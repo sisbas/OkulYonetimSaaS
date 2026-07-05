@@ -7,7 +7,13 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "test": "jest --passWithNoTests",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "typeorm": "typeorm-ts-node-commonjs",
+    "db:migrate": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
+    "db:migrate:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
+    "db:migrate:show": "typeorm-ts-node-commonjs migration:show -d src/database/data-source.ts",
+    "db:seed:permissions": "ts-node src/database/seeds/permissions.seed.ts",
+    "db:verify": "ts-node scripts/verify-datasource.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

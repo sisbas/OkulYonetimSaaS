@@ -8,10 +8,10 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 @Controller('rbac')
 export class RbacController {
   @Get('permissions')
-  @Permissions('rbac.read')
+  @Permissions('role:permission:read')
   permissions() { return PERMISSION_SEED; }
 
   @Get('roles')
-  @Permissions('rbac.read')
+  @Permissions('role:read')
   roles() { return ROLE_SEED; }
 }
