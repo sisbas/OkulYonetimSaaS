@@ -7,18 +7,17 @@ Branch: work
 
 ### Dependency Lock Report
 
-- package-lock.json önceden var mıydı: Hayır (`ls package-lock.json` failed at initial check).
-- package-lock.json üretildi mi: Kısmi/blocked. `npm install --package-lock-only` registry 403 nedeniyle FAIL oldu; repository history'deki son lockfile içeriği geri yüklendi.
+- package-lock.json önceden var mıydı: Evet (`ls package-lock.json` PASS).
+- package-lock.json üretildi mi: Hayır; mevcut lockfile bulunduğu için `npm install --package-lock-only` çalıştırılmadı.
 - package.json değişti mi: Hayır.
-- package-lock.json değişti mi: Evet, yeni untracked dosya olarak eklendi.
-- npm install --package-lock-only sonucu: FAIL — `403 Forbidden - GET https://registry.npmjs.org/@nestjs%2fcommon`.
+- package-lock.json değişti mi: Hayır (`git diff -- package-lock.json` boş).
+- npm install --package-lock-only sonucu: Not run; package-lock.json zaten mevcuttu.
 - npm ci sonucu: FAIL — `403 Forbidden - GET https://registry.npmjs.org/@nestjs%2fcommon`.
-- Commit'e dahil edildi mi: Evet, bu Gate 1 doğrulama commit'ine dahil edildi.
+- Commit'e dahil edildi mi: Evet; `package-lock.json` tracked (`git ls-files package-lock.json`). Bu rapor commit'inde lockfile değişikliği yok çünkü önceden commit edilmişti.
 - Result: FAIL.
 
 Blockers:
 
-- [BLOCKER] npm install --package-lock-only fail
 - [BLOCKER] npm ci fail
 
 ## 2. Origin/Main Sync
@@ -26,10 +25,10 @@ Blockers:
 ### Origin/Main Sync Report
 
 - origin/main ref doğrulandı mı: Hayır.
-- origin/main commit: N/A — `origin` remote configured değil.
+- origin/main commit: N/A — `origin` remote configured değil; `git fetch origin` failed with `fatal: 'origin' does not appear to be a git repository`.
 - backend branch: work.
 - backend branch origin/main ile güncellendi mi: Hayır.
-- kullanılan yöntem: merge hedefi doğrulanamadığı için uygulanamadı.
+- kullanılan yöntem: N/A; merge hedefi doğrulanamadığı için `git merge origin/main` uygulanamadı.
 - conflict çıktı mı: Hayır; merge başlatılamadı.
 - conflict dosyaları: None.
 - conflict çözümü teknik davranış değiştirdi mi: No.
@@ -48,23 +47,23 @@ Blockers:
 
 | Command | Result | Duration | Important output | Error summary |
 | --- | --- | ---: | --- | --- |
-| `npm ci` | FAIL | 0s | npm attempted to fetch `@nestjs/common` | `403 Forbidden - GET https://registry.npmjs.org/@nestjs%2fcommon` |
-| `npm run build` | FAIL | 2s | `tsc -p tsconfig.json` executed | Missing Jest/Node types because dependencies were not installed (`expect`, `describe`, `fs`, `path`) |
-| `npm run test:rbac` | FAIL | 0s | script started | `jest: not found` |
-| `npm run test:database` | FAIL | 1s | script started | `jest: not found` |
+| `npm ci` | FAIL | 2s | npm attempted to fetch `@nestjs/common` from npm registry | `403 Forbidden - GET https://registry.npmjs.org/@nestjs%2fcommon` |
+| `npm run build` | FAIL | 2s | `tsc -p tsconfig.json` executed | Dependencies are not installed after failed `npm ci`; TypeScript cannot resolve NestJS/TypeORM/Jest/Node types (`@nestjs/common`, `typeorm`, `describe`, `expect`, `process`, etc.) |
+| `npm run test:rbac` | FAIL | 1s | script started | `jest: not found` |
+| `npm run test:database` | FAIL | 0s | script started | `jest: not found` |
 | `npm run db:migrate` | FAIL | 0s | script started | `typeorm-ts-node-commonjs: not found` |
-| `npm run db:seed:permissions` | FAIL | 0s | script started | `ts-node: not found` |
+| `npm run db:seed:permissions` | FAIL | 1s | script started | `ts-node: not found` |
 | `npm run db:verify` | FAIL | 0s | script started | `ts-node: not found` |
 | `npm run db:seed:permissions` (idempotency #1) | FAIL | 0s | script started | `ts-node: not found` |
-| `npm run db:seed:permissions` (idempotency #2) | FAIL | 1s | script started | `ts-node: not found` |
-| `npm run db:verify` (idempotency verify) | FAIL | 0s | script started | `ts-node: not found` |
+| `npm run db:seed:permissions` (idempotency #2) | FAIL | 0s | script started | `ts-node: not found` |
+| `npm run db:verify` (idempotency verify) | FAIL | 1s | script started | `ts-node: not found` |
 
 ### Backend/API Gate 1 Re-run Report
 
 1. Dependency Lock
-- package-lock.json: present, added in this commit.
+- package-lock.json: present and tracked.
 - npm ci: FAIL.
-- package-lock.json commit'e dahil mi: Yes.
+- package-lock.json commit'e dahil mi: Yes; tracked in git.
 
 2. Origin/Main Sync
 - origin/main ref doğrulandı mı: No.
@@ -83,7 +82,7 @@ Blockers:
 - npm run db:migrate: FAIL.
 - npm run db:seed:permissions: FAIL.
 - npm run db:verify: FAIL.
-- seed idempotency: FAIL.
+- seed idempotency: FAIL / not verifiable because seed command cannot start without `ts-node`.
 
 4. Merge Blockers
 - [BLOCKER] npm ci fail
@@ -110,6 +109,7 @@ Blockers:
 
 - Missing domains: None.
 - Extra domains: None.
+- Covered domains: `attendance`, `audit_log`, `course`, `daily_operations`, `dashboard`, `leave`, `message_template`, `parent_notification`, `role`, `room`, `schedule`, `student`, `teacher`, `tenant`, `time_slot`, `user`.
 - Result: PASS.
 
 ### 4.3 Out-of-scope Permissions
@@ -127,11 +127,11 @@ Blockers:
 
 ### 4.5 operations_manager Mapping
 
-- Forbidden permissions present: None from required forbidden list.
+- Forbidden permissions present: None from required forbidden list (`tenant:update`, `tenant:settings:update`, `tenant:branch:create`, `tenant:branch:update`, `user:create`, `user:deactivate`, `role:assign`, `role:remove`, `audit_log:security:read`, `attendance:unlock`).
 - parent_notification:approve var mı: Yes.
 - parent_notification:send var mı: Yes.
-- student:kvkk:read veya eşdeğer KVKK görünürlüğü gerekli mi: `student:kvkk:read` is not assigned to operations_manager; send/approve boundaries rely on KVKK guard tests.
-- notification send öncesi consent guard testleri var mı: Yes (`test/kvkk/consent-guard.spec.ts`, `test/kvkk/notification-approval.guard.spec.ts`).
+- student:kvkk:read veya eşdeğer KVKK görünürlüğü gerekli mi: `student:kvkk:read` is not assigned to operations_manager; send/approve boundaries rely on KVKK guards.
+- notification send öncesi consent guard testleri var mı: Yes by static inspection (`test/kvkk/consent-guard.spec.ts`, `test/kvkk/notification-approval.guard.spec.ts`).
 - KVKK boundary respected: PASS by static seed/test inspection, but runtime verification is blocked because dependencies are not installed.
 - Result: PASS (static), runtime not verified.
 
@@ -146,14 +146,13 @@ Blockers:
 
 ### 4.7 Route Decorator Consistency
 
-- Decorator keys found: `user:read`, `role:permission:read`, `role:read`, `tenant:read`.
+- Decorator keys found: `tenant:read`, `role:permission:read`, `role:read`, `user:read`.
 - Decorator keys missing from seed: None.
 - Old format keys: None.
 - Result: PASS.
 
 ## 5. Merge Blockers
 
-- [BLOCKER] npm install --package-lock-only fail
 - [BLOCKER] npm ci fail
 - [BLOCKER] origin/main ref doğrulanamadı
 - [BLOCKER] backend branch origin/main ile güncellenemedi
