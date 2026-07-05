@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AppDataSource } from './database/data-source';
 import { AuthModule } from './auth/auth.module';
 import { TenantContextMiddleware } from './common/context/tenant-context.middleware';
 import { PermissionGuard } from './common/guards/permission.guard';
@@ -11,12 +12,7 @@ import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      url: process.env.DATABASE_URL,
-      autoLoadEntities: true,
-      synchronize: false,
-    }),
+    TypeOrmModule.forRoot({ ...AppDataSource.options, autoLoadEntities: true }),
     AuthModule,
     TenantsModule,
     UsersModule,
