@@ -7,7 +7,7 @@ import { RequestWithContext } from '../common/context/request-context';
 @Controller('tenants')
 export class TenantsController {
   @Get(':tenantId')
-  @Permissions('tenant.read')
+  @Permissions('tenant:read')
   findOne(@Param('tenantId') tenantId: string, @Req() req: RequestWithContext) {
     if (req.context?.tenantId !== tenantId) throw new NotFoundException();
     return { id: tenantId };

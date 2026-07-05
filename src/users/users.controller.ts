@@ -7,7 +7,7 @@ import { RequestWithContext } from '../common/context/request-context';
 @Controller('users')
 export class UsersController {
   @Get()
-  @Permissions('user.read')
+  @Permissions('user:read')
   findAll(@Req() req: RequestWithContext, @Query('tenantId') _tenantId?: string) {
     return { tenantId: req.context?.tenantId, data: [] };
   }
