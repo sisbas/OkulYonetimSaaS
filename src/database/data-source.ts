@@ -3,7 +3,7 @@ import { DataSource } from 'typeorm';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
-  url: process.env.DATABASE_URL,
+  url: process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL,
   host: process.env.DATABASE_HOST,
   port: process.env.DATABASE_PORT ? Number(process.env.DATABASE_PORT) : undefined,
   username: process.env.DATABASE_USER,

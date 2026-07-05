@@ -1,6 +1,18 @@
 import { AppDataSource } from '../src/database/data-source';
 
-const CORE_TABLES = ['tenants', 'branches', 'users', 'roles', 'permissions', 'audit_logs', 'kvkk_consents'];
+const CORE_TABLES = [
+  'tenants',
+  'branches',
+  'tenant_settings',
+  'users',
+  'tenant_memberships',
+  'roles',
+  'permissions',
+  'user_roles',
+  'user_sessions',
+  'audit_logs',
+  'kvkk_consents',
+];
 
 export async function verifyDataSource(): Promise<void> {
   const ds = AppDataSource.isInitialized ? AppDataSource : await AppDataSource.initialize();
