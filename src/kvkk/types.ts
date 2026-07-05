@@ -49,3 +49,18 @@ export interface ProviderJob {
 export interface ProviderJobQueue {
   enqueue(job: ProviderJob): Promise<void> | void;
 }
+
+export interface NotificationEligibilityInput {
+  consent?: ConsentInput | null;
+  phone: PhoneInput;
+  channel: ChannelInput;
+  messageBody: string | null;
+}
+
+export interface NotificationSendInput {
+  notification: NotificationInput;
+  consent?: ConsentInput | null;
+  phone: PhoneInput;
+  channel: ChannelInput;
+  queue: ProviderJobQueue;
+}
