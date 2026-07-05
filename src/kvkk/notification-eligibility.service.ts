@@ -3,12 +3,9 @@ import { ConsentGuard } from './consent.guard';
 import { NotificationApprovalGuard, NOT_APPROVED } from './notification-approval.guard';
 import { PhoneGuard } from './phone.guard';
 import {
-  ChannelInput,
-  ConsentInput,
-  NotificationInput,
+  NotificationEligibilityInput,
   NotificationResult,
-  PhoneInput,
-  ProviderJobQueue,
+  NotificationSendInput,
 } from './types';
 
 export class NotificationEligibilityService {
@@ -19,12 +16,7 @@ export class NotificationEligibilityService {
     private readonly approvalGuard = new NotificationApprovalGuard(),
   ) {}
 
-  evaluate(input: {
-    consent?: ConsentInput | null;
-    phone: PhoneInput;
-    channel: ChannelInput;
-    messageBody: string | null;
-  }): NotificationResult {
+  evaluate(input: NotificationEligibilityInput): NotificationResult {
     if (!this.consentGuard.canProcess(input.consent)) {
       return { status: 'blocked_consent', message_body: null };
     }
@@ -44,13 +36,7 @@ export class NotificationEligibilityService {
     return { status: 'approved', message_body: input.messageBody };
   }
 
-  async send(input: {
-    notification: NotificationInput;
-    consent?: ConsentInput | null;
-    phone: PhoneInput;
-    channel: ChannelInput;
-    queue: ProviderJobQueue;
-  }): Promise<NotificationResult> {
+  async send(input: NotificationSendInput): Promise<NotificationResult> {
     const approval = this.approvalGuard.canSend(input.notification);
     if (approval !== true) {
       return { status: input.notification.status, message_body: null, reason: NOT_APPROVED };
