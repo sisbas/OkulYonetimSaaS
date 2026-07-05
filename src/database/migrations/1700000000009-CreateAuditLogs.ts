@@ -22,7 +22,7 @@ export class CreateAuditLogs1700000000009 implements MigrationInterface {
         created_at timestamptz NOT NULL DEFAULT now()
       )
     `);
-    await queryRunner.query(`COMMENT ON TABLE audit_logs IS 'KVKK/security: do not write credentials, raw refresh tokens, unmasked parent phone numbers, or sensitive counseling notes into audit logs.'`);
+    await queryRunner.query(`COMMENT ON TABLE audit_logs IS 'Audit log must not store raw credentials, raw refresh secrets, unmasked parent contact data, or sensitive counseling notes. tenant_id is nullable only for platform-level/system events that cannot be attributed to a tenant.'`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_id ON audit_logs(tenant_id)`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_user_id ON audit_logs(actor_user_id)`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)`);

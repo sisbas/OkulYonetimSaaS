@@ -13,7 +13,9 @@
     "db:migrate:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
     "db:migrate:show": "typeorm-ts-node-commonjs migration:show -d src/database/data-source.ts",
     "db:seed:permissions": "ts-node src/database/seeds/permissions.seed.ts",
-    "db:verify": "ts-node scripts/verify-datasource.ts"
+    "db:verify": "ts-node scripts/verify-datasource.ts",
+    "test:rbac": "jest --runInBand test/rbac",
+    "test:database": "jest --runInBand test/database"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
