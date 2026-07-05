@@ -15,7 +15,8 @@
     "db:seed:permissions": "ts-node src/database/seeds/permissions.seed.ts",
     "db:verify": "ts-node scripts/verify-datasource.ts",
     "test:rbac": "jest --runInBand test/rbac",
-    "test:database": "jest --runInBand test/database"
+    "test:database": "jest --runInBand test/database",
+    "test:tenant-guard": "jest --runInBand test/database/tenant-guard.spec.ts test/rbac/tenant-repository-scope.spec.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
