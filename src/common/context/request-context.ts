@@ -9,7 +9,10 @@ export type RequestUser = {
 
 export type RequestContext = {
   requestId: string;
+  userId?: string;
   tenantId?: string;
+  roles?: string[];
+  permissions?: string[];
   user?: RequestUser;
 };
 
