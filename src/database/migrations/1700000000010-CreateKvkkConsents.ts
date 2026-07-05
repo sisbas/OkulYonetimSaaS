@@ -60,7 +60,7 @@ export class CreateKvkkConsents1700000000010 implements MigrationInterface {
       )
     `);
     await queryRunner.query(`COMMENT ON TABLE kvkk_consent_subjects IS 'KVKK data minimization: store masked contact values only; raw contact data belongs in future tenant-scoped domain tables.'`);
-    await queryRunner.query(`COMMENT ON TABLE kvkk_consents IS 'Sprint 0 stores consent state and evidence references only; avoid duplicating unnecessary personal data.'`);
+    await queryRunner.query(`COMMENT ON TABLE kvkk_consents IS 'Stores consent status and evidence references with data minimization. Raw contact data must remain in tenant-scoped domain tables.'`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_kvkk_subjects_tenant_id ON kvkk_consent_subjects(tenant_id)`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_kvkk_subjects_type ON kvkk_consent_subjects(subject_type)`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_kvkk_subjects_ref ON kvkk_consent_subjects(subject_ref_id)`);
