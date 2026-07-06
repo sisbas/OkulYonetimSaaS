@@ -5,35 +5,47 @@ on:
     branches:
       - main
       - develop
+
   pull_request:
     branches:
       - main
       - develop
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  backend-api:
-    name: Backend/API checks
+  backend-ci:
+    name: Migration + Seed + Tests + Build
+
     runs-on: ubuntu-latest
 
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: okul_yonetim_saas_test
+          POSTGRES_USER: okul_user
+          POSTGRES_PASSWORD: okul_password
+          POSTGRES_DB: okul_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d okul_yonetim_saas_test"
+          --health-cmd "pg_isready -U okul_user -d okul_test"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     env:
+      CI: true
       NODE_ENV: test
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/okul_yonetim_saas_test
-      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/okul_yonetim_saas_test
+      DATABASE_URL: postgresql://okul_user:okul_password@localhost:5432/okul_test
+      TEST_DATABASE_URL: postgresql://okul_user:okul_password@localhost:5432/okul_test
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: okul_user
+      PGPASSWORD: okul_password
+      PGDATABASE: okul_test
+
 
     steps:
       - name: Checkout repository
@@ -42,18 +54,27 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: false
+          node-version: 22
+          cache: npm
+
+      - name: Show Node and npm versions
+        run: |
+          node --version
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Wait for PostgreSQL
         run: |
-          until pg_isready -h localhost -p 5432 -U postgres -d okul_yonetim_saas_test; do
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 -U okul_user -d okul_test && exit 0
             echo "Waiting for PostgreSQL..."
             sleep 2
           done
+          echo "PostgreSQL did not become ready in time"
+          exit 1
 
-      - name: Install dependencies
-        run: npm install
 
       - name: Run database migrations
         run: npm run db:migrate
@@ -61,7 +82,8 @@ jobs:
       - name: Seed permissions
         run: npm run db:seed:permissions
 
-      - name: Verify database
+      - name: Verify DataSource
+
         run: npm run db:verify
 
       - name: Run RBAC tests
@@ -71,4 +93,5 @@ jobs:
         run: npm run test:database
 
       - name: Build backend
+
         run: npm run build
