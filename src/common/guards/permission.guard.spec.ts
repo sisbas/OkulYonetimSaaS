@@ -12,6 +12,7 @@ describe('PermissionGuard', () => {
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue(['user:read']) } as unknown as Reflector;
     const guard = new PermissionGuard(reflector);
     const context = { getHandler: jest.fn(), getClass: jest.fn(), switchToHttp: () => ({ getRequest: () => request([]) }) } as unknown as ExecutionContext;
+
     expect(guard.canActivate(context)).toBe(false);
   });
 
@@ -19,6 +20,7 @@ describe('PermissionGuard', () => {
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue(['user:read']) } as unknown as Reflector;
     const guard = new PermissionGuard(reflector);
     const context = { getHandler: jest.fn(), getClass: jest.fn(), switchToHttp: () => ({ getRequest: () => request(['user:read']) }) } as unknown as ExecutionContext;
+
     expect(guard.canActivate(context)).toBe(true);
   });
 });

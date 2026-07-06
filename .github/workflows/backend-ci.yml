@@ -1,15 +1,15 @@
 name: Backend CI
 
 on:
-  pull_request:
-    branches:
-      - main
-      - develop
   push:
     branches:
       - main
       - develop
 
+  pull_request:
+    branches:
+      - main
+      - develop
 concurrency:
   group: backend-ci-${{ github.ref }}
   cancel-in-progress: true
@@ -17,6 +17,7 @@ concurrency:
 jobs:
   backend-ci:
     name: Migration + Seed + Tests + Build
+
     runs-on: ubuntu-latest
 
     services:
@@ -44,6 +45,7 @@ jobs:
       PGUSER: okul_user
       PGPASSWORD: okul_password
       PGDATABASE: okul_test
+
 
     steps:
       - name: Checkout repository
@@ -73,6 +75,7 @@ jobs:
           echo "PostgreSQL did not become ready in time"
           exit 1
 
+
       - name: Run database migrations
         run: npm run db:migrate
 
@@ -80,6 +83,7 @@ jobs:
         run: npm run db:seed:permissions
 
       - name: Verify DataSource
+
         run: npm run db:verify
 
       - name: Run RBAC tests
@@ -88,5 +92,6 @@ jobs:
       - name: Run database tests
         run: npm run test:database
 
-      - name: Build
+      - name: Build backend
+
         run: npm run build

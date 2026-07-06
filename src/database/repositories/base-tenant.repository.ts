@@ -1,4 +1,5 @@
 import { InsertResult, UpdateResult } from 'typeorm';
+
 import { RequestContext } from '../../common/context/request-context';
 import { assertTenantScope } from '../../common/tenant/assert-tenant-scope';
 import { TenantColumnName, omitTenantKeys, tenantData, tenantWhere } from '../../common/tenant/tenant-query.helper';
@@ -21,6 +22,7 @@ type TenantScopedManager = {
   update(tableName: string, where: Record<string, unknown>, values: Record<string, unknown>): Promise<Pick<UpdateResult, 'affected'>>;
 };
 
+
 export class BaseTenantRepository<TRecord extends Record<string, unknown> = Record<string, unknown>> {
   protected readonly tableName: string;
   protected readonly resourceName: string;
@@ -29,6 +31,7 @@ export class BaseTenantRepository<TRecord extends Record<string, unknown> = Reco
 
   constructor(
     protected readonly manager: TenantScopedManager,
+
     options: TenantScopedRepositoryOptions,
   ) {
     this.tableName = options.tableName;
@@ -40,11 +43,13 @@ export class BaseTenantRepository<TRecord extends Record<string, unknown> = Reco
   async findById(ctx: RequestContext, id: string): Promise<TRecord | null> {
     const where = tenantWhere(ctx, { [this.idColumn]: id }, this.resourceName, this.tenantColumn);
     return this.manager.findOne(this.tableName, { where }) as Promise<unknown> as Promise<TRecord | null>;
+
   }
 
   async findMany(ctx: RequestContext, filters: TenantScopedFilters = {}): Promise<TRecord[]> {
     const where = tenantWhere(ctx, filters, this.resourceName, this.tenantColumn);
     return this.manager.find(this.tableName, { where }) as Promise<unknown> as Promise<TRecord[]>;
+
   }
 
   async create(ctx: RequestContext, data: TenantScopedCreateInput): Promise<TRecord> {
