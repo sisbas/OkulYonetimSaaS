@@ -4,12 +4,44 @@ import { Observable, tap } from 'rxjs';
 import { AUDIT_ACTION_KEY, AuditActionOptions } from '../decorators/audit-action.decorator';
 import { RequestWithContext } from '../context/request-context';
 
-const SENSITIVE_KEYS = new Set(['password', 'refreshToken', 'accessToken', 'token', 'email', 'phone']);
+const SENSITIVE_KEY_PATTERNS = [
+  'password',
+  'credential',
+  'secret',
+  'refreshtoken',
+  'accesstoken',
+  'token',
+  'authorization',
+  'email',
+  'phone',
+  'phonenumber',
+  'parentphone',
+  'guardianphone',
+  'parentcontact',
+  'guardiancontact',
+  'counselingnote',
+  'guidancenote',
+  'sensitivecounselingnote',
+] as const;
+
+function normalizeKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isSensitiveKey(key: string): boolean {
+  const normalized = normalizeKey(key);
+  return SENSITIVE_KEY_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
 
 function sanitize(value: unknown): unknown {
   if (!value || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map(sanitize);
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, val]) => [key, SENSITIVE_KEYS.has(key) ? '[REDACTED]' : sanitize(val)]));
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, val]) => [
+      key,
+      isSensitiveKey(key) ? '[REDACTED]' : sanitize(val),
+    ]),
+  );
 }
 
 @Injectable()
