@@ -62,8 +62,52 @@ jobs:
           node --version
           npm --version
 
+      - name: Prepare CI report directory
+        run: mkdir -p .ci-reports
+
       - name: Install dependencies
-        run: npm ci
+        id: npm_ci
+        run: |
+          set -o pipefail
+
+          {
+            echo "# npm ci PASS Proof"
+            echo
+            echo "- Workflow: $GITHUB_WORKFLOW"
+            echo "- Run ID: $GITHUB_RUN_ID"
+            echo "- Job: $GITHUB_JOB"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Event: $GITHUB_EVENT_NAME"
+            echo "- Node: $(node --version)"
+            echo "- npm: $(npm --version)"
+            echo
+            echo "## npm ci output"
+            echo '```text'
+          } > .ci-reports/npm-ci-proof.md
+
+          npm ci 2>&1 | tee .ci-reports/npm-ci.log
+          status=${PIPESTATUS[0]}
+
+          cat .ci-reports/npm-ci.log >> .ci-reports/npm-ci-proof.md
+
+          {
+            echo '```'
+            echo
+            if [ "$status" -eq 0 ]; then
+              echo "- Result: PASS"
+            else
+              echo "- Result: FAIL"
+            fi
+          } >> .ci-reports/npm-ci-proof.md
+
+          exit "$status"
+
+      - name: Upload npm ci proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-ci-proof
+          path: .ci-reports/npm-ci-proof.md
 
       - name: Wait for PostgreSQL
         run: |
