@@ -14,7 +14,7 @@
     "strict": true,
     "skipLibCheck": true,
     "strictPropertyInitialization": false,
-    "ignoreDeprecations": "6.0"
+    "ignoreDeprecations": "5.0"
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
