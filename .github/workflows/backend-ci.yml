@@ -65,6 +65,9 @@ jobs:
       - name: Prepare CI report directory
         run: mkdir -p .ci-reports
 
+      - name: Validate package lock
+        run: node -e "JSON.parse(require('fs').readFileSync('package-lock.json', 'utf8'))"
+
       - name: Install dependencies
         id: npm_ci
         run: |
