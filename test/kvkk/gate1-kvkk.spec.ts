@@ -8,7 +8,7 @@ function readRepoFile(path: string): string {
 
 describe('Gate 1 KVKK acceptance checks', () => {
   it('keeps parent contact and broad student/audit access out of the teacher role', () => {
-    const teacherPermissions = new Set(ROLE_PERMISSION_SEED.teacher);
+    const teacherPermissions = new Set<string>(ROLE_PERMISSION_SEED.teacher);
     const forbiddenTeacherPermissions = [
       'student:parent_contact:read',
       'student:read',
