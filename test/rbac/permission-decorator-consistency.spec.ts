@@ -15,7 +15,6 @@ function sourceFiles(dir: string): string[] {
 describe('permission decorator consistency', () => {
   const seeded = new Set<string>(PERMISSION_SEED.map((permission) => permission.code));
 
-
   it('keeps route permission keys within the seeded permission keys', () => {
     const used = sourceFiles(join(process.cwd(), 'src')).flatMap((file) => {
       const source = readFileSync(file, 'utf8');
@@ -30,8 +29,10 @@ describe('permission decorator consistency', () => {
     expect(used.length).toBeGreaterThan(0);
     for (const { permission, file } of used) {
       expect(permission).not.toContain('.');
-      expect(seeded.has(permission), `${permission} in ${file} is not seeded`).toBe(true);
-
+      if (!seeded.has(permission)) {
+        throw new Error(`${permission} in ${file} is not seeded`);
+      }
+      expect(seeded.has(permission)).toBe(true);
     }
   });
 });

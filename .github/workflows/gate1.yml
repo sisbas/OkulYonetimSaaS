@@ -1,0 +1,86 @@
+name: Gate 1 CI
+
+on:
+  pull_request:
+    branches:
+      - backend
+      - main
+  push:
+    branches:
+      - backend
+      - main
+      - codex/gate1-actions-ci-chain
+  workflow_dispatch:
+
+jobs:
+  gate1:
+    name: npm ci → migration → seed → verify → tests → build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: okul_yonetim_saas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d okul_yonetim_saas_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/okul_yonetim_saas_test
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/okul_yonetim_saas_test
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: okul_yonetim_saas_test
+      TYPEORM_LOGGING: "false"
+      JWT_ACCESS_SECRET: gate1-access-secret
+      JWT_REFRESH_SECRET: gate1-refresh-secret
+      SEED_TENANT_SLUG: system-seed
+      SEED_TENANT_NAME: System Seed Tenant
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify lockfile exists
+        run: test -f package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Run TypeORM migrations
+        run: npm run db:migrate
+
+      - name: Seed permissions
+        run: npm run db:seed:permissions
+
+      - name: Verify datasource and core tables
+        run: npm run db:verify
+
+      - name: RBAC tests
+        run: npm run test:rbac
+
+      - name: Database tests
+        run: npm run test:database
+
+      - name: KVKK tests
+        run: npm run test:kvkk
+
+      - name: Build
+        run: npm run build
