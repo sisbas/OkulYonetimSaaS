@@ -109,6 +109,80 @@ run_check() {
   return "$status"
 }
 
+is_redacted_line() {
+  local line="$1"
+  [[ "$line" =~ (\[REDACTED\]|\*\*\*|<redacted>|REDACTED|masked|MASKED) ]]
+}
+
+scan_sensitive_log_patterns() {
+  local report_file="ci-logs/sensitive-pattern-scan.tsv"
+  local log_file
+  local line
+  local line_number
+  local finding_count=0
+  local credential_key_regex='(credential|password|passwd|pwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|authorization)[^[:alnum:]_-]*[:=][[:space:]]*[^[:space:],;}]+'
+  local bearer_token_regex='bearer[[:space:]]+[A-Za-z0-9._~+/=-]{12,}'
+  local email_value_regex='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+  local phone_value_regex='(\+90|0090|0)?[[:space:].-]?5[0-9]{2}[[:space:].-]?[0-9]{3}[[:space:].-]?[0-9]{2}[[:space:].-]?[0-9]{2}'
+  local field_key_regex='((parent|guardian)[_-]?(phone|email|name|contact)|message_body|guidance_note|rehberlik[_-]?notu)[^[:alnum:]_-]*[:=]'
+
+  : > "$report_file"
+  printf 'file\tline\tcategory\n' >> "$report_file"
+
+  shopt -s nocasematch
+  while IFS= read -r -d '' log_file; do
+    line_number=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line_number=$((line_number + 1))
+
+      if [[ "$line" =~ $email_value_regex ]]; then
+        printf '%s\t%s\t%s\n' "$log_file" "$line_number" "email" >> "$report_file"
+        finding_count=$((finding_count + 1))
+      fi
+
+      if [[ "$line" =~ $phone_value_regex ]]; then
+        printf '%s\t%s\t%s\n' "$log_file" "$line_number" "phone" >> "$report_file"
+        finding_count=$((finding_count + 1))
+      fi
+
+      if [[ "$line" =~ $bearer_token_regex ]]; then
+        printf '%s\t%s\t%s\n' "$log_file" "$line_number" "token" >> "$report_file"
+        finding_count=$((finding_count + 1))
+      fi
+
+      if [[ "$line" =~ $credential_key_regex ]] && ! is_redacted_line "$line"; then
+        printf '%s\t%s\t%s\n' "$log_file" "$line_number" "credential_or_token_key" >> "$report_file"
+        finding_count=$((finding_count + 1))
+      fi
+
+      if [[ "$line" =~ $field_key_regex ]] && ! is_redacted_line "$line"; then
+        printf '%s\t%s\t%s\n' "$log_file" "$line_number" "parent_guardian_contact_or_message_guidance_key" >> "$report_file"
+        finding_count=$((finding_count + 1))
+      fi
+    done < "$log_file"
+  done < <(find ci-logs -type f -name '*.log' -print0)
+  shopt -u nocasematch
+
+  if [[ "$finding_count" -eq 0 ]]; then
+    printf 'none\t0\tno_sensitive_pattern_match\n' >> "$report_file"
+    write_row "11" "sensitive log scan" "PASS" "—" "—"
+    return 0
+  fi
+
+  write_row "11" "sensitive log scan" "FAIL" "${finding_count} sensitive pattern finding(s) in ci-logs; see redacted scan report" "audit/redaction failure"
+  {
+    echo
+    echo "**Decision:** FAIL at 11 sensitive log scan."
+    echo "**Finding count:** ${finding_count}."
+    echo "**Scope:** credential, token, email, phone, parent/guardian contact, message_body, guidance_note."
+    echo "**Disclosure control:** Matched values are not printed in the summary; inspect ci-logs/sensitive-pattern-scan.tsv for file, line, and category only."
+    echo "**Blocker:** Release blocker until the emitting test/script/log line is redacted or removed."
+  } >> "$SUMMARY_FILE"
+
+  echo "::error title=Sensitive log scan failed::${finding_count} sensitive pattern finding(s) detected in ci-logs artifact."
+  return 1
+}
+
 write_header
 
 run_check "01" "npm ci" "npm ci" || exit $?
@@ -121,6 +195,7 @@ run_check "07" "RBAC tests" "npm run test:rbac" || exit $?
 run_check "08" "KVKK tests" "npm run test:kvkk" || exit $?
 run_check "09" "audit/redaction tests" "npm run test:audit-redaction" || exit $?
 run_check "10" "build" "npm run build" || exit $?
+scan_sensitive_log_patterns || exit $?
 
 {
   echo
