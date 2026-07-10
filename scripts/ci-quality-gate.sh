@@ -185,7 +185,7 @@ scan_sensitive_log_patterns() {
 
 write_header
 
-run_check "01" "npm ci" "npm ci" || exit $?
+run_check "01" "npm ci" "npm ci --loglevel=error" || exit $?
 run_check "02" "lint" "npm run lint" || exit $?
 run_check "03" "unit tests" "npm run test:unit" || exit $?
 run_check "04" "migration check" "npm run db:migrate" || exit $?
