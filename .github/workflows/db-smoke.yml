@@ -1,0 +1,86 @@
+name: DB Smoke Tests
+
+on:
+  pull_request:
+    branches:
+      - backend
+      - main
+  push:
+    branches:
+      - backend
+      - main
+      - chore/gate1-db-smoke-qa-db
+  workflow_dispatch:
+
+jobs:
+  db-smoke:
+    name: qa:db with required migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: ataakademi_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ataakademi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CI: true
+      NODE_ENV: test
+      REQUIRE_MIGRATIONS: true
+      MIGRATIONS_DIR: src/database/migrations
+      DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+      TEST_DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_NAME: ataakademi_test
+      TYPEORM_LOGGING: "false"
+      JWT_ACCESS_SECRET: db-smoke-access-secret
+      JWT_REFRESH_SECRET: db-smoke-refresh-secret
+      SEED_TENANT_SLUG: system-seed
+      SEED_TENANT_NAME: System Seed Tenant
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify lockfile exists
+        run: test -f package-lock.json
+
+      - name: Validate package lock
+        run: node -e "JSON.parse(require('fs').readFileSync('package-lock.json', 'utf8'))"
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Verify required migrations
+        run: |
+          set -euo pipefail
+          echo "REQUIRE_MIGRATIONS=$REQUIRE_MIGRATIONS"
+          echo "MIGRATIONS_DIR=$MIGRATIONS_DIR"
+          test "$REQUIRE_MIGRATIONS" = "true"
+          test -d "$MIGRATIONS_DIR"
+          find "$MIGRATIONS_DIR" -maxdepth 1 -type f | sort
+          test "$(find "$MIGRATIONS_DIR" -maxdepth 1 -type f | wc -l)" -gt 0
+
+      - name: Run DB smoke tests
+        run: npm run qa:db
+
+      - name: Build
+        run: npm run build
