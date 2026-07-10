@@ -47,8 +47,8 @@ jobs:
       DATABASE_USER: postgres
       DATABASE_NAME: okul_yonetim_saas_test
       TYPEORM_LOGGING: "false"
-      JWT_ACCESS_SECRET: sprint1-access-secret
-      JWT_REFRESH_SECRET: sprint1-refresh-secret
+      JWT_ACCESS_SECRET: ci-access-signing-key-placeholder
+      JWT_REFRESH_SECRET: ci-refresh-signing-key-placeholder
       SEED_TENANT_SLUG: system-seed
       SEED_TENANT_NAME: System Seed Tenant
 

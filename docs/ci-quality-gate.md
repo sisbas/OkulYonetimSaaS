@@ -54,6 +54,30 @@ Her workflow run için GitHub Actions summary aşağıdaki alanları üretmelidi
 | Build failure | TypeScript compile failure | Merge yok |
 | Audit/redaction failure | PII masking, token/credential, parent contact, guidance note sızıntısı | Release blocker |
 
+## GitGuardian / secret placeholder standardı
+
+GitGuardian veya benzeri secret scanner uyarıları PR acceptance için ayrı hard gate olarak ele alınır.
+
+Zorunlu karar:
+
+1. Her uyarı için `remediation` veya `false-positive` kararı yazılır.
+2. Karar yazılmadan PR için tam acceptance PASS verilmez.
+3. Uyarı gerçek credential ise merge yoktur; değer rotate/revoke edilir ve commit geçmişi etkisi ayrıca değerlendirilir.
+4. Uyarı CI/test placeholder değerinden kaynaklı ise gerçek credential olmadığı, dış servis erişimi sağlamadığı ve sadece ephemeral test ortamında kullanıldığı açıkça yazılır.
+5. Placeholder değerleri `password`, `secret`, gerçek token biçimi veya gerçek servis anahtarı gibi görünecek formatta tutulmaz.
+6. CI ortamında zorunlu değişken adı `*_SECRET` ise değişken adı korunabilir; fakat değer daha nötr test formatına çekilir.
+
+PR notunda minimum kayıt:
+
+```text
+GitGuardian decision: false-positive / remediated
+Finding: <detector and file>
+Reason: <why it is not live secret or what was rotated>
+Action: <renamed placeholder / moved to test-only format / revoked>
+Residual risk: none / tracked
+Acceptance impact: PASS only after scanner note and CI rerun
+```
+
 ## Branch policy notu
 
 Hedef branch: `main`.
@@ -101,6 +125,7 @@ Aşağıdaki durumlardan biri varsa merge önerilmez:
 - Migration/seed failure var.
 - KVKK/audit/redaction failure var.
 - Parent/guardian contact, token, credential, email, phone veya rehberlik notu loglama etkisi açıklanmamış.
+- GitGuardian veya secret scanner uyarısı için remediation/false-positive kararı yazılmamış.
 - PR template alanları boş bırakılmış.
 - Rollback planı yok.
 - Main ile branch arasında büyük divergence var.
