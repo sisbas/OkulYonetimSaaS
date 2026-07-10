@@ -120,7 +120,7 @@ scan_sensitive_log_patterns() {
   local line
   local line_number
   local finding_count=0
-  local credential_key_regex='(credential|password|passwd|pwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|authorization)[^[:alnum:]_-]*[:=][[:space:]]*[^[:space:],;}]+'
+  local credential_key_regex='(credential|password|passwd|pwd|secret|api[_-]?key|token|access[_-]?token|refresh[_-]?token|id[_-]?token|authorization)[^[:alnum:]_-]*[:=][[:space:]]*[^[:space:],;}]+'
   local bearer_token_regex='bearer[[:space:]]+[A-Za-z0-9._~+/=-]{12,}'
   local email_value_regex='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
   local phone_value_regex='(\+90|0090|0)?[[:space:].-]?5[0-9]{2}[[:space:].-]?[0-9]{3}[[:space:].-]?[0-9]{2}[[:space:].-]?[0-9]{2}'
