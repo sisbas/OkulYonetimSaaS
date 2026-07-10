@@ -247,9 +247,15 @@ export async function seedPermissions(): Promise<void> {
         );
       }
       for (const [roleCode, permissionCodes] of Object.entries(ROLE_PERMISSION_SEED)) {
+        const allowedPermissionCodes = [...permissionCodes];
+
+        await manager.query(
+          `DELETE FROM role_permissions rp USING roles r, permissions p WHERE rp.role_id = r.id AND rp.permission_id = p.id AND r.tenant_id = $1 AND r.name = $2 AND NOT EXISTS (SELECT 1 FROM unnest($3::varchar[]) AS allowed(code) WHERE allowed.code = p.code)`,
+          [tenantId, roleCode, allowedPermissionCodes],
+        );
         await manager.query(
           `INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r CROSS JOIN permissions p WHERE r.tenant_id = $1 AND r.name = $2 AND p.code = ANY($3::varchar[]) ON CONFLICT DO NOTHING`,
-          [tenantId, roleCode, permissionCodes],
+          [tenantId, roleCode, allowedPermissionCodes],
         );
       }
     });
