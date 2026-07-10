@@ -27,7 +27,7 @@
 
 - [ ] `npm ci` PASS
 - [ ] `npm run lint` PASS
-- [ ] `npm test -- --runInBand` PASS
+- [ ] `npm run test:unit` PASS
 - [ ] `npm run db:migrate` PASS
 - [ ] `npm run db:seed:permissions` PASS
 - [ ] `npm run db:verify` PASS
