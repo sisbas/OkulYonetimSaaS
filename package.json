@@ -17,7 +17,8 @@
     "test:rbac": "jest --runInBand test/rbac",
     "test:database": "jest --runInBand test/database",
     "test:tenant-guard": "jest --runInBand test/database/tenant-guard.spec.ts test/rbac/tenant-repository-scope.spec.ts",
-    "test:kvkk": "jest --runInBand test/kvkk"
+    "test:kvkk": "jest --runInBand test/kvkk",
+    "qa:db": "node -e \"const fs=require('fs'); const dir=process.env.MIGRATIONS_DIR||'src/database/migrations'; if(process.env.REQUIRE_MIGRATIONS==='true'&&!fs.existsSync(dir)){throw new Error('Migration directory missing: '+dir)} const files=fs.existsSync(dir)?fs.readdirSync(dir).filter((file)=>/\\.(ts|js|sql)$/.test(file)).sort():[]; if(process.env.REQUIRE_MIGRATIONS==='true'&&files.length===0){throw new Error('No migration files found in '+dir)} console.log('Migration directory: '+dir); console.log('Migration files: '+files.join(', '));\" && npm run db:migrate && npm run db:verify && npm run db:seed:permissions && npm run test:tenant-guard && npm run test:database && npm run test:kvkk && echo \"QA DB smoke tests passed\""
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
