@@ -20,7 +20,7 @@ Sıra zorunludur. Zincir ilk hard failure noktasında durur ve GitHub Step Summa
 |---:|---|---|---|
 | 1 | Install | `npm ci` | dependency/install veya env/config |
 | 2 | Lint/static check | `npm run lint` | code quality/build failure |
-| 3 | Unit test | `npm test -- --runInBand` | real test failure veya flaky |
+| 3 | Unit test | `npm run test:unit` | real test failure veya flaky |
 | 4 | Migration check | `npm run db:migrate` | env/config veya schema failure |
 | 5 | Seed check | `npm run db:seed:permissions` | env/config veya seed failure |
 | 6 | Datasource verify | `npm run db:verify` | env/config veya schema failure |
