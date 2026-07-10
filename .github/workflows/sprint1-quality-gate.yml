@@ -1,0 +1,76 @@
+name: Sprint 1 Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+      - backend
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sprint1-quality-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sprint1-quality-gate:
+    name: npm ci → lint → test → migration/seed → RBAC/KVKK/audit → build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: okul_yonetim_saas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d okul_yonetim_saas_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/okul_yonetim_saas_test
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/okul_yonetim_saas_test
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: okul_yonetim_saas_test
+      TYPEORM_LOGGING: "false"
+      JWT_ACCESS_SECRET: sprint1-access-secret
+      JWT_REFRESH_SECRET: sprint1-refresh-secret
+      SEED_TENANT_SLUG: system-seed
+      SEED_TENANT_NAME: System Seed Tenant
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Run Sprint 1 quality gate
+        run: bash scripts/ci-quality-gate.sh
+
+      - name: Upload quality gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprint1-quality-gate-logs
+          path: ci-logs
+          if-no-files-found: ignore
+          retention-days: 14
