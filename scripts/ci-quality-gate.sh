@@ -113,7 +113,7 @@ write_header
 
 run_check "01" "npm ci" "npm ci" || exit $?
 run_check "02" "lint" "npm run lint" || exit $?
-run_check "03" "test" "npm test -- --runInBand" || exit $?
+run_check "03" "unit tests" "npm run test:unit" || exit $?
 run_check "04" "migration check" "npm run db:migrate" || exit $?
 run_check "05" "seed check" "npm run db:seed:permissions" || exit $?
 run_check "06" "datasource verify" "npm run db:verify" || exit $?
