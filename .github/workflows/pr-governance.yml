@@ -1,0 +1,141 @@
+name: PR Governance
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: pr-governance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  body-validation:
+    name: PR Governance / Body Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR body completeness
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || "";
+
+            const requiredSections = [
+              "Amaç",
+              "Kapsam",
+              "Kapsam dışı",
+              "Acceptance criteria",
+              "Test çıktısı",
+              "KVKK/audit etkisi",
+              "Rollback",
+              "CI run referansı"
+            ];
+
+            const placeholders = [
+              "", "-", "--", "---", "n/a", "na", "none", "null", "todo", "tbd",
+              "boş", "yok", "henüz yok", "sonra", "daha sonra", "placeholder"
+            ];
+
+            function escapeRegex(value) {
+              return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            }
+
+            function extractSection(title) {
+              const others = requiredSections
+                .filter((section) => section !== title)
+                .map(escapeRegex)
+                .join("|");
+
+              const pattern = new RegExp(
+                `(?:^|\\n)#{2,3}\\s*${escapeRegex(title)}\\s*\\n([\\s\\S]*?)(?=\\n#{2,3}\\s*(?:${others})\\s*\\n|$)`,
+                "i"
+              );
+
+              const match = body.match(pattern);
+              return match ? match[1].trim() : "";
+            }
+
+            const failures = [];
+
+            for (const section of requiredSections) {
+              const value = extractSection(section);
+              const normalized = value
+                .replace(/<!--([\s\S]*?)-->/g, "")
+                .replace(/```([\s\S]*?)```/g, "")
+                .replace(/[-*]\s*\[[ xX]\]\s*/g, "")
+                .trim()
+                .toLowerCase();
+
+              if (!normalized || normalized.length < 10 || placeholders.includes(normalized)) {
+                failures.push(`Eksik/geçersiz bölüm: ${section}`);
+              }
+            }
+
+            if (/\b(draft|taslak|wip)\b/i.test(body) && pr.draft === false) {
+              failures.push("PR gövdesinde Draft/Taslak/WIP yazıyor ama GitHub draft metadata false. PR gerçek Draft olarak açılmalı.");
+            }
+
+            if (failures.length) {
+              core.setFailed(failures.join("\n"));
+            }
+
+  issue-reference:
+    name: PR Governance / Issue Reference
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate issue reference
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const text = `${pr.title || ""}\n${pr.body || ""}`;
+            const issueRef = /\b(fixes|fix|closes|close|resolves|resolve|refs|references)\s+#\d+\b/i;
+
+            if (!issueRef.test(text)) {
+              core.setFailed("PR title/body içinde geçerli issue referansı yok. Örnek: Fixes #123 veya Refs #123");
+            }
+
+  rollback-plan:
+    name: PR Governance / Rollback Plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate rollback plan
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || "";
+            const rollback = body.match(/(?:^|\n)#{2,3}\s*Rollback\s*\n([\s\S]*?)(?=\n#{2,3}\s|\s*$)/i)?.[1]?.trim() || "";
+            const normalized = rollback.replace(/<!--([\s\S]*?)-->/g, "").trim();
+            const weak = /^(|[-_. ]+|n\/a|na|none|null|todo|tbd|boş|yok|sonra|daha sonra|placeholder)$/i;
+            const hasRollbackSignal = /\b(revert|rollback|migration down|migrate:revert|restore|feature flag|disable|hotfix|previous release|backup|geri al|geri dönüş)\b/i.test(normalized);
+
+            if (!normalized || normalized.length < 30 || weak.test(normalized) || !hasRollbackSignal) {
+              core.setFailed("Rollback bölümü gerçek geri dönüş planı içermiyor. Revert/migration rollback/feature flag/restore/hotfix adımı yazılmalı.");
+            }
+
+  acceptance-criteria:
+    name: PR Governance / Acceptance Criteria
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate acceptance criteria
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || "";
+            const ac = body.match(/(?:^|\n)#{2,3}\s*Acceptance criteria\s*\n([\s\S]*?)(?=\n#{2,3}\s|\s*$)/i)?.[1]?.trim() || "";
+            const hasChecklist = /-\s*\[[ xX]\]\s+.{10,}/.test(ac);
+            const weak = /^(|[-_. ]+|n\/a|na|none|null|todo|tbd|boş|yok|placeholder)$/i;
+
+            if (!ac || weak.test(ac.trim()) || !hasChecklist) {
+              core.setFailed("Acceptance criteria bölümü checklist formatında ve ölçülebilir olmalı. Örnek: - [ ] Backend CI PASS");
+            }
