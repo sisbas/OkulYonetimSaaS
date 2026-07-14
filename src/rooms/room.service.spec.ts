@@ -26,15 +26,16 @@ function room(overrides: Partial<Room> = {}): Room {
 
 function setup() {
   const repository = {
+    branchExistsInTenant: jest.fn(async () => true),
     create: jest.fn(),
-    existsByIdAnyTenant: jest.fn(),
     existsByIdInTenant: jest.fn(),
-    findByCode: jest.fn(),
+    findByCode: jest.fn(async () => null),
     findById: jest.fn(),
+    findByName: jest.fn(async () => null),
     list: jest.fn(),
     save: jest.fn(),
   } as unknown as jest.Mocked<RoomRepository>;
-  const audit = { emit: jest.fn(), emitTenantAccessDenied: jest.fn() } as unknown as jest.Mocked<RoomAuditService>;
+  const audit = { emit: jest.fn(), emitAccessDenied: jest.fn(), emitTenantAccessDenied: jest.fn() } as unknown as jest.Mocked<RoomAuditService>;
   const service = new RoomService(repository, audit);
   const ctx: RequestContext = {
     requestId: 'req-1',
@@ -45,10 +46,9 @@ function setup() {
 }
 
 describe('RoomService', () => {
-  it('creates a room and emits room.created without raw payload values', async () => {
+  it('creates a room only after validating branch belongs to the same tenant', async () => {
     const { audit, ctx, repository, service } = setup();
     const created = room({ description: 'token=secret should not be audited' });
-    repository.findByCode.mockResolvedValue(null);
     repository.create.mockResolvedValue(created);
 
     const result = await service.create(ctx, {
@@ -60,7 +60,9 @@ describe('RoomService', () => {
     });
 
     expect(result.id).toBe('room-1');
-    expect(repository.findByCode).toHaveBeenCalledWith(ctx, 'branch-a', 'D1');
+    expect(repository.branchExistsInTenant).toHaveBeenCalledWith(ctx, 'branch-a');
+    expect(repository.findByName).toHaveBeenCalledWith(ctx, 'branch-a', 'Derslik 1', undefined);
+    expect(repository.findByCode).toHaveBeenCalledWith(ctx, 'branch-a', 'D1', undefined);
     expect(repository.create).toHaveBeenCalledWith(ctx, {
       branchId: 'branch-a',
       name: 'Derslik 1',
@@ -72,6 +74,15 @@ describe('RoomService', () => {
     expect(JSON.stringify(audit.emit.mock.calls[0])).not.toContain('secret');
   });
 
+  it('rejects branchId values that are not active branches inside the tenant', async () => {
+    const { audit, ctx, repository, service } = setup();
+    repository.branchExistsInTenant.mockResolvedValue(false);
+
+    await expect(service.create(ctx, { branchId: 'branch-from-tenant-b', name: 'Derslik 1', code: 'D1' })).rejects.toThrow(NotFoundException);
+    expect(audit.emitAccessDenied).toHaveBeenCalledWith(ctx, { branchId: 'branch-from-tenant-b' });
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
   it('rejects blank names and invalid capacity after normalization', async () => {
     const { ctx, service } = setup();
 
@@ -79,11 +90,18 @@ describe('RoomService', () => {
     await expect(service.create(ctx, { branchId: 'branch-a', name: 'Derslik 1', capacity: 0 })).rejects.toThrow(BadRequestException);
   });
 
-  it('rejects duplicate code inside the same tenant branch', async () => {
+  it('rejects duplicate code inside the same active tenant branch', async () => {
     const { ctx, repository, service } = setup();
     repository.findByCode.mockResolvedValue(room());
 
     await expect(service.create(ctx, { branchId: 'branch-a', name: 'Derslik 1', code: 'D1' })).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects duplicate name inside the same active tenant branch', async () => {
+    const { ctx, repository, service } = setup();
+    repository.findByName.mockResolvedValue(room());
+
+    await expect(service.create(ctx, { branchId: 'branch-a', name: 'Derslik 1', code: 'D2' })).rejects.toThrow(ConflictException);
   });
 
   it('lists paginated rooms', async () => {
@@ -94,41 +112,19 @@ describe('RoomService', () => {
     expect(repository.list).toHaveBeenCalledWith(ctx, { page: '1', limit: '20', branchId: 'branch-a' });
   });
 
-  it('hides missing records as 404 without tenant access denied audit', async () => {
+  it('hides missing or cross-tenant records as 404 without any global existence lookup', async () => {
     const { audit, ctx, repository, service } = setup();
     repository.findById.mockResolvedValue(null);
-    repository.existsByIdInTenant.mockResolvedValue(false);
-    repository.existsByIdAnyTenant.mockResolvedValue(false);
 
-    await expect(service.get(ctx, 'missing-room')).rejects.toThrow(NotFoundException);
-    expect(audit.emitTenantAccessDenied).not.toHaveBeenCalled();
+    await expect(service.get(ctx, 'missing-or-cross-tenant-room')).rejects.toThrow(NotFoundException);
+    expect(audit.emitAccessDenied).toHaveBeenCalledWith(ctx, { roomId: 'missing-or-cross-tenant-room' });
+    expect(Object.prototype.hasOwnProperty.call(repository, 'existsByIdAnyTenant')).toBe(false);
   });
 
-  it('does not emit tenant.access_denied for same-tenant inactive rooms hidden from active GET', async () => {
-    const { audit, ctx, repository, service } = setup();
-    repository.findById.mockResolvedValue(null);
-    repository.existsByIdInTenant.mockResolvedValue(true);
-
-    await expect(service.get(ctx, 'inactive-same-tenant-room')).rejects.toThrow(NotFoundException);
-    expect(repository.existsByIdAnyTenant).not.toHaveBeenCalled();
-    expect(audit.emitTenantAccessDenied).not.toHaveBeenCalled();
-  });
-
-  it('emits tenant.access_denied while still hiding cross-tenant records as 404', async () => {
-    const { audit, ctx, repository, service } = setup();
-    repository.findById.mockResolvedValue(null);
-    repository.existsByIdInTenant.mockResolvedValue(false);
-    repository.existsByIdAnyTenant.mockResolvedValue(true);
-
-    await expect(service.get(ctx, 'room-from-tenant-b')).rejects.toThrow(NotFoundException);
-    expect(audit.emitTenantAccessDenied).toHaveBeenCalledWith(ctx, { roomId: 'room-from-tenant-b' });
-  });
-
-  it('updates a room with tenant-and-branch scoped duplicate validation', async () => {
+  it('updates a room with tenant branch, name and code validation', async () => {
     const { audit, ctx, repository, service } = setup();
     const existing = room();
     repository.findById.mockResolvedValue(existing);
-    repository.findByCode.mockResolvedValue(null);
     repository.save.mockImplementation(async (value) => value);
 
     const result = await service.update(ctx, 'room-1', { name: 'Laboratuvar', code: 'lab-1', branchId: 'branch-a', capacity: 30 });
@@ -136,6 +132,8 @@ describe('RoomService', () => {
     expect(result.name).toBe('Laboratuvar');
     expect(result.code).toBe('LAB-1');
     expect(result.capacity).toBe(30);
+    expect(repository.branchExistsInTenant).toHaveBeenCalledWith(ctx, 'branch-a');
+    expect(repository.findByName).toHaveBeenCalledWith(ctx, 'branch-a', 'Laboratuvar', 'room-1');
     expect(repository.findByCode).toHaveBeenCalledWith(ctx, 'branch-a', 'LAB-1', 'room-1');
     expect(audit.emit).toHaveBeenCalledWith(ctx, 'room.updated', expect.objectContaining({ changedFields: expect.arrayContaining(['name', 'code']) }));
   });
@@ -147,13 +145,16 @@ describe('RoomService', () => {
     repository.save.mockImplementationOnce(async (value) => value);
 
     await expect(service.deactivate(ctx, 'room-1')).resolves.toMatchObject({ status: RoomStatus.INACTIVE });
-    expect(audit.emit).toHaveBeenCalledWith(ctx, 'room.deactivated', expect.objectContaining({ roomId: 'room-1' }));
+    expect(audit.emit).toHaveBeenCalledWith(ctx, 'room.archived', expect.objectContaining({ roomId: 'room-1' }));
 
     const inactive = room({ status: RoomStatus.INACTIVE, deactivatedAt: new Date() });
     repository.findById.mockResolvedValueOnce(inactive);
     repository.save.mockImplementationOnce(async (value) => value);
 
     await expect(service.reactivate(ctx, 'room-1')).resolves.toMatchObject({ status: RoomStatus.ACTIVE, deactivatedAt: null });
+    expect(repository.branchExistsInTenant).toHaveBeenCalledWith(ctx, 'branch-a');
+    expect(repository.findByName).toHaveBeenCalledWith(ctx, 'branch-a', 'Derslik 1', 'room-1');
+    expect(repository.findByCode).toHaveBeenCalledWith(ctx, 'branch-a', 'D1', 'room-1');
     expect(audit.emit).toHaveBeenCalledWith(ctx, 'room.reactivated', expect.objectContaining({ roomId: 'room-1' }));
   });
 
