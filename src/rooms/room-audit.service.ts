@@ -2,18 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { RequestContext } from '../common/context/request-context';
 
-export type RoomAuditEventName = 'room.created' | 'room.updated' | 'room.deactivated' | 'room.reactivated';
+export type RoomSuccessAuditEventName = 'room.created' | 'room.updated' | 'room.archived' | 'room.reactivated';
+export type RoomAuditEventName = RoomSuccessAuditEventName | 'room.access_denied';
 
 export type RoomAuditResult = 'success' | 'denied';
 
 export type RoomAuditEvent = {
-  eventName: RoomAuditEventName | 'tenant.access_denied';
+  eventName: RoomAuditEventName;
   resource: 'room';
   tenantId?: string;
   branchId?: string;
   actorId?: string;
   requestId: string;
-  roomId: string;
+  roomId?: string;
   changedFields: string[];
   result: RoomAuditResult;
 };
@@ -26,7 +27,7 @@ function actorIdFrom(ctx: RequestContext): string | undefined {
 export class RoomAuditService {
   private readonly logger = new Logger(RoomAuditService.name);
 
-  emit(ctx: RequestContext, eventName: RoomAuditEventName, input: { roomId: string; branchId: string; changedFields: string[] }): RoomAuditEvent {
+  emit(ctx: RequestContext, eventName: RoomSuccessAuditEventName, input: { roomId: string; branchId: string; changedFields: string[] }): RoomAuditEvent {
     const event: RoomAuditEvent = {
       eventName,
       resource: 'room',
@@ -42,11 +43,12 @@ export class RoomAuditService {
     return event;
   }
 
-  emitTenantAccessDenied(ctx: RequestContext, input: { roomId: string }): RoomAuditEvent {
+  emitAccessDenied(ctx: RequestContext, input: { roomId?: string; branchId?: string }): RoomAuditEvent {
     const event: RoomAuditEvent = {
-      eventName: 'tenant.access_denied',
+      eventName: 'room.access_denied',
       resource: 'room',
       tenantId: ctx.tenantId,
+      branchId: input.branchId,
       actorId: actorIdFrom(ctx),
       requestId: ctx.requestId,
       roomId: input.roomId,
@@ -55,5 +57,9 @@ export class RoomAuditService {
     };
     this.logger.warn(JSON.stringify(event));
     return event;
+  }
+
+  emitTenantAccessDenied(ctx: RequestContext, input: { roomId: string }): RoomAuditEvent {
+    return this.emitAccessDenied(ctx, input);
   }
 }
