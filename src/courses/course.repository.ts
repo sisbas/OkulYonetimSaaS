@@ -72,6 +72,15 @@ export class CourseRepository {
     return qb.getOne();
   }
 
+  async existsByIdInTenant(ctx: RequestContext, id: string): Promise<boolean> {
+    assertTenantScope(ctx, 'courses');
+    const count = await this.repository
+      .createQueryBuilder('course')
+      .where('course.id = :id AND course.tenant_id = :tenantId', { id, tenantId: ctx.tenantId })
+      .getCount();
+    return count > 0;
+  }
+
   async existsByIdAnyTenant(id: string): Promise<boolean> {
     const count = await this.repository
       .createQueryBuilder('course')
