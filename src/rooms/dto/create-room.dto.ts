@@ -1,7 +1,7 @@
 import { IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateRoomDto {
-  @IsUUID()
+  @IsUUID('4')
   branchId!: string;
 
   @IsString()
