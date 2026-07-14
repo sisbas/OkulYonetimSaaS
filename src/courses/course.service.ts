@@ -118,6 +118,9 @@ export class CourseService {
   private async findTenantScopedCourseOrThrow(ctx: RequestContext, id: string, includeInactive = false): Promise<Course> {
     const course = await this.courses.findById(ctx, id, includeInactive);
     if (course) return course;
+    if (!includeInactive && await this.courses.existsByIdInTenant(ctx, id)) {
+      throw new NotFoundException('Course not found');
+    }
     if (await this.courses.existsByIdAnyTenant(id)) {
       this.audit.emitTenantAccessDenied(ctx, { resourceId: id });
     }
