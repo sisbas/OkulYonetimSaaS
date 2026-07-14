@@ -2,7 +2,7 @@ import { IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, MaxLength, M
 
 export class UpdateRoomDto {
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   branchId?: string;
 
   @IsOptional()

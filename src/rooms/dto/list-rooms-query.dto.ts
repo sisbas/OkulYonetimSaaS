@@ -15,7 +15,7 @@ export class ListRoomsQueryDto {
   search?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   branchId?: string;
 
   @IsOptional()

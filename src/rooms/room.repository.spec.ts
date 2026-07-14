@@ -4,6 +4,8 @@ import { RoomRepository } from './room.repository';
 
 function createQueryBuilder() {
   const qb: any = {
+    select: jest.fn(() => qb),
+    from: jest.fn(() => qb),
     where: jest.fn(() => qb),
     andWhere: jest.fn(() => qb),
     orderBy: jest.fn(() => qb),
@@ -12,8 +14,13 @@ function createQueryBuilder() {
     getCount: jest.fn(async () => 1),
     getManyAndCount: jest.fn(async () => [[], 0]),
     getOne: jest.fn(async () => null),
+    getRawOne: jest.fn(async () => ({ exists: '1' })),
   };
   return qb;
+}
+
+function repositoryWith(qb: any): RoomRepository {
+  return new RoomRepository({ createQueryBuilder: jest.fn(() => qb), manager: { createQueryBuilder: jest.fn(() => qb) } } as any);
 }
 
 describe('RoomRepository tenant isolation', () => {
@@ -27,7 +34,7 @@ describe('RoomRepository tenant isolation', () => {
 
   it('scopes list queries by tenant_id, branch_id and active status', async () => {
     const qb = createQueryBuilder();
-    const repository = new RoomRepository({ createQueryBuilder: jest.fn(() => qb) } as any);
+    const repository = repositoryWith(qb);
 
     await repository.list(ctx, { page: '2', limit: '5', branchId: 'branch-a', search: 'lab' });
 
@@ -40,7 +47,7 @@ describe('RoomRepository tenant isolation', () => {
 
   it('scopes findById by id and tenant_id so cross-tenant records stay hidden', async () => {
     const qb = createQueryBuilder();
-    const repository = new RoomRepository({ createQueryBuilder: jest.fn(() => qb) } as any);
+    const repository = repositoryWith(qb);
 
     await repository.findById(ctx, 'room-b');
 
@@ -50,9 +57,9 @@ describe('RoomRepository tenant isolation', () => {
     });
   });
 
-  it('checks same-tenant existence before cross-tenant audit classification', async () => {
+  it('checks same-tenant room existence without global tenant bypass queries', async () => {
     const qb = createQueryBuilder();
-    const repository = new RoomRepository({ createQueryBuilder: jest.fn(() => qb) } as any);
+    const repository = repositoryWith(qb);
 
     await expect(repository.existsByIdInTenant(ctx, 'room-b')).resolves.toBe(true);
 
@@ -60,25 +67,46 @@ describe('RoomRepository tenant isolation', () => {
       id: 'room-b',
       tenantId: 'tenant-a',
     });
+    expect(Object.prototype.hasOwnProperty.call(repository, 'existsByIdAnyTenant')).toBe(false);
   });
 
-  it('checks raw existence by id only for internal tenant.access_denied audit classification', async () => {
+  it('validates branch existence inside the current active tenant only', async () => {
     const qb = createQueryBuilder();
-    const repository = new RoomRepository({ createQueryBuilder: jest.fn(() => qb) } as any);
+    const repository = repositoryWith(qb);
 
-    await expect(repository.existsByIdAnyTenant('room-b')).resolves.toBe(true);
+    await expect(repository.branchExistsInTenant(ctx, 'branch-a')).resolves.toBe(true);
 
-    expect(qb.where).toHaveBeenCalledWith('room.id = :id', { id: 'room-b' });
+    expect(qb.select).toHaveBeenCalledWith('1', 'exists');
+    expect(qb.from).toHaveBeenCalledWith('branches', 'branch');
+    expect(qb.where).toHaveBeenCalledWith('branch.id = :branchId AND branch.tenant_id = :tenantId', {
+      branchId: 'branch-a',
+      tenantId: 'tenant-a',
+    });
+    expect(qb.andWhere).toHaveBeenCalledWith('branch.status = :status', { status: 'active' });
+    expect(qb.andWhere).toHaveBeenCalledWith('branch.deleted_at IS NULL');
   });
 
-  it('performs duplicate lookup inside the same tenant and branch', async () => {
+  it('performs duplicate code lookup inside the same active tenant and branch', async () => {
     const qb = createQueryBuilder();
-    const repository = new RoomRepository({ createQueryBuilder: jest.fn(() => qb) } as any);
+    const repository = repositoryWith(qb);
 
     await repository.findByCode(ctx, 'branch-a', 'LAB-1');
 
     expect(qb.where).toHaveBeenCalledWith('room.tenant_id = :tenantId', { tenantId: 'tenant-a' });
     expect(qb.andWhere).toHaveBeenCalledWith('room.branch_id = :branchId', { branchId: 'branch-a' });
     expect(qb.andWhere).toHaveBeenCalledWith('LOWER(room.code) = :code', { code: 'lab-1' });
+    expect(qb.andWhere).toHaveBeenCalledWith('room.status = :status', { status: 'active' });
+  });
+
+  it('performs duplicate name lookup inside the same active tenant and branch', async () => {
+    const qb = createQueryBuilder();
+    const repository = repositoryWith(qb);
+
+    await repository.findByName(ctx, 'branch-a', 'Derslik 1');
+
+    expect(qb.where).toHaveBeenCalledWith('room.tenant_id = :tenantId', { tenantId: 'tenant-a' });
+    expect(qb.andWhere).toHaveBeenCalledWith('room.branch_id = :branchId', { branchId: 'branch-a' });
+    expect(qb.andWhere).toHaveBeenCalledWith('LOWER(room.name) = :name', { name: 'derslik 1' });
+    expect(qb.andWhere).toHaveBeenCalledWith('room.status = :status', { status: 'active' });
   });
 });

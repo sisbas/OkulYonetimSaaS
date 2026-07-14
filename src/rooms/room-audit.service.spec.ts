@@ -49,15 +49,16 @@ describe('RoomAuditService', () => {
     logSpy.mockRestore();
   });
 
-  it('emits tenant.access_denied with allowlisted metadata only', () => {
+  it('emits room.access_denied with allowlisted metadata only', () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const service = new RoomAuditService();
 
-    const event = service.emitTenantAccessDenied(ctx, { roomId: 'room-from-tenant-b' });
+    const event = service.emitAccessDenied(ctx, { roomId: 'room-from-tenant-b', branchId: 'branch-from-tenant-b' });
 
     expect(event).toEqual({
-      eventName: 'tenant.access_denied',
+      eventName: 'room.access_denied',
       tenantId: 'tenant-a',
+      branchId: 'branch-from-tenant-b',
       actorId: 'user-1',
       requestId: 'req-1',
       resource: 'room',
@@ -66,7 +67,7 @@ describe('RoomAuditService', () => {
       result: 'denied',
     });
     const serialized = String(warnSpy.mock.calls[0][0]);
-    expect(serialized).toContain('tenant.access_denied');
+    expect(serialized).toContain('room.access_denied');
     for (const forbidden of FORBIDDEN_KEYS) {
       expect(serialized).not.toContain(forbidden);
     }

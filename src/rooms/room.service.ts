@@ -57,9 +57,11 @@ export class RoomService {
     const branchId = normalizeRequiredString(dto.branchId, 'Room branchId', 36);
     const name = normalizeRequiredString(dto.name, 'Room name');
     const code = normalizeOptionalCode(dto.code);
-    if (code && (await this.rooms.findByCode(ctx, branchId, code))) {
-      throw new ConflictException('Room code already exists in this tenant branch');
-    }
+
+    await this.assertBranchInTenant(ctx, branchId);
+    await this.assertRoomNameIsAvailable(ctx, branchId, name);
+    if (code) await this.assertRoomCodeIsAvailable(ctx, branchId, code);
+
     const room = await this.rooms.create(ctx, {
       branchId,
       name,
@@ -86,14 +88,15 @@ export class RoomService {
     const nextBranchId = Object.prototype.hasOwnProperty.call(dto, 'branchId')
       ? normalizeRequiredString(dto.branchId ?? '', 'Room branchId', 36)
       : room.branchId;
+    const nextName = Object.prototype.hasOwnProperty.call(dto, 'name') ? normalizeRequiredString(dto.name ?? '', 'Room name') : room.name;
     const nextCode = Object.prototype.hasOwnProperty.call(dto, 'code') ? normalizeOptionalCode(dto.code) : room.code;
 
-    if (nextCode && (await this.rooms.findByCode(ctx, nextBranchId, nextCode, id))) {
-      throw new ConflictException('Room code already exists in this tenant branch');
-    }
+    await this.assertBranchInTenant(ctx, nextBranchId);
+    await this.assertRoomNameIsAvailable(ctx, nextBranchId, nextName, id);
+    if (nextCode) await this.assertRoomCodeIsAvailable(ctx, nextBranchId, nextCode, id);
 
     if (Object.prototype.hasOwnProperty.call(dto, 'branchId')) room.branchId = nextBranchId;
-    if (Object.prototype.hasOwnProperty.call(dto, 'name')) room.name = normalizeRequiredString(dto.name ?? '', 'Room name');
+    if (Object.prototype.hasOwnProperty.call(dto, 'name')) room.name = nextName;
     if (Object.prototype.hasOwnProperty.call(dto, 'code')) room.code = nextCode;
     if (Object.prototype.hasOwnProperty.call(dto, 'capacity')) room.capacity = normalizeCapacity(dto.capacity);
     if (Object.prototype.hasOwnProperty.call(dto, 'description')) room.description = normalizeDescription(dto.description);
@@ -109,13 +112,18 @@ export class RoomService {
     room.status = RoomStatus.INACTIVE;
     room.deactivatedAt = new Date();
     const updated = await this.rooms.save(room);
-    this.audit.emit(ctx, 'room.deactivated', { roomId: updated.id, branchId: updated.branchId, changedFields: ['status', 'deactivatedAt'] });
+    this.audit.emit(ctx, 'room.archived', { roomId: updated.id, branchId: updated.branchId, changedFields: ['status', 'deactivatedAt'] });
     return this.toResponse(updated);
   }
 
   async reactivate(ctx: RequestContext, id: string): Promise<RoomResponseDto> {
     const room = await this.findTenantScopedRoomOrThrow(ctx, id, true);
     if (room.status === RoomStatus.ACTIVE) throw new BadRequestException('Room is already active');
+
+    await this.assertBranchInTenant(ctx, room.branchId);
+    await this.assertRoomNameIsAvailable(ctx, room.branchId, room.name, id);
+    if (room.code) await this.assertRoomCodeIsAvailable(ctx, room.branchId, room.code, id);
+
     room.status = RoomStatus.ACTIVE;
     room.deactivatedAt = null;
     const updated = await this.rooms.save(room);
@@ -123,15 +131,28 @@ export class RoomService {
     return this.toResponse(updated);
   }
 
+  private async assertBranchInTenant(ctx: RequestContext, branchId: string): Promise<void> {
+    if (await this.rooms.branchExistsInTenant(ctx, branchId)) return;
+    this.audit.emitAccessDenied(ctx, { branchId });
+    throw new NotFoundException('Branch not found');
+  }
+
+  private async assertRoomCodeIsAvailable(ctx: RequestContext, branchId: string, code: string, excludeId?: string): Promise<void> {
+    if (await this.rooms.findByCode(ctx, branchId, code, excludeId)) {
+      throw new ConflictException('Room code already exists in this tenant branch');
+    }
+  }
+
+  private async assertRoomNameIsAvailable(ctx: RequestContext, branchId: string, name: string, excludeId?: string): Promise<void> {
+    if (await this.rooms.findByName(ctx, branchId, name, excludeId)) {
+      throw new ConflictException('Room name already exists in this tenant branch');
+    }
+  }
+
   private async findTenantScopedRoomOrThrow(ctx: RequestContext, id: string, includeInactive = false): Promise<Room> {
     const room = await this.rooms.findById(ctx, id, includeInactive);
     if (room) return room;
-    if (!includeInactive && await this.rooms.existsByIdInTenant(ctx, id)) {
-      throw new NotFoundException('Room not found');
-    }
-    if (await this.rooms.existsByIdAnyTenant(id)) {
-      this.audit.emitTenantAccessDenied(ctx, { roomId: id });
-    }
+    this.audit.emitAccessDenied(ctx, { roomId: id });
     throw new NotFoundException('Room not found');
   }
 
