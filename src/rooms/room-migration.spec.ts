@@ -1,0 +1,35 @@
+import { QueryRunner } from 'typeorm';
+
+import { CreateRoomsTable1784022680000 } from '../database/migrations/1784022680000-CreateRoomsTable';
+
+describe('CreateRoomsTable migration', () => {
+  it('creates rooms table and deterministic indexes', async () => {
+    const queries: string[] = [];
+    const queryRunner = { query: jest.fn(async (query: string) => queries.push(query)) } as unknown as QueryRunner;
+    const migration = new CreateRoomsTable1784022680000();
+
+    await migration.up(queryRunner);
+
+    expect(queries.join('\n')).toContain('CREATE TABLE IF NOT EXISTS rooms');
+    expect(queries.join('\n')).toContain('tenant_id uuid NOT NULL');
+    expect(queries.join('\n')).toContain('branch_id uuid NOT NULL');
+    expect(queries.join('\n')).toContain('uq_rooms_tenant_branch_code');
+    expect(queries.join('\n')).toContain('idx_rooms_tenant_branch_status');
+    expect(queries.join('\n')).toContain('idx_rooms_tenant_branch_name');
+  });
+
+  it('drops indexes and rooms table on revert', async () => {
+    const queries: string[] = [];
+    const queryRunner = { query: jest.fn(async (query: string) => queries.push(query)) } as unknown as QueryRunner;
+    const migration = new CreateRoomsTable1784022680000();
+
+    await migration.down(queryRunner);
+
+    expect(queries).toEqual([
+      'DROP INDEX IF EXISTS idx_rooms_tenant_branch_name',
+      'DROP INDEX IF EXISTS idx_rooms_tenant_branch_status',
+      'DROP INDEX IF EXISTS uq_rooms_tenant_branch_code',
+      'DROP TABLE IF EXISTS rooms',
+    ]);
+  });
+});

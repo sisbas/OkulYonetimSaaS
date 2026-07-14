@@ -21,6 +21,7 @@ describe('permission seed', () => {
     'attendance:generate',
     'attendance:lock',
     'attendance:unlock',
+    'room:archive',
   ];
   const operationsManagerForbidden = [
     'tenant:update',
@@ -35,9 +36,9 @@ describe('permission seed', () => {
     'attendance:unlock',
   ];
 
-  it('contains exactly 115 unique permissions', () => {
-    expect(permissionCodes).toHaveLength(115);
-    expect(permissionSet.size).toBe(115);
+  it('contains exactly 116 unique permissions', () => {
+    expect(permissionCodes).toHaveLength(116);
+    expect(permissionSet.size).toBe(116);
   });
 
   it('uses colon-delimited seeded permission keys', () => {
