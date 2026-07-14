@@ -27,10 +27,10 @@ describe('CourseController RBAC contract', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CourseController.prototype.reactivate)).toEqual(['course:archive']);
   });
 
-  it('returns unauthorized when controller is called without authenticated context', async () => {
+  it('returns unauthorized when controller is called without authenticated context', () => {
     const controller = new CourseController(service);
 
-    await expect(controller.list({ context: { requestId: 'req-1' } } as RequestWithContext, {})).rejects.toThrow(UnauthorizedException);
+    expect(() => controller.list({ context: { requestId: 'req-1' } } as RequestWithContext, {})).toThrow(UnauthorizedException);
   });
 
   it('denies users without required permission through PermissionGuard', () => {
