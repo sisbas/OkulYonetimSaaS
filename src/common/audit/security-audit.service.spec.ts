@@ -1,6 +1,6 @@
 import { SecurityAuditService } from './security-audit.service';
 
-const FORBIDDEN_KEYS = [
+const FORBIDDEN_KEYS = new Set([
   'requestBody',
   'responseBody',
   'authorization',
@@ -19,7 +19,19 @@ const FORBIDDEN_KEYS = [
   'studentName',
   'parentName',
   'teacherName',
-];
+]);
+
+function expectNoForbiddenKeys(value: unknown): void {
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (const nested of value) expectNoForbiddenKeys(nested);
+    return;
+  }
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    expect(FORBIDDEN_KEYS.has(key)).toBe(false);
+    expectNoForbiddenKeys(nested);
+  }
+}
 
 describe('SecurityAuditService', () => {
   it('persists authorization.denied with allowlisted metadata only', () => {
@@ -44,9 +56,6 @@ describe('SecurityAuditService', () => {
       reasonCode: 'missing_permission',
     });
 
-    const serialized = JSON.stringify(event);
-    for (const forbidden of FORBIDDEN_KEYS) {
-      expect(serialized).not.toContain(forbidden);
-    }
+    expectNoForbiddenKeys(event);
   });
 });
