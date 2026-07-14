@@ -1,78 +1,62 @@
 ## Amaç
 
-<!-- Bu PR neden açıldı? Hangi kullanıcı hikayesi, bug veya teknik borç kapatılıyor? -->
+Bu PR neden açıldı? Hangi problemi, kullanıcı hikâyesini veya teknik borcu kapatıyor?
 
-## Etkilenen modül
+## Kapsam
 
-- [ ] Auth / Tenant
-- [ ] RBAC / Permission
-- [ ] Ders Programı
-- [ ] İzin Yönetimi
-- [ ] Günlük Operasyon
-- [ ] Yoklama
-- [ ] Veli Bilgilendirme
-- [ ] KVKK / Audit
-- [ ] CI / DevOps
-- [ ] Diğer: <!-- yazınız -->
+Bu PR içinde yapılan değişiklikler:
+
+- 
+
+## Kapsam dışı
+
+Bu PR bilinçli olarak şunları kapsamıyor:
+
+- 
 
 ## Acceptance criteria
 
-- [ ] AC-1:
-- [ ] AC-2:
-- [ ] AC-3:
+- [ ] 
+- [ ] 
 
 ## Test çıktısı
 
-<!-- Lokal veya CI çıktısını yaz. Belirsiz CI sonucu varsa merge önermeyin. -->
+Çalıştırılan testler ve sonuçları:
 
-- [ ] `npm ci` PASS
-- [ ] `npm run lint` PASS
-- [ ] `npm run test:unit` PASS
-- [ ] `npm run db:migrate` PASS
-- [ ] `npm run db:seed:permissions` PASS
-- [ ] `npm run db:verify` PASS
-- [ ] `npm run test:rbac` PASS
-- [ ] `npm run test:kvkk` PASS
-- [ ] `npm run test:audit-redaction` PASS
-- [ ] `npm run build` PASS
-
-CI run URL:
-
-```text
-<!-- https://github.com/sisbas/OkulYonetimSaaS/actions/runs/<RUN_ID> -->
-```
+- `npm ci`: 
+- `npm run ci:sprint1`: 
+- `npm run lint`: 
+- `npm test`: 
+- `npm run build`: 
+- `npm run qa:db`: 
+- Sprint 1 Quality Gate:
+- Backend CI:
+- DB Smoke:
+- Gate 1 CI:
+- Sensitive Pattern Scanner:
+- GitGuardian scan:
 
 ## KVKK/audit etkisi
 
-- [ ] Kişisel veri alanı eklenmedi.
-- [ ] Kişisel veri alanı eklendi ve redaction/audit kapsamı güncellendi.
-- [ ] Parent/guardian contact verisi açık loglanmıyor.
-- [ ] Credential/token/secret/email/phone alanları loglarda maskeleniyor.
-- [ ] KVKK consent akışı etkilenmiyor veya testle doğrulandı.
+Kişisel veri, veli iletişim bilgisi, öğrenci bilgisi, rehberlik notu, audit log veya notification payload etkisi var mı?
 
-Not:
+- Etki:
+- Redaction ihtiyacı:
+- Audit log davranışı:
 
-```text
-<!-- KVKK/audit etkisini kısa yazınız. -->
-```
+## Rollback
 
-## Rollback planı
+Geri dönüş planı:
 
-- [ ] Revert edilecek commit/PR açıkça belli.
-- [ ] Migration rollback gerekmiyor.
-- [ ] Migration rollback gerekiyorsa `npm run db:migrate:revert` yolu test edildi veya notlandı.
-- [ ] Main kırılırsa önce revert, sonra hotfix PR açılacak.
+- 
+- 
 
-Rollback notu:
+## CI run referansı
 
-```text
-<!-- Örn: Revert PR #XX. DB migration yok. -->
-```
+GitHub Actions run id veya CI run referansı:
 
-## Merge güvenlik kontrolü
+- 
 
-- [ ] CI sonucu `completed / success`.
-- [ ] FAIL varsa ilk hata satırı ayrıştırıldı.
-- [ ] Failure tipi sınıflandırıldı: flaky / env-config / real test failure.
-- [ ] Belirsiz CI sonucu yok.
-- [ ] Main branch kırılma riski düşük.
+## Issue reference
+
+Fixes #
