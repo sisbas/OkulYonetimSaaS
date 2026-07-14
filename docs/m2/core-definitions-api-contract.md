@@ -440,7 +440,7 @@ Deactivation must not be represented only as generic `<resource>.updated`; it re
 | Teacher full email/phone | `teacher.contact.read` | `teacher.contact.read_denied` | `teacher:contact:read` | true |
 | Parent contact | `student.parent_contact.read` | `student.parent_contact.denied` | `student:parent_contact:read` | true |
 | Guardian contact | `student.guardian_contact.read` | `student.guardian_contact.denied` | `student:guardian_contact:read` | true |
-| KVKK consent status | `student.consent.read` | `student.consent.read_denied` | `student:consent:read` | true |
+| KVKK consent status | `student.consent.read` | `student.consent.read_denied` | `student:kvkk:read` | true |
 | Notification eligibility | `student.notification_eligibility.read` | `student.notification_eligibility.denied` | `student:notification_eligibility:read` | true |
 | Student note | `student.note.read` | `student.note.read_denied` | `student:note:read` | true |
 
