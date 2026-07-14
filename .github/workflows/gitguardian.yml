@@ -22,6 +22,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate GitGuardian configuration
+        shell: bash
+        env:
+          GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GITGUARDIAN_API_KEY:-}" ]; then
+            echo "::error title=GitGuardian configuration missing::Repository secret GITGUARDIAN_API_KEY is not configured. Add a GitGuardian API token under Settings > Secrets and variables > Actions before making this check required."
+            exit 1
+          fi
+          echo "GitGuardian API key is configured."
+
       - name: GitGuardian scan
         uses: GitGuardian/ggshield/actions/secret@v1.52.2
         env:
