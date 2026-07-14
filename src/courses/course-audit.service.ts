@@ -15,6 +15,21 @@ export type CourseAuditEvent = {
   result: 'success';
 };
 
+export type CourseTenantAccessDeniedAuditEvent = {
+  eventName: 'tenant.access_denied';
+  tenantId?: string;
+  actorId?: string;
+  requestId: string;
+  resource: 'course';
+  resourceId: string;
+  outcome: 'denied';
+  reasonCode: 'cross_tenant_resource';
+};
+
+function actorIdFrom(ctx: RequestContext): string | undefined {
+  return ctx.user?.userId ?? ctx.userId;
+}
+
 @Injectable()
 export class CourseAuditService {
   private readonly logger = new Logger(CourseAuditService.name);
@@ -24,13 +39,28 @@ export class CourseAuditService {
       eventName,
       resource: 'course',
       tenantId: ctx.tenantId,
-      actorId: ctx.user?.userId ?? ctx.userId,
+      actorId: actorIdFrom(ctx),
       requestId: ctx.requestId,
       courseId: input.courseId,
       changedFields: [...input.changedFields].sort(),
       result: 'success',
     };
     this.logger.log(JSON.stringify(event));
+    return event;
+  }
+
+  emitTenantAccessDenied(ctx: RequestContext, input: { resourceId: string }): CourseTenantAccessDeniedAuditEvent {
+    const event: CourseTenantAccessDeniedAuditEvent = {
+      eventName: 'tenant.access_denied',
+      tenantId: ctx.tenantId,
+      actorId: actorIdFrom(ctx),
+      requestId: ctx.requestId,
+      resource: 'course',
+      resourceId: input.resourceId,
+      outcome: 'denied',
+      reasonCode: 'cross_tenant_resource',
+    };
+    this.logger.warn(JSON.stringify(event));
     return event;
   }
 }
