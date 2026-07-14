@@ -21,8 +21,12 @@ function normalizeDescription(description: string | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-function normalizeName(name: string | undefined): string | undefined {
-  return name?.trim();
+function normalizeRequiredName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length < 2 || trimmed.length > 120) {
+    throw new BadRequestException('Course name must be between 2 and 120 characters after trimming');
+  }
+  return trimmed;
 }
 
 function changedFieldsFrom(input: CourseMutation, defaults: string[] = []): string[] {
@@ -53,12 +57,13 @@ export class CourseService {
   ) {}
 
   async create(ctx: RequestContext, dto: CreateCourseDto): Promise<CourseResponse> {
+    const name = normalizeRequiredName(dto.name);
     const code = normalizeCode(dto.code);
     if (code && (await this.courses.findByCode(ctx, code))) {
       throw new ConflictException('Course code already exists in this tenant');
     }
     const course = await this.courses.create(ctx, {
-      name: normalizeName(dto.name) ?? dto.name,
+      name,
       code,
       description: normalizeDescription(dto.description),
     });
@@ -84,7 +89,7 @@ export class CourseService {
     if (code && (await this.courses.findByCode(ctx, code, id))) {
       throw new ConflictException('Course code already exists in this tenant');
     }
-    if (Object.prototype.hasOwnProperty.call(dto, 'name')) course.name = normalizeName(dto.name) ?? course.name;
+    if (Object.prototype.hasOwnProperty.call(dto, 'name')) course.name = normalizeRequiredName(dto.name ?? '');
     if (Object.prototype.hasOwnProperty.call(dto, 'code')) course.code = code;
     if (Object.prototype.hasOwnProperty.call(dto, 'description')) course.description = normalizeDescription(dto.description);
     const updated = await this.courses.save(course);
