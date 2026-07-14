@@ -51,7 +51,7 @@ export class CourseRepository {
 
     const search = query.search?.trim().toLowerCase();
     if (search) {
-      qb.andWhere('(LOWER(course.name) LIKE :search OR LOWER(COALESCE(course.code, \"\")) LIKE :search)', { search: `%${search}%` });
+      qb.andWhere("(LOWER(course.name) LIKE :search OR LOWER(COALESCE(course.code, '')) LIKE :search)", { search: `%${search}%` });
     }
 
     const [data, total] = await qb
