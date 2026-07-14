@@ -1,0 +1,91 @@
+name: Sensitive Pattern Scanner
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+jobs:
+  sensitive-patterns:
+    name: Sensitive Pattern Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan sensitive patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          // Runtime kaynakları taranır. Test fixture'ları dummy credential/PII içerebildiği için
+          // burada release blocker yapılmaz; test fixture kontrolleri ayrı KVKK/audit testlerinde ele alınır.
+          const roots = ['src', 'scripts'];
+          const rootFiles = ['.env', '.env.local', '.env.production', '.env.test'];
+          const allowedExtensions = new Set(['.ts', '.js', '.tsx', '.jsx', '.json', '.sql', '.env']);
+          const ignored = new Set(['node_modules', '.git', 'dist', 'coverage']);
+
+          const patterns = [
+            {
+              name: 'hard-coded credential/token',
+              regex: /(api[_-]?key|secret|token|password|private[_-]?key)\s*[:=]\s*['\"][^'\"]{8,}['\"]/i,
+            },
+            {
+              name: 'parent/guardian phone leakage',
+              regex: /(parent|guardian|veli|phone|telefon).{0,80}(\+90|0)?5[0-9]{9}/i,
+            },
+            {
+              name: 'TCKN-like value',
+              regex: /\b[1-9][0-9]{10}\b/,
+            },
+            {
+              name: 'sensitive log output',
+              regex: /console\.(log|debug|info)\(.*(token|password|secret|phone|parent|guardian|veli|kvkk|consent|notification|payload)/i,
+            },
+          ];
+
+          function walk(dir, files = []) {
+            if (!fs.existsSync(dir)) return files;
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (ignored.has(entry.name)) continue;
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(full, files);
+              else files.push(full);
+            }
+            return files;
+          }
+
+          const files = [];
+          for (const root of roots) files.push(...walk(root));
+          for (const file of rootFiles) if (fs.existsSync(file)) files.push(file);
+
+          let failed = false;
+          for (const file of files) {
+            const ext = file.startsWith('.env') ? '.env' : path.extname(file);
+            if (!allowedExtensions.has(ext)) continue;
+            const content = fs.readFileSync(file, 'utf8');
+            const lines = content.split(/\r?\n/);
+
+            for (let i = 0; i < lines.length; i += 1) {
+              for (const pattern of patterns) {
+                if (pattern.regex.test(lines[i])) {
+                  failed = true;
+                  console.error(`::error file=${file},line=${i + 1}::Potential ${pattern.name} found`);
+                }
+              }
+            }
+          }
+
+          if (failed) process.exit(1);
+          console.log(`Sensitive pattern scan completed. Files scanned: ${files.length}`);
+          NODE

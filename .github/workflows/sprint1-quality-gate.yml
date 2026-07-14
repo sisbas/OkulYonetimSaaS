@@ -2,24 +2,31 @@ name: Sprint 1 Quality Gate
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
     branches:
       - main
       - backend
+      - develop
   push:
     branches:
       - main
+      - backend
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: sprint1-quality-gate-${{ github.ref }}
+  group: sprint1-quality-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   sprint1-quality-gate:
-    name: npm ci → lint → test → migration/seed → RBAC/KVKK/audit → build
+    name: Sprint 1 Quality Gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -39,6 +46,7 @@ jobs:
           --health-retries 10
 
     env:
+      CI: true
       NODE_ENV: test
       DATABASE_URL: postgres://postgres@localhost:5432/okul_yonetim_saas_test
       TEST_DATABASE_URL: postgres://postgres@localhost:5432/okul_yonetim_saas_test
@@ -63,7 +71,7 @@ jobs:
           cache: npm
 
       - name: Run Sprint 1 quality gate
-        run: bash scripts/ci-quality-gate.sh
+        run: npm run ci:sprint1
 
       - name: Upload quality gate logs
         if: always()

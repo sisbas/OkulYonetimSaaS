@@ -1,20 +1,32 @@
-name: DB Smoke Tests
+name: DB Smoke
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
     branches:
-      - backend
       - main
+      - backend
+      - develop
   push:
     branches:
-      - backend
       - main
-      - chore/gate1-db-smoke-qa-db
+      - backend
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   db-smoke:
-    name: qa:db with required migrations
+    name: DB Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
 

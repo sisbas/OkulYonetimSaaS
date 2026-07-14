@@ -5,49 +5,31 @@ on:
     branches:
       - main
       - develop
-
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
     branches:
       - main
       - develop
-
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 concurrency:
-  group: backend-ci-${{ github.ref }}
+  group: backend-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   backend-ci:
-    name: Migration + Seed + Tests + Build
-
+    name: Backend CI
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: okul_user
-          POSTGRES_PASSWORD: okul_password
-          POSTGRES_DB: okul_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U okul_user -d okul_test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-
     env:
       CI: true
       NODE_ENV: test
-      DATABASE_URL: postgresql://okul_user:okul_password@localhost:5432/okul_test
-      TEST_DATABASE_URL: postgresql://okul_user:okul_password@localhost:5432/okul_test
-      PGHOST: localhost
-      PGPORT: 5432
-      PGUSER: okul_user
-      PGPASSWORD: okul_password
-      PGDATABASE: okul_test
-
 
     steps:
       - name: Checkout repository
@@ -59,88 +41,17 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Show Node and npm versions
-        run: |
-          node --version
-          npm --version
-
-      - name: Prepare CI report directory
-        run: mkdir -p .ci-reports
-
       - name: Validate package lock
         run: node -e "JSON.parse(require('fs').readFileSync('package-lock.json', 'utf8'))"
 
       - name: Install dependencies
-        id: npm_ci
-        run: |
-          set -o pipefail
+        run: npm ci
 
-          {
-            echo "# npm ci PASS Proof"
-            echo
-            echo "- Workflow: $GITHUB_WORKFLOW"
-            echo "- Run ID: $GITHUB_RUN_ID"
-            echo "- Job: $GITHUB_JOB"
-            echo "- Commit: $GITHUB_SHA"
-            echo "- Event: $GITHUB_EVENT_NAME"
-            echo "- Node: $(node --version)"
-            echo "- npm: $(npm --version)"
-            echo
-            echo "## npm ci output"
-            echo '```text'
-          } > .ci-reports/npm-ci-proof.md
+      - name: TypeScript / lint gate
+        run: npm run lint
 
-          npm ci 2>&1 | tee .ci-reports/npm-ci.log
-          status=${PIPESTATUS[0]}
-
-          cat .ci-reports/npm-ci.log >> .ci-reports/npm-ci-proof.md
-
-          {
-            echo '```'
-            echo
-            if [ "$status" -eq 0 ]; then
-              echo "- Result: PASS"
-            else
-              echo "- Result: FAIL"
-            fi
-          } >> .ci-reports/npm-ci-proof.md
-
-          exit "$status"
-
-      - name: Upload npm ci proof
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-ci-proof
-          path: .ci-reports/npm-ci-proof.md
-
-      - name: Wait for PostgreSQL
-        run: |
-          for i in {1..30}; do
-            pg_isready -h localhost -p 5432 -U okul_user -d okul_test && exit 0
-            echo "Waiting for PostgreSQL..."
-            sleep 2
-          done
-          echo "PostgreSQL did not become ready in time"
-          exit 1
-
-
-      - name: Run database migrations
-        run: npm run db:migrate
-
-      - name: Seed permissions
-        run: npm run db:seed:permissions
-
-      - name: Verify DataSource
-
-        run: npm run db:verify
-
-      - name: Run RBAC tests
-        run: npm run test:rbac
-
-      - name: Run database tests
-        run: npm run test:database
+      - name: Unit tests
+        run: npm test
 
       - name: Build backend
-
         run: npm run build
