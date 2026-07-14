@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { TenantContextMiddleware } from './common/context/tenant-context.middleware';
 import { PermissionGuard } from './common/guards/permission.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
+import { CoursesModule } from './courses/courses.module';
 import { RbacModule } from './rbac/rbac.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { UsersModule } from './users/users.module';
@@ -17,6 +18,7 @@ import { UsersModule } from './users/users.module';
     TenantsModule,
     UsersModule,
     RbacModule,
+    CoursesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: PermissionGuard },
