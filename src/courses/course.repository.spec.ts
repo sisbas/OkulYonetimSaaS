@@ -9,6 +9,7 @@ function createQueryBuilder() {
     orderBy: jest.fn(() => qb),
     skip: jest.fn(() => qb),
     take: jest.fn(() => qb),
+    getCount: jest.fn(async () => 1),
     getManyAndCount: jest.fn(async () => [[], 0]),
     getOne: jest.fn(async () => null),
   };
@@ -46,6 +47,15 @@ describe('CourseRepository tenant isolation', () => {
       id: 'course-b',
       tenantId: 'tenant-a',
     });
+  });
+
+  it('checks raw existence by id only for internal tenant.access_denied audit classification', async () => {
+    const qb = createQueryBuilder();
+    const repository = new CourseRepository({ createQueryBuilder: jest.fn(() => qb) } as any);
+
+    await expect(repository.existsByIdAnyTenant('course-b')).resolves.toBe(true);
+
+    expect(qb.where).toHaveBeenCalledWith('course.id = :id', { id: 'course-b' });
   });
 
   it('performs duplicate lookup inside the same tenant', async () => {
