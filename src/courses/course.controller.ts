@@ -1,4 +1,5 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 
 import { RequestContext, RequestWithContext } from '../common/context/request-context';
 import { Permissions } from '../common/decorators/permissions.decorator';
@@ -13,6 +14,7 @@ function getRequestContext(request: RequestWithContext): RequestContext {
   return request.context;
 }
 
+@UseGuards(AuthGuard('jwt'))
 @Controller('courses')
 export class CourseController {
   constructor(private readonly courses: CourseService) {}
@@ -39,6 +41,12 @@ export class CourseController {
   @Permissions('course:update')
   update(@Req() request: RequestWithContext, @Param('id') id: string, @Body() dto: UpdateCourseDto) {
     return this.courses.update(getRequestContext(request), id, dto);
+  }
+
+  @Delete(':id')
+  @Permissions('course:delete')
+  softDelete(@Req() request: RequestWithContext, @Param('id') id: string) {
+    return this.courses.deactivate(getRequestContext(request), id);
   }
 
   @Post(':id/deactivate')
