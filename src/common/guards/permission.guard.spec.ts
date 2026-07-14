@@ -16,7 +16,7 @@ describe('PermissionGuard', () => {
   it('denies missing route permission and emits authorization.denied', () => {
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue(['user:read']) } as unknown as Reflector;
     const audit = auditMock();
-    const guard = new PermissionGuard(reflector, audit as SecurityAuditService);
+    const guard = new PermissionGuard(reflector, audit as unknown as SecurityAuditService);
     const context = { getHandler: jest.fn(), getClass: jest.fn(), switchToHttp: () => ({ getRequest: () => request([]) }) } as unknown as ExecutionContext;
 
     expect(guard.canActivate(context)).toBe(false);
@@ -29,7 +29,7 @@ describe('PermissionGuard', () => {
   it('allows matching route permission', () => {
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue(['user:read']) } as unknown as Reflector;
     const audit = auditMock();
-    const guard = new PermissionGuard(reflector, audit as SecurityAuditService);
+    const guard = new PermissionGuard(reflector, audit as unknown as SecurityAuditService);
     const context = { getHandler: jest.fn(), getClass: jest.fn(), switchToHttp: () => ({ getRequest: () => request(['user:read']) }) } as unknown as ExecutionContext;
 
     expect(guard.canActivate(context)).toBe(true);
