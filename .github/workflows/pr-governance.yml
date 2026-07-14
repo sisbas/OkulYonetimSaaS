@@ -7,6 +7,7 @@ on:
       - edited
       - synchronize
       - reopened
+      - converted_to_draft
       - ready_for_review
 
 permissions:
@@ -104,8 +105,14 @@ jobs:
               failures.push("KVKK/audit etkisi bölümü gerçek veri/audit/log değerlendirmesi içermiyor.");
             }
 
-            if (/\b(draft|taslak|wip)\b/i.test(body) && pr.draft === false) {
-              failures.push("PR gövdesinde Draft/Taslak/WIP yazıyor ama GitHub draft metadata false. PR gerçek Draft olarak açılmalı.");
+            // Natural-language references such as "draft metadata" must not be treated
+            // as a draft declaration. Only an explicit status line or title prefix counts.
+            const explicitDraftMarker =
+              /^\s*(?:status|durum)\s*:\s*(?:draft|taslak|wip)\s*$/im.test(body) ||
+              /^\s*\[(?:draft|taslak|wip)\]\s*/i.test(pr.title || "");
+
+            if (explicitDraftMarker && pr.draft === false) {
+              failures.push("PR açıkça Draft/Taslak/WIP olarak işaretlenmiş ancak GitHub draft metadata false. PR gerçek Draft olarak açılmalı.");
             }
 
             if (failures.length) {
