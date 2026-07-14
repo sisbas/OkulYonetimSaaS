@@ -41,10 +41,10 @@ jobs:
               "CI run referansı"
             ];
 
-            const placeholders = [
+            const placeholders = new Set([
               "", "-", "--", "---", "n/a", "na", "none", "null", "todo", "tbd",
-              "boş", "yok", "henüz yok", "sonra", "daha sonra", "placeholder"
-            ];
+              "boş", "yok", "henüz yok", "sonra", "daha sonra", "placeholder", "fixes #"
+            ]);
 
             function escapeRegex(value) {
               return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -65,20 +65,43 @@ jobs:
               return match ? match[1].trim() : "";
             }
 
+            function clean(value) {
+              return value
+                .replace(/<!--([\s\S]*?)-->/g, "")
+                .replace(/```([\s\S]*?)```/g, "")
+                .replace(/[-*]\s*\[[ xX]\]\s*/g, "")
+                .replace(/^[-*]\s*$/gm, "")
+                .replace(/^[-*]\s*[^:\n]+:\s*$/gm, "")
+                .trim();
+            }
+
+            function isWeak(value) {
+              const normalized = clean(value).trim().toLowerCase();
+              return !normalized || normalized.length < 20 || placeholders.has(normalized);
+            }
+
             const failures = [];
 
             for (const section of requiredSections) {
               const value = extractSection(section);
-              const normalized = value
-                .replace(/<!--([\s\S]*?)-->/g, "")
-                .replace(/```([\s\S]*?)```/g, "")
-                .replace(/[-*]\s*\[[ xX]\]\s*/g, "")
-                .trim()
-                .toLowerCase();
-
-              if (!normalized || normalized.length < 10 || placeholders.includes(normalized)) {
+              if (isWeak(value)) {
                 failures.push(`Eksik/geçersiz bölüm: ${section}`);
               }
+            }
+
+            const testOutput = clean(extractSection("Test çıktısı"));
+            if (!/(pass|fail|success|completed|başarılı|başarısız|https:\/\/github\.com\/.*\/actions\/runs\/\d+|\brun\s*id\b|\b\d{6,}\b)/i.test(testOutput)) {
+              failures.push("Test çıktısı bölümü gerçek PASS/FAIL veya CI run kanıtı içermiyor.");
+            }
+
+            const ciRef = clean(extractSection("CI run referansı"));
+            if (!/(https:\/\/github\.com\/.*\/actions\/runs\/\d+|\brun\s*id\b|\b\d{6,}\b)/i.test(ciRef)) {
+              failures.push("CI run referansı bölümü GitHub Actions URL, run id veya açık run referansı içermiyor.");
+            }
+
+            const kvkk = clean(extractSection("KVKK/audit etkisi"));
+            if (!/(kvkk|audit|redaction|kişisel veri|pii|öğrenci|veli|parent|guardian|log|notification|payload|etki yok|etkisi yok)/i.test(kvkk)) {
+              failures.push("KVKK/audit etkisi bölümü gerçek veri/audit/log değerlendirmesi içermiyor.");
             }
 
             if (/\b(draft|taslak|wip)\b/i.test(body) && pr.draft === false) {
