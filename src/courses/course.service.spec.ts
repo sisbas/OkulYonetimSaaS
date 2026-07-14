@@ -26,6 +26,7 @@ function setup() {
   const repository = {
     create: jest.fn(),
     existsByIdAnyTenant: jest.fn(),
+    existsByIdInTenant: jest.fn(),
     findByCode: jest.fn(),
     findById: jest.fn(),
     list: jest.fn(),
@@ -83,15 +84,27 @@ describe('CourseService', () => {
   it('hides missing records as 404 without tenant access denied audit', async () => {
     const { audit, ctx, repository, service } = setup();
     repository.findById.mockResolvedValue(null);
+    repository.existsByIdInTenant.mockResolvedValue(false);
     repository.existsByIdAnyTenant.mockResolvedValue(false);
 
     await expect(service.get(ctx, 'missing-course')).rejects.toThrow(NotFoundException);
     expect(audit.emitTenantAccessDenied).not.toHaveBeenCalled();
   });
 
+  it('does not emit tenant.access_denied for same-tenant inactive records hidden from active GET', async () => {
+    const { audit, ctx, repository, service } = setup();
+    repository.findById.mockResolvedValue(null);
+    repository.existsByIdInTenant.mockResolvedValue(true);
+
+    await expect(service.get(ctx, 'inactive-same-tenant-course')).rejects.toThrow(NotFoundException);
+    expect(repository.existsByIdAnyTenant).not.toHaveBeenCalled();
+    expect(audit.emitTenantAccessDenied).not.toHaveBeenCalled();
+  });
+
   it('emits tenant.access_denied while still hiding cross-tenant records as 404', async () => {
     const { audit, ctx, repository, service } = setup();
     repository.findById.mockResolvedValue(null);
+    repository.existsByIdInTenant.mockResolvedValue(false);
     repository.existsByIdAnyTenant.mockResolvedValue(true);
 
     await expect(service.get(ctx, 'course-from-tenant-b')).rejects.toThrow(NotFoundException);
