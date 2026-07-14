@@ -56,6 +56,13 @@ describe('CourseService', () => {
     expect(JSON.stringify(audit.emit.mock.calls[0])).not.toContain('secret');
   });
 
+  it('rejects blank or too-short normalized names', async () => {
+    const { ctx, service } = setup();
+
+    await expect(service.create(ctx, { name: '   ' })).rejects.toThrow(BadRequestException);
+    await expect(service.create(ctx, { name: ' a ' })).rejects.toThrow(BadRequestException);
+  });
+
   it('rejects duplicate code inside the same tenant', async () => {
     const { ctx, repository, service } = setup();
     repository.findByCode.mockResolvedValue(course());
@@ -91,6 +98,13 @@ describe('CourseService', () => {
     expect(result.code).toBe('GEO-101');
     expect(repository.findByCode).toHaveBeenCalledWith(ctx, 'GEO-101', 'course-1');
     expect(audit.emit).toHaveBeenCalledWith(ctx, 'course.updated', expect.objectContaining({ changedFields: expect.arrayContaining(['name', 'code']) }));
+  });
+
+  it('rejects blank names during update', async () => {
+    const { ctx, repository, service } = setup();
+    repository.findById.mockResolvedValue(course());
+
+    await expect(service.update(ctx, 'course-1', { name: '   ' })).rejects.toThrow(BadRequestException);
   });
 
   it('deactivates and reactivates without hard delete', async () => {
