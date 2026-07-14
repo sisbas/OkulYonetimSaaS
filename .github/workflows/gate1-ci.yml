@@ -1,0 +1,63 @@
+name: Gate 1 CI
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    branches:
+      - main
+      - backend
+      - develop
+  push:
+    branches:
+      - main
+      - backend
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate1-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate1:
+    name: Gate 1 CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: true
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint / typecheck
+        run: npm run lint
+
+      - name: RBAC tests
+        run: npm run test:rbac
+
+      - name: Tenant guard tests
+        run: npm run test:tenant-guard
+
+      - name: KVKK tests
+        run: npm run test:kvkk
+
+      - name: Audit redaction tests
+        run: npm run test:audit-redaction
+
+      - name: Build
+        run: npm run build
