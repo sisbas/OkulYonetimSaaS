@@ -3,6 +3,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppDataSource } from './database/data-source';
 import { AuthModule } from './auth/auth.module';
+import { SecurityAuditService } from './common/audit/security-audit.service';
 import { TenantContextMiddleware } from './common/context/tenant-context.middleware';
 import { PermissionGuard } from './common/guards/permission.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
@@ -21,6 +22,7 @@ import { UsersModule } from './users/users.module';
     CoursesModule,
   ],
   providers: [
+    SecurityAuditService,
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
