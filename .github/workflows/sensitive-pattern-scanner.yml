@@ -1,0 +1,52 @@
+name: Sensitive Pattern Scanner
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+jobs:
+  sensitive-patterns:
+    name: Sensitive Pattern Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan sensitive patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Scanning for high-risk sensitive patterns..."
+
+          FAIL=0
+          EXCLUDES=(--exclude-dir=node_modules --exclude-dir=.git --exclude=package-lock.json)
+
+          if grep -RInE "(api[_-]?key|secret|token|password|private[_-]?key)\s*[:=]\s*['\"][^'\"]{8,}" "${EXCLUDES[@]}" .; then
+            echo "::error::Potential hard-coded credential/token found"
+            FAIL=1
+          fi
+
+          if grep -RInE "(parent|guardian|veli|phone|telefon).{0,80}(\+90|0)?5[0-9]{9}" "${EXCLUDES[@]}" .; then
+            echo "::error::Potential parent/guardian phone leakage found"
+            FAIL=1
+          fi
+
+          if grep -RInE "\b[1-9][0-9]{10}\b" "${EXCLUDES[@]}" .; then
+            echo "::error::Potential TCKN-like value found"
+            FAIL=1
+          fi
+
+          if grep -RInE "console\.(log|debug|info)\(.*(token|password|secret|phone|parent|guardian|veli|kvkk|consent|notification|payload)" "${EXCLUDES[@]}" .; then
+            echo "::error::Potential sensitive log output found"
+            FAIL=1
+          fi
+
+          exit "$FAIL"
