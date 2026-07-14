@@ -58,9 +58,10 @@ describe('CourseService', () => {
   });
 
   it('rejects blank names after trimming', async () => {
-    const { ctx, service } = setup();
+    const { ctx, repository, service } = setup();
 
     await expect(service.create(ctx, { name: '   ', code: 'MAT-101' })).rejects.toThrow(BadRequestException);
+    repository.findById.mockResolvedValue(course());
     await expect(service.update(ctx, 'course-1', { name: ' A ' })).rejects.toThrow(BadRequestException);
   });
 
