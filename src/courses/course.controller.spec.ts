@@ -23,6 +23,7 @@ describe('CourseController RBAC contract', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CourseController.prototype.list)).toEqual(['course:read']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CourseController.prototype.get)).toEqual(['course:read']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CourseController.prototype.update)).toEqual(['course:update']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CourseController.prototype.softDelete)).toEqual(['course:delete']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CourseController.prototype.deactivate)).toEqual(['course:archive']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CourseController.prototype.reactivate)).toEqual(['course:archive']);
   });
