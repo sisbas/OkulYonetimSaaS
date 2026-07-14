@@ -49,6 +49,18 @@ describe('CourseRepository tenant isolation', () => {
     });
   });
 
+  it('checks same-tenant existence before cross-tenant audit classification', async () => {
+    const qb = createQueryBuilder();
+    const repository = new CourseRepository({ createQueryBuilder: jest.fn(() => qb) } as any);
+
+    await expect(repository.existsByIdInTenant(ctx, 'course-b')).resolves.toBe(true);
+
+    expect(qb.where).toHaveBeenCalledWith('course.id = :id AND course.tenant_id = :tenantId', {
+      id: 'course-b',
+      tenantId: 'tenant-a',
+    });
+  });
+
   it('checks raw existence by id only for internal tenant.access_denied audit classification', async () => {
     const qb = createQueryBuilder();
     const repository = new CourseRepository({ createQueryBuilder: jest.fn(() => qb) } as any);
