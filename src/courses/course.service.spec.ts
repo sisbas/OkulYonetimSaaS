@@ -25,12 +25,13 @@ function course(overrides: Partial<Course> = {}): Course {
 function setup() {
   const repository = {
     create: jest.fn(),
+    existsByIdAnyTenant: jest.fn(),
     findByCode: jest.fn(),
     findById: jest.fn(),
     list: jest.fn(),
     save: jest.fn(),
   } as unknown as jest.Mocked<CourseRepository>;
-  const audit = { emit: jest.fn() } as unknown as jest.Mocked<CourseAuditService>;
+  const audit = { emit: jest.fn(), emitTenantAccessDenied: jest.fn() } as unknown as jest.Mocked<CourseAuditService>;
   const service = new CourseService(repository, audit);
   const ctx: RequestContext = {
     requestId: 'req-1',
@@ -56,11 +57,11 @@ describe('CourseService', () => {
     expect(JSON.stringify(audit.emit.mock.calls[0])).not.toContain('secret');
   });
 
-  it('rejects blank or too-short normalized names', async () => {
+  it('rejects blank names after trimming', async () => {
     const { ctx, service } = setup();
 
-    await expect(service.create(ctx, { name: '   ' })).rejects.toThrow(BadRequestException);
-    await expect(service.create(ctx, { name: ' a ' })).rejects.toThrow(BadRequestException);
+    await expect(service.create(ctx, { name: '   ', code: 'MAT-101' })).rejects.toThrow(BadRequestException);
+    await expect(service.update(ctx, 'course-1', { name: ' A ' })).rejects.toThrow(BadRequestException);
   });
 
   it('rejects duplicate code inside the same tenant', async () => {
@@ -78,11 +79,22 @@ describe('CourseService', () => {
     expect(repository.list).toHaveBeenCalledWith(ctx, { page: '1', limit: '20' });
   });
 
-  it('hides cross-tenant or missing records as 404', async () => {
-    const { ctx, repository, service } = setup();
+  it('hides missing records as 404 without tenant access denied audit', async () => {
+    const { audit, ctx, repository, service } = setup();
     repository.findById.mockResolvedValue(null);
+    repository.existsByIdAnyTenant.mockResolvedValue(false);
 
-    await expect(service.get(ctx, 'course-from-other-tenant')).rejects.toThrow(NotFoundException);
+    await expect(service.get(ctx, 'missing-course')).rejects.toThrow(NotFoundException);
+    expect(audit.emitTenantAccessDenied).not.toHaveBeenCalled();
+  });
+
+  it('emits tenant.access_denied while still hiding cross-tenant records as 404', async () => {
+    const { audit, ctx, repository, service } = setup();
+    repository.findById.mockResolvedValue(null);
+    repository.existsByIdAnyTenant.mockResolvedValue(true);
+
+    await expect(service.get(ctx, 'course-from-tenant-b')).rejects.toThrow(NotFoundException);
+    expect(audit.emitTenantAccessDenied).toHaveBeenCalledWith(ctx, { resourceId: 'course-from-tenant-b' });
   });
 
   it('updates a course with tenant-scoped duplicate validation', async () => {
@@ -98,13 +110,6 @@ describe('CourseService', () => {
     expect(result.code).toBe('GEO-101');
     expect(repository.findByCode).toHaveBeenCalledWith(ctx, 'GEO-101', 'course-1');
     expect(audit.emit).toHaveBeenCalledWith(ctx, 'course.updated', expect.objectContaining({ changedFields: expect.arrayContaining(['name', 'code']) }));
-  });
-
-  it('rejects blank names during update', async () => {
-    const { ctx, repository, service } = setup();
-    repository.findById.mockResolvedValue(course());
-
-    await expect(service.update(ctx, 'course-1', { name: '   ' })).rejects.toThrow(BadRequestException);
   });
 
   it('deactivates and reactivates without hard delete', async () => {
