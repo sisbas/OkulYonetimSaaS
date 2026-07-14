@@ -1,8 +1,8 @@
-import { CreateCoursesTable20260714095100 } from '../database/migrations/20260714095100-CreateCoursesTable';
+import { CreateCoursesTable1784022660000 } from '../database/migrations/1784022660000-CreateCoursesTable';
 
 describe('CreateCoursesTable migration', () => {
   it('creates and reverts the courses table', async () => {
-    const migration = new CreateCoursesTable20260714095100();
+    const migration = new CreateCoursesTable1784022660000();
     const queryRunner = { query: jest.fn(async () => undefined) } as any;
 
     await migration.up(queryRunner);
