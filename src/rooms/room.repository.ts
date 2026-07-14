@@ -85,12 +85,17 @@ export class RoomRepository {
     return count > 0;
   }
 
-  async existsByIdAnyTenant(id: string): Promise<boolean> {
-    const count = await this.repository
-      .createQueryBuilder('room')
-      .where('room.id = :id', { id })
-      .getCount();
-    return count > 0;
+  async branchExistsInTenant(ctx: RequestContext, branchId: string): Promise<boolean> {
+    assertTenantScope(ctx, 'branches');
+    const branch = await this.repository.manager
+      .createQueryBuilder()
+      .select('1', 'exists')
+      .from('branches', 'branch')
+      .where('branch.id = :branchId AND branch.tenant_id = :tenantId', { branchId, tenantId: ctx.tenantId })
+      .andWhere('branch.status = :status', { status: 'active' })
+      .andWhere('branch.deleted_at IS NULL')
+      .getRawOne<{ exists: string }>();
+    return Boolean(branch);
   }
 
   async findByCode(ctx: RequestContext, branchId: string, code: string, excludeId?: string): Promise<Room | null> {
@@ -99,7 +104,20 @@ export class RoomRepository {
       .createQueryBuilder('room')
       .where('room.tenant_id = :tenantId', { tenantId: ctx.tenantId })
       .andWhere('room.branch_id = :branchId', { branchId })
-      .andWhere('LOWER(room.code) = :code', { code: code.toLowerCase() });
+      .andWhere('LOWER(room.code) = :code', { code: code.toLowerCase() })
+      .andWhere('room.status = :status', { status: RoomStatus.ACTIVE });
+    if (excludeId) qb.andWhere('room.id != :excludeId', { excludeId });
+    return qb.getOne();
+  }
+
+  async findByName(ctx: RequestContext, branchId: string, name: string, excludeId?: string): Promise<Room | null> {
+    assertTenantScope(ctx, 'rooms');
+    const qb = this.repository
+      .createQueryBuilder('room')
+      .where('room.tenant_id = :tenantId', { tenantId: ctx.tenantId })
+      .andWhere('room.branch_id = :branchId', { branchId })
+      .andWhere('LOWER(room.name) = :name', { name: name.toLowerCase() })
+      .andWhere('room.status = :status', { status: RoomStatus.ACTIVE });
     if (excludeId) qb.andWhere('room.id != :excludeId', { excludeId });
     return qb.getOne();
   }
