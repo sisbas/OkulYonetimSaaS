@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
+import { SecurityAuditService } from '../common/audit/security-audit.service';
 import { RequestWithContext } from '../common/context/request-context';
 import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
 import { PermissionGuard } from '../common/guards/permission.guard';
@@ -34,26 +35,32 @@ describe('CourseController RBAC contract', () => {
     expect(() => controller.list({ context: { requestId: 'req-1' } } as RequestWithContext, {})).toThrow(UnauthorizedException);
   });
 
-  it('denies users without required permission through PermissionGuard', () => {
+  it('denies users without required permission and emits authorization.denied', () => {
     const reflector = { getAllAndOverride: jest.fn(() => ['course:create']) } as unknown as Reflector;
-    const guard = new PermissionGuard(reflector);
+    const audit = { emitAuthorizationDenied: jest.fn() } as unknown as jest.Mocked<SecurityAuditService>;
+    const guard = new PermissionGuard(reflector, audit);
     const context = {
       getClass: jest.fn(),
       getHandler: jest.fn(),
       switchToHttp: () => ({
         getRequest: () => ({
-          header: () => undefined,
+          header: (name: string) => (name === 'x-request-id' ? 'req-1' : undefined),
           user: { userId: 'user-1', tenantId: 'tenant-a', roleIds: ['role-teacher'], permissions: ['course:read'] },
         }),
       }),
     } as unknown as ExecutionContext;
 
     expect(guard.canActivate(context)).toBe(false);
+    expect(audit.emitAuthorizationDenied).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a', user: expect.objectContaining({ userId: 'user-1' }) }),
+      { requiredPermission: ['course:create'], resource: 'course', reasonCode: 'missing_permission' },
+    );
   });
 
-  it('allows users with the required course permission', () => {
+  it('allows users with the required course permission without denied audit', () => {
     const reflector = { getAllAndOverride: jest.fn(() => ['course:create']) } as unknown as Reflector;
-    const guard = new PermissionGuard(reflector);
+    const audit = { emitAuthorizationDenied: jest.fn() } as unknown as jest.Mocked<SecurityAuditService>;
+    const guard = new PermissionGuard(reflector, audit);
     const context = {
       getClass: jest.fn(),
       getHandler: jest.fn(),
@@ -66,5 +73,6 @@ describe('CourseController RBAC contract', () => {
     } as unknown as ExecutionContext;
 
     expect(guard.canActivate(context)).toBe(true);
+    expect(audit.emitAuthorizationDenied).not.toHaveBeenCalled();
   });
 });

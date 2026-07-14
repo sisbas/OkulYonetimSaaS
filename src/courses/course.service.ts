@@ -77,14 +77,12 @@ export class CourseService {
   }
 
   async get(ctx: RequestContext, id: string): Promise<CourseResponse> {
-    const course = await this.courses.findById(ctx, id);
-    if (!course) throw new NotFoundException('Course not found');
+    const course = await this.findTenantScopedCourseOrThrow(ctx, id);
     return this.toResponse(course);
   }
 
   async update(ctx: RequestContext, id: string, dto: UpdateCourseDto): Promise<CourseResponse> {
-    const course = await this.courses.findById(ctx, id, true);
-    if (!course) throw new NotFoundException('Course not found');
+    const course = await this.findTenantScopedCourseOrThrow(ctx, id, true);
     const code = normalizeCode(dto.code);
     if (code && (await this.courses.findByCode(ctx, code, id))) {
       throw new ConflictException('Course code already exists in this tenant');
@@ -98,8 +96,7 @@ export class CourseService {
   }
 
   async deactivate(ctx: RequestContext, id: string): Promise<CourseResponse> {
-    const course = await this.courses.findById(ctx, id, true);
-    if (!course) throw new NotFoundException('Course not found');
+    const course = await this.findTenantScopedCourseOrThrow(ctx, id, true);
     if (course.status === CourseStatus.INACTIVE) throw new BadRequestException('Course is already inactive');
     course.status = CourseStatus.INACTIVE;
     course.deactivatedAt = new Date();
@@ -109,14 +106,25 @@ export class CourseService {
   }
 
   async reactivate(ctx: RequestContext, id: string): Promise<CourseResponse> {
-    const course = await this.courses.findById(ctx, id, true);
-    if (!course) throw new NotFoundException('Course not found');
+    const course = await this.findTenantScopedCourseOrThrow(ctx, id, true);
     if (course.status === CourseStatus.ACTIVE) throw new BadRequestException('Course is already active');
     course.status = CourseStatus.ACTIVE;
     course.deactivatedAt = null;
     const updated = await this.courses.save(course);
     this.audit.emit(ctx, 'course.reactivated', { courseId: updated.id, changedFields: ['status', 'deactivatedAt'] });
     return this.toResponse(updated);
+  }
+
+  private async findTenantScopedCourseOrThrow(ctx: RequestContext, id: string, includeInactive = false): Promise<Course> {
+    const course = await this.courses.findById(ctx, id, includeInactive);
+    if (course) return course;
+    if (!includeInactive && await this.courses.existsByIdInTenant(ctx, id)) {
+      throw new NotFoundException('Course not found');
+    }
+    if (await this.courses.existsByIdAnyTenant(id)) {
+      this.audit.emitTenantAccessDenied(ctx, { resourceId: id });
+    }
+    throw new NotFoundException('Course not found');
   }
 
   private toResponse(course: Course): CourseResponse {
