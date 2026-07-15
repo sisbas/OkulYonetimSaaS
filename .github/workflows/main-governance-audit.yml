@@ -1,0 +1,171 @@
+name: Main Governance Audit
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  checks: read
+  contents: read
+  issues: write
+  pull-requests: read
+  statuses: read
+
+jobs:
+  audit:
+    name: Main Governance Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect ungoverned main updates
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const mergeSha = context.sha;
+            const requiredChecks = [
+              "Sprint 1 Quality Gate",
+              "Backend CI",
+              "DB Smoke",
+              "Gate 1 CI",
+              "Sensitive Pattern Scanner",
+              "GitGuardian scan",
+              "PR Governance / Body Validation",
+              "PR Governance / Issue Reference",
+              "PR Governance / Rollback Plan",
+              "PR Governance / Acceptance Criteria",
+              "Merge Governance Enforcement"
+            ];
+
+            const violations = [];
+            const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner,
+              repo,
+              commit_sha: mergeSha
+            });
+
+            const pr = associated.data.find((item) => item.merged_at && item.base?.ref === "main");
+            if (!pr) {
+              violations.push("main güncellemesiyle ilişkili merge edilmiş pull request bulunamadı; direct push veya korumasız ref update olasılığı var.");
+            } else {
+              const fullPr = (await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: pr.number
+              })).data;
+
+              const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                owner,
+                repo,
+                pull_number: pr.number,
+                per_page: 100
+              });
+              reviews.sort((a, b) => (a.id || 0) - (b.id || 0));
+
+              const latestReviewByUser = new Map();
+              for (const review of reviews) {
+                const login = review.user?.login;
+                if (login) latestReviewByUser.set(login, review);
+              }
+
+              const validApprovals = [...latestReviewByUser.values()].filter((review) => {
+                const login = review.user?.login || "";
+                const isBot = review.user?.type === "Bot" || /\[bot\]$/i.test(login);
+                return review.state === "APPROVED" &&
+                  review.commit_id === fullPr.head.sha &&
+                  login !== fullPr.user.login &&
+                  !isBot;
+              });
+
+              if (validApprovals.length < 1) {
+                violations.push(`PR #${pr.number} güncel head SHA için bağımsız approval olmadan merge edildi.`);
+              }
+
+              let cursor = null;
+              let unresolvedThreadCount = 0;
+              do {
+                const result = await github.graphql(
+                  `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                    repository(owner: $owner, name: $repo) {
+                      pullRequest(number: $number) {
+                        reviewThreads(first: 100, after: $cursor) {
+                          nodes { isResolved }
+                          pageInfo { hasNextPage endCursor }
+                        }
+                      }
+                    }
+                  }`,
+                  { owner, repo, number: pr.number, cursor }
+                );
+
+                const threads = result.repository.pullRequest.reviewThreads;
+                unresolvedThreadCount += threads.nodes.filter((thread) => !thread.isResolved).length;
+                cursor = threads.pageInfo.hasNextPage ? threads.pageInfo.endCursor : null;
+              } while (cursor);
+
+              if (unresolvedThreadCount > 0) {
+                violations.push(`PR #${pr.number}, ${unresolvedThreadCount} çözülmemiş review thread ile merge edildi.`);
+              }
+
+              const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+                owner,
+                repo,
+                ref: fullPr.head.sha,
+                per_page: 100,
+                filter: "latest"
+              });
+              const latestByName = new Map();
+              for (const check of checkRuns) {
+                const current = latestByName.get(check.name);
+                if (!current || check.id > current.id) latestByName.set(check.name, check);
+              }
+
+              for (const name of requiredChecks) {
+                const check = latestByName.get(name);
+                if (!check) {
+                  violations.push(`PR #${pr.number} merge edildiğinde required check bulunamadı: ${name}.`);
+                } else if (check.status !== "completed" || check.conclusion !== "success") {
+                  violations.push(`PR #${pr.number} merge edildiğinde ${name} SUCCESS değildi: ${check.status}/${check.conclusion || "unknown"}.`);
+                }
+              }
+            }
+
+            if (!violations.length) {
+              await core.summary
+                .addHeading("Main Governance Audit")
+                .addRaw("main güncellemesi governance şartlarını sağlıyor.")
+                .write();
+              return;
+            }
+
+            const shortSha = mergeSha.slice(0, 7);
+            const title = `[Governance Incident] main update ${shortSha}`;
+            const body = [
+              "## Otomatik governance ihlali",
+              "",
+              `- Main commit: \`${mergeSha}\``,
+              `- Workflow run: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+              "",
+              "## Bulgular",
+              ...violations.map((violation) => `- ${violation}`),
+              "",
+              "## Operasyonel karar",
+              "HOLD — ihlal incelenmeden yeni runtime merge yapılmamalıdır."
+            ].join("\n");
+
+            const existing = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} is:issue in:title \"${title}\"`
+            });
+
+            if (!existing.data.items.length) {
+              await github.rest.issues.create({ owner, repo, title, body, assignees: [owner] });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.data.items[0].number,
+                body
+              });
+            }
+
+            core.setFailed(violations.map((violation) => `- ${violation}`).join("\n"));
