@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate PR body completeness
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -131,7 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate issue reference
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -147,7 +147,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate rollback plan
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const body = context.payload.pull_request.body || "";
@@ -165,7 +165,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate acceptance criteria
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const body = context.payload.pull_request.body || "";
@@ -189,7 +189,7 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Enforce required checks, review and branch freshness
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const pr = context.payload.pull_request;
