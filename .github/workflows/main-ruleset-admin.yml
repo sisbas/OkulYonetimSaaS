@@ -48,11 +48,7 @@ jobs:
        github.event.pull_request.head.ref == 'ops/bootstrap-main-ruleset')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Validate declared ruleset
-        run: python3 scripts/main_ruleset.py validate-payload
-      - name: Apply exact live ruleset policy
+      - name: Apply latest-push approval to live ruleset
         env:
           REPO_ADMIN_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
         shell: bash
@@ -62,7 +58,34 @@ jobs:
             echo '::error::Repository secret REPO_ADMIN_TOKEN is missing.'
             exit 1
           fi
-          python3 scripts/main_ruleset.py apply
+
+          api='https://api.github.com/repos/sisbas/OkulYonetimSaaS/rulesets/19052349'
+          headers=(
+            -H 'Accept: application/vnd.github+json'
+            -H 'X-GitHub-Api-Version: 2022-11-28'
+            -H "Authorization: Bearer $REPO_ADMIN_TOKEN"
+          )
+
+          current="$(curl --fail-with-body --silent --show-error --location "${headers[@]}" "$api")"
+          payload="$(jq '
+            (.rules[] | select(.type=="pull_request").parameters.require_last_push_approval) = true |
+            {name,target,enforcement,bypass_actors,conditions,rules}
+          ' <<<"$current")"
+
+          updated="$(curl --fail-with-body --silent --show-error --location \
+            --request PUT \
+            "${headers[@]}" \
+            -H 'Content-Type: application/json' \
+            --data "$payload" \
+            "$api")"
+
+          jq -e '
+            .enforcement=="active" and
+            (.bypass_actors|length==0) and
+            ([.rules[]|select(.type=="pull_request")][0].parameters.require_last_push_approval==true)
+          ' <<<"$updated" >/dev/null
+
+          echo 'PASS: require_last_push_approval=true applied to live ruleset.'
       - name: Record bootstrap evidence
         if: always()
         run: |
@@ -85,7 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           api='https://api.github.com/repos/sisbas/OkulYonetimSaaS'
-          headers=(-H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2026-03-10')
+          headers=(-H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
           rulesets="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rulesets?includes_parents=false")"
           id="$(jq -r '[.[]|select(.name=="main-merge-governance")][0].id//empty' <<<"$rulesets")"
           [[ -n "$id" ]] || { echo '::error::Ruleset main-merge-governance does not exist.'; exit 1; }
