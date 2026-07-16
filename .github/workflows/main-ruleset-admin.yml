@@ -7,13 +7,6 @@ on:
       - '.github/workflows/main-ruleset-admin.yml'
       - 'scripts/main_ruleset.py'
       - 'docs/operations/main-ruleset-bootstrap.md'
-  push:
-    branches:
-      - 'ops/bootstrap-main-ruleset'
-    paths:
-      - '.github/rulesets/main-merge-governance.json'
-      - '.github/workflows/main-ruleset-admin.yml'
-      - 'scripts/main_ruleset.py'
   workflow_dispatch:
     inputs:
       operation:
@@ -39,68 +32,9 @@ jobs:
       - name: Validate declared ruleset
         run: python3 scripts/main_ruleset.py validate-payload
 
-  Bootstrap-Live-Main-Ruleset:
-    name: Bootstrap Live Main Ruleset
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/ops/bootstrap-main-ruleset') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository &&
-       github.event.pull_request.head.ref == 'ops/bootstrap-main-ruleset')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Apply latest-push approval to live ruleset
-        env:
-          REPO_ADMIN_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "${REPO_ADMIN_TOKEN:-}" ]]; then
-            echo '::error::Repository secret REPO_ADMIN_TOKEN is missing.'
-            exit 1
-          fi
-
-          api='https://api.github.com/repos/sisbas/OkulYonetimSaaS/rulesets/19052349'
-          headers=(
-            -H 'Accept: application/vnd.github+json'
-            -H 'X-GitHub-Api-Version: 2022-11-28'
-            -H "Authorization: Bearer $REPO_ADMIN_TOKEN"
-          )
-
-          current="$(curl --fail-with-body --silent --show-error --location "${headers[@]}" "$api")"
-          payload="$(jq '
-            (.rules[] | select(.type=="pull_request").parameters.require_last_push_approval) = true |
-            {name,target,enforcement,bypass_actors,conditions,rules}
-          ' <<<"$current")"
-
-          updated="$(curl --fail-with-body --silent --show-error --location \
-            --request PUT \
-            "${headers[@]}" \
-            -H 'Content-Type: application/json' \
-            --data "$payload" \
-            "$api")"
-
-          jq -e '
-            .enforcement=="active" and
-            (.bypass_actors|length==0) and
-            ([.rules[]|select(.type=="pull_request")][0].parameters.require_last_push_approval==true)
-          ' <<<"$updated" >/dev/null
-
-          echo 'PASS: require_last_push_approval=true applied to live ruleset.'
-      - name: Record bootstrap evidence
-        if: always()
-        run: |
-          {
-            echo '## Bootstrap live main ruleset'
-            echo
-            echo "- Repository: $GITHUB_REPOSITORY"
-            echo "- Head: $GITHUB_SHA"
-            echo "- Result: ${{ job.status }}"
-          } >> "$GITHUB_STEP_SUMMARY"
-
   Live-Main-Ruleset-Verification:
     name: Live Main Ruleset Verification
-    needs: Bootstrap-Live-Main-Ruleset
-    if: always() && github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Verify exact active main ruleset through public Rules REST API
@@ -114,29 +48,35 @@ jobs:
           [[ -n "$id" ]] || { echo '::error::Ruleset main-merge-governance does not exist.'; exit 1; }
           detail="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rulesets/$id")"
           expected='["Sprint 1 Quality Gate","Backend CI","DB Smoke","Gate 1 CI","Sensitive Pattern Scanner","GitGuardian scan","PR Governance / Body Validation","PR Governance / Issue Reference","PR Governance / Rollback Plan","PR Governance / Acceptance Criteria","Merge Governance Enforcement"]'
+          pull="$(jq -c '[.rules[]|select(.type=="pull_request")][0].parameters' <<<"$detail")"
+          checks="$(jq -c '[.rules[]|select(.type=="required_status_checks")][0].parameters' <<<"$detail")"
 
-          if ! jq -e --argjson expected "$expected" '
-            .name=="main-merge-governance" and .target=="branch" and .enforcement=="active" and
-            (.bypass_actors|length==0) and
-            ([.conditions.ref_name.include[]]|any(.=="~DEFAULT_BRANCH" or .=="refs/heads/main")) and
-            (([.rules[]|select(.type=="pull_request")][0].parameters) as $p |
-              $p.dismiss_stale_reviews_on_push==true and $p.require_last_push_approval==true and
-              $p.required_approving_review_count==1 and $p.required_review_thread_resolution==true) and
-            (([.rules[]|select(.type=="required_status_checks")][0].parameters) as $s |
-              $s.strict_required_status_checks_policy==true and
-              (($s.required_status_checks|map(.context)|sort)==($expected|sort)))
-          ' <<<"$detail" >/dev/null; then
-            echo '::error::Live ruleset differs from the declared approval or required-check policy.'
-            jq -c '{name,target,enforcement,bypass_count:(.bypass_actors|length),pull_request:([.rules[]|select(.type=="pull_request")][0].parameters),actual_checks:([.rules[]|select(.type=="required_status_checks")][0].parameters.required_status_checks|map(.context)|sort)}' <<<"$detail"
-            echo "Expected checks: $(jq -c 'sort' <<<"$expected")"
+          jq -e '.name=="main-merge-governance" and .target=="branch" and .enforcement=="active" and (.bypass_actors|length==0) and ([.conditions.ref_name.include[]]|any(.=="~DEFAULT_BRANCH" or .=="refs/heads/main"))' <<<"$detail" >/dev/null || {
+            echo '::error::Ruleset target, enforcement, branch condition or bypass policy is invalid.'
+            exit 1
+          }
+
+          jq -e '.dismiss_stale_reviews_on_push==true and .required_approving_review_count==1 and .required_review_thread_resolution==true' <<<"$pull" >/dev/null || {
+            echo '::error::Approval count, stale approval dismissal or conversation resolution policy is invalid.'
+            exit 1
+          }
+
+          if ! jq -e '.require_last_push_approval==true' <<<"$pull" >/dev/null; then
+            echo '::error::Require approval of the most recent reviewable push is disabled.'
+            echo '::error::Open Settings > Rules > Rulesets > main-merge-governance and enable this option.'
             exit 1
           fi
+
+          jq -e --argjson expected "$expected" '.strict_required_status_checks_policy==true and ((.required_status_checks|map(.context)|sort)==($expected|sort))' <<<"$checks" >/dev/null || {
+            echo '::error::Strict required checks or exact required-check list is invalid.'
+            exit 1
+          }
 
           active="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rules/branches/main")"
           for type in deletion non_fast_forward pull_request required_status_checks; do
             jq -e --arg type "$type" 'any(.[];.type==$type)' <<<"$active" >/dev/null || { echo "::error::Active main rules are missing $type."; exit 1; }
           done
-          echo "PASS: exact active main ruleset verified (id=$id; checks=11; bypass=0)"
+          echo "PASS: exact active main ruleset verified (id=$id; checks=11; bypass=0; latest-push-approval=true)"
 
   Main-Ruleset-Administration:
     name: Main Ruleset Administration
