@@ -37,7 +37,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Verify active main ruleset through public Rules REST API
+      - name: Verify exact active main ruleset through public Rules REST API
         shell: bash
         run: |
           set -euo pipefail
@@ -56,6 +56,7 @@ jobs:
           fi
 
           detail="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rulesets/$ruleset_id")"
+
           jq -e '
             .name == "main-merge-governance" and
             .target == "branch" and
@@ -63,9 +64,57 @@ jobs:
             (.bypass_actors | length == 0) and
             ([.conditions.ref_name.include[]] | any(. == "~DEFAULT_BRANCH" or . == "refs/heads/main"))
           ' <<<"$detail" >/dev/null || {
-            echo '::error::Ruleset exists but target, enforcement, branch condition or bypass policy is invalid.'
+            echo '::error::Ruleset target, enforcement, branch condition or bypass policy is invalid.'
             exit 1
           }
+
+          jq -e '
+            ([.rules[] | select(.type == "pull_request")][0].parameters) as $pr |
+            $pr.dismiss_stale_reviews_on_push == true and
+            $pr.require_last_push_approval == true and
+            $pr.required_approving_review_count == 1 and
+            $pr.required_review_thread_resolution == true
+          ' <<<"$detail" >/dev/null || {
+            echo '::error::Pull-request approval, stale-review or conversation-resolution policy is invalid.'
+            exit 1
+          }
+
+          jq -e '
+            ([.rules[] | select(.type == "required_status_checks")][0].parameters) as $checks |
+            $checks.strict_required_status_checks_policy == true
+          ' <<<"$detail" >/dev/null || {
+            echo '::error::Strict required-status-check policy is not active.'
+            exit 1
+          }
+
+          expected_checks="$({
+            printf '%s\n' \
+              'Sprint 1 Quality Gate' \
+              'Backend CI' \
+              'DB Smoke' \
+              'Gate 1 CI' \
+              'Sensitive Pattern Scanner' \
+              'GitGuardian scan' \
+              'PR Governance / Body Validation' \
+              'PR Governance / Issue Reference' \
+              'PR Governance / Rollback Plan' \
+              'PR Governance / Acceptance Criteria' \
+              'Merge Governance Enforcement'
+          } | jq -R . | jq -sc 'sort')"
+
+          actual_checks="$(jq -c '
+            [.rules[] | select(.type == "required_status_checks")][0]
+            .parameters.required_status_checks
+            | map(.context)
+            | sort
+          ' <<<"$detail")"
+
+          if [[ "$actual_checks" != "$expected_checks" ]]; then
+            echo '::error::Live required-check list does not exactly match the declared eleven contexts.'
+            echo "Expected: $expected_checks"
+            echo "Actual:   $actual_checks"
+            exit 1
+          fi
 
           active_rules="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rules/branches/main")"
           for required_type in deletion non_fast_forward pull_request required_status_checks; do
@@ -75,7 +124,7 @@ jobs:
             }
           done
 
-          echo "PASS: active main ruleset verified (id=$ruleset_id)"
+          echo "PASS: exact active main ruleset verified (id=$ruleset_id; checks=11; bypass=0)"
 
   Main-Ruleset-Administration:
     name: Main Ruleset Administration
