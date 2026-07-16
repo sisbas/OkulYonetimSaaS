@@ -1,0 +1,58 @@
+name: Main Ruleset Admin
+
+on:
+  pull_request:
+    paths:
+      - '.github/rulesets/main-merge-governance.json'
+      - '.github/workflows/main-ruleset-admin.yml'
+      - 'scripts/main_ruleset.py'
+      - 'docs/operations/main-ruleset-bootstrap.md'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Apply the declared ruleset or verify the live ruleset
+        required: true
+        default: verify
+        type: choice
+        options:
+          - verify
+          - apply
+
+permissions:
+  contents: read
+
+jobs:
+  Ruleset-Payload-Validation:
+    name: Ruleset Payload Validation
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate declared ruleset
+        run: python3 scripts/main_ruleset.py validate-payload
+
+  Main-Ruleset-Administration:
+    name: Main Ruleset Administration
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate declared ruleset
+        run: python3 scripts/main_ruleset.py validate-payload
+      - name: Apply or verify live ruleset
+        env:
+          REPO_ADMIN_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
+        run: python3 scripts/main_ruleset.py "${{ inputs.operation }}"
+      - name: Publish evidence summary
+        if: always()
+        run: |
+          {
+            echo '## Main ruleset administration'
+            echo
+            echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Operation: ${{ inputs.operation }}"
+            echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
