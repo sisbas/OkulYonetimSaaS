@@ -37,10 +37,45 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Verify active main ruleset
-        run: python3 scripts/main_ruleset.py verify
+      - name: Verify active main ruleset through public Rules REST API
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.github.com/repos/sisbas/OkulYonetimSaaS'
+          headers=(
+            -H 'Accept: application/vnd.github+json'
+            -H 'X-GitHub-Api-Version: 2026-03-10'
+          )
+
+          rulesets="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rulesets?includes_parents=false")"
+          ruleset_id="$(jq -r '[.[] | select(.name == "main-merge-governance")][0].id // empty' <<<"$rulesets")"
+
+          if [[ -z "$ruleset_id" ]]; then
+            echo '::error::Ruleset main-merge-governance does not exist.'
+            exit 1
+          fi
+
+          detail="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rulesets/$ruleset_id")"
+          jq -e '
+            .name == "main-merge-governance" and
+            .target == "branch" and
+            .enforcement == "active" and
+            (.bypass_actors | length == 0) and
+            ([.conditions.ref_name.include[]] | any(. == "~DEFAULT_BRANCH" or . == "refs/heads/main"))
+          ' <<<"$detail" >/dev/null || {
+            echo '::error::Ruleset exists but target, enforcement, branch condition or bypass policy is invalid.'
+            exit 1
+          }
+
+          active_rules="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rules/branches/main")"
+          for required_type in deletion non_fast_forward pull_request required_status_checks; do
+            jq -e --arg type "$required_type" 'any(.[]; .type == $type)' <<<"$active_rules" >/dev/null || {
+              echo "::error::Active main rules are missing $required_type."
+              exit 1
+            }
+          done
+
+          echo "PASS: active main ruleset verified (id=$ruleset_id)"
 
   Main-Ruleset-Administration:
     name: Main Ruleset Administration
