@@ -1,0 +1,104 @@
+name: Main Ruleset Admin
+
+on:
+  pull_request:
+    paths:
+      - '.github/rulesets/main-merge-governance.json'
+      - '.github/workflows/main-ruleset-admin.yml'
+      - 'scripts/main_ruleset.py'
+      - 'docs/operations/main-ruleset-bootstrap.md'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Apply the declared ruleset or verify the live ruleset
+        required: true
+        default: verify
+        type: choice
+        options:
+          - verify
+          - apply
+
+permissions:
+  contents: read
+
+jobs:
+  Ruleset-Payload-Validation:
+    name: Ruleset Payload Validation
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Validate declared ruleset
+        run: python3 scripts/main_ruleset.py validate-payload
+
+  Live-Main-Ruleset-Verification:
+    name: Live Main Ruleset Verification
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify exact active main ruleset through public Rules REST API
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.github.com/repos/sisbas/OkulYonetimSaaS'
+          headers=(-H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
+          rulesets="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rulesets?includes_parents=false")"
+          id="$(jq -r '[.[]|select(.name=="main-merge-governance")][0].id//empty' <<<"$rulesets")"
+          [[ -n "$id" ]] || { echo '::error::Ruleset main-merge-governance does not exist.'; exit 1; }
+          detail="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rulesets/$id")"
+          expected='["Sprint 1 Quality Gate","Backend CI","DB Smoke","Gate 1 CI","Sensitive Pattern Scanner","GitGuardian scan","PR Governance / Body Validation","PR Governance / Issue Reference","PR Governance / Rollback Plan","PR Governance / Acceptance Criteria","Merge Governance Enforcement"]'
+          pull="$(jq -c '[.rules[]|select(.type=="pull_request")][0].parameters' <<<"$detail")"
+          checks="$(jq -c '[.rules[]|select(.type=="required_status_checks")][0].parameters' <<<"$detail")"
+
+          jq -e '.name=="main-merge-governance" and .target=="branch" and .enforcement=="active" and (.bypass_actors|length==0) and ([.conditions.ref_name.include[]]|any(.=="~DEFAULT_BRANCH" or .=="refs/heads/main"))' <<<"$detail" >/dev/null || {
+            echo '::error::Ruleset target, enforcement, branch condition or bypass policy is invalid.'
+            exit 1
+          }
+
+          jq -e '.dismiss_stale_reviews_on_push==true and .required_approving_review_count==1 and .required_review_thread_resolution==true' <<<"$pull" >/dev/null || {
+            echo '::error::Approval count, stale approval dismissal or conversation resolution policy is invalid.'
+            exit 1
+          }
+
+          if ! jq -e '.require_last_push_approval==true' <<<"$pull" >/dev/null; then
+            echo '::error::Require approval of the most recent reviewable push is disabled.'
+            echo '::error::Open Settings > Rules > Rulesets > main-merge-governance and enable this option.'
+            exit 1
+          fi
+
+          jq -e --argjson expected "$expected" '.strict_required_status_checks_policy==true and ((.required_status_checks|map(.context)|sort)==($expected|sort))' <<<"$checks" >/dev/null || {
+            echo '::error::Strict required checks or exact required-check list is invalid.'
+            exit 1
+          }
+
+          active="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rules/branches/main")"
+          for type in deletion non_fast_forward pull_request required_status_checks; do
+            jq -e --arg type "$type" 'any(.[];.type==$type)' <<<"$active" >/dev/null || { echo "::error::Active main rules are missing $type."; exit 1; }
+          done
+          echo "PASS: exact active main ruleset verified (id=$id; checks=11; bypass=0; latest-push-approval=true)"
+
+  Main-Ruleset-Administration:
+    name: Main Ruleset Administration
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Validate declared ruleset
+        run: python3 scripts/main_ruleset.py validate-payload
+      - name: Apply or verify live ruleset
+        env:
+          REPO_ADMIN_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
+        run: python3 scripts/main_ruleset.py "${{ inputs.operation }}"
+      - name: Publish evidence summary
+        if: always()
+        run: |
+          {
+            echo '## Main ruleset administration'
+            echo
+            echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Operation: ${{ inputs.operation }}"
+            echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
