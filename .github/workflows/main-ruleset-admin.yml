@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Validate declared ruleset
         run: python3 scripts/main_ruleset.py validate-payload
       - name: Probe current live main ruleset
@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Validate declared ruleset
         run: python3 scripts/main_ruleset.py validate-payload
       - name: Apply or verify live ruleset
