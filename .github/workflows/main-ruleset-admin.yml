@@ -39,9 +39,45 @@ jobs:
       - name: Validate declared ruleset
         run: python3 scripts/main_ruleset.py validate-payload
 
+  Bootstrap-Live-Main-Ruleset:
+    name: Bootstrap Live Main Ruleset
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/ops/bootstrap-main-ruleset') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'ops/bootstrap-main-ruleset')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Validate declared ruleset
+        run: python3 scripts/main_ruleset.py validate-payload
+      - name: Apply exact live ruleset policy
+        env:
+          REPO_ADMIN_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${REPO_ADMIN_TOKEN:-}" ]]; then
+            echo '::error::Repository secret REPO_ADMIN_TOKEN is missing.'
+            exit 1
+          fi
+          python3 scripts/main_ruleset.py apply
+      - name: Record bootstrap evidence
+        if: always()
+        run: |
+          {
+            echo '## Bootstrap live main ruleset'
+            echo
+            echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Head: $GITHUB_SHA"
+            echo "- Result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   Live-Main-Ruleset-Verification:
     name: Live Main Ruleset Verification
-    if: github.event_name == 'pull_request'
+    needs: Bootstrap-Live-Main-Ruleset
+    if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Verify exact active main ruleset through public Rules REST API
@@ -78,37 +114,6 @@ jobs:
             jq -e --arg type "$type" 'any(.[];.type==$type)' <<<"$active" >/dev/null || { echo "::error::Active main rules are missing $type."; exit 1; }
           done
           echo "PASS: exact active main ruleset verified (id=$id; checks=11; bypass=0)"
-
-  Bootstrap-Live-Main-Ruleset:
-    name: Bootstrap Live Main Ruleset
-    if: github.event_name == 'push' && github.ref == 'refs/heads/ops/bootstrap-main-ruleset'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Validate declared ruleset
-        run: python3 scripts/main_ruleset.py validate-payload
-      - name: Apply exact live ruleset policy
-        env:
-          REPO_ADMIN_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "${REPO_ADMIN_TOKEN:-}" ]]; then
-            echo '::error::Repository secret REPO_ADMIN_TOKEN is missing.'
-            exit 1
-          fi
-          python3 scripts/main_ruleset.py apply
-      - name: Record bootstrap evidence
-        if: always()
-        run: |
-          {
-            echo '## Bootstrap live main ruleset'
-            echo
-            echo "- Repository: $GITHUB_REPOSITORY"
-            echo "- Head: $GITHUB_SHA"
-            echo "- Result: ${{ job.status }}"
-          } >> "$GITHUB_STEP_SUMMARY"
 
   Main-Ruleset-Administration:
     name: Main Ruleset Administration
