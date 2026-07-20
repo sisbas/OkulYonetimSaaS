@@ -1,0 +1,177 @@
+name: Course Prerequisite Migration Cycle
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    branches:
+      - main
+    paths:
+      - 'src/database/migrations/*CourseTenantIdCompositeUnique*.ts'
+      - 'src/courses/course-parent-prerequisite.migration.spec.ts'
+      - '.github/workflows/course-prerequisite-migration-cycle.yml'
+      - 'docs/m3/course-parent-prerequisite.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: course-prerequisite-migration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migration-cycle:
+    name: migrate -> verify -> revert -> verify -> migrate -> verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: ataakademi_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ataakademi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CI: true
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+      TEST_DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_NAME: ataakademi_test
+      TYPEORM_LOGGING: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Course migration contract test
+        run: npx jest --runInBand src/courses/course-parent-prerequisite.migration.spec.ts
+
+      - name: Initial migrate and verify
+        run: |
+          set -euo pipefail
+          echo 'COURSE_PREREQUISITE_STEP=initial_migrate'
+          npm run db:migrate
+          npm run db:verify
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF to_regclass(current_schema() || '.uq_courses_tenant_id') IS NULL THEN
+              RAISE EXCEPTION 'Course prerequisite verification failed: index is missing after migrate';
+            END IF;
+          END $$;
+          SQL
+
+      - name: Revert and verify without data loss
+        run: |
+          set -euo pipefail
+          echo 'COURSE_PREREQUISITE_STEP=revert'
+          npm run db:migrate:revert
+          npm run db:verify
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF to_regclass(current_schema() || '.uq_courses_tenant_id') IS NOT NULL THEN
+              RAISE EXCEPTION 'Course prerequisite verification failed: index remains after revert';
+            END IF;
+            IF to_regclass(current_schema() || '.courses') IS NULL THEN
+              RAISE EXCEPTION 'Course prerequisite verification failed: courses data surface was dropped by revert';
+            END IF;
+          END $$;
+          SQL
+
+      - name: Prove controlled preflight failure
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE INDEX uq_courses_tenant_id ON courses (tenant_id)'
+
+          set +e
+          failure_output="$(npm run db:migrate 2>&1)"
+          failure_status=$?
+          set -e
+
+          printf '%s\n' "$failure_output"
+          if [ "$failure_status" -eq 0 ]; then
+            echo 'Expected fail-closed migration failure, but migration succeeded'
+            exit 1
+          fi
+
+          printf '%s\n' "$failure_output" | grep -F 'uq_courses_tenant_id exists with an invalid definition'
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'DROP INDEX uq_courses_tenant_id'
+
+      - name: Remigrate and verify
+        run: |
+          set -euo pipefail
+          echo 'COURSE_PREREQUISITE_STEP=remigrate'
+          npm run db:migrate
+          npm run db:verify
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            valid_index boolean;
+          BEGIN
+            SELECT
+              index_metadata.indisunique
+              AND array_agg(column_metadata.attname ORDER BY key_columns.ordinality)
+                  = ARRAY['tenant_id', 'id']::name[]
+            INTO valid_index
+            FROM pg_class index_relation
+            JOIN pg_index index_metadata
+              ON index_metadata.indexrelid = index_relation.oid
+            JOIN pg_class table_relation
+              ON table_relation.oid = index_metadata.indrelid
+            JOIN pg_namespace namespace_relation
+              ON namespace_relation.oid = table_relation.relnamespace
+            JOIN unnest(index_metadata.indkey) WITH ORDINALITY AS key_columns(attnum, ordinality)
+              ON true
+            JOIN pg_attribute column_metadata
+              ON column_metadata.attrelid = table_relation.oid
+             AND column_metadata.attnum = key_columns.attnum
+            WHERE namespace_relation.nspname = current_schema()
+              AND table_relation.relname = 'courses'
+              AND index_relation.relname = 'uq_courses_tenant_id'
+            GROUP BY index_metadata.indisunique;
+
+            IF NOT COALESCE(valid_index, false) THEN
+              RAISE EXCEPTION 'Course prerequisite verification failed: final index definition is invalid';
+            END IF;
+          END $$;
+          SQL
+          npm run db:migrate:show
+
+      - name: Course regression
+        run: npx jest --runInBand src/courses --passWithNoTests
+
+      - name: Database, RBAC, KVKK and audit-redaction regression
+        run: |
+          npm run test:database
+          npm run test:rbac
+          npm run test:kvkk
+          npm run test:audit-redaction
+
+      - name: Build
+        run: npm run build
