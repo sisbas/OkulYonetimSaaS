@@ -85,6 +85,7 @@ export class TimeSlotService {
 
     return this.dataSource.transaction(async (manager) => {
       const tx = this.slots.withManager(manager);
+      await tx.lockMutationScopes(ctx, [{ branchId, dayOfWeek }]);
       await this.assertBranch(ctx, branchId, tx);
       await this.assertNoConflict(ctx, tx, branchId, dayOfWeek, startTime, endTime);
       const slot = await tx.create(ctx, {
@@ -136,7 +137,7 @@ export class TimeSlotService {
     assertTenantScope(ctx, 'time_slots');
     return this.dataSource.transaction(async (manager) => {
       const tx = this.slots.withManager(manager);
-      const slot = await this.findOrThrow(ctx, id, true, tx);
+      const slot = await this.findOrThrow(ctx, id, true, tx, true);
       const branchId = Object.prototype.hasOwnProperty.call(dto, 'branchId') ? dto.branchId ?? '' : slot.branchId;
       const name = Object.prototype.hasOwnProperty.call(dto, 'name') ? requiredString(dto.name ?? '', 'TimeSlot name') : slot.name;
       const dayOfWeek = Object.prototype.hasOwnProperty.call(dto, 'dayOfWeek') ? day(dto.dayOfWeek ?? 0) : slot.dayOfWeek;
@@ -144,6 +145,10 @@ export class TimeSlotService {
       const endTime = Object.prototype.hasOwnProperty.call(dto, 'endTime') ? time(dto.endTime ?? '', 'endTime') : time(slot.endTime, 'endTime');
       assertTimeRange(startTime, endTime);
 
+      await tx.lockMutationScopes(ctx, [
+        { branchId: slot.branchId, dayOfWeek: slot.dayOfWeek },
+        { branchId, dayOfWeek },
+      ]);
       await this.assertBranch(ctx, branchId, tx);
       await this.assertNoConflict(ctx, tx, branchId, dayOfWeek, startTime, endTime, id);
 
@@ -165,24 +170,30 @@ export class TimeSlotService {
   }
 
   async archive(ctx: RequestContext, id: string): Promise<TimeSlotResponseDto> {
-    const slot = await this.findOrThrow(ctx, id, true);
-    if (slot.status === TimeSlotStatus.INACTIVE) throw new BadRequestException('TimeSlot is already inactive');
-    slot.status = TimeSlotStatus.INACTIVE;
-    slot.archivedAt = new Date();
-    const updated = await this.slots.save(slot);
-    this.audit.emit(ctx, 'time_slot.archived', {
-      timeSlotId: updated.id,
-      branchId: updated.branchId,
-      changedFields: ['archivedAt', 'status'],
+    assertTenantScope(ctx, 'time_slots');
+    return this.dataSource.transaction(async (manager) => {
+      const tx = this.slots.withManager(manager);
+      const slot = await this.findOrThrow(ctx, id, true, tx, true);
+      await tx.lockMutationScopes(ctx, [{ branchId: slot.branchId, dayOfWeek: slot.dayOfWeek }]);
+      if (slot.status === TimeSlotStatus.INACTIVE) throw new BadRequestException('TimeSlot is already inactive');
+      slot.status = TimeSlotStatus.INACTIVE;
+      slot.archivedAt = new Date();
+      const updated = await tx.save(slot);
+      this.audit.emit(ctx, 'time_slot.archived', {
+        timeSlotId: updated.id,
+        branchId: updated.branchId,
+        changedFields: ['archivedAt', 'status'],
+      });
+      return this.toResponse(updated);
     });
-    return this.toResponse(updated);
   }
 
   async reactivate(ctx: RequestContext, id: string): Promise<TimeSlotResponseDto> {
     assertTenantScope(ctx, 'time_slots');
     return this.dataSource.transaction(async (manager) => {
       const tx = this.slots.withManager(manager);
-      const slot = await this.findOrThrow(ctx, id, true, tx);
+      const slot = await this.findOrThrow(ctx, id, true, tx, true);
+      await tx.lockMutationScopes(ctx, [{ branchId: slot.branchId, dayOfWeek: slot.dayOfWeek }]);
       if (slot.status === TimeSlotStatus.ACTIVE) throw new BadRequestException('TimeSlot is already active');
       const startTime = time(slot.startTime, 'startTime');
       const endTime = time(slot.endTime, 'endTime');
@@ -228,8 +239,9 @@ export class TimeSlotService {
     id: string,
     includeInactive = false,
     repository: TimeSlotRepository = this.slots,
+    lockForUpdate = false,
   ): Promise<TimeSlot> {
-    const slot = await repository.findById(ctx, id, includeInactive);
+    const slot = await repository.findById(ctx, id, includeInactive, lockForUpdate);
     if (slot) return slot;
     this.audit.emitAccessDenied(ctx, { timeSlotId: id, reasonCode: 'time_slot_not_visible' });
     throw new NotFoundException('TimeSlot not found');
