@@ -14,8 +14,25 @@ export type ScheduleContractUiState =
   | 'version_mismatch'
   | 'version_required'
   | 'publish_confirmation'
-  | 'publish_blocked'
+  | 'publish_blocked_empty'
+  | 'publish_blocked_validation_stale'
+  | 'publish_blocked_hard_conflicts'
+  | 'publish_blocked_period_conflict'
   | 'published_read_only';
+
+export type SchedulePublishBlockReasonCode =
+  | 'SCHEDULE_EMPTY'
+  | 'SCHEDULE_VALIDATION_STALE'
+  | 'SCHEDULE_HARD_CONFLICTS_PRESENT'
+  | 'PUBLISHED_SCHEDULE_PERIOD_CONFLICT'
+  | 'SCHEDULE_VERSION_MISMATCH';
+
+export type ScheduleRoleProjection =
+  | 'management_draft'
+  | 'management_published_branch'
+  | 'teacher_own_published_events'
+  | 'viewer_published_read_only'
+  | 'hidden';
 
 export type OperationsStateDescriptor = {
   state: OperationsUiState;
@@ -91,9 +108,11 @@ export type ScheduleStateDescriptor = {
     | 'SCHEDULE_HARD_CONFLICTS_PRESENT'
     | 'SCHEDULE_VALIDATION_STALE'
     | 'SCHEDULE_EMPTY'
+    | 'PUBLISHED_SCHEDULE_PERIOD_CONFLICT'
     | 'SCHEDULE_VERSION_REQUIRED'
     | null;
   roleVisibility: Readonly<Record<FrontendRole, OperationsRouteScope>>;
+  roleProjection: Readonly<Record<FrontendRole, ScheduleRoleProjection>>;
   allowsMutation: false;
   apiBinding: 'not_connected';
   permissionBinding: 'pending_catalog';
@@ -114,6 +133,30 @@ const MANAGEMENT_ONLY_VISIBILITY: Readonly<Record<FrontendRole, OperationsRouteS
   viewer: 'hidden',
 };
 
+const MANAGEMENT_DRAFT_PROJECTION: Readonly<Record<FrontendRole, ScheduleRoleProjection>> = {
+  tenant_admin: 'management_draft',
+  operations_manager: 'management_draft',
+  teacher: 'hidden',
+  viewer: 'hidden',
+};
+
+const PUBLISHED_READ_PROJECTION: Readonly<Record<FrontendRole, ScheduleRoleProjection>> = {
+  tenant_admin: 'management_published_branch',
+  operations_manager: 'management_published_branch',
+  teacher: 'teacher_own_published_events',
+  viewer: 'viewer_published_read_only',
+};
+
+export const SCHEDULE_REASON_CODE_TO_UI_STATE: Readonly<
+  Record<SchedulePublishBlockReasonCode, ScheduleContractUiState>
+> = {
+  SCHEDULE_EMPTY: 'publish_blocked_empty',
+  SCHEDULE_VALIDATION_STALE: 'publish_blocked_validation_stale',
+  SCHEDULE_HARD_CONFLICTS_PRESENT: 'publish_blocked_hard_conflicts',
+  PUBLISHED_SCHEDULE_PERIOD_CONFLICT: 'publish_blocked_period_conflict',
+  SCHEDULE_VERSION_MISMATCH: 'version_mismatch',
+};
+
 export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
   {
     state: 'draft_list_ready',
@@ -125,6 +168,7 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
     expectedHttpStatus: 200,
     expectedErrorCode: null,
     roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
@@ -133,13 +177,14 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
   {
     state: 'weekly_grid_ready',
     surface: 'weekly_grid',
-    scheduleStatus: null,
+    scheduleStatus: 'draft',
     validationStatus: null,
-    title: 'Haftalık program görünümü',
-    description: 'Draft yönetim ve published read-only projection için aynı grid yerleşimi descriptor seviyesinde ayrıştırılır.',
+    title: 'Taslak haftalık program görünümü',
+    description: 'Yönetim rollerine özel draft grid placeholder’ıdır; Teacher ve Viewer için görünmez.',
     expectedHttpStatus: 200,
     expectedErrorCode: null,
-    roleVisibility: MANAGEMENT_AND_READ_VISIBILITY,
+    roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
@@ -155,6 +200,7 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
     expectedHttpStatus: 422,
     expectedErrorCode: 'SCHEDULE_VALIDATION_STALE',
     roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
@@ -170,6 +216,7 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
     expectedHttpStatus: 200,
     expectedErrorCode: null,
     roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
@@ -185,6 +232,7 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
     expectedHttpStatus: 422,
     expectedErrorCode: 'SCHEDULE_HARD_CONFLICTS_PRESENT',
     roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
@@ -200,6 +248,7 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
     expectedHttpStatus: 422,
     expectedErrorCode: 'SCHEDULE_VALIDATION_STALE',
     roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
@@ -215,6 +264,7 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
     expectedHttpStatus: 412,
     expectedErrorCode: 'SCHEDULE_VERSION_MISMATCH',
     roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
@@ -230,6 +280,7 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
     expectedHttpStatus: 428,
     expectedErrorCode: 'SCHEDULE_VERSION_REQUIRED',
     roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
@@ -245,21 +296,71 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
     expectedHttpStatus: 200,
     expectedErrorCode: null,
     roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
     runtimeGuardChanged: false,
   },
   {
-    state: 'publish_blocked',
+    state: 'publish_blocked_empty',
     surface: 'publish_confirmation',
     scheduleStatus: 'draft',
     validationStatus: null,
-    title: 'Yayınlama koşulları sağlanmadı',
-    description: 'Boş draft, stale validation, hard conflict veya period conflict nedenleri güvenli reason mapping ile gösterilir.',
+    title: 'Taslak program boş',
+    description: 'Event içermeyen draft için yalnız SCHEDULE_EMPTY reason-code görünümü gösterilir.',
     expectedHttpStatus: 422,
     expectedErrorCode: 'SCHEDULE_EMPTY',
     roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
+    allowsMutation: false,
+    apiBinding: 'not_connected',
+    permissionBinding: 'pending_catalog',
+    runtimeGuardChanged: false,
+  },
+  {
+    state: 'publish_blocked_validation_stale',
+    surface: 'publish_confirmation',
+    scheduleStatus: 'draft',
+    validationStatus: 'stale',
+    title: 'Doğrulama yeniden yapılmalı',
+    description: 'Current version üzerinde full validation bulunmadığında SCHEDULE_VALIDATION_STALE gösterilir.',
+    expectedHttpStatus: 422,
+    expectedErrorCode: 'SCHEDULE_VALIDATION_STALE',
+    roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
+    allowsMutation: false,
+    apiBinding: 'not_connected',
+    permissionBinding: 'pending_catalog',
+    runtimeGuardChanged: false,
+  },
+  {
+    state: 'publish_blocked_hard_conflicts',
+    surface: 'publish_confirmation',
+    scheduleStatus: 'draft',
+    validationStatus: 'invalid',
+    title: 'Hard conflict çözülmeli',
+    description: 'Hard conflict mevcutsa SCHEDULE_HARD_CONFLICTS_PRESENT reason-code görünümü gösterilir.',
+    expectedHttpStatus: 422,
+    expectedErrorCode: 'SCHEDULE_HARD_CONFLICTS_PRESENT',
+    roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
+    allowsMutation: false,
+    apiBinding: 'not_connected',
+    permissionBinding: 'pending_catalog',
+    runtimeGuardChanged: false,
+  },
+  {
+    state: 'publish_blocked_period_conflict',
+    surface: 'publish_confirmation',
+    scheduleStatus: 'draft',
+    validationStatus: 'valid',
+    title: 'Yayın dönemi çakışıyor',
+    description: 'Aynı branch ve effective period için başka published Schedule varsa PUBLISHED_SCHEDULE_PERIOD_CONFLICT gösterilir.',
+    expectedHttpStatus: 409,
+    expectedErrorCode: 'PUBLISHED_SCHEDULE_PERIOD_CONFLICT',
+    roleVisibility: MANAGEMENT_ONLY_VISIBILITY,
+    roleProjection: MANAGEMENT_DRAFT_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
@@ -271,10 +372,11 @@ export const SCHEDULE_STATE_MATRIX: readonly ScheduleStateDescriptor[] = [
     scheduleStatus: 'published',
     validationStatus: 'valid',
     title: 'Yayınlanmış program',
-    description: 'Published ve unpublished ScheduleEvent kayıtları immutable kabul edilir; teacher yalnız own-read projection görür.',
+    description: 'Management full branch, Teacher own published events ve Viewer contract read-only projection ayrı tutulur.',
     expectedHttpStatus: 200,
     expectedErrorCode: null,
     roleVisibility: MANAGEMENT_AND_READ_VISIBILITY,
+    roleProjection: PUBLISHED_READ_PROJECTION,
     allowsMutation: false,
     apiBinding: 'not_connected',
     permissionBinding: 'pending_catalog',
