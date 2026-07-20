@@ -22,9 +22,10 @@ permissions:
   issues: read
   statuses: read
 
-concurrency:
-  group: pr-governance-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+# Deliberately no workflow-level concurrency.
+# Every governance-triggering event must produce a terminal check-suite result.
+# Cancelling an older run can leave required contexts missing/cancelled and makes
+# merge-time evidence ambiguous, as observed in the PR #104 incident.
 
 jobs:
   body-validation:
@@ -37,7 +38,6 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             const body = pr.body || "";
-
             const requiredSections = [
               "Amaç",
               "Kapsam",
@@ -48,7 +48,6 @@ jobs:
               "Rollback",
               "CI run referansı"
             ];
-
             const placeholders = new Set([
               "", "-", "--", "---", "n/a", "na", "none", "null", "todo", "tbd",
               "boş", "yok", "henüz yok", "sonra", "daha sonra", "placeholder", "fixes #"
@@ -63,12 +62,10 @@ jobs:
                 .filter((section) => section !== title)
                 .map(escapeRegex)
                 .join("|");
-
               const pattern = new RegExp(
                 `(?:^|\\n)#{2,3}\\s*${escapeRegex(title)}\\s*\\n([\\s\\S]*?)(?=\\n#{2,3}\\s*(?:${others})\\s*\\n|$)`,
                 "i"
               );
-
               const match = body.match(pattern);
               return match ? match[1].trim() : "";
             }
@@ -89,12 +86,8 @@ jobs:
             }
 
             const failures = [];
-
             for (const section of requiredSections) {
-              const value = extractSection(section);
-              if (isWeak(value)) {
-                failures.push(`Eksik/geçersiz bölüm: ${section}`);
-              }
+              if (isWeak(extractSection(section))) failures.push(`Eksik/geçersiz bölüm: ${section}`);
             }
 
             const testOutput = clean(extractSection("Test çıktısı"));
@@ -112,19 +105,14 @@ jobs:
               failures.push("KVKK/audit etkisi bölümü gerçek veri/audit/log değerlendirmesi içermiyor.");
             }
 
-            // Natural-language references such as "draft metadata" must not be treated
-            // as a draft declaration. Only an explicit status line or title prefix counts.
             const explicitDraftMarker =
               /^\s*(?:status|durum)\s*:\s*(?:draft|taslak|wip)\s*$/im.test(body) ||
               /^\s*\[(?:draft|taslak|wip)\]\s*/i.test(pr.title || "");
-
             if (explicitDraftMarker && pr.draft === false) {
               failures.push("PR açıkça Draft/Taslak/WIP olarak işaretlenmiş ancak GitHub draft metadata false. PR gerçek Draft olarak açılmalı.");
             }
 
-            if (failures.length) {
-              core.setFailed(failures.join("\n"));
-            }
+            if (failures.length) core.setFailed(failures.join("\n"));
 
   issue-reference:
     name: PR Governance / Issue Reference
@@ -136,9 +124,7 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             const text = `${pr.title || ""}\n${pr.body || ""}`;
-            const issueRef = /\b(fixes|fix|closes|close|resolves|resolve|refs|references)\s+#\d+\b/i;
-
-            if (!issueRef.test(text)) {
+            if (!/\b(fixes|fix|closes|close|resolves|resolve|refs|references)\s+#\d+\b/i.test(text)) {
               core.setFailed("PR title/body içinde geçerli issue referansı yok. Örnek: Fixes #123 veya Refs #123");
             }
 
@@ -155,7 +141,6 @@ jobs:
             const normalized = rollback.replace(/<!--([\s\S]*?)-->/g, "").trim();
             const weak = /^(|[-_. ]+|n\/a|na|none|null|todo|tbd|boş|yok|sonra|daha sonra|placeholder)$/i;
             const hasRollbackSignal = /\b(revert|rollback|migration down|migrate:revert|restore|feature flag|disable|hotfix|previous release|backup|geri al|geri dönüş)\b/i.test(normalized);
-
             if (!normalized || normalized.length < 30 || weak.test(normalized) || !hasRollbackSignal) {
               core.setFailed("Rollback bölümü gerçek geri dönüş planı içermiyor. Revert/migration rollback/feature flag/restore/hotfix adımı yazılmalı.");
             }
@@ -172,7 +157,6 @@ jobs:
             const ac = body.match(/(?:^|\n)#{2,3}\s*Acceptance criteria\s*\n([\s\S]*?)(?=\n#{2,3}\s|\s*$)/i)?.[1]?.trim() || "";
             const hasChecklist = /-\s*\[[ xX]\]\s+.{10,}/.test(ac);
             const weak = /^(|[-_. ]+|n\/a|na|none|null|todo|tbd|boş|yok|placeholder)$/i;
-
             if (!ac || weak.test(ac.trim()) || !hasChecklist) {
               core.setFailed("Acceptance criteria bölümü checklist formatında ve ölçülebilir olmalı. Örnek: - [ ] Backend CI PASS");
             }
@@ -186,7 +170,7 @@ jobs:
       - acceptance-criteria
     if: always() && github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - name: Enforce required checks, review and branch freshness
         uses: actions/github-script@v8
@@ -227,13 +211,11 @@ jobs:
               per_page: 100
             });
             reviews.sort((a, b) => (a.id || 0) - (b.id || 0));
-
             const latestReviewByUser = new Map();
             for (const review of reviews) {
               const login = review.user?.login;
               if (login) latestReviewByUser.set(login, review);
             }
-
             const validApprovals = [...latestReviewByUser.values()].filter((review) => {
               const login = review.user?.login || "";
               const isBot = review.user?.type === "Bot" || /\[bot\]$/i.test(login);
@@ -242,7 +224,6 @@ jobs:
                 login !== pr.user.login &&
                 !isBot;
             });
-
             if (validApprovals.length < 1) {
               failures.push("Güncel head SHA için en az bir bağımsız APPROVED review yok veya approval stale.");
             }
@@ -267,13 +248,10 @@ jobs:
               unresolvedThreadCount += threads.nodes.filter((thread) => !thread.isResolved).length;
               cursor = threads.pageInfo.hasNextPage ? threads.pageInfo.endCursor : null;
             } while (cursor);
-
-            if (unresolvedThreadCount > 0) {
-              failures.push(`${unresolvedThreadCount} çözülmemiş review thread'i var.`);
-            }
+            if (unresolvedThreadCount > 0) failures.push(`${unresolvedThreadCount} çözülmemiş review thread'i var.`);
 
             let lastState = { missing: requiredChecks, pending: [], failed: [] };
-            for (let attempt = 1; attempt <= 30; attempt += 1) {
+            for (let attempt = 1; attempt <= 45; attempt += 1) {
               const checkRuns = await github.paginate(github.rest.checks.listForRef, {
                 owner,
                 repo,
@@ -281,13 +259,11 @@ jobs:
                 per_page: 100,
                 filter: "latest"
               });
-
               const latestByName = new Map();
               for (const check of checkRuns) {
                 const current = latestByName.get(check.name);
                 if (!current || check.id > current.id) latestByName.set(check.name, check);
               }
-
               const missing = [];
               const pending = [];
               const failed = [];
@@ -297,10 +273,9 @@ jobs:
                 else if (check.status !== "completed") pending.push(`${name} (${check.status})`);
                 else if (check.conclusion !== "success") failed.push(`${name} (${check.conclusion || "unknown"})`);
               }
-
               lastState = { missing, pending, failed };
               if (!missing.length && !pending.length && !failed.length) break;
-              if (attempt < 30) await new Promise((resolve) => setTimeout(resolve, 10000));
+              if (attempt < 45) await new Promise((resolve) => setTimeout(resolve, 10000));
             }
 
             if (lastState.missing.length) failures.push(`Eksik required checks: ${lastState.missing.join(", ")}`);
