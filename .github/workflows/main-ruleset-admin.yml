@@ -67,7 +67,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Verify exact active main ruleset through public Rules REST API
+      - name: Verify public live ruleset structure and source
         shell: bash
         run: |
           set -euo pipefail
@@ -85,11 +85,9 @@ jobs:
             .name=="main-merge-governance" and
             .target=="branch" and
             .enforcement=="active" and
-            (.bypass_actors|type=="array") and
-            (.bypass_actors|length==0) and
             ([.conditions.ref_name.include[]]|any(.=="~DEFAULT_BRANCH" or .=="refs/heads/main"))
           ' <<<"$detail" >/dev/null || {
-            echo '::error::Ruleset target, enforcement, branch condition or authoritative bypass evidence is invalid.'
+            echo '::error::Ruleset target, enforcement or default-branch condition is invalid.'
             exit 1
           }
 
@@ -110,7 +108,20 @@ jobs:
               exit 1
             }
           done
-          echo "PASS: exact active main ruleset verified (id=$id; checks=11; source-bound=true; bypass=0)."
+
+          bypass_state="$(jq -r 'if has("bypass_actors") then (.bypass_actors|type) else "missing" end' <<<"$detail")"
+          if [[ "$bypass_state" == 'array' ]]; then
+            bypass_count="$(jq -r '.bypass_actors|length' <<<"$detail")"
+            [[ "$bypass_count" == '0' ]] || {
+              echo "::error::Public response reports active bypass actors: count=$bypass_count."
+              exit 1
+            }
+            echo 'NOTICE: public response reports bypass_count=0; trusted-main admin verification remains the authoritative closure evidence.'
+          else
+            echo "::notice::Public Rules API did not expose an authoritative bypass list (state=$bypass_state). Trusted-main admin verification is required before incident closure."
+          fi
+
+          echo "PASS: public live ruleset structure verified (id=$id; checks=11; source-bound=true)."
 
   Main-Ruleset-Administration:
     name: Main Ruleset Administration
@@ -124,7 +135,7 @@ jobs:
           persist-credentials: false
       - name: Validate declared ruleset
         run: python3 scripts/main_ruleset.py validate-payload
-      - name: Apply or verify live ruleset
+      - name: Apply or verify authoritative live ruleset
         env:
           REPO_ADMIN_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
         run: python3 scripts/main_ruleset.py "${{ inputs.operation }}"
