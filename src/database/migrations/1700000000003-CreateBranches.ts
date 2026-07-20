@@ -20,6 +20,7 @@ export class CreateBranches1700000000003 implements MigrationInterface {
         CONSTRAINT chk_branches_status CHECK (status IN ('active', 'inactive', 'deleted'))
       )
     `);
+    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_branches_tenant_id ON branches(tenant_id, id)`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_branches_tenant_id ON branches(tenant_id)`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_branches_status ON branches(status)`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_branches_tenant_status ON branches(tenant_id, status)`);

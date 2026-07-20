@@ -36,7 +36,7 @@ describe('CreateRoomsTable migration', () => {
 });
 
 describe('RoomSecurityHotfix migration', () => {
-  it('adds same-tenant branch FK and active room uniqueness constraints', async () => {
+  it('adds same-tenant branch FK and active room uniqueness without owning Branch indexes', async () => {
     const queries: string[] = [];
     const queryRunner = { query: jest.fn(async (query: string) => queries.push(query)) } as unknown as QueryRunner;
     const migration = new RoomSecurityHotfix1784050500000();
@@ -44,15 +44,16 @@ describe('RoomSecurityHotfix migration', () => {
     await migration.up(queryRunner);
 
     const sql = queries.join('\n');
-    expect(sql).toContain('uq_branches_tenant_id');
     expect(sql).toContain('fk_rooms_branch_same_tenant');
     expect(sql).toContain('FOREIGN KEY (tenant_id, branch_id)');
     expect(sql).toContain('uq_rooms_tenant_branch_code_active');
     expect(sql).toContain('uq_rooms_tenant_branch_name_active');
     expect(sql).toContain("status = 'active'");
+    expect(sql).not.toContain('CREATE UNIQUE INDEX IF NOT EXISTS uq_branches_tenant_id');
+    expect(sql).not.toContain('DROP INDEX IF EXISTS uq_branches_tenant_id');
   });
 
-  it('reverts room security constraints in deterministic order', async () => {
+  it('reverts only Room-owned security constraints in deterministic order', async () => {
     const queries: string[] = [];
     const queryRunner = { query: jest.fn(async (query: string) => queries.push(query)) } as unknown as QueryRunner;
     const migration = new RoomSecurityHotfix1784050500000();
@@ -63,7 +64,6 @@ describe('RoomSecurityHotfix migration', () => {
       'DROP INDEX IF EXISTS uq_rooms_tenant_branch_name_active',
       'DROP INDEX IF EXISTS uq_rooms_tenant_branch_code_active',
       'ALTER TABLE rooms DROP CONSTRAINT IF EXISTS fk_rooms_branch_same_tenant',
-      'DROP INDEX IF EXISTS uq_branches_tenant_id',
       'CREATE UNIQUE INDEX IF NOT EXISTS uq_rooms_tenant_branch_code ON rooms (tenant_id, branch_id, lower(code)) WHERE code IS NOT NULL',
     ]);
   });

@@ -12,6 +12,7 @@ function queryBuilder() {
     addOrderBy: jest.fn(() => qb),
     skip: jest.fn(() => qb),
     take: jest.fn(() => qb),
+    setLock: jest.fn(() => qb),
     getMany: jest.fn(async () => []),
     getManyAndCount: jest.fn(async () => [[], 0]),
     getOne: jest.fn(async () => null),
@@ -20,8 +21,11 @@ function queryBuilder() {
   return qb;
 }
 
-function repositoryWith(qb: any): TimeSlotRepository {
-  return new TimeSlotRepository({ createQueryBuilder: jest.fn(() => qb), manager: { createQueryBuilder: jest.fn(() => qb) } } as any);
+function repositoryWith(qb: any, query = jest.fn(async () => [])): TimeSlotRepository {
+  return new TimeSlotRepository({
+    createQueryBuilder: jest.fn(() => qb),
+    manager: { createQueryBuilder: jest.fn(() => qb), query },
+  } as any);
 }
 
 describe('TimeSlotRepository tenant isolation and conflicts', () => {
@@ -42,11 +46,12 @@ describe('TimeSlotRepository tenant isolation and conflicts', () => {
     expect(qb.andWhere).toHaveBeenCalledWith('slot.branch_id = :branchId', { branchId: 'branch-a' });
     expect(qb.andWhere).toHaveBeenCalledWith('slot.status = :status', { status: 'active' });
 
-    await repository.findById(ctx, 'slot-from-tenant-b');
+    await repository.findById(ctx, 'slot-from-tenant-b', true, true);
     expect(qb.where).toHaveBeenCalledWith('slot.id = :id AND slot.tenant_id = :tenantId', {
       id: 'slot-from-tenant-b',
       tenantId: 'tenant-a',
     });
+    expect(qb.setLock).toHaveBeenCalledWith('pessimistic_write');
     expect(Object.prototype.hasOwnProperty.call(repository, 'existsByIdAnyTenant')).toBe(false);
   });
 
@@ -69,5 +74,28 @@ describe('TimeSlotRepository tenant isolation and conflicts', () => {
     });
     expect(qb.andWhere).toHaveBeenCalledWith('branch.status = :status', { status: 'active' });
     expect(qb.andWhere).toHaveBeenCalledWith('branch.deleted_at IS NULL');
+  });
+
+  it('deduplicates and sorts tenant, branch and day advisory transaction locks', async () => {
+    const qb = queryBuilder();
+    const query = jest.fn(async () => []);
+    const repository = repositoryWith(qb, query);
+
+    await repository.lockMutationScopes(ctx, [
+      { branchId: 'branch-a', dayOfWeek: 2 },
+      { branchId: 'branch-a', dayOfWeek: 1 },
+      { branchId: 'branch-a', dayOfWeek: 2 },
+    ]);
+
+    expect(query.mock.calls).toEqual([
+      [
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        ['time_slots:tenant-a:branch-a:1'],
+      ],
+      [
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        ['time_slots:tenant-a:branch-a:2'],
+      ],
+    ]);
   });
 });

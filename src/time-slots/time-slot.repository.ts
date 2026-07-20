@@ -15,6 +15,11 @@ export type TimeSlotListQuery = {
 
 export type TimeSlotCreateValues = Pick<TimeSlot, 'branchId' | 'name' | 'dayOfWeek' | 'startTime' | 'endTime' | 'orderIndex'>;
 
+export type TimeSlotMutationScope = {
+  branchId: string;
+  dayOfWeek: number;
+};
+
 export type PaginatedTimeSlots = {
   data: TimeSlot[];
   meta: { page: number; limit: number; total: number; totalPages: number };
@@ -26,12 +31,28 @@ function positiveInt(value: string | number | undefined, fallback: number, max: 
   return Math.min(parsed, max);
 }
 
+function mutationScopeKey(ctx: RequestContext, scope: TimeSlotMutationScope): string {
+  return ['time_slots', ctx.tenantId, scope.branchId, scope.dayOfWeek].join(':');
+}
+
 @Injectable()
 export class TimeSlotRepository {
   constructor(@InjectRepository(TimeSlot) private readonly repository: Repository<TimeSlot>) {}
 
   withManager(manager: EntityManager): TimeSlotRepository {
     return new TimeSlotRepository(manager.getRepository(TimeSlot));
+  }
+
+  async lockMutationScopes(ctx: RequestContext, scopes: TimeSlotMutationScope[]): Promise<void> {
+    assertTenantScope(ctx, 'time_slots');
+    const lockKeys = [...new Set(scopes.map((scope) => mutationScopeKey(ctx, scope)))].sort();
+
+    for (const lockKey of lockKeys) {
+      await this.repository.manager.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [lockKey],
+      );
+    }
   }
 
   async list(ctx: RequestContext, query: TimeSlotListQuery): Promise<PaginatedTimeSlots> {
@@ -74,12 +95,18 @@ export class TimeSlotRepository {
       .getMany();
   }
 
-  async findById(ctx: RequestContext, id: string, includeInactive = false): Promise<TimeSlot | null> {
+  async findById(
+    ctx: RequestContext,
+    id: string,
+    includeInactive = false,
+    lockForUpdate = false,
+  ): Promise<TimeSlot | null> {
     assertTenantScope(ctx, 'time_slots');
     const qb = this.repository
       .createQueryBuilder('slot')
       .where('slot.id = :id AND slot.tenant_id = :tenantId', { id, tenantId: ctx.tenantId });
     if (!includeInactive) qb.andWhere('slot.status = :status', { status: TimeSlotStatus.ACTIVE });
+    if (lockForUpdate) qb.setLock('pessimistic_write');
     return qb.getOne();
   }
 
