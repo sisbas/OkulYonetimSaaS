@@ -2,6 +2,16 @@ import type { FrontendRole } from '../core-definitions/core-definitions.routes';
 
 export type OperationsModule = 'daily_operation' | 'schedule' | 'attendance';
 
+export type ScheduleContractSurface =
+  | 'draft_list'
+  | 'weekly_grid'
+  | 'event_editor_modal'
+  | 'conflict_panel'
+  | 'validation_result'
+  | 'publish_confirmation'
+  | 'stale_version_warning'
+  | 'forbidden_state';
+
 export type OperationsRouteScope =
   | 'management_placeholder'
   | 'own_read_only_placeholder'
@@ -22,6 +32,22 @@ export type OperationsSensitiveDataPolicy = {
   blockedDataClasses: readonly string[];
 };
 
+export type ScheduleContractMetadata = {
+  source: 'issue_40_contract_draft';
+  lifecycle: readonly ['draft', 'published', 'unpublished'];
+  validationLifecycle: readonly ['not_validated', 'valid', 'invalid', 'stale'];
+  surfaces: readonly ScheduleContractSurface[];
+  versioning: {
+    responseEtagRequired: true;
+    mutationIfMatchRequired: true;
+    staleVersionStatusCode: 412;
+    missingVersionStatusCode: 428;
+  };
+  publishedImmutable: true;
+  publishRequiresFullValidation: true;
+  bindingStatus: 'blocked';
+};
+
 export type OperationsRoutePlaceholder = {
   path: string;
   title: string;
@@ -34,16 +60,26 @@ export type OperationsRoutePlaceholder = {
   runtimeRouteGuard: 'unchanged';
   allowedStates: readonly ['loading', 'empty', 'error', 'forbidden', 'contract_pending'];
   runtimeScopeNote: string;
+  scheduleContract?: ScheduleContractMetadata;
 };
 
 const OPERATIONS_BLOCKED_DATA_CLASSES = [
   'student_name',
   'student_identity',
+  'student_roster',
+  'student_note',
+  'parent_phone',
+  'parent_email',
   'parent_contact',
   'guardian_contact',
   'notification_payload',
   'message_body',
   'counseling_note',
+  'tenant_id',
+  'raw_request',
+  'raw_response',
+  'authorization_header',
+  'cross_tenant_existence',
   'credential',
   'token',
 ] as const;
@@ -63,7 +99,12 @@ export const OPERATIONS_ROUTES: readonly OperationsRoutePlaceholder[] = [
     permissionDependency: {
       status: 'pending_catalog_binding',
       module: 'daily_operation',
-      expectedCapabilities: ['read daily summary', 'read own daily summary', 'close operational day'],
+      expectedCapabilities: [
+        'read daily summary',
+        'read own daily summary',
+        'read published schedule summary',
+        'close operational day',
+      ],
       catalogKey: null,
       hardCodedPermissionKey: false,
       runtimeEnforcement: 'not_implemented',
@@ -75,7 +116,8 @@ export const OPERATIONS_ROUTES: readonly OperationsRoutePlaceholder[] = [
     apiBinding: 'not_connected',
     runtimeRouteGuard: 'unchanged',
     allowedStates: ['loading', 'empty', 'error', 'forbidden', 'contract_pending'],
-    runtimeScopeNote: 'Descriptor only. No daily-operation API call, mutation or close-day action is enabled.',
+    runtimeScopeNote:
+      'Descriptor only. Published-schedule summary dependency is documented but no daily-operation API call, mutation or close-day action is enabled.',
   },
   {
     path: '/app/schedule',
@@ -91,7 +133,17 @@ export const OPERATIONS_ROUTES: readonly OperationsRoutePlaceholder[] = [
     permissionDependency: {
       status: 'pending_catalog_binding',
       module: 'schedule',
-      expectedCapabilities: ['read schedule', 'read own schedule', 'validate draft', 'publish schedule'],
+      expectedCapabilities: [
+        'list schedule drafts',
+        'create schedule draft',
+        'read published schedule',
+        'read own published schedule',
+        'create update and delete draft events',
+        'update event assignments',
+        'validate hard conflicts',
+        'read hard conflict results',
+        'publish and unpublish schedule',
+      ],
       catalogKey: null,
       hardCodedPermissionKey: false,
       runtimeEnforcement: 'not_implemented',
@@ -103,7 +155,32 @@ export const OPERATIONS_ROUTES: readonly OperationsRoutePlaceholder[] = [
     apiBinding: 'not_connected',
     runtimeRouteGuard: 'unchanged',
     allowedStates: ['loading', 'empty', 'error', 'forbidden', 'contract_pending'],
-    runtimeScopeNote: 'Schedule placeholder does not bind to Course, Room or TimeSlot runtime APIs.',
+    runtimeScopeNote:
+      'M3 contract-alignment descriptor only. Schedule lifecycle, version, validation and publish-gate metadata do not call Schedule, Course, Room, TimeSlot, Teacher or StudentGroup APIs.',
+    scheduleContract: {
+      source: 'issue_40_contract_draft',
+      lifecycle: ['draft', 'published', 'unpublished'],
+      validationLifecycle: ['not_validated', 'valid', 'invalid', 'stale'],
+      surfaces: [
+        'draft_list',
+        'weekly_grid',
+        'event_editor_modal',
+        'conflict_panel',
+        'validation_result',
+        'publish_confirmation',
+        'stale_version_warning',
+        'forbidden_state',
+      ],
+      versioning: {
+        responseEtagRequired: true,
+        mutationIfMatchRequired: true,
+        staleVersionStatusCode: 412,
+        missingVersionStatusCode: 428,
+      },
+      publishedImmutable: true,
+      publishRequiresFullValidation: true,
+      bindingStatus: 'blocked',
+    },
   },
   {
     path: '/app/attendance',
@@ -119,7 +196,12 @@ export const OPERATIONS_ROUTES: readonly OperationsRoutePlaceholder[] = [
     permissionDependency: {
       status: 'pending_catalog_binding',
       module: 'attendance',
-      expectedCapabilities: ['read attendance sessions', 'read own sessions', 'read missing attendance'],
+      expectedCapabilities: [
+        'read attendance sessions',
+        'read own sessions',
+        'read missing attendance',
+        'read published schedule-derived session reference',
+      ],
       catalogKey: null,
       hardCodedPermissionKey: false,
       runtimeEnforcement: 'not_implemented',
@@ -131,7 +213,8 @@ export const OPERATIONS_ROUTES: readonly OperationsRoutePlaceholder[] = [
     apiBinding: 'not_connected',
     runtimeRouteGuard: 'unchanged',
     allowedStates: ['loading', 'empty', 'error', 'forbidden', 'contract_pending'],
-    runtimeScopeNote: 'No student roster, attendance record or absence detail is loaded.',
+    runtimeScopeNote:
+      'Attendance dependency on a published schedule is documented only. No student roster, attendance record or absence detail is loaded.',
   },
   {
     path: '/app/attendance/session/:sessionId',
