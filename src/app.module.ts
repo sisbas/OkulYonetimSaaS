@@ -11,6 +11,7 @@ import { CoursesModule } from './courses/courses.module';
 import { RbacModule } from './rbac/rbac.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { TenantsModule } from './tenants/tenants.module';
+import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { UsersModule } from './users/users.module';
     RbacModule,
     CoursesModule,
     RoomsModule,
+    TimeSlotsModule,
   ],
   providers: [
     SecurityAuditService,
