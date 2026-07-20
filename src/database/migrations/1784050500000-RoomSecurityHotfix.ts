@@ -4,7 +4,6 @@ export class RoomSecurityHotfix1784050500000 implements MigrationInterface {
   name = 'RoomSecurityHotfix1784050500000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_branches_tenant_id ON branches (tenant_id, id)`);
     await queryRunner.query(`ALTER TABLE rooms DROP CONSTRAINT IF EXISTS fk_rooms_branch_same_tenant`);
     await queryRunner.query(`
       ALTER TABLE rooms
@@ -22,7 +21,6 @@ export class RoomSecurityHotfix1784050500000 implements MigrationInterface {
     await queryRunner.query(`DROP INDEX IF EXISTS uq_rooms_tenant_branch_name_active`);
     await queryRunner.query(`DROP INDEX IF EXISTS uq_rooms_tenant_branch_code_active`);
     await queryRunner.query(`ALTER TABLE rooms DROP CONSTRAINT IF EXISTS fk_rooms_branch_same_tenant`);
-    await queryRunner.query(`DROP INDEX IF EXISTS uq_branches_tenant_id`);
     await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_rooms_tenant_branch_code ON rooms (tenant_id, branch_id, lower(code)) WHERE code IS NOT NULL`);
   }
 }
