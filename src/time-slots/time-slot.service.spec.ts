@@ -34,6 +34,7 @@ function slot(overrides: Partial<TimeSlot> = {}): TimeSlot {
 function setup() {
   const repository = {
     withManager: jest.fn(),
+    lockMutationScopes: jest.fn(async () => undefined),
     branchExistsInTenant: jest.fn(async () => true),
     findDuplicate: jest.fn(async () => null),
     findOverlap: jest.fn(async () => null),
@@ -58,16 +59,41 @@ function setup() {
 }
 
 describe('TimeSlotService', () => {
-  it('creates inside a transaction after branch, duplicate and overlap checks', async () => {
+  it('creates inside a transaction after the scope lock, branch, duplicate and overlap checks', async () => {
     const { repository, audit, dataSource, service, ctx } = setup();
     repository.create.mockResolvedValue(slot());
     await expect(service.create(ctx, {
       branchId: 'branch-a', name: ' 1. Ders ', dayOfWeek: 1, startTime: '09:00', endTime: '09:40', orderIndex: 1,
     })).resolves.toMatchObject({ id: 'slot-1', name: '1. Ders' });
     expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+    expect(repository.lockMutationScopes).toHaveBeenCalledWith(ctx, [{ branchId: 'branch-a', dayOfWeek: 1 }]);
     expect(repository.findDuplicate).toHaveBeenCalledWith(ctx, 'branch-a', 1, '09:00', '09:40', undefined);
     expect(repository.findOverlap).toHaveBeenCalledWith(ctx, 'branch-a', 1, '09:00', '09:40', undefined);
+    expect(repository.lockMutationScopes.mock.invocationCallOrder[0]).toBeLessThan(
+      repository.findDuplicate.mock.invocationCallOrder[0],
+    );
     expect(audit.emit).toHaveBeenCalledWith(ctx, 'time_slot.created', expect.objectContaining({ timeSlotId: 'slot-1' }));
+  });
+
+  it('locks the current row and both old/new scopes before moving a TimeSlot', async () => {
+    const { repository, service, ctx } = setup();
+    repository.findById.mockResolvedValue(slot());
+    repository.save.mockImplementation(async (value) => value);
+
+    await expect(service.update(ctx, 'slot-1', {
+      branchId: 'branch-b',
+      dayOfWeek: 2,
+      startTime: '10:00',
+      endTime: '10:40',
+    })).resolves.toMatchObject({ branchId: 'branch-b', dayOfWeek: 2 });
+
+    expect(repository.findById).toHaveBeenCalledWith(ctx, 'slot-1', true, true);
+    expect(repository.lockMutationScopes).toHaveBeenCalledWith(ctx, [
+      { branchId: 'branch-a', dayOfWeek: 1 },
+      { branchId: 'branch-b', dayOfWeek: 2 },
+    ]);
+    expect(repository.findDuplicate).toHaveBeenCalledWith(ctx, 'branch-b', 2, '10:00', '10:40', 'slot-1');
+    expect(repository.findOverlap).toHaveBeenCalledWith(ctx, 'branch-b', 2, '10:00', '10:40', 'slot-1');
   });
 
   it('rejects missing/cross-tenant or inactive branch as non-enumerating 404', async () => {
@@ -119,16 +145,24 @@ describe('TimeSlotService', () => {
     expect(Object.prototype.hasOwnProperty.call(repository, 'existsByIdAnyTenant')).toBe(false);
   });
 
-  it('archives without hard delete and rechecks conflicts before reactivate', async () => {
+  it('archives and reactivates inside locked transactions', async () => {
     const archivedCase = setup();
     archivedCase.repository.findById.mockResolvedValue(slot());
     archivedCase.repository.save.mockImplementation(async (value) => value);
     await expect(archivedCase.service.archive(archivedCase.ctx, 'slot-1')).resolves.toMatchObject({ status: 'inactive' });
+    expect(archivedCase.repository.findById).toHaveBeenCalledWith(archivedCase.ctx, 'slot-1', true, true);
+    expect(archivedCase.repository.lockMutationScopes).toHaveBeenCalledWith(archivedCase.ctx, [
+      { branchId: 'branch-a', dayOfWeek: 1 },
+    ]);
 
     const reactivateCase = setup();
     reactivateCase.repository.findById.mockResolvedValue(slot({ status: TimeSlotStatus.INACTIVE, archivedAt: new Date() }));
     reactivateCase.repository.save.mockImplementation(async (value) => value);
     await expect(reactivateCase.service.reactivate(reactivateCase.ctx, 'slot-1')).resolves.toMatchObject({ status: 'active', archivedAt: null });
+    expect(reactivateCase.repository.findById).toHaveBeenCalledWith(reactivateCase.ctx, 'slot-1', true, true);
+    expect(reactivateCase.repository.lockMutationScopes).toHaveBeenCalledWith(reactivateCase.ctx, [
+      { branchId: 'branch-a', dayOfWeek: 1 },
+    ]);
     expect(reactivateCase.repository.findDuplicate).toHaveBeenCalledWith(
       reactivateCase.ctx, 'branch-a', 1, '09:00', '09:40', 'slot-1',
     );
