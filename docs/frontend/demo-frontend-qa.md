@@ -1,36 +1,36 @@
-# Demo Frontend QA Acceptance
+# Demo Frontend QA
 
-## Kapsam
+## Sev-2 conflict validation regression
 
-- `/demo/today`
-- `/demo/schedule`
-- `/demo/leave/:id`
-- `/demo/attendance/session/:id`
-- `/demo/notifications`
+Önceki davranış, event state değişmeden `validated=true` atıyor; conflict stillerini kaldırıyor ve hard conflict sayısını sıfır gösteriyordu.
 
-## Statik kontroller
+Yeni davranış:
 
-- Beş route kayıtlı.
-- Tüm ekranlarda görünür `Demo Verisi` etiketi mevcut.
-- Sentetik veri seed'i sabit: `OKUL-DEMO-2026-07-21-v1`.
-- `fetch`, `XMLHttpRequest`, Axios, Authorization/Bearer, API path, localStorage, sessionStorage ve cookie kullanımı yok.
-- HTML, CSS ve JavaScript ayrı statik dosyalarda.
-- JavaScript sözdizimi `new Function` ile doğrulanıyor.
-- Responsive breakpoint'ler mevcut.
-- Vercel JSON yapılandırması parse edilebilir.
+- Validation, mevcut demo event listesi üzerinden pure conflict engine ile hesaplanır.
+- Aynı gün ve çakışan zaman aralığındaki Teacher, StudentGroup ve Room eşleşmeleri ayrı hard conflict kayıtları üretir.
+- Başlangıç fixture’ı deterministik olarak bir Teacher, bir StudentGroup ve bir Room overlap içerir.
+- Conflict kartları ve event stilleri gerçek validation sonucundan türetilir.
+- Event editor kaydı sonrasında validation otomatik yeniden çalışır.
+- `valid` yalnız `hardConflictCount === 0` olduğunda gösterilir.
+- Published görünümde save/add/validation mutation aksiyonları kapalıdır.
 
-## Etkileşim kontrolleri
+## Otomatik assertion kapsamı
 
-- SPA menü geçişleri ve browser back/forward desteği.
-- Draft/yayınlanmış schedule görünümü.
-- Conflict doğrulama simülasyonu.
-- Ders detayı ve yeni event modalı.
-- İzin yedek öğretmen seçimi.
-- Yoklama durum değişikliği.
-- Bildirim onay ve gönderim simülasyonu.
-- Demo state sıfırlama.
-- Beklenmeyen render hatası için güvenli fallback.
+- Unresolved teacher overlap zero-conflict success üretemez.
+- Unresolved StudentGroup overlap zero-conflict success üretemez.
+- Unresolved Room overlap zero-conflict success üretemez.
+- Bir conflict çözülünce count azalır.
+- Son conflict çözülünce count sıfır olur.
+- Reset başlangıç conflict durumunu geri getirir.
+- Published görünüm mutation açmaz.
+- Network, auth, permission ve persistent storage marker’ları yoktur.
 
-## Karar
+## Manuel preview kontrolü
 
-Statik smoke test PASS. Browser preview ve Vercel deployment check'i PR CI/preview üzerinde ayrıca doğrulanmalıdır.
+- Taslak görünüm başlangıçta üç conflict göstermeli.
+- Değişiklik yapmadan `Çakışmaları doğrula` count’u sıfırlamamalı.
+- Her conflict kartı ilgili event editor modalını açmalı.
+- Event kaynak alanı değiştirildiğinde count azalmalı.
+- Son conflict çözüldüğünde başarı durumu görünmeli.
+- Reset sonrası başlangıçtaki üç conflict geri gelmeli.
+- Yayınlanmış görünümde düzenleme ve yeni event mutation’ı açılmamalı.
