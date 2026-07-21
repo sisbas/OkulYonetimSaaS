@@ -51,7 +51,7 @@ describeWithPostgres('TransactionalAuditWriter PostgreSQL atomicity', () => {
 
   async function cleanup(): Promise<void> {
     await dataSource.query(`DELETE FROM audit_logs WHERE request_id LIKE 'audit-foundation-%'`);
-    await dataSource.query('DELETE FROM tenants WHERE id IN ($1, $2, $3)', TEST_TENANT_IDS);
+    await dataSource.query('DELETE FROM tenants WHERE id IN ($1, $2, $3)', [...TEST_TENANT_IDS]);
   }
 
   beforeAll(async () => {
