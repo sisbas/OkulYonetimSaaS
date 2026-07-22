@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Okul Yönetim SaaS Faz 1–3 ürün vizyonu için tamamen sentetik, statik satış prototipi">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'none'; object-src 'none'; base-uri 'none'">
+  <title>Okul Yönetim · Ürün Vizyonu Demosu</title>
+  <link rel="stylesheet" href="/full-vision-demo/styles.css">
+  <script src="/full-vision-demo/app-shell/route-manifest.js" defer></script>
+  <script src="/full-vision-demo/app-shell/claim-manifest.js" defer></script>
+  <script src="/full-vision-demo/app-shell/scenario-manifest.js" defer></script>
+  <script src="/full-vision-demo/fixtures/fixture-graph.js" defer></script>
+  <script src="/full-vision-demo/app-shell/state.js" defer></script>
+  <script src="/full-vision-demo/shared/ui.js" defer></script>
+  <script src="/full-vision-demo/phases/phase-1/operations.js" defer></script>
+  <script src="/full-vision-demo/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#screen">Ana içeriğe geç</a>
+  <div id="app" class="app-shell">
+    <aside id="sidebar" class="sidebar" aria-label="Ürün modülleri">
+      <a class="brand" href="/demo/overview" data-route>
+        <span class="brand-mark" aria-hidden="true">OY</span>
+        <span><strong>Okul Yönetim</strong><small>F1–F3 Ürün Vizyonu</small></span>
+      </a>
+      <div class="synthetic-note"><span aria-hidden="true">◆</span><span><strong>Demo Verisi</strong><small>Sentetik · statik · sıfırlanabilir</small></span></div>
+      <nav id="phaseNav" class="phase-nav" aria-label="Fazlara göre ekranlar"></nav>
+      <div class="boundary-note"><strong>Güvenli demo sınırı</strong><p>Gerçek işlem, kişi verisi veya dış sistem bağlantısı yoktur.</p></div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-primary">
+          <button id="menuToggle" class="icon-button mobile-only" type="button" aria-label="Menüyü aç" aria-controls="sidebar" aria-expanded="false">☰</button>
+          <div><p class="eyebrow">Demo Eğitim Kurumu · Kampüs A</p><h1 id="pageTitle">Ürün Vizyonu</h1></div>
+        </div>
+        <div class="topbar-controls">
+          <label class="compact-field"><span>Faz</span><select id="phaseFilter" aria-label="Faz filtresi"><option value="all">Tümü</option><option value="f1">Faz 1</option><option value="f2">Faz 2</option><option value="f3">Faz 3</option></select></label>
+          <label class="compact-field"><span>Persona görünümü</span><select id="personaFilter" aria-label="Persona görünümü"><option value="all">Tümü</option><option value="manager">Yönetici</option><option value="operations">Operasyon</option><option value="teacher">Öğretmen</option><option value="guidance">Rehber</option><option value="guardian">Veli</option><option value="student">Öğrenci</option></select></label>
+          <button id="claimToggle" class="button subtle" type="button" aria-controls="claimDrawer" aria-expanded="false">Demo sınırları</button>
+          <button id="globalReset" class="icon-button" type="button" aria-label="Tüm demo senaryosunu sıfırla" title="Tüm demo senaryosunu sıfırla">↻</button>
+        </div>
+      </header>
+
+      <section id="scenarioRail" class="scenario-rail" aria-label="Sunum modu" hidden></section>
+      <nav id="breadcrumb" class="breadcrumb" aria-label="Sayfa yolu"></nav>
+      <main id="screen" class="screen" tabindex="-1" aria-live="polite"></main>
+    </div>
+
+    <aside id="claimDrawer" class="claim-drawer" role="dialog" aria-modal="true" aria-labelledby="claimTitle" hidden>
+      <div class="drawer-header"><div><p class="eyebrow">Şeffaflık</p><h2 id="claimTitle">Bu ekran neyi gösterir?</h2></div><button id="claimClose" class="icon-button" type="button" aria-label="Demo sınırlarını kapat">×</button></div>
+      <div id="claimContent" class="drawer-content"></div>
+    </aside>
+    <div id="drawerBackdrop" class="drawer-backdrop" hidden></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  </div>
+</body>
+</html>
