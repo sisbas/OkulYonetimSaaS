@@ -17,7 +17,7 @@ Hosted Full-Vision demo kabul edilmiştir ancak yalnız UX/iş akışı referans
 | Audit/event-first modular monolith + domain state machine | Seçildi | Mevcut NestJS/TypeORM yapısına uyar; başlangıç maliyeti daha yüksek ama atomik ve ayrıştırılabilir |
 | Ayrı workflow/leave servisi | Reddedildi | Teacher/Schedule API'leri kararlı değil; dağıtık transaction ve operasyon yükü gereksiz |
 
-PostgreSQL transaction ve uygulama içi idempotent outbox relay kullanılacaktır. Broker veya yeni mikroservis eklenmeyecektir.
+İlk runtime diliminde izin kararı, yakalanan ders etkileri, açık Daily Operations işleri ve kalıcı audit aynı PostgreSQL transaction'ında yazılacaktır. Outbox; bildirim veya harici tüketici ihtiyacı kanıtlanana kadar ertelenmiştir. Broker veya yeni mikroservis eklenmeyecektir.
 
 ## Ürün sözleşmesi
 
@@ -27,6 +27,16 @@ PostgreSQL transaction ve uygulama içi idempotent outbox relay kullanılacaktı
 - Kapsama: `not_required | unresolved | partially_covered | covered`
 
 Karar ve kapsama birbirinden bağımsızdır. Uygun yedek öğretmen bulunması otomatik izin onayı oluşturmaz. Talep sahibi kendi talebini onaylayamaz.
+
+## Dondurulmuş kapsama politikası
+
+Yönetici, etkilenen derslerin tamamına yedek öğretmen atanmamış olsa da izin talebini onaylayabilir. Onay anında `unresolved` veya `partially_covered` durumda kalan her ders, aynı transaction içinde Daily Operations kuyruğunda açık iş olarak görünmelidir.
+
+- `approved + unresolved|partially_covered` geçerli bir durumdur.
+- Uygun yedek öğretmen yalnız karar kanıtıdır; otomatik onay veya otomatik atama üretmez.
+- Yayımlanmış program/etki kaynağı erişilemiyorsa bu durum `0 etki` ya da `not_required` sayılamaz; karar `IMPACT_ANALYSIS_NOT_READY` ile durur.
+- Reddedilen, tamamen kapsanan veya gerçekten ders etkisi bulunmayan izinler açık Daily Operations işi üretmez.
+- Yönetici rolü bu akışta `operations_manager` ve `tenant_admin` rollerini kapsar; her iki rolde de self-approval yasağı geçerlidir.
 
 ## GATE 3.0 dependency matrisi
 
@@ -56,6 +66,6 @@ Bu fark migration, controller, gerçek schedule impact, aday öğretmen, günlü
 1. User↔Teacher eşleşmesini üreten tenant-scoped kaynak onaylanır.
 2. Published schedule event ve version read portu gerçek runtime kaynağına bağlanır.
 3. Teacher suitability/availability/assignment recheck portu sağlanır.
-4. Audit + outbox aynı TypeORM transaction içinde kalıcı yazılır.
+4. İzin kararı + ders etkileri + açık Daily Operations işleri + kalıcı audit aynı TypeORM transaction içinde yazılır.
 5. Runtime frontend ve deployment ADR onaylanır.
-6. Her etkilenen ders için yedek zorunluluğu ürün kararıyla dondurulur.
+6. Daily Operations açık işlerinin tenant-scope ve idempotency constraint'leri gerçek PostgreSQL testleriyle kanıtlanır.

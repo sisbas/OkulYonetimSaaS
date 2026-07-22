@@ -14,13 +14,20 @@ const pendingRequest = {
 };
 
 describe('LeavePolicy', () => {
-  it('approves a pending request without coupling the decision to coverage', () => {
-    expect(decideLeaveRequest({ ...pendingRequest, decision: 'approved' })).toEqual({
-      status: 'approved',
-      coverageStatus: 'unresolved',
-      version: 4,
-    });
-  });
+  it.each(['unresolved', 'partially_covered'] as const)(
+    'allows a manager decision while %s lessons remain open for Daily Operations',
+    (coverageStatus) => {
+      expect(decideLeaveRequest({
+        ...pendingRequest,
+        coverageStatus,
+        decision: 'approved',
+      })).toEqual({
+        status: 'approved',
+        coverageStatus,
+        version: 4,
+      });
+    },
+  );
 
   it('rejects a pending request and increments the optimistic version', () => {
     expect(decideLeaveRequest({ ...pendingRequest, decision: 'rejected' })).toEqual({

@@ -111,6 +111,25 @@ describe('Phase 1 permission catalog v1', () => {
     });
   });
 
+  it.each(['operations_manager', 'tenant_admin'] as const)(
+    'keeps %s leave decisions aligned with the seeded permissions',
+    (role) => {
+      for (const action of ['approve', 'reject'] as const) {
+        expect(findPermissionCatalogEntry({
+          role,
+          route: `/leave-requests/:requestId/${action}`,
+          action,
+          resource: 'leave_request',
+        })).toMatchObject({
+          permission: `leave:${action}`,
+          effect: 'allow',
+          audit_required: true,
+          deny_state: 'masked',
+        });
+      }
+    },
+  );
+
   it('does not grant the teacher role a manager decision mapping', () => {
     expect(findPermissionCatalogEntry({
       role: 'teacher',
