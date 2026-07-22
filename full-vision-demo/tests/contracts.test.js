@@ -33,19 +33,23 @@ test('route manifest freezes 25 canonical patterns and 21 product screen familie
     assert.notEqual(fixtureAt(route.fixture), undefined, `${route.id} references a missing fixture path: ${route.fixture}`);
   }
   assert.equal(routes.filter((route) => route.implementationStatus === 'gate2-high-fidelity').length, 8);
-  const notFound = matchRoute('/demo/unknown-screen');
+  const notFound = matchRoute('/full-vision/unknown-screen');
   assert.equal(notFound.notFound, true);
-  assert.equal(notFound.pathname, '/demo/unknown-screen');
+  assert.equal(notFound.pathname, '/full-vision/unknown-screen');
 });
 
 test('legacy aliases canonicalize without duplicate screens', () => {
-  assert.equal(routesModule.normalizeLegacyPath('/demo/today'), '/demo/f1/operations');
-  assert.equal(routesModule.normalizeLegacyPath('/demo/schedule'), '/demo/f1/schedule');
-  assert.equal(routesModule.normalizeLegacyPath('/demo/leave/D-LV-204'), '/demo/f1/leaves/D-LV-204');
-  assert.equal(routesModule.normalizeLegacyPath('/demo/leave/LV-204'), '/demo/f1/leaves/D-LV-204');
-  assert.equal(routesModule.normalizeLegacyPath('/demo/attendance/session/D-AT-1204'), '/demo/f1/attendance/D-AT-1204');
-  assert.equal(routesModule.normalizeLegacyPath('/demo/attendance/session/AT-1204'), '/demo/f1/attendance/D-AT-1204');
-  assert.equal(routesModule.normalizeLegacyPath('/demo/notifications'), '/demo/f1/notifications');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/'), '/full-vision/overview');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/today'), '/full-vision/f1/operations');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/today/'), '/full-vision/f1/operations');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/schedule'), '/full-vision/f1/schedule');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/schedule/'), '/full-vision/f1/schedule');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/leave/D-LV-204'), '/full-vision/f1/leaves/D-LV-204');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/leave/LV-204'), '/full-vision/f1/leaves/D-LV-204');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/attendance/session/D-AT-1204'), '/full-vision/f1/attendance/D-AT-1204');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/attendance/session/AT-1204'), '/full-vision/f1/attendance/D-AT-1204');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/notifications'), '/full-vision/f1/notifications');
+  assert.equal(routesModule.normalizeLegacyPath('/full-vision/notifications/'), '/full-vision/f1/notifications');
 });
 
 test('scenario steps reference canonical routes and the GATE 2 operations slice is complete', () => {

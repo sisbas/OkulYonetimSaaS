@@ -17,7 +17,9 @@ Faz 1–3 ürün vizyonunu gösteren dependency-free, statik ve tamamen sentetik
 node full-vision-demo/local-server.js
 ```
 
-Ardından `http://127.0.0.1:4174/demo/overview` adresini açın.
+Ardından `http://127.0.0.1:4174/full-vision/overview` adresini açın.
+
+Hosted release sözleşmesinde Full-Vision yalnız `/full-vision/*` altında çalışır; tarihsel beş ekranlık demo `/demo/*` altında korunur.
 
 ## Doğrulama
 

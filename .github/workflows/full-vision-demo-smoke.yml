@@ -6,6 +6,11 @@ on:
       - 'full-vision-demo/**'
       - 'scripts/build-full-vision-demo-static.js'
       - 'scripts/test-full-vision-demo-static-deployment.js'
+      - 'scripts/build-hosted-demos-static.js'
+      - 'scripts/test-hosted-demos-static-deployment.js'
+      - 'scripts/hosted-demos-local-server.js'
+      - 'scripts/hosted-demos-runtime-manifest.js'
+      - 'vercel.json'
       - 'package.json'
       - '.github/workflows/full-vision-demo-smoke.yml'
   push:
@@ -15,6 +20,11 @@ on:
       - 'full-vision-demo/**'
       - 'scripts/build-full-vision-demo-static.js'
       - 'scripts/test-full-vision-demo-static-deployment.js'
+      - 'scripts/build-hosted-demos-static.js'
+      - 'scripts/test-hosted-demos-static-deployment.js'
+      - 'scripts/hosted-demos-local-server.js'
+      - 'scripts/hosted-demos-runtime-manifest.js'
+      - 'vercel.json'
       - 'package.json'
 
 permissions:
@@ -29,8 +39,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify GATE 2 static foundation
-        run: npm run verify:gate2
+      - name: Verify GATE 2 and combined hosted static contracts
+        run: npm run verify:hosted-demos
 
   gate2-browser-matrix:
     runs-on: ubuntu-latest
