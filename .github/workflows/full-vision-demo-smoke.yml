@@ -1,0 +1,57 @@
+name: Full-Vision Demo Smoke
+
+on:
+  pull_request:
+    paths:
+      - 'full-vision-demo/**'
+      - 'scripts/build-full-vision-demo-static.js'
+      - 'scripts/test-full-vision-demo-static-deployment.js'
+      - 'package.json'
+      - '.github/workflows/full-vision-demo-smoke.yml'
+  push:
+    branches:
+      - demo/full-vision-f1-f3
+    paths:
+      - 'full-vision-demo/**'
+      - 'scripts/build-full-vision-demo-static.js'
+      - 'scripts/test-full-vision-demo-static-deployment.js'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  gate2-static-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify GATE 2 static foundation
+        run: npm run verify:gate2
+
+  gate2-browser-matrix:
+    runs-on: ubuntu-latest
+    needs: gate2-static-contract
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated Chromium QA runtime
+        run: npm install --prefix "$RUNNER_TEMP/gate2-browser" puppeteer-core@24.16.0 @sparticuz/chromium@138.0.2
+      - name: Run four-viewport browser acceptance matrix
+        env:
+          GATE2_BROWSER_MODULE_ROOT: ${{ runner.temp }}/gate2-browser/node_modules
+          GATE2_BROWSER_OUTPUT: ${{ runner.temp }}/gate2-browser-evidence
+        run: npm run demo:full:browser
+      - name: Upload browser screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate2-browser-evidence
+          path: ${{ runner.temp }}/gate2-browser-evidence
+          if-no-files-found: error
