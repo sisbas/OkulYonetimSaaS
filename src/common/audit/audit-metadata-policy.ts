@@ -1,6 +1,7 @@
 import {
   AuditMetadataByEvent,
   COURSE_SUCCESS_AUDIT_EVENT_NAMES,
+  LEAVE_SUCCESS_AUDIT_EVENT_NAMES,
   PersistableAuditRecord,
   ROOM_SUCCESS_AUDIT_EVENT_NAMES,
   TIME_SLOT_SUCCESS_AUDIT_EVENT_NAMES,
@@ -35,6 +36,15 @@ const TIME_SLOT_CHANGED_FIELDS = [
   'status',
   'archivedAt',
 ] as const;
+const LEAVE_CHANGED_FIELDS = [
+  'status',
+  'coverageStatus',
+  'durationKind',
+  'reasonCode',
+  'startAt',
+  'endAt',
+  'version',
+] as const;
 
 export const FORBIDDEN_AUDIT_METADATA_KEYS = [
   'requestBody',
@@ -67,10 +77,11 @@ export const FORBIDDEN_AUDIT_METADATA_KEYS = [
 ] as const;
 
 type AuditMetadataPolicy = Readonly<{
-  entityType: 'course' | 'room' | 'time_slot';
+  entityType: 'course' | 'room' | 'time_slot' | 'leave_request';
   allowedKeys: readonly string[];
   allowedChangedFields: readonly string[];
   branchScoped: boolean;
+  actorRequired?: boolean;
 }>;
 
 const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> = {
@@ -145,6 +156,27 @@ const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> 
     allowedKeys: BRANCH_SCOPED_KEYS,
     allowedChangedFields: TIME_SLOT_CHANGED_FIELDS,
     branchScoped: true,
+  },
+  'leave.requested.v1': {
+    entityType: 'leave_request',
+    allowedKeys: COMMON_KEYS,
+    allowedChangedFields: LEAVE_CHANGED_FIELDS,
+    branchScoped: false,
+    actorRequired: true,
+  },
+  'leave.approved.v1': {
+    entityType: 'leave_request',
+    allowedKeys: COMMON_KEYS,
+    allowedChangedFields: LEAVE_CHANGED_FIELDS,
+    branchScoped: false,
+    actorRequired: true,
+  },
+  'leave.rejected.v1': {
+    entityType: 'leave_request',
+    allowedKeys: COMMON_KEYS,
+    allowedChangedFields: LEAVE_CHANGED_FIELDS,
+    branchScoped: false,
+    actorRequired: true,
   },
 };
 
@@ -228,6 +260,9 @@ export function validateTransactionalAuditMetadata<E extends TransactionalAuditE
 
   const tenantId = assertUuid(metadata.tenantId, 'tenantId');
   const actorUserId = assertNullableUuid(metadata.actorUserId, 'actorUserId');
+  if (policy.actorRequired && actorUserId === null) {
+    throw new TypeError('actorUserId is required for leave audit events');
+  }
   const actorSessionId = assertNullableUuid(metadata.actorSessionId, 'actorSessionId');
   const entityId = assertUuid(metadata.entityId, 'entityId');
   const requestId = assertRequestId(metadata.requestId);
@@ -255,6 +290,7 @@ export function isTransactionalAuditEventName(value: string): value is Transacti
   return (
     (COURSE_SUCCESS_AUDIT_EVENT_NAMES as readonly string[]).includes(value) ||
     (ROOM_SUCCESS_AUDIT_EVENT_NAMES as readonly string[]).includes(value) ||
-    (TIME_SLOT_SUCCESS_AUDIT_EVENT_NAMES as readonly string[]).includes(value)
+    (TIME_SLOT_SUCCESS_AUDIT_EVENT_NAMES as readonly string[]).includes(value) ||
+    (LEAVE_SUCCESS_AUDIT_EVENT_NAMES as readonly string[]).includes(value)
   );
 }

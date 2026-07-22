@@ -40,6 +40,20 @@ function courseMetadata(): AuditMetadataByEvent['course.created'] {
   };
 }
 
+function leaveMetadata(): AuditMetadataByEvent['leave.approved.v1'] {
+  return {
+    schemaVersion: 1,
+    tenantId: TENANT_ID,
+    actorUserId: '30000000-0000-4000-8000-000000000100',
+    actorSessionId: null,
+    requestId: 'leave-audit-policy-test',
+    entityType: 'leave_request',
+    entityId: ENTITY_ID,
+    result: 'success',
+    changedFields: ['version', 'coverageStatus', 'status'],
+  };
+}
+
 describe('TypeOrmTransactionalAuditWriter', () => {
   it('uses the supplied manager and waits for the repository insert', async () => {
     let releaseInsert: (() => void) | undefined;
@@ -142,5 +156,39 @@ describe('transactional audit production metadata policy', () => {
         changedFields: ['name'],
       }),
     ).toThrow(/missing required keys: branchId/);
+  });
+
+  it('accepts versioned leave lifecycle events without personal or health detail fields', () => {
+    expect(validateTransactionalAuditMetadata('leave.approved.v1', leaveMetadata())).toEqual({
+      tenantId: TENANT_ID,
+      actorUserId: '30000000-0000-4000-8000-000000000100',
+      actorSessionId: null,
+      action: 'leave.approved.v1',
+      entityType: 'leave_request',
+      entityId: ENTITY_ID,
+      requestId: 'leave-audit-policy-test',
+      metadataJson: {
+        schemaVersion: 1,
+        result: 'success',
+        changedFields: ['coverageStatus', 'status', 'version'],
+      },
+    });
+  });
+
+  it.each(['healthNote', 'reasonDetail', 'teacherName'])(
+    'rejects leave audit detail field %s',
+    (forbiddenKey) => {
+      expect(() => validateTransactionalAuditMetadata('leave.rejected.v1', {
+        ...leaveMetadata(),
+        [forbiddenKey]: 'must-not-enter-audit',
+      })).toThrow(/non-allowlisted keys/);
+    },
+  );
+
+  it('requires an authenticated actor for leave lifecycle events', () => {
+    expect(() => validateTransactionalAuditMetadata('leave.approved.v1', {
+      ...leaveMetadata(),
+      actorUserId: null,
+    })).toThrow(/actorUserId is required/);
   });
 });
