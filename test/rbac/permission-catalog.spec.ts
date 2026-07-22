@@ -63,4 +63,60 @@ describe('Phase 1 permission catalog v1', () => {
     expect(teacherMappings.length).toBeGreaterThan(0);
     expect(teacherMappings.every((entry) => entry.role === 'teacher')).toBe(true);
   });
+
+  it('allows teachers to create and read only their own leave requests', () => {
+    expect(findPermissionCatalogEntry({
+      role: 'teacher',
+      route: '/leave-requests',
+      action: 'create',
+      resource: 'leave_request.own',
+    })).toMatchObject({
+      permission: 'leave:create',
+      effect: 'allow',
+      audit_required: true,
+    });
+    expect(findPermissionCatalogEntry({
+      role: 'teacher',
+      route: '/leave-requests/me',
+      action: 'read',
+      resource: 'leave_request.own',
+    })).toMatchObject({
+      permission: 'leave:own:read',
+      effect: 'allow',
+    });
+  });
+
+  it('keeps manager leave decisions explicit and audit-required', () => {
+    expect(findPermissionCatalogEntry({
+      role: 'operations_manager',
+      route: '/leave-requests/:requestId/approve',
+      action: 'approve',
+      resource: 'leave_request',
+    })).toMatchObject({
+      permission: 'leave:approve',
+      effect: 'allow',
+      audit_required: true,
+      deny_state: 'masked',
+    });
+    expect(findPermissionCatalogEntry({
+      role: 'operations_manager',
+      route: '/leave-requests/:requestId/reject',
+      action: 'reject',
+      resource: 'leave_request',
+    })).toMatchObject({
+      permission: 'leave:reject',
+      effect: 'allow',
+      audit_required: true,
+      deny_state: 'masked',
+    });
+  });
+
+  it('does not grant the teacher role a manager decision mapping', () => {
+    expect(findPermissionCatalogEntry({
+      role: 'teacher',
+      route: '/leave-requests/:requestId/approve',
+      action: 'approve',
+      resource: 'leave_request',
+    })).toBeUndefined();
+  });
 });
