@@ -1,0 +1,25 @@
+name: Demo Frontend Smoke
+
+on:
+  pull_request:
+    paths:
+      - 'demo-frontend/**'
+      - 'vercel.json'
+      - '.github/workflows/demo-frontend-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  demo-frontend-smoke:
+    name: Demo Frontend Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Verify deterministic demo application
+        run: node demo-frontend/smoke-test.js
+
+      - name: Validate Vercel route configuration
+        run: node -e "JSON.parse(require('node:fs').readFileSync('vercel.json', 'utf8')); console.log('Vercel config valid')"

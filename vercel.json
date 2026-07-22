@@ -1,0 +1,26 @@
+{
+  "redirects": [
+    {
+      "source": "/demo",
+      "destination": "/demo/today",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/demo/:path*",
+      "destination": "/demo-frontend/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/demo-frontend/(.*)",
+      "headers": [
+        {
+          "key": "X-Demo-Application",
+          "value": "synthetic-static-prototype"
+        }
+      ]
+    }
+  ]
+}
