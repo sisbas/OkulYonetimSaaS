@@ -4,6 +4,8 @@
 
 GATE 3 üretim dikey dilimi **HOLD**; GATE 3A bounded foundation **GO**.
 
+22 Temmuz 2026 güncellemesi: PR #131 ile karar/RBAC sözleşmesi, PR #118 ile transaction-scope kalıcı audit writer `main` dalına birleşmiştir. Audit dependency alt kapısı artık **PROVEN** durumundadır; Leave runtime, authenticated Teacher kimliği ve versioned published schedule bağımlılıkları nedeniyle HOLD kalır.
+
 Base: `main@f86c95f1b04186a6cf0b313b598203911366407b`  
 Takip: GitHub Issue #129
 
@@ -45,7 +47,7 @@ Yönetici, etkilenen derslerin tamamına yedek öğretmen atanmamış olsa da iz
 | Authenticated User ↔ tenant Teacher | MISSING | `src/teachers` runtime modülü ve kullanıcı–öğretmen eşleşmesi yok |
 | Published schedule event + version | MISSING | Schedule runtime yok; `docs/frontend/m3-schedule-contract-alignment.md` API bağlantısını bloke ediyor |
 | Availability/assignment recheck | MISSING | Permission seed var; entity/repository/runtime kaynak yok |
-| Transaction-scope durable audit writer | MISSING | `audit_logs` migration var; `AuditInterceptor` ve feature audit servisleri logger tabanlı |
+| Transaction-scope durable audit writer | PROVEN | PR #118: `TransactionalAuditWriter`, exact metadata allowlist ve PostgreSQL commit/rollback testleri |
 | Leave Permission Catalog route binding | PROVEN IN GATE 3A | `src/rbac/permission-catalog.ts` ve testleri |
 | Runtime frontend/deployment | MISSING | `src/frontend/operations` descriptor; statik demo production frontend değildir |
 
@@ -69,3 +71,15 @@ Bu fark migration, controller, gerçek schedule impact, aday öğretmen, günlü
 4. İzin kararı + ders etkileri + açık Daily Operations işleri + kalıcı audit aynı TypeORM transaction içinde yazılır.
 5. Runtime frontend ve deployment ADR onaylanır.
 6. Daily Operations açık işlerinin tenant-scope ve idempotency constraint'leri gerçek PostgreSQL testleriyle kanıtlanır.
+
+## Audit adapter dilimi
+
+PR #118'in writer/repository temeli yeniden kullanılacaktır; ikinci bir audit writer oluşturulmaz. Leave adapter yalnız aynı transaction-scoped `EntityManager` ile şu versioned olayları yazabilir:
+
+- `leave.requested.v1`
+- `leave.approved.v1`
+- `leave.rejected.v1`
+
+Metadata; opaque kimlikler, kontrollü durum alanları, version ve timestamps alan adlarıyla sınırlıdır. Ad, telefon, e-posta, serbest metin gerekçe, sağlık ayrıntısı, bildirim içeriği ve raw DTO audit kaydına alınmaz. Leave olaylarında authenticated `actorUserId` zorunludur.
+
+Outbox; yalnız bildirim, broker, ayrı servis veya asenkron harici tüketici onaylandığında eklenecektir. Aynı PostgreSQL transaction'ında yazılan leave, impact, Daily Operations işi ve audit için P0'da outbox zorunlu değildir.

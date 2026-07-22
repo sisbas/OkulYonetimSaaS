@@ -19,14 +19,22 @@ export const TIME_SLOT_SUCCESS_AUDIT_EVENT_NAMES = [
   'time_slot.reactivated',
 ] as const;
 
+export const LEAVE_SUCCESS_AUDIT_EVENT_NAMES = [
+  'leave.requested.v1',
+  'leave.approved.v1',
+  'leave.rejected.v1',
+] as const;
+
 export type CourseSuccessAuditEventName = (typeof COURSE_SUCCESS_AUDIT_EVENT_NAMES)[number];
 export type RoomSuccessAuditEventName = (typeof ROOM_SUCCESS_AUDIT_EVENT_NAMES)[number];
 export type TimeSlotSuccessAuditEventName = (typeof TIME_SLOT_SUCCESS_AUDIT_EVENT_NAMES)[number];
+export type LeaveSuccessAuditEventName = (typeof LEAVE_SUCCESS_AUDIT_EVENT_NAMES)[number];
 
 export type TransactionalAuditEventName =
   | CourseSuccessAuditEventName
   | RoomSuccessAuditEventName
-  | TimeSlotSuccessAuditEventName;
+  | TimeSlotSuccessAuditEventName
+  | LeaveSuccessAuditEventName;
 
 export type CourseAuditChangedField = 'name' | 'code' | 'description' | 'status' | 'deactivatedAt';
 export type RoomAuditChangedField =
@@ -46,8 +54,19 @@ export type TimeSlotAuditChangedField =
   | 'orderIndex'
   | 'status'
   | 'archivedAt';
+export type LeaveAuditChangedField =
+  | 'status'
+  | 'coverageStatus'
+  | 'durationKind'
+  | 'reasonCode'
+  | 'startAt'
+  | 'endAt'
+  | 'version';
 
-type CommonSuccessAuditMetadata<TEntityType extends 'course' | 'room' | 'time_slot', TChangedField extends string> = Readonly<{
+type CommonSuccessAuditMetadata<
+  TEntityType extends 'course' | 'room' | 'time_slot' | 'leave_request',
+  TChangedField extends string,
+> = Readonly<{
   schemaVersion: 1;
   tenantId: string;
   actorUserId: string | null;
@@ -71,12 +90,16 @@ export type TimeSlotSuccessAuditMetadata = CommonSuccessAuditMetadata<'time_slot
     branchId: string;
   }>;
 
+export type LeaveSuccessAuditMetadata = CommonSuccessAuditMetadata<'leave_request', LeaveAuditChangedField>;
+
 export type AuditMetadataByEvent = {
   [K in CourseSuccessAuditEventName]: CourseSuccessAuditMetadata;
 } & {
   [K in RoomSuccessAuditEventName]: RoomSuccessAuditMetadata;
 } & {
   [K in TimeSlotSuccessAuditEventName]: TimeSlotSuccessAuditMetadata;
+} & {
+  [K in LeaveSuccessAuditEventName]: LeaveSuccessAuditMetadata;
 };
 
 export type PersistableAuditRecord = Readonly<{
@@ -84,7 +107,7 @@ export type PersistableAuditRecord = Readonly<{
   actorUserId: string | null;
   actorSessionId: string | null;
   action: TransactionalAuditEventName;
-  entityType: 'course' | 'room' | 'time_slot';
+  entityType: 'course' | 'room' | 'time_slot' | 'leave_request';
   entityId: string;
   requestId: string;
   metadataJson: Readonly<{
