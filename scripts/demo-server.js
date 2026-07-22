@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const demoEntry = path.join(root, 'demo-frontend', 'index.html');
+const demoRoot = path.join(root, 'demo-frontend');
+const demoEntry = path.join(demoRoot, 'index.html');
 const port = Number(process.env.PORT || 3000);
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -15,35 +16,55 @@ const contentTypes = {
   '.svg': 'image/svg+xml',
 };
 
+function sendText(response, statusCode, message) {
+  response.writeHead(statusCode, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  response.end(message);
+}
+
 function sendFile(response, filePath) {
   fs.stat(filePath, (error, stats) => {
     if (error || !stats.isFile()) {
-      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      response.end('Not found');
+      sendText(response, 404, 'Not found');
       return;
     }
 
     response.writeHead(200, {
       'Content-Type': contentTypes[path.extname(filePath)] || 'application/octet-stream',
       'Cache-Control': 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
     });
     fs.createReadStream(filePath).pipe(response);
   });
 }
 
+function resolveDemoAsset(requestPath) {
+  const prefix = '/demo-frontend/';
+  if (!requestPath.startsWith(prefix)) return null;
+
+  const relativePath = requestPath.slice(prefix.length);
+  if (!relativePath) return null;
+
+  const filePath = path.resolve(demoRoot, relativePath);
+  if (!filePath.startsWith(`${demoRoot}${path.sep}`)) return null;
+
+  return filePath;
+}
+
 const server = http.createServer((request, response) => {
-  const requestPath = new URL(request.url, `http://${request.headers.host}`).pathname;
-  if (requestPath === '/') {
-    response.writeHead(302, { Location: '/demo/today' });
-    response.end();
+  let requestPath;
+  try {
+    requestPath = new URL(request.url, `http://${request.headers.host || 'localhost'}`).pathname;
+  } catch {
+    sendText(response, 400, 'Invalid request');
     return;
   }
 
-  const relativePath = requestPath.replace(/^\/+/, '');
-  const filePath = path.resolve(root, relativePath);
-  if (!filePath.startsWith(`${root}${path.sep}`)) {
-    response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-    response.end('Invalid path');
+  if (requestPath === '/') {
+    response.writeHead(302, { Location: '/demo/today', 'Cache-Control': 'no-store' });
+    response.end();
     return;
   }
 
@@ -53,7 +74,13 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  sendFile(response, filePath);
+  const assetPath = resolveDemoAsset(requestPath);
+  if (assetPath) {
+    sendFile(response, assetPath);
+    return;
+  }
+
+  sendText(response, 404, 'Not found');
 });
 
 server.listen(port, '0.0.0.0', () => {
