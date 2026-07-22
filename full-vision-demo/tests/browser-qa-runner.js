@@ -22,6 +22,13 @@ if (process.env.GATE2_BROWSER_MERGE_ONLY !== '1') {
 }
 
 const reports = Object.fromEntries(phases.map((phase) => [phase, JSON.parse(fs.readFileSync(path.join(outputRoot, `report-${phase}.json`), 'utf8'))]));
+const diagnostics = phases.flatMap((phase) => reports[phase].diagnostics || []);
+const measured = {
+  consoleErrors: diagnostics.reduce((total, item) => total + item.consoleErrors, 0),
+  restrictedRequests: diagnostics.reduce((total, item) => total + item.restrictedRequests, 0),
+  storageViolations: diagnostics.reduce((total, item) => total + item.storageViolations, 0),
+};
+assert.deepEqual(measured, { consoleErrors: 0, restrictedRequests: 0, storageViolations: 0 }, 'Merged browser diagnostics must be measured and clean.');
 const merged = {
   browser: reports.viewport.browser,
   baseUrl: reports.viewport.baseUrl,
@@ -32,8 +39,9 @@ const merged = {
   routes: { canonical: canonicalPhases.reduce((total, phase) => total + reports[phase].routes.canonical, 0), wrongScreens: 0, ...reports.replay.routes },
   replay: reports.replay.replay,
   p0: reports.p0.p0,
-  summary: { screenshots: reports.viewport.screenshots.length, consoleErrors: 0, restrictedRequests: 0, sev1: 0, sev2: 0, result: 'PASS' },
+  diagnostics,
+  summary: { screenshots: reports.viewport.screenshots.length, ...measured, sev1: 0, sev2: 0, result: 'PASS' },
 };
 fs.writeFileSync(path.join(outputRoot, 'report.json'), `${JSON.stringify(merged, null, 2)}\n`);
 process.stdout.write(`Browser QA: ${merged.viewports.length}/4 viewports, ${merged.screenshots.length}/28 screenshots, ${merged.routes.canonical}/25 routes, ${merged.routes.aliases}/5 aliases\n`);
-process.stdout.write('Console errors: 0; restricted requests/storage/cookies: 0; Sev-1: 0; Sev-2: 0\n');
+process.stdout.write(`Measured console errors: ${measured.consoleErrors}; restricted requests: ${measured.restrictedRequests}; storage violations: ${measured.storageViolations}; Sev-1: 0; Sev-2: 0\n`);

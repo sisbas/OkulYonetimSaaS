@@ -24,9 +24,10 @@ async function run() {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   try {
-    const redirect = await request(port, '/demo');
+    const redirect = await request(port, '/full-vision');
     assert.equal(redirect.status, 302);
-    assert.equal(redirect.headers.location, '/demo/overview');
+    assert.equal(redirect.headers.location, '/full-vision/overview');
+    assert.equal((await request(port, '/full-vision/')).status, 200);
 
     for (const route of routes) {
       const response = await request(port, route.samplePath);
@@ -37,17 +38,22 @@ async function run() {
       assert.match(response.headers['content-security-policy'], /connect-src 'none'/);
     }
 
-    const legacySamples = ['/demo/today', '/demo/schedule', '/demo/leave/D-LV-204', '/demo/attendance/session/D-AT-1204', '/demo/notifications'];
+    const legacySamples = ['/full-vision/today', '/full-vision/schedule', '/full-vision/leave/D-LV-204', '/full-vision/attendance/session/D-AT-1204', '/full-vision/notifications'];
     assert.equal(legacySamples.length, legacyAliases.length);
-    for (const pathname of legacySamples) assert.equal((await request(port, pathname)).status, 200, `Legacy alias failed: ${pathname}`);
+    for (const pathname of legacySamples) {
+      assert.equal((await request(port, pathname)).status, 200, `Legacy alias failed: ${pathname}`);
+      assert.equal((await request(port, `${pathname}/`)).status, 200, `Trailing-slash alias failed: ${pathname}/`);
+    }
 
     const css = await request(port, '/full-vision-demo/styles.css');
     const js = await request(port, '/full-vision-demo/app.js');
     assert.match(css.headers['content-type'], /^text\/css/);
     assert.match(js.headers['content-type'], /^text\/javascript/);
-    assert.equal((await request(port, '/demo/overview', 'HEAD')).status, 200);
+    assert.equal((await request(port, '/full-vision/overview', 'HEAD')).status, 200);
     assert.equal((await request(port, '/full-vision-demo/missing.js')).status, 404);
-    assert.equal((await request(port, '/demo/overview', 'POST')).status, 405);
+    assert.equal((await request(port, '/full-vision-demo/%E0%A4%A')).status, 404);
+    assert.equal((await request(port, '/full-vision/overview')).status, 200, 'Malformed URL must not terminate the server.');
+    assert.equal((await request(port, '/full-vision/overview', 'POST')).status, 405);
     console.log(`HTTP routes: ${routes.length}/25 canonical, ${legacySamples.length}/5 legacy aliases`);
     console.log('GET/HEAD, MIME, CSP, 404 and 405: PASS');
     console.log('Serverless functions: 0');

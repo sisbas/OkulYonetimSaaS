@@ -24,10 +24,10 @@ const expectedAssets = [
 
 assert.equal(config.framework, null, 'Vercel framework detection must be disabled.');
 assert.equal(config.installCommand, 'node --version', 'Backend dependency installation must be bypassed.');
-assert.equal(config.buildCommand, 'node scripts/build-demo-static.js', 'Only the bounded static build may run.');
-assert.equal(config.outputDirectory, 'demo-static-dist', 'Vercel output must be the bounded static directory.');
-assert.deepEqual(config.redirects, [{ source: '/demo', destination: '/demo/today', permanent: false }]);
-assert.deepEqual(config.rewrites, [{ source: '/demo/:path*', destination: '/demo-frontend/index.html' }]);
+assert.equal(config.buildCommand, 'node scripts/build-hosted-demos-static.js', 'Only the combined bounded static build may run.');
+assert.equal(config.outputDirectory, 'hosted-demos-static-dist', 'Vercel output must be the combined bounded static directory.');
+assert.deepEqual(config.redirects.find((rule) => rule.source === '/demo'), { source: '/demo', destination: '/demo/today', permanent: false });
+assert.deepEqual(config.rewrites[0], { source: '/demo/:path*', destination: '/demo-frontend/index.html' });
 
 execFileSync(process.execPath, [path.join(__dirname, 'build-demo-static.js')], {
   cwd: repositoryRoot,

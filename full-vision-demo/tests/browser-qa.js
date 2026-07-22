@@ -30,6 +30,35 @@ async function settle(page) {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
+function monitorPage(page, baseUrl) {
+  const errors = [];
+  const restrictedRequests = [];
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
+  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+  page.on('requestfailed', (request) => errors.push(`requestfailed: ${request.url()} ${request.failure()?.errorText || ''}`));
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (['xhr', 'fetch', 'websocket', 'eventsource'].includes(request.resourceType()) || url.origin !== baseUrl) {
+      restrictedRequests.push(`${request.resourceType()}: ${request.url()}`);
+    }
+  });
+
+  return {
+    async assertClean(label) {
+      const storage = await page.evaluate(async () => ({
+        cookies: document.cookie,
+        localStorage: localStorage.length,
+        sessionStorage: sessionStorage.length,
+        indexedDb: typeof indexedDB.databases === 'function' ? (await indexedDB.databases()).length : 0,
+      }));
+      assert.deepEqual(errors, [], `${label} browser error(s): ${errors.join(', ')}`);
+      assert.deepEqual(restrictedRequests, [], `${label} restricted request(s): ${restrictedRequests.join(', ')}`);
+      assert.deepEqual(storage, { cookies: '', localStorage: 0, sessionStorage: 0, indexedDb: 0 }, `${label} storage boundary failed`);
+      return { label, consoleErrors: errors.length, restrictedRequests: restrictedRequests.length, storageViolations: Object.values(storage).filter(Boolean).length };
+    },
+  };
+}
+
 async function screenSignature(page) {
   return page.evaluate(() => ({
     path: `${location.pathname}${location.search}`,
@@ -132,15 +161,7 @@ async function capture(page, viewport, name) {
 async function runViewportMatrix(browser, baseUrl, evidence) {
   for (const viewport of viewports) {
     const page = await browser.newPage();
-    const errors = [];
-    const restrictedRequests = [];
-    page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
-    page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
-    page.on('requestfailed', (request) => errors.push(`requestfailed: ${request.url()} ${request.failure()?.errorText || ''}`));
-    page.on('request', (request) => {
-      const url = new URL(request.url());
-      if (['xhr', 'fetch', 'websocket', 'eventsource'].includes(request.resourceType()) || url.origin !== baseUrl) restrictedRequests.push(`${request.resourceType()}: ${request.url()}`);
-    });
+    const monitor = monitorPage(page, baseUrl);
     await page.setViewport({ width: viewport.width, height: viewport.height, deviceScaleFactor: 1 });
     await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
 
@@ -149,11 +170,11 @@ async function runViewportMatrix(browser, baseUrl, evidence) {
       await settle(page);
     };
 
-    await open('/demo/overview');
+    await open('/full-vision/overview');
     await assertShell(page, viewport);
     evidence.screenshots.push(await capture(page, viewport, 'overview'));
 
-    await open('/demo/f1/operations?scenario=operations&step=1');
+    await open('/full-vision/f1/operations?scenario=operations&step=1');
     evidence.screenshots.push(await capture(page, viewport, 'operations'));
     await page.select('#personaFilter', 'operations');
     await page.focus('#personaFilter');
@@ -166,33 +187,24 @@ async function runViewportMatrix(browser, baseUrl, evidence) {
     evidence.screenshots.push(await capture(page, viewport, 'claim-drawer'));
     await page.keyboard.press('Escape');
 
-    await open('/demo/f1/schedule?view=lifecycle&scenario=operations&step=3');
+    await open('/full-vision/f1/schedule?view=lifecycle&scenario=operations&step=3');
     assert.equal(await page.$eval('.view-tab.active', (element) => element.textContent.trim()), 'Program yaşam döngüsü');
     evidence.screenshots.push(await capture(page, viewport, 'schedule'));
 
-    await open('/demo/f1/attendance/D-AT-1204?scenario=operations&step=4');
+    await open('/full-vision/f1/attendance/D-AT-1204?scenario=operations&step=4');
     evidence.screenshots.push(await capture(page, viewport, 'attendance'));
 
-    const security = await page.evaluate(async () => ({
-      cookies: document.cookie,
-      localStorage: localStorage.length,
-      sessionStorage: sessionStorage.length,
-      indexedDb: typeof indexedDB.databases === 'function' ? (await indexedDB.databases()).length : 0,
-      reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
-    }));
-    assert.deepEqual(security, { cookies: '', localStorage: 0, sessionStorage: 0, indexedDb: 0, reducedMotion: true });
-    assert.deepEqual(restrictedRequests, [], `Restricted browser request(s): ${restrictedRequests.join(', ')}`);
-    assert.deepEqual(errors, [], `Browser error(s): ${errors.join(', ')}`);
-    evidence.viewports.push({ ...viewport, errors: errors.length, restrictedRequests: restrictedRequests.length, security });
+    assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true);
+    const diagnostics = await monitor.assertClean(`${viewport.name}/viewport`);
+    evidence.diagnostics.push(diagnostics);
+    evidence.viewports.push({ ...viewport, errors: diagnostics.consoleErrors, restrictedRequests: diagnostics.restrictedRequests, storageViolations: diagnostics.storageViolations });
     await page.close();
   }
 }
 
 async function runCanonicalRouteQa(browser, baseUrl, evidence, subset) {
   const page = await browser.newPage();
-  const errors = [];
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-  page.on('pageerror', (error) => errors.push(error.message));
+  const monitor = monitorPage(page, baseUrl);
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
 
   for (const route of subset) {
@@ -206,22 +218,20 @@ async function runCanonicalRouteQa(browser, baseUrl, evidence, subset) {
   }
   evidence.routes = { canonical: subset.length, wrongScreens: 0 };
 
-  assert.deepEqual(errors, [], `Canonical route browser errors: ${errors.join(', ')}`);
+  evidence.diagnostics.push(await monitor.assertClean(`canonical/${subset.map((route) => route.id).join(',')}`));
   await page.close();
 }
 
 async function runReplayQa(browser, baseUrl, evidence) {
   const page = await browser.newPage();
-  const errors = [];
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-  page.on('pageerror', (error) => errors.push(error.message));
+  const monitor = monitorPage(page, baseUrl);
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
   const aliases = [
-    ['/demo/today', '/demo/f1/operations'],
-    ['/demo/schedule', '/demo/f1/schedule'],
-    ['/demo/leave/LV-204', '/demo/f1/leaves/D-LV-204'],
-    ['/demo/attendance/session/AT-1204', '/demo/f1/attendance/D-AT-1204'],
-    ['/demo/notifications', '/demo/f1/notifications'],
+    ['/full-vision/today', '/full-vision/f1/operations'],
+    ['/full-vision/schedule', '/full-vision/f1/schedule'],
+    ['/full-vision/leave/LV-204', '/full-vision/f1/leaves/D-LV-204'],
+    ['/full-vision/attendance/session/AT-1204', '/full-vision/f1/attendance/D-AT-1204'],
+    ['/full-vision/notifications', '/full-vision/f1/notifications'],
   ];
   for (const [legacy, canonical] of aliases) {
     await page.goto(`${baseUrl}${legacy}`, { waitUntil: 'networkidle0' });
@@ -231,12 +241,12 @@ async function runReplayQa(browser, baseUrl, evidence) {
   }
   evidence.routes = { aliases: aliases.length };
 
-  await page.goto(`${baseUrl}/demo/not-a-route?unsafe=yes`, { waitUntil: 'networkidle0' });
-  assert.equal(new URL(page.url()).pathname, '/demo/not-a-route');
+  await page.goto(`${baseUrl}/full-vision/not-a-route?unsafe=yes`, { waitUntil: 'networkidle0' });
+  assert.equal(new URL(page.url()).pathname, '/full-vision/not-a-route');
   assert.equal(new URL(page.url()).search, '');
   assert.ok((await page.$eval('#screen', (screen) => screen.textContent)).includes('Demo sayfası bulunamadı'));
 
-  await page.goto(`${baseUrl}/demo/f1/operations?status=complete&scenario=operations&step=1&step=6&unsafe=yes`, { waitUntil: 'networkidle0' });
+  await page.goto(`${baseUrl}/full-vision/f1/operations?status=complete&scenario=operations&step=1&step=6&unsafe=yes`, { waitUntil: 'networkidle0' });
   assert.equal(new URL(page.url()).search, '?status=complete&scenario=operations&step=6');
   const step6Direct = await screenSignature(page);
   await page.reload({ waitUntil: 'networkidle0' });
@@ -249,14 +259,15 @@ async function runReplayQa(browser, baseUrl, evidence) {
   assert.deepEqual(await screenSignature(page), step1Click, 'Browser forward changed step 1 state');
   evidence.replay = { directRefresh: 'PASS', browserBack: 'PASS', browserForward: 'PASS', scenarioRail: 'PASS' };
 
-  assert.deepEqual(errors, [], `Replay browser errors: ${errors.join(', ')}`);
+  evidence.diagnostics.push(await monitor.assertClean('replay'));
   await page.close();
 }
 
 async function runP0Flow(browser, baseUrl, evidence) {
   const page = await browser.newPage();
+  const monitor = monitorPage(page, baseUrl);
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
-  await page.goto(`${baseUrl}/demo/overview`, { waitUntil: 'networkidle0' });
+  await page.goto(`${baseUrl}/full-vision/overview`, { waitUntil: 'networkidle0' });
   await page.click('[data-start-scenario="operations"]');
   assert.equal(new URL(page.url()).search, '?scenario=operations&step=1');
   await page.click('a.button.primary[href*="/leaves/"]');
@@ -281,9 +292,10 @@ async function runP0Flow(browser, baseUrl, evidence) {
   assert.equal(new URL(page.url()).search, '?status=complete&scenario=operations&step=6');
   assert.ok((await page.$eval('#screen', (screen) => screen.textContent)).includes('Operasyon senaryosu tamamlandı'));
   await page.click('#globalReset');
-  assert.equal(new URL(page.url()).pathname, '/demo/overview');
+  assert.equal(new URL(page.url()).pathname, '/full-vision/overview');
   assert.equal(new URL(page.url()).search, '');
   evidence.p0 = { steps: 6, blockers: 'PASS', completion: 'PASS', globalReset: 'PASS' };
+  evidence.diagnostics.push(await monitor.assertClean('p0'));
   await page.close();
 }
 
@@ -300,7 +312,7 @@ async function main() {
     baseUrl: 'loopback-only ephemeral server',
     fixedClock: '2026-07-21T09:00:00+03:00',
     seed: 'OKUL-FULL-VISION-2026-07-21-v1',
-    viewports: [], screenshots: [], routes: {}, replay: {}, p0: {},
+    viewports: [], screenshots: [], routes: {}, replay: {}, p0: {}, diagnostics: [],
   };
   try {
     if (phase === 'all' || phase === 'viewport') {
@@ -321,7 +333,16 @@ async function main() {
       await runP0Flow(browser, baseUrl, evidence);
       process.stdout.write('P0 flow: PASS\n');
     }
-    evidence.summary = { phase, screenshots: evidence.screenshots.length, consoleErrors: 0, restrictedRequests: 0, sev1: 0, sev2: 0, result: 'PASS' };
+    evidence.summary = {
+      phase,
+      screenshots: evidence.screenshots.length,
+      consoleErrors: evidence.diagnostics.reduce((total, item) => total + item.consoleErrors, 0),
+      restrictedRequests: evidence.diagnostics.reduce((total, item) => total + item.restrictedRequests, 0),
+      storageViolations: evidence.diagnostics.reduce((total, item) => total + item.storageViolations, 0),
+      sev1: 0,
+      sev2: 0,
+      result: 'PASS',
+    };
     fs.writeFileSync(path.join(outputRoot, `report-${phase}.json`), `${JSON.stringify(evidence, null, 2)}\n`);
   } finally {
     await browser.close();

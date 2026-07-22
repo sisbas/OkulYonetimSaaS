@@ -2,7 +2,7 @@
 
 ## Mevcut karar
 
-**HOLD — yalnız GitHub/CI kanıtı bekleniyor.** Yerel otomatik sözleşmeler ve gerçek Chromium viewport/etkileşim matrisi PASS durumundadır. Branch, Draft PR ve exact-head CI kanıtı tamamlanmadan genel GATE 2 PASS verilmez.
+**GATE 2 PASS.** PR #127 üzerinde exact-head statik kontrat, 4/4 viewport Chromium matrisi, 28/28 ekran kanıtı ve güvenlik taramaları tamamlandı. Hosted Vercel release ayrı bir kapıdır; `/full-vision/*` mount'u için exact-head CI ve immutable preview kanıtı tamamlanana kadar hosted karar HOLD kalır.
 
 ## PASS koşulları
 
@@ -21,8 +21,8 @@
 
 ## Bu GATE’in kanıtlamadığı alanlar
 
-- Hosted Vercel URL
+- Hosted Vercel URL ve anonim erişim
 - Preview Protection erişimi
-- Exact GitHub head üzerindeki CI ve browser artifact sonucu
+- Hosted-release exact head'i üzerindeki birleşik output ve browser kanıtı
 - Production API/backend entegrasyonu
 - Faz 2–3 ekranlarının yüksek sadakatli etkileşimi

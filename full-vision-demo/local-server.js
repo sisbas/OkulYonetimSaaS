@@ -15,7 +15,12 @@ const securityHeaders = {
 
 function safeRuntimePath(urlPath, root = sourceRoot) {
   if (!urlPath.startsWith('/full-vision-demo/')) return null;
-  const relative = decodeURIComponent(urlPath.slice('/full-vision-demo/'.length));
+  let relative;
+  try {
+    relative = decodeURIComponent(urlPath.slice('/full-vision-demo/'.length));
+  } catch {
+    return null;
+  }
   const resolved = path.resolve(root, relative);
   return resolved.startsWith(`${path.resolve(root)}${path.sep}`) ? resolved : null;
 }
@@ -30,13 +35,13 @@ function createServer(options = {}) {
       return;
     }
     const url = new URL(request.url, 'http://127.0.0.1');
-    if (url.pathname === '/demo') {
-      response.writeHead(302, { Location: '/demo/overview' });
+    if (url.pathname === '/full-vision') {
+      response.writeHead(302, { Location: '/full-vision/overview' });
       response.end();
       return;
     }
     const asset = safeRuntimePath(url.pathname, root);
-    const filePath = asset || (url.pathname.startsWith('/demo/') ? path.join(root, 'index.html') : null);
+    const filePath = asset || (url.pathname.startsWith('/full-vision/') ? path.join(root, 'index.html') : null);
     if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('Not found');
@@ -50,7 +55,7 @@ function createServer(options = {}) {
 
 if (require.main === module) {
   const port = Number(process.env.PORT || 4174);
-  createServer().listen(port, '127.0.0.1', () => console.log(`Full-vision demo: http://127.0.0.1:${port}/demo/overview`));
+  createServer().listen(port, '127.0.0.1', () => console.log(`Full-vision demo: http://127.0.0.1:${port}/full-vision/overview`));
 }
 
 module.exports = { createServer, safeRuntimePath, securityHeaders };

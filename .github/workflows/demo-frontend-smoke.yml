@@ -6,6 +6,14 @@ on:
       - 'demo-frontend/**'
       - 'scripts/build-demo-static.js'
       - 'scripts/test-demo-static-deployment.js'
+      - 'scripts/build-hosted-demos-static.js'
+      - 'scripts/test-hosted-demos-static-deployment.js'
+      - 'scripts/hosted-demos-local-server.js'
+      - 'scripts/hosted-demos-runtime-manifest.js'
+      - 'full-vision-demo/**'
+      - 'scripts/build-full-vision-demo-static.js'
+      - 'scripts/test-full-vision-demo-static-deployment.js'
+      - 'package.json'
       - 'vercel.json'
       - '.github/workflows/demo-frontend-smoke.yml'
 
@@ -18,10 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Verify deterministic demo application
         run: node demo-frontend/smoke-test.js
 
-      - name: Verify bounded static deployment and local fallback
-        run: node scripts/test-demo-static-deployment.js
+      - name: Verify combined bounded hosted deployment
+        run: npm run verify:hosted-demos

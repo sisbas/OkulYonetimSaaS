@@ -96,7 +96,7 @@
       const hidden = selectedPhase !== 'all' && selectedPhase !== phase;
       return `<section class="nav-group" data-phase="${phase}" ${hidden ? 'hidden' : ''}><button class="nav-group-title" type="button" data-toggle-phase="${phase}" aria-expanded="true"><span>${label}</span><b>${phaseRoutes.length}</b></button><div class="nav-items">${phaseRoutes.map((route) => { const personaMatch = selectedPersona === 'all' || route.personas.includes(selectedPersona); return `<a href="${ui.escapeHtml(routePath(route))}" data-route data-nav-id="${route.id}" data-persona-match="${personaMatch}" class="${personaMatch ? 'persona-match' : 'persona-muted'}"><span class="nav-dot ${phase}" aria-hidden="true"></span><span><strong>${ui.escapeHtml(route.title)}</strong><small>${ui.escapeHtml(route.priority)} · ${route.maturity.startsWith('Vizyon') ? 'Kavramsal' : route.maturity.startsWith('Mevcut') ? 'Kanıtlı' : 'Simülasyon'}</small></span></a>`; }).join('')}</div></section>`;
     }).join('');
-    dom.nav.innerHTML = `<a class="overview-link" href="/demo/overview" data-route data-nav-id="overview"><span aria-hidden="true">⌂</span><strong>Genel Bakış</strong></a>${groups}`;
+    dom.nav.innerHTML = `<a class="overview-link" href="/full-vision/overview" data-route data-nav-id="overview"><span aria-hidden="true">⌂</span><strong>Genel Bakış</strong></a>${groups}`;
   }
 
   function renderScenarioRail() {
@@ -121,7 +121,7 @@
   function renderBreadcrumb(route) {
     const phase = route.phase === 'global' ? '' : `<span aria-hidden="true">/</span><span>${ui.escapeHtml(ui.phaseLabel(route.phase))}</span>`;
     const current = currentMatch.notFound ? 'Sayfa bulunamadı' : route.title;
-    dom.breadcrumb.innerHTML = `<a href="/demo/overview" data-route>Genel Bakış</a>${phase}<span aria-hidden="true">/</span><span aria-current="page">${ui.escapeHtml(current)}</span>`;
+    dom.breadcrumb.innerHTML = `<a href="/full-vision/overview" data-route>Genel Bakış</a>${phase}<span aria-hidden="true">/</span><span aria-current="page">${ui.escapeHtml(current)}</span>`;
   }
 
   function renderClaimDrawer(route) {
@@ -141,7 +141,7 @@
     renderClaimDrawer(route);
     renderBreadcrumb(route);
     dom.screen.innerHTML = currentMatch.notFound
-      ? ui.emptyState('!', 'Demo sayfası bulunamadı', `${currentMatch.pathname} tanımlı bir demo route’u değildir.`, '<a class="button primary" href="/demo/overview" data-route>Genel Bakışa dön</a>')
+      ? ui.emptyState('!', 'Demo sayfası bulunamadı', `${currentMatch.pathname} tanımlı bir demo route’u değildir.`, '<a class="button primary" href="/full-vision/overview" data-route>Genel Bakışa dön</a>')
       : phaseOne.render(route, appState, currentMatch.pathname, window.location.search);
     document.querySelectorAll('[data-nav-id]').forEach((item) => {
       const navRoute = routes.find((candidate) => candidate.id === item.dataset.navId);
@@ -194,7 +194,7 @@
       appState = stateModule.createInitialState();
       dom.phaseFilter.value = 'f1';
       dom.personaFilter.value = 'operations';
-      navigate('/demo/f1/operations?scenario=operations&step=1');
+      navigate('/full-vision/f1/operations?scenario=operations&step=1');
       showToast('Operasyon sunum modu başladı. Tüm veriler sentetiktir.');
       return;
     }
@@ -236,7 +236,7 @@
     }
     if (event.target.closest('[data-reset-scenario]')) {
       appState = stateModule.createInitialState();
-      navigate('/demo/f1/operations?scenario=operations&step=1');
+      navigate('/full-vision/f1/operations?scenario=operations&step=1');
       showToast('Senaryo aynı seed ile başa alındı.');
     }
   });
@@ -256,7 +256,7 @@
     }
   });
 
-  dom.globalReset.addEventListener('click', () => { appState = stateModule.createInitialState(); navigate('/demo/overview'); showToast('Tüm demo aynı seed ile başlangıç durumuna döndü.'); });
+  dom.globalReset.addEventListener('click', () => { appState = stateModule.createInitialState(); navigate('/full-vision/overview'); showToast('Tüm demo aynı seed ile başlangıç durumuna döndü.'); });
   dom.claimToggle.addEventListener('click', openDrawer);
   dom.claimClose.addEventListener('click', closeDrawer);
   dom.drawerBackdrop.addEventListener('click', closeDrawer);

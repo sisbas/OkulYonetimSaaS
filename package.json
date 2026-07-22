@@ -28,6 +28,9 @@
     "demo:full:http": "node scripts/test-full-vision-demo-static-deployment.js",
     "demo:full:browser": "node full-vision-demo/tests/browser-qa-runner.js",
     "verify:gate2": "npm run demo:full:test && npm run demo:full:build && npm run demo:full:http",
+    "demo:hosted:build": "node scripts/build-hosted-demos-static.js",
+    "demo:hosted:test": "node scripts/test-hosted-demos-static-deployment.js",
+    "verify:hosted-demos": "npm run verify:gate2 && node demo-frontend/smoke-test.js && npm run demo:hosted:test",
     "qa:db": "node -e \"const fs=require('fs'); const dir=process.env.MIGRATIONS_DIR||'src/database/migrations'; if(process.env.REQUIRE_MIGRATIONS==='true'&&!fs.existsSync(dir)){throw new Error('Migration directory missing: '+dir)} const files=fs.existsSync(dir)?fs.readdirSync(dir).filter((file)=>/\\.(ts|js|sql)$/.test(file)).sort():[]; if(process.env.REQUIRE_MIGRATIONS==='true'&&files.length===0){throw new Error('No migration files found in '+dir)} console.log('Migration directory: '+dir); console.log('Migration files: '+files.join(', '));\" && npm run db:migrate && npm run db:verify && npm run db:seed:permissions && npm run test:tenant-guard && npm run test:database && npm run test:kvkk && echo \"QA DB smoke tests passed\""
   },
   "dependencies": {
