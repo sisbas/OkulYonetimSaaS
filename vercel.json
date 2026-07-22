@@ -1,4 +1,9 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "node --version",
+  "buildCommand": "node scripts/build-demo-static.js",
+  "outputDirectory": "demo-static-dist",
   "redirects": [
     {
       "source": "/demo",
