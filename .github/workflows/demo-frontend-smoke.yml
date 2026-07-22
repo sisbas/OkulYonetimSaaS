@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'demo-frontend/**'
+      - 'scripts/build-demo-static.js'
+      - 'scripts/test-demo-static-deployment.js'
       - 'vercel.json'
       - '.github/workflows/demo-frontend-smoke.yml'
 
@@ -21,5 +23,5 @@ jobs:
       - name: Verify deterministic demo application
         run: node demo-frontend/smoke-test.js
 
-      - name: Validate Vercel route configuration
-        run: node -e "JSON.parse(require('node:fs').readFileSync('vercel.json', 'utf8')); console.log('Vercel config valid')"
+      - name: Verify bounded static deployment and local fallback
+        run: node scripts/test-demo-static-deployment.js
