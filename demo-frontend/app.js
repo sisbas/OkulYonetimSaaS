@@ -6,6 +6,7 @@
   const start = () => createInitialState(validateSchedule);
   let state = start();
   let toastTimer;
+  let lastFocusedElement;
 
   const lessons = [
     ['09:30', 'TYT Matematik', '12-SAY-1', 'Demo Öğretmen A', 'Derslik 2'],
@@ -51,72 +52,73 @@
 
   function validationToast(result) {
     return result.hardConflictCount === 0
-      ? 'Full validation tamamlandı: hard conflict 0.'
-      : `Validation tamamlandı: ${result.hardConflictCount} hard conflict devam ediyor.`;
+      ? 'Demo doğrulaması tamamlandı: hard conflict 0. Gerçek yayın yapılmadı.'
+      : `Demo doğrulaması tamamlandı: ${result.hardConflictCount} hard conflict devam ediyor.`;
   }
 
   function today() {
     const pending = Object.values(state.notifications).filter((value) => value === 'pending').length;
     const conflictCount = state.validation.hardConflictCount;
-    return `${heading('21 Temmuz 2026 · Salı', 'Bugünün operasyon görünümü', 'Dersler, izin etkileri, yoklama ve bildirim akışının sentetik sunum özeti.', '<a class="button primary" href="/demo/schedule" data-route>Programı aç</a>')}
+    return `${heading('21 Temmuz 2026 · Salı', 'Bugünün operasyon görünümü', 'Dersler, izin etkileri, yoklama ve bildirim akışının sentetik sunum özeti.', '<a class="button primary" href="/demo/schedule" data-route>Program demosunu aç</a>')}
     <section class="metric-grid">${metric('Planlanan ders', '18', `Hard conflict: ${conflictCount}`)}${metric('Aktif öğretmen', '12', '1 izin kaydı')}${metric('Yoklama', '6/8', '2 oturum bekliyor')}${metric('Bildirim taslağı', pending, 'İnsan onayı gerekli')}</section>
-    <section class="layout-grid"><article class="panel"><div class="panel-header"><h3>Bugünkü ders akışı</h3><span class="status-chip success">Canlı demo akışı</span></div><div class="panel-body">${lessons.map((lesson) => `<div class="lesson-row"><div class="time-box">${lesson[0]}</div><div class="lesson-main"><strong>${lesson[1]} · ${lesson[2]}</strong><small>${lesson[3]}</small></div><span class="room-chip">${lesson[4]}</span></div>`).join('')}</div></article>
-    <aside class="stack"><article class="panel"><div class="panel-header"><h3>Operasyon uyarıları</h3><span class="tag">3 kayıt</span></div><div class="panel-body stack"><div class="alert-card ${conflictCount ? 'danger' : 'success'}"><strong>${conflictCount ? 'Program çakışması' : 'Program doğrulandı'}</strong><p>${conflictCount ? `${conflictCount} hard conflict çözüm bekliyor.` : 'Sentetik programda açık hard conflict bulunmuyor.'}</p></div><div class="alert-card"><strong>İzin etkisi</strong><p>Demo Öğretmen A için üç ders yeniden görevlendirme bekliyor.</p></div><div class="alert-card success"><strong>Veli bildirimleri</strong><p>Onay ve gönderim simülasyonu hazır.</p></div></div></article>
-    <article class="panel"><div class="panel-header"><h3>Hızlı geçişler</h3></div><div class="panel-body quick-grid"><a class="quick-link" href="/demo/leave/LV-204" data-route>İzin etkisini çöz</a><a class="quick-link" href="/demo/attendance/session/AT-1204" data-route>Yoklama al</a><a class="quick-link" href="/demo/notifications" data-route>Bildirimleri incele</a><a class="quick-link" href="/demo/schedule" data-route>Haftalık grid</a></div></article></aside></section>`;
+    <section class="layout-grid"><article class="panel"><div class="panel-header"><h3>Bugünkü ders akışı</h3><span class="status-chip success">Demo akışı · Aktif</span></div><div class="panel-body">${lessons.map((lesson) => `<div class="lesson-row"><div class="time-box">${lesson[0]}</div><div class="lesson-main"><strong>${lesson[1]} · ${lesson[2]}</strong><small>${lesson[3]}</small></div><span class="room-chip">${lesson[4]}</span></div>`).join('')}</div></article>
+    <aside class="stack"><article class="panel"><div class="panel-header"><h3>Operasyon uyarıları</h3><span class="tag">3 kayıt</span></div><div class="panel-body stack"><div class="alert-card ${conflictCount ? 'danger' : 'success'}"><strong>${conflictCount ? 'Durum: Program çakışması' : 'Durum: Program doğrulandı'}</strong><p>${conflictCount ? `${conflictCount} hard conflict çözüm bekliyor.` : 'Sentetik programda açık hard conflict bulunmuyor.'}</p></div><div class="alert-card"><strong>Durum: İzin etkisi var</strong><p>Demo Öğretmen A için üç ders yeniden görevlendirme bekliyor.</p></div><div class="alert-card success"><strong>Durum: Bildirim simülasyonu hazır</strong><p>Onay ve gönderim simülasyonu gerçek işlem oluşturmaz.</p></div></div></article>
+    <article class="panel"><div class="panel-header"><h3>Hızlı geçişler</h3></div><div class="panel-body quick-grid"><a class="quick-link" href="/demo/leave/LV-204" data-route>İzin etkisini incele</a><a class="quick-link" href="/demo/attendance/session/AT-1204" data-route>Yoklama demosu</a><a class="quick-link" href="/demo/notifications" data-route>Bildirim simülasyonu</a><a class="quick-link" href="/demo/schedule" data-route>Haftalık grid</a></div></article></aside></section>`;
   }
 
   function conflictCard(conflict, draft) {
     const eventNames = conflict.eventIds.map((eventId) => state.events.find((event) => event.id === eventId)?.course || eventId).join(' ↔ ');
     const editTarget = conflict.eventIds[1];
-    return `<article class="alert-card danger" style="display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap"><div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span class="status-chip danger">${esc(conflict.reasonCode)}</span><span class="tag">${esc(conflict.day)} ${esc(conflict.start)}–${esc(conflict.end)}</span></div><strong>${esc(conflict.resourceLabel)}: ${esc(conflict.resourceValue)}</strong><p>${esc(eventNames)}</p></div>${draft ? `<button class="button small" data-action="edit-conflict" data-event-id="${esc(editTarget)}">Çakışmayı düzenle</button>` : '<span class="status-chip neutral">Salt okunur</span>'}</article>`;
+    return `<article class="alert-card danger" style="display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap"><div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span class="status-chip danger">Çakışma · ${esc(conflict.reasonCode)}</span><span class="tag">${esc(conflict.day)} ${esc(conflict.start)}–${esc(conflict.end)}</span></div><strong>${esc(conflict.resourceLabel)}: ${esc(conflict.resourceValue)}</strong><p>${esc(eventNames)}</p></div>${draft ? `<button class="button small" data-action="edit-conflict" data-event-id="${esc(editTarget)}">Çakışmayı düzenle · Demo</button>` : '<span class="status-chip neutral">Yayınlanmış · Salt okunur</span>'}</article>`;
   }
 
   function schedule() {
     const draft = canMutateSchedule(state.mode);
     const validation = state.validation;
     const conflictEventIds = new Set(validation.conflictedEventIds);
-    const actions = `<button class="button" data-action="validate" ${draft ? '' : 'disabled'}>Çakışmaları doğrula</button><button class="button primary" data-action="new-event" ${draft ? '' : 'disabled'}>Yeni ders ekle</button>`;
-    const grid = timeOptions.map(([start]) => `<div class="schedule-time">${start}</div>${dayOptions.map((day) => `<div class="schedule-cell">${state.events.filter((event) => event.day === day && event.start === start).map((event) => `<button class="schedule-event ${conflictEventIds.has(event.id) ? 'conflict' : ''}" data-action="event" data-event-id="${esc(event.id)}"><strong>${esc(event.course)}</strong><span>${esc(event.studentGroup)} · ${esc(event.teacher)}</span><span>${esc(event.room)} · ${esc(event.start)}–${esc(event.end)}</span></button>`).join('')}</div>`).join('')}`).join('');
+    const actions = `<button class="button primary" data-action="validate" ${draft ? '' : 'disabled'}>Programı doğrula · Simülasyon</button><button class="button" data-action="new-event" ${draft ? '' : 'disabled'}>Yeni demo dersi</button>`;
+    const grid = timeOptions.map(([start]) => `<div class="schedule-time">${start}</div>${dayOptions.map((day) => `<div class="schedule-cell">${state.events.filter((event) => event.day === day && event.start === start).map((event) => `<button class="schedule-event ${conflictEventIds.has(event.id) ? 'conflict' : ''}" data-action="event" data-event-id="${esc(event.id)}"><strong>${esc(event.course)}</strong><span>${esc(event.studentGroup)} · ${esc(event.teacher)}</span><span>${esc(event.room)} · ${esc(event.start)}–${esc(event.end)}</span>${conflictEventIds.has(event.id) ? '<span class="status-chip danger">Hard conflict</span>' : '<span class="status-chip success">Planlı</span>'}</button>`).join('')}</div>`).join('')}`).join('');
     const validationCard = validation.hardConflictCount
-      ? `<div class="alert-card danger" style="margin-bottom:14px"><strong>SCHEDULE_HARD_CONFLICTS_PRESENT</strong><p>${validation.hardConflictCount} hard conflict devam ediyor. Event verisi değişmeden başarılı validation gösterilmez.</p></div>`
-      : '<div class="alert-card success" style="margin-bottom:14px"><strong>Full validation tamamlandı</strong><p>Hard conflict sayısı 0. Gerçek publish çağrısı yapılmaz.</p></div>';
+      ? `<div class="alert-card danger" style="margin-bottom:14px"><strong>Doğrulama: Geçersiz · SCHEDULE_HARD_CONFLICTS_PRESENT</strong><p>${validation.hardConflictCount} hard conflict devam ediyor. Event verisi değişmeden başarılı validation gösterilmez.</p></div>`
+      : '<div class="alert-card success" style="margin-bottom:14px"><strong>Doğrulama: Geçerli</strong><p>Hard conflict sayısı 0. Gerçek publish çağrısı yapılmaz.</p></div>';
     const conflictPanel = validation.hardConflictCount
-      ? `<article class="panel" style="margin-bottom:14px"><div class="panel-header"><div><h3>Hard conflict sonuçları</h3><div class="metric-note">Öğretmen: ${validation.summaryByType.teacher} · Öğrenci grubu: ${validation.summaryByType.studentGroup} · Derslik: ${validation.summaryByType.room}</div></div><span class="status-chip danger">${validation.hardConflictCount} conflict</span></div><div class="panel-body stack">${validation.conflicts.map((conflict) => conflictCard(conflict, draft)).join('')}</div></article>`
+      ? `<article class="panel" style="margin-bottom:14px"><div class="panel-header"><div><h3>Hard conflict sonuçları</h3><div class="metric-note">Öğretmen: ${validation.summaryByType.teacher} · Öğrenci grubu: ${validation.summaryByType.studentGroup} · Derslik: ${validation.summaryByType.room}</div></div><span class="status-chip danger">${validation.hardConflictCount} conflict · Açık</span></div><div class="panel-body stack">${validation.conflicts.map((conflict) => conflictCard(conflict, draft)).join('')}</div></article>`
       : '';
 
     return `${heading('2026–2027 · 1. Hafta', draft ? 'Taslak haftalık program' : 'Yayınlanmış program', draft ? 'Yönetim görünümü; her düzenleme sonrasında validation mevcut event state’i üzerinden yeniden hesaplanır.' : 'Salt okunur yayın görünümü; mutation ve validation aksiyonları kapalıdır.', actions)}
     <div class="schedule-toolbar"><div class="tabs"><button class="tab ${draft ? 'active' : ''}" data-action="mode" data-mode="draft">Taslak</button><button class="tab ${draft ? '' : 'active'}" data-action="mode" data-mode="published">Yayınlanmış</button></div><div class="legend"><span>Planlı ders</span><span class="conflict">Hard conflict</span></div></div>
     ${validationCard}${conflictPanel}
-    <div class="schedule-wrap"><div class="schedule-grid"><div class="schedule-head">Saat</div>${dayOptions.map((day) => `<div class="schedule-head">${day}</div>`).join('')}${grid}</div></div>`;
+    <p class="schedule-scroll-hint" id="scheduleScrollHint">Program tablosunu yatay kaydırarak diğer günleri görüntüleyin</p>
+    <div class="schedule-wrap" tabindex="0" role="region" aria-label="Haftalık ders programı" aria-describedby="scheduleScrollHint"><div class="schedule-grid"><div class="schedule-head">Saat</div>${dayOptions.map((day) => `<div class="schedule-head">${day}</div>`).join('')}${grid}</div></div>`;
   }
 
   function leave(id) {
     const unresolved = leaveRows.filter((row) => !state.substitutes[row[0]]).length;
-    return `${heading(`İzin kaydı ${id}`, 'Demo Öğretmen A · Tam gün izin', 'Bugünkü programa etkisi ve sentetik yedek öğretmen seçenekleri.', '<button class="button primary" data-action="save-substitutes">Görevlendirmeleri kaydet</button>')}
+    return `${heading(`İzin kaydı ${id}`, 'Demo Öğretmen A · Tam gün izin', 'Bugünkü programa etkisi ve sentetik yedek öğretmen seçenekleri.', '<button class="button primary" data-action="save-substitutes">Görevlendirmeyi simüle et</button>')}
     <section class="metric-grid">${metric('Etkilenen ders', '3', 'Aynı gün içinde')}${metric('Atanan yedek', 3 - unresolved, 'Yerel demo state’i')}${metric('Açık risk', unresolved, 'Görevlendirme bekliyor')}${metric('İzin durumu', 'Onaylı', '21 Temmuz 2026')}</section>
-    <section class="layout-grid"><article class="panel"><div class="panel-header"><h3>Etkilenen dersler</h3><span class="status-chip ${unresolved ? 'warning' : 'success'}">${unresolved ? `${unresolved} açık aksiyon` : 'Tüm dersler atandı'}</span></div><div class="panel-body">${leaveRows.map((row) => `<div class="impact-row"><strong>${row[1]}</strong><div class="lesson-main"><strong>${row[2]} · ${row[3]}</strong><small>${row[4]}</small></div><select class="select" data-substitute="${row[0]}"><option value="">Yedek öğretmen seç</option>${['Demo Öğretmen B', 'Demo Öğretmen C', 'Demo Öğretmen D'].map((teacher) => `<option ${state.substitutes[row[0]] === teacher ? 'selected' : ''}>${teacher}</option>`).join('')}</select></div>`).join('')}</div></article>
-    <aside class="stack"><article class="panel"><div class="panel-header"><h3>İzin özeti</h3>${badge()}</div><div class="panel-body"><dl class="detail-list"><dt>Tür</dt><dd>Tam gün</dd><dt>Neden</dt><dd>Kişisel izin · sentetik</dd><dt>Onaylayan</dt><dd>Demo Yönetici</dd><dt>Branch</dt><dd>Neşet Ertaş KE</dd></dl></div></article><div class="alert-card"><strong>Gerçek işlem yapılmaz</strong><p>Kaydet yalnız tarayıcı belleğindeki demo state’ini günceller.</p></div></aside></section>`;
+    <section class="layout-grid"><article class="panel"><div class="panel-header"><h3>Etkilenen dersler</h3><span class="status-chip ${unresolved ? 'warning' : 'success'}">${unresolved ? `Durum: ${unresolved} açık aksiyon` : 'Durum: Tüm dersler atandı'}</span></div><div class="panel-body">${leaveRows.map((row) => `<div class="impact-row"><strong>${row[1]}</strong><div class="lesson-main"><strong>${row[2]} · ${row[3]}</strong><small>${row[4]}</small></div><select class="select" data-substitute="${row[0]}"><option value="">Yedek öğretmen seç</option>${['Demo Öğretmen B', 'Demo Öğretmen C', 'Demo Öğretmen D'].map((teacher) => `<option ${state.substitutes[row[0]] === teacher ? 'selected' : ''}>${teacher}</option>`).join('')}</select></div>`).join('')}</div></article>
+    <aside class="stack"><article class="panel"><div class="panel-header"><h3>İzin özeti</h3>${badge()}</div><div class="panel-body"><dl class="detail-list"><dt>Tür</dt><dd>Tam gün</dd><dt>Neden</dt><dd>Kişisel izin · sentetik</dd><dt>Onaylayan</dt><dd>Demo Yönetici</dd><dt>Branch</dt><dd>Neşet Ertaş KE</dd></dl></div></article><div class="alert-card"><strong>Gerçek işlem yapılmadı</strong><p>Simülasyon yalnız tarayıcı belleğindeki demo state’ini günceller.</p></div></aside></section>`;
   }
 
   function attendance(id) {
     const count = { present: 0, absent: 0, late: 0 };
     Object.values(state.attendance).forEach((value) => { count[value] += 1; });
-    return `${heading(`Oturum ${id}`, 'TYT Matematik · 12-SAY-1', 'Sentetik kayıtlarla yoklama durumlarını değiştirin.', '<button class="button success" data-action="complete-attendance">Yoklamayı tamamla</button>')}
+    return `${heading(`Oturum ${id}`, 'TYT Matematik · 12-SAY-1', 'Sentetik kayıtlarla yoklama durumlarını değiştirin.', '<button class="button success" data-action="complete-attendance">Yoklamayı tamamla · Demo</button>')}
     <section class="metric-grid">${metric('Mevcut', count.present, 'Derse katılan')}${metric('Devamsız', count.absent, 'Bildirim adayı')}${metric('Geç', count.late, 'Gecikme kaydı')}${metric('Tamamlanma', '100%', '6 sentetik kayıt')}</section>
-    <article class="panel"><div class="panel-header"><div><h3>Yoklama listesi</h3><div class="metric-note">Bireysel kayıtlar tamamen sentetiktir.</div></div>${badge()}</div><div class="panel-body"><div class="progress"><span style="width:100%"></span></div><div style="overflow-x:auto;margin-top:12px"><table class="attendance-table"><thead><tr><th>Kod</th><th>Öğrenci</th><th>Durum</th></tr></thead><tbody>${students.map((student) => `<tr><td><span class="student-code">${student[0].slice(1)}</span></td><td><strong>${student[1]}</strong><div class="metric-note">Kişisel veri değildir</div></td><td><div class="segmented">${[['present', 'Var'], ['absent', 'Yok'], ['late', 'Geç']].map((status) => `<button data-action="attendance" data-student="${student[0]}" data-status="${status[0]}" class="${state.attendance[student[0]] === status[0] ? 'active' : ''}">${status[1]}</button>`).join('')}</div></td></tr>`).join('')}</tbody></table></div></div></article>`;
+    <article class="panel"><div class="panel-header"><div><h3>Yoklama listesi</h3><div class="metric-note">Bireysel kayıtlar tamamen sentetiktir. Gerçek işlem yapılmaz.</div></div>${badge()}</div><div class="panel-body"><div class="progress"><span style="width:100%"></span></div><div style="overflow-x:auto;margin-top:12px"><table class="attendance-table"><thead><tr><th>Kod</th><th>Öğrenci</th><th>Durum</th></tr></thead><tbody>${students.map((student) => `<tr><td><span class="student-code">${student[0].slice(1)}</span></td><td><strong>${student[1]}</strong><div class="metric-note">Kişisel veri değildir</div></td><td><div class="segmented" aria-label="${esc(student[1])} yoklama durumu">${[['present', 'Var'], ['absent', 'Yok'], ['late', 'Geç']].map((status) => `<button data-action="attendance" data-student="${student[0]}" data-status="${status[0]}" class="${state.attendance[student[0]] === status[0] ? 'active' : ''}" aria-pressed="${state.attendance[student[0]] === status[0]}">${status[1]}</button>`).join('')}</div></td></tr>`).join('')}</tbody></table></div></div></article>`;
   }
 
   function notificationCard(notification) {
     const status = state.notifications[notification[0]];
     const label = status === 'pending' ? 'Onay bekliyor' : status === 'approved' ? 'Onaylandı' : 'Gönderildi';
     const className = status === 'pending' ? 'warning' : status === 'approved' ? 'success' : 'neutral';
-    return `<article class="notification-card"><div><h3>${notification[1]} · ${notification[3]}</h3><p>${notification[2]} · Sentetik SMS taslağı.</p><div class="notification-meta"><span class="status-chip ${className}">${label}</span><span class="tag">${notification[0]}</span>${badge()}</div></div><div class="notification-actions">${status === 'pending' ? `<button class="button small" data-action="approve" data-id="${notification[0]}">Onayla</button>` : ''}${status === 'approved' ? `<button class="button small primary" data-action="send" data-id="${notification[0]}">Gönderimi simüle et</button>` : ''}${status === 'sent' ? '<span class="status-chip success">Teslim edildi</span>' : ''}</div></article>`;
+    return `<article class="notification-card"><div><h3>${notification[1]} · ${notification[3]}</h3><p>${notification[2]} · Sentetik SMS taslağı. Gerçek işlem yapılmadı.</p><div class="notification-meta"><span class="status-chip ${className}">Durum: ${label}</span><span class="tag">${notification[0]}</span>${badge()}</div></div><div class="notification-actions">${status === 'pending' ? `<button class="button small" data-action="approve" data-id="${notification[0]}">Demo onayı</button>` : ''}${status === 'approved' ? `<button class="button small" data-action="send" data-id="${notification[0]}">Gönderimi simüle et</button>` : ''}${status === 'sent' ? '<span class="status-chip success">Durum: Demo teslim edildi</span>' : ''}</div></article>`;
   }
 
   function notificationsView() {
     const values = Object.values(state.notifications);
     const pending = values.filter((value) => value === 'pending').length;
-    return `${heading('İnsan onaylı akış', 'Veli bilgilendirme kuyruğu', 'Maskelenmiş sentetik hedeflerle onay ve gönderim akışını deneyin.', `<button class="button primary" data-action="approve-all" ${pending ? '' : 'disabled'}>Bekleyenleri onayla</button>`)}
+    return `${heading('İnsan onaylı akış', 'Veli bilgilendirme kuyruğu', 'Maskelenmiş sentetik hedeflerle onay ve gönderim simülasyonunu deneyin. Gerçek SMS veya e-posta gönderilmez.', `<button class="button primary" data-action="approve-all" ${pending ? '' : 'disabled'}>Bekleyenleri demo onayla</button>`)}
     <section class="metric-grid">${metric('Bekleyen', pending, 'Onay gerekli')}${metric('Onaylı', values.filter((value) => value === 'approved').length, 'Gönderime hazır')}${metric('Gönderildi', values.filter((value) => value === 'sent').length, 'Demo teslim kaydı')}${metric('Hata', '0', 'Simülasyon stabil')}</section><section class="stack">${notifications.map(notificationCard).join('')}</section>`;
   }
 
@@ -173,28 +175,36 @@
     toastTimer = setTimeout(() => { toast.hidden = true; }, 3000);
   }
 
+  function modalFocusableElements() {
+    return $$('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])', modal);
+  }
+
   function openModal(modalHeading, body) {
+    lastFocusedElement = document.activeElement;
     modalTitle.textContent = modalHeading;
     modalBody.innerHTML = body;
     modal.hidden = false;
     document.body.style.overflow = 'hidden';
+    requestAnimationFrame(() => modalFocusableElements()[0]?.focus());
   }
 
   function closeModal() {
+    if (modal.hidden) return;
     modal.hidden = true;
     modalBody.innerHTML = '';
     document.body.style.overflow = '';
+    if (lastFocusedElement instanceof HTMLElement && document.contains(lastFocusedElement)) lastFocusedElement.focus();
   }
 
   function eventModal(event) {
     const readOnly = !canMutateSchedule(state.mode);
     const selectedTime = `${event.start}|${event.end}`;
-    openModal(readOnly ? 'Yayınlanmış ders detayı' : 'Ders etkinliğini düzenle', `<div class="modal-content"><div class="form-grid"><div class="field full"><label>Ders</label><input data-event-field="course" value="${esc(event.course)}" ${readOnly ? 'disabled' : ''}></div><div class="field"><label>Gün</label><select data-event-field="day" ${readOnly ? 'disabled' : ''}>${optionList(dayOptions, event.day)}</select></div><div class="field"><label>Saat aralığı</label><select data-event-field="time" ${readOnly ? 'disabled' : ''}>${timeOptions.map(([start, end]) => `<option value="${start}|${end}" ${`${start}|${end}` === selectedTime ? 'selected' : ''}>${start}–${end}</option>`).join('')}</select></div><div class="field"><label>Grup</label><select data-event-field="studentGroup" ${readOnly ? 'disabled' : ''}>${optionList(groupOptions, event.studentGroup)}</select></div><div class="field"><label>Derslik</label><select data-event-field="room" ${readOnly ? 'disabled' : ''}>${optionList(roomOptions, event.room)}</select></div><div class="field full"><label>Öğretmen</label><select data-event-field="teacher" ${readOnly ? 'disabled' : ''}>${optionList(teacherOptions, event.teacher)}</select></div></div>${readOnly ? '<div class="alert-card" style="margin-top:14px"><strong>Immutable görünüm</strong><p>Yayınlanmış program düzenlenemez.</p></div>' : '<div class="alert-card" style="margin-top:14px"><strong>Validation davranışı</strong><p>Kaydetme sonrası tüm hard conflictler mevcut event state’i üzerinden yeniden hesaplanır.</p></div>'}</div><div class="modal-footer"><button class="button" data-action="close">Kapat</button>${readOnly ? '' : `<button class="button primary" data-action="save-event" data-event-id="${esc(event.id)}">Demo değişikliğini kaydet</button>`}</div>`);
+    openModal(readOnly ? 'Yayınlanmış ders detayı' : 'Ders etkinliğini düzenle', `<div class="modal-content"><div class="form-grid"><div class="field full"><label>Ders</label><input data-event-field="course" value="${esc(event.course)}" ${readOnly ? 'disabled' : ''}></div><div class="field"><label>Gün</label><select data-event-field="day" ${readOnly ? 'disabled' : ''}>${optionList(dayOptions, event.day)}</select></div><div class="field"><label>Saat aralığı</label><select data-event-field="time" ${readOnly ? 'disabled' : ''}>${timeOptions.map(([start, end]) => `<option value="${start}|${end}" ${`${start}|${end}` === selectedTime ? 'selected' : ''}>${start}–${end}</option>`).join('')}</select></div><div class="field"><label>Grup</label><select data-event-field="studentGroup" ${readOnly ? 'disabled' : ''}>${optionList(groupOptions, event.studentGroup)}</select></div><div class="field"><label>Derslik</label><select data-event-field="room" ${readOnly ? 'disabled' : ''}>${optionList(roomOptions, event.room)}</select></div><div class="field full"><label>Öğretmen</label><select data-event-field="teacher" ${readOnly ? 'disabled' : ''}>${optionList(teacherOptions, event.teacher)}</select></div></div>${readOnly ? '<div class="alert-card" style="margin-top:14px"><strong>Yayınlanmış · Salt okunur</strong><p>Program düzenlenemez. Gerçek işlem yapılmadı.</p></div>' : '<div class="alert-card" style="margin-top:14px"><strong>Demo validation davranışı</strong><p>Kaydetme sonrası tüm hard conflictler mevcut event state’i üzerinden yeniden hesaplanır.</p></div>'}</div><div class="modal-footer"><button class="button" data-action="close">Kapat</button>${readOnly ? '' : `<button class="button primary" data-action="save-event" data-event-id="${esc(event.id)}">Demo değişikliğini kaydet</button>`}</div>`);
   }
 
   function newEvent() {
     if (!canMutateSchedule(state.mode)) return;
-    openModal('Yeni ders ekle', `<div class="modal-content"><div class="form-grid"><div class="field full"><label>Ders</label><input data-event-field="course" value="Yeni Demo Dersi"></div><div class="field"><label>Gün</label><select data-event-field="day">${optionList(dayOptions, 'Pazartesi')}</select></div><div class="field"><label>Saat aralığı</label><select data-event-field="time">${timeOptions.map(([start, end]) => `<option value="${start}|${end}">${start}–${end}</option>`).join('')}</select></div><div class="field"><label>Grup</label><select data-event-field="studentGroup">${optionList(groupOptions, '12-EA-2')}</select></div><div class="field"><label>Derslik</label><select data-event-field="room">${optionList(roomOptions, 'D7')}</select></div><div class="field full"><label>Öğretmen</label><select data-event-field="teacher">${optionList(teacherOptions, 'Demo Öğretmen H')}</select></div></div><div class="alert-card" style="margin-top:14px"><strong>Demo-only kayıt</strong><p>Backend çağrısı yapılmaz; kayıt sonrası validation yeniden çalışır.</p></div></div><div class="modal-footer"><button class="button" data-action="close">Vazgeç</button><button class="button primary" data-action="add-event">Ekle</button></div>`);
+    openModal('Yeni demo dersi ekle', `<div class="modal-content"><div class="form-grid"><div class="field full"><label>Ders</label><input data-event-field="course" value="Yeni Demo Dersi"></div><div class="field"><label>Gün</label><select data-event-field="day">${optionList(dayOptions, 'Pazartesi')}</select></div><div class="field"><label>Saat aralığı</label><select data-event-field="time">${timeOptions.map(([start, end]) => `<option value="${start}|${end}">${start}–${end}</option>`).join('')}</select></div><div class="field"><label>Grup</label><select data-event-field="studentGroup">${optionList(groupOptions, '12-EA-2')}</select></div><div class="field"><label>Derslik</label><select data-event-field="room">${optionList(roomOptions, 'D7')}</select></div><div class="field full"><label>Öğretmen</label><select data-event-field="teacher">${optionList(teacherOptions, 'Demo Öğretmen H')}</select></div></div><div class="alert-card" style="margin-top:14px"><strong>Demo-only kayıt</strong><p>Backend çağrısı yapılmaz; kayıt sonrası validation yeniden çalışır.</p></div></div><div class="modal-footer"><button class="button" data-action="close">Vazgeç</button><button class="button primary" data-action="add-event">Demo dersini ekle</button></div>`);
   }
 
   function readEventForm() {
@@ -239,7 +249,7 @@
       closeModal();
     } else if (action === 'save-event') {
       if (!canMutateSchedule(state.mode)) {
-        showToast('Yayınlanmış görünüm salt okunurdur.');
+        showToast('Yayınlanmış görünüm salt okunurdur. Gerçek işlem yapılmadı.');
         return;
       }
       const scheduleEvent = state.events.find((candidate) => candidate.id === button.dataset.eventId);
@@ -260,7 +270,7 @@
     } else if (action === 'save-substitutes') {
       $$('[data-substitute]').forEach((select) => { state.substitutes[select.dataset.substitute] = select.value; });
       render();
-      showToast('Demo görevlendirmeleri kaydedildi.');
+      showToast('Görevlendirme simüle edildi; gerçek kayıt oluşturulmadı.');
     } else if (action === 'attendance') {
       state.attendance[button.dataset.student] = button.dataset.status;
       render();
@@ -269,7 +279,7 @@
     } else if (action === 'approve') {
       state.notifications[button.dataset.id] = 'approved';
       render();
-      showToast('Demo bildirimi onaylandı.');
+      showToast('Demo bildirimi onaylandı; gerçek işlem yapılmadı.');
     } else if (action === 'send') {
       state.notifications[button.dataset.id] = 'sent';
       render();
@@ -277,7 +287,7 @@
     } else if (action === 'approve-all') {
       Object.keys(state.notifications).forEach((key) => { if (state.notifications[key] === 'pending') state.notifications[key] = 'approved'; });
       render();
-      showToast('Bekleyen demo bildirimleri onaylandı.');
+      showToast('Bekleyen demo bildirimleri onaylandı; gerçek işlem yapılmadı.');
     } else if (action === 'reset') {
       state = start();
       closeModal();
@@ -293,7 +303,26 @@
   });
   $('#closeModal').addEventListener('click', closeModal);
   modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
-  addEventListener('keydown', (event) => { if (event.key === 'Escape') closeModal(); });
+  addEventListener('keydown', (event) => {
+    if (modal.hidden) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeModal();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = modalFocusableElements();
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
   addEventListener('popstate', render);
   Object.defineProperty(window, '__OKUL_DEMO__', { value: Object.freeze({ seed: SEED, routes: ['today', 'schedule', 'leave', 'attendance', 'notifications'], validation: 'state-derived' }) });
   render();
