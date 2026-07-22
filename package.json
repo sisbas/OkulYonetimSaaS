@@ -7,6 +7,7 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "start": "nest start",
     "start:dev": "nest start --watch",
+    "demo:start": "node scripts/demo-server.js",
     "test": "jest --passWithNoTests",
     "test:unit": "jest --runInBand src --passWithNoTests",
     "test:e2e": "jest --config ./test/jest-e2e.json",
