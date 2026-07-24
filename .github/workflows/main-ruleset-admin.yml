@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/rulesets/main-merge-governance.json'
       - '.github/workflows/main-ruleset-admin.yml'
+      - '.github/workflows/pr-governance.yml'
       - 'scripts/main_ruleset.py'
       - 'docs/operations/main-ruleset-bootstrap.md'
   workflow_dispatch:
@@ -29,15 +30,44 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Validate declared ruleset
         run: python3 scripts/main_ruleset.py validate-payload
+      - name: Validate governance workflow contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/pr-governance.yml'
+          exact_count="$(grep -Ec '^    name: Merge Governance Enforcement$' "$workflow")"
+          [[ "$exact_count" == '1' ]] || {
+            echo "::error::Expected exactly one aggregate job named 'Merge Governance Enforcement'; found $exact_count."
+            exit 1
+          }
+          if grep -Eq '^\s*cancel-in-progress:\s*true\s*$' "$workflow"; then
+            echo '::error::PR Governance must not cancel in-progress runs; every event requires terminal evidence.'
+            exit 1
+          fi
+          grep -Fq 'else if (check.status !== "completed") pending.push' "$workflow" || {
+            echo '::error::Pending required-check handling is missing.'
+            exit 1
+          }
+          grep -Fq 'if (!check) missing.push' "$workflow" || {
+            echo '::error::Missing required-check handling is missing.'
+            exit 1
+          }
+          grep -Fq 'else if (check.conclusion !== "success") failed.push' "$workflow" || {
+            echo '::error::Cancelled/failure required-check handling is missing.'
+            exit 1
+          }
+          echo 'PASS: exact aggregate name and fail-closed missing/pending/cancelled handling verified.'
 
   Live-Main-Ruleset-Verification:
     name: Live Main Ruleset Verification
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Verify exact active main ruleset through public Rules REST API
+      - name: Verify public live ruleset structure and source
         shell: bash
         run: |
           set -euo pipefail
@@ -51,21 +81,20 @@ jobs:
           pull="$(jq -c '[.rules[]|select(.type=="pull_request")][0].parameters' <<<"$detail")"
           checks="$(jq -c '[.rules[]|select(.type=="required_status_checks")][0].parameters' <<<"$detail")"
 
-          jq -e '.name=="main-merge-governance" and .target=="branch" and .enforcement=="active" and (.bypass_actors|length==0) and ([.conditions.ref_name.include[]]|any(.=="~DEFAULT_BRANCH" or .=="refs/heads/main"))' <<<"$detail" >/dev/null || {
-            echo '::error::Ruleset target, enforcement, branch condition or bypass policy is invalid.'
+          jq -e '
+            .name=="main-merge-governance" and
+            .target=="branch" and
+            .enforcement=="active" and
+            ([.conditions.ref_name.include[]]|any(.=="~DEFAULT_BRANCH" or .=="refs/heads/main"))
+          ' <<<"$detail" >/dev/null || {
+            echo '::error::Ruleset target, enforcement or default-branch condition is invalid.'
             exit 1
           }
 
-          jq -e '.dismiss_stale_reviews_on_push==true and .required_approving_review_count==1 and .required_review_thread_resolution==true' <<<"$pull" >/dev/null || {
-            echo '::error::Approval count, stale approval dismissal or conversation resolution policy is invalid.'
+          jq -e '.dismiss_stale_reviews_on_push==true and .required_approving_review_count==1 and .required_review_thread_resolution==true and .require_last_push_approval==true' <<<"$pull" >/dev/null || {
+            echo '::error::Pull-request approval, stale dismissal, latest-push approval or thread-resolution policy is invalid.'
             exit 1
           }
-
-          if ! jq -e '.require_last_push_approval==true' <<<"$pull" >/dev/null; then
-            echo '::error::Require approval of the most recent reviewable push is disabled.'
-            echo '::error::Open Settings > Rules > Rulesets > main-merge-governance and enable this option.'
-            exit 1
-          fi
 
           jq -e --argjson expected "$expected" '.strict_required_status_checks_policy==true and ((.required_status_checks|map(.context)|sort)==($expected|sort))' <<<"$checks" >/dev/null || {
             echo '::error::Strict required checks or exact required-check list is invalid.'
@@ -74,20 +103,39 @@ jobs:
 
           active="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rules/branches/main")"
           for type in deletion non_fast_forward pull_request required_status_checks; do
-            jq -e --arg type "$type" 'any(.[];.type==$type)' <<<"$active" >/dev/null || { echo "::error::Active main rules are missing $type."; exit 1; }
+            jq -e --arg type "$type" --arg id "$id" 'any(.[]; .type==$type and ((.ruleset_id|tostring)==$id))' <<<"$active" >/dev/null || {
+              echo "::error::Active main rule $type is missing or is not sourced from ruleset id=$id."
+              exit 1
+            }
           done
-          echo "PASS: exact active main ruleset verified (id=$id; checks=11; bypass=0; latest-push-approval=true)"
+
+          bypass_state="$(jq -r 'if has("bypass_actors") then (.bypass_actors|type) else "missing" end' <<<"$detail")"
+          if [[ "$bypass_state" == 'array' ]]; then
+            bypass_count="$(jq -r '.bypass_actors|length' <<<"$detail")"
+            [[ "$bypass_count" == '0' ]] || {
+              echo "::error::Public response reports active bypass actors: count=$bypass_count."
+              exit 1
+            }
+            echo 'NOTICE: public response reports bypass_count=0; trusted-main admin verification remains the authoritative closure evidence.'
+          else
+            echo "::notice::Public Rules API did not expose an authoritative bypass list (state=$bypass_state). Trusted-main admin verification is required before incident closure."
+          fi
+
+          echo "PASS: public live ruleset structure verified (id=$id; checks=11; source-bound=true)."
 
   Main-Ruleset-Administration:
     name: Main Ruleset Administration
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout trusted main
         uses: actions/checkout@v7
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
       - name: Validate declared ruleset
         run: python3 scripts/main_ruleset.py validate-payload
-      - name: Apply or verify live ruleset
+      - name: Apply or verify authoritative live ruleset
         env:
           REPO_ADMIN_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
         run: python3 scripts/main_ruleset.py "${{ inputs.operation }}"
@@ -98,6 +146,7 @@ jobs:
             echo '## Main ruleset administration'
             echo
             echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Ref: $GITHUB_REF"
             echo "- Operation: ${{ inputs.operation }}"
             echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo "- Result: ${{ job.status }}"
