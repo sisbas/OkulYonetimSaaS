@@ -2,6 +2,45 @@ import type { OperationsModule } from './operations.routes';
 import type { OperationsUiState, ScheduleContractUiState } from './operations.states';
 import type { UiStateVisualPattern, DisclosureTier, BreadcrumbSegment } from './operations.visual-hierarchy';
 
+/**
+ * Accessibility configuration for operations skeleton components
+ * Defines ARIA attributes, keyboard navigation, color contrast, and reduced motion support
+ */
+export type OperationsAccessibilityConfig = {
+  /** ARIA role for the component container */
+  role: string;
+  /** ARIA label describing the component's purpose */
+  ariaLabel: string;
+  /** ARIA live region policy for dynamic content updates */
+  ariaLive?: 'off' | 'polite' | 'assertive';
+  /** ARIA atomic setting for live regions */
+  ariaAtomic?: boolean;
+  /** Indicates if the component contains interactive elements requiring keyboard navigation */
+  hasInteractiveElements: boolean;
+  /** Tabindex strategy for focus management */
+  tabindexStrategy: 'none' | 'container' | 'individual';
+  /** Focus indicator style requirement */
+  focusIndicatorRequired: boolean;
+  /** Minimum color contrast ratio for text (WCAG 2.1 AA requires 4.5:1 for normal text) */
+  minimumContrastRatio: number;
+  /** Color contrast requirements for state indicators */
+  stateIndicatorContrast: {
+    loading: { foreground: string; background: string; minRatio: number };
+    empty: { foreground: string; background: string; minRatio: number };
+    error: { foreground: string; background: string; minRatio: number };
+    forbidden: { foreground: string; background: string; minRatio: number };
+    contract_pending: { foreground: string; background: string; minRatio: number };
+  };
+  /** Reduced motion alternative - disables animations for users with vestibular disorders */
+  reducedMotionAlternative: {
+    enabled: boolean;
+    prefersReducedMotionQuery: string;
+    fallbackBehavior: 'static' | 'minimal-animation';
+  };
+  /** Screen reader announcement for state changes */
+  stateAnnouncements?: Partial<Record<OperationsUiState, string>>;
+};
+
 export type OperationsComponentDescriptor = {
   name: string;
   module: OperationsModule | 'shared';
@@ -17,6 +56,9 @@ export type OperationsComponentDescriptor = {
   interactionEnabled: false;
   submitEnabled: false;
   runtimeComponent: false;
+  /** Accessibility configuration for screen readers, keyboard navigation, and reduced motion */
+  accessibility: OperationsAccessibilityConfig;
+
   // Visual Hierarchy Extensions
   visualPattern?: UiStateVisualPattern;
   defaultDisclosureTier?: DisclosureTier;
@@ -61,6 +103,54 @@ const SCHEDULE_CONTRACT_DEPENDENCIES = [
   'Branch Course Room TimeSlot Teacher StudentGroup reference contracts',
 ] as const;
 
+/**
+ * Default accessibility configuration for operations components meeting WCAG 2.1 AA standards
+ */
+const OPERATIONS_DEFAULT_ACCESSIBILITY: OperationsAccessibilityConfig = {
+  role: 'region',
+  ariaLabel: 'Operations content loading placeholder',
+  ariaLive: 'polite',
+  ariaAtomic: true,
+  hasInteractiveElements: false,
+  tabindexStrategy: 'none',
+  focusIndicatorRequired: true,
+  minimumContrastRatio: 4.5,
+  stateIndicatorContrast: {
+    loading: { foreground: '#666666', background: '#F5F5F5', minRatio: 4.5 },
+    empty: { foreground: '#666666', background: '#FFFFFF', minRatio: 4.5 },
+    error: { foreground: '#D32F2F', background: '#FFEBEE', minRatio: 4.5 },
+    forbidden: { foreground: '#F57C00', background: '#FFF3E0', minRatio: 4.5 },
+    contract_pending: { foreground: '#1976D2', background: '#E3F2FD', minRatio: 4.5 },
+  },
+  reducedMotionAlternative: {
+    enabled: true,
+    prefersReducedMotionQuery: '@media (prefers-reduced-motion: reduce)',
+    fallbackBehavior: 'static',
+  },
+  stateAnnouncements: {
+    loading: 'Loading operations content...',
+    empty: 'No operations data available',
+    error: 'An error occurred while loading operations data',
+    forbidden: 'Access denied to this operations content',
+    contract_pending: 'Waiting for contract dependencies to be resolved',
+  },
+};
+
+/**
+ * Accessibility configuration for interactive operations components (forms, editors)
+ */
+const OPERATIONS_INTERACTIVE_ACCESSIBILITY: OperationsAccessibilityConfig = {
+  ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+  hasInteractiveElements: true,
+  tabindexStrategy: 'individual',
+  role: 'form',
+  stateAnnouncements: {
+    ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+    loading: 'Loading form fields...',
+    error: 'Form validation errors present',
+  },
+};
+
 export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescriptor[] = [
   {
     name: 'DailyOperationPageSkeleton',
@@ -76,6 +166,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Daily operations page with summary placeholders',
+      role: 'main',
+      stateAnnouncements: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+        loading: 'Loading daily operations...',
+        contract_pending: 'Waiting for schedule and operations contracts...',
+      },
+    },
   },
   {
     name: 'TodaySchedulePanelSkeleton',
@@ -91,6 +191,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: "Today's schedule panel",
+      role: 'region',
+      stateAnnouncements: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+        loading: 'Loading today\'s schedule...',
+        empty: 'No scheduled events for today',
+      },
+    },
   },
   {
     name: 'LeaveImpactPlaceholder',
@@ -105,6 +215,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Leave impact information placeholder',
+      ariaLive: 'polite',
+      stateAnnouncements: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+        empty: 'No leave impact information available',
+        contract_pending: 'Waiting for leave impact contract...',
+      },
+    },
   },
   {
     name: 'DailyClosurePanelSkeleton',
@@ -119,6 +239,14 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_INTERACTIVE_ACCESSIBILITY,
+      ariaLabel: 'Daily closure checklist',
+      stateAnnouncements: {
+        ...OPERATIONS_INTERACTIVE_ACCESSIBILITY.stateAnnouncements,
+        empty: 'Daily closure checklist unavailable',
+      },
+    },
   },
   {
     name: 'SchedulePageSkeleton',
@@ -135,6 +263,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Schedule management page',
+      role: 'main',
+      stateAnnouncements: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+        loading: 'Loading schedule page...',
+        contract_pending: 'Waiting for schedule contracts...',
+      },
+    },
   },
   {
     name: 'ScheduleDraftListSkeleton',
@@ -158,6 +296,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Schedule drafts list',
+      role: 'list',
+      stateAnnouncements: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+        loading: 'Loading schedule drafts...',
+        empty: 'No schedule drafts available',
+      },
+    },
   },
   {
     name: 'ScheduleWeeklyGridSkeleton',
@@ -181,6 +329,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Weekly schedule grid',
+      role: 'grid',
+      stateAnnouncements: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+        loading: 'Loading weekly schedule grid...',
+        empty: 'No schedule events in grid',
+      },
+    },
   },
   {
     name: 'ScheduleEventEditorModalSkeleton',
@@ -205,6 +363,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_INTERACTIVE_ACCESSIBILITY,
+      ariaLabel: 'Schedule event editor form',
+      role: 'dialog',
+      ariaLive: 'assertive',
+      stateAnnouncements: {
+        ...OPERATIONS_INTERACTIVE_ACCESSIBILITY.stateAnnouncements,
+        empty: 'Event editor form fields unavailable',
+      },
+    },
   },
   {
     name: 'ScheduleConflictPanelSkeleton',
@@ -228,6 +396,20 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Schedule conflicts panel',
+      ariaLive: 'assertive',
+      stateIndicatorContrast: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateIndicatorContrast,
+        error: { foreground: '#C62828', background: '#FFEBEE', minRatio: 4.5 },
+      },
+      stateAnnouncements: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+        empty: 'No scheduling conflicts detected',
+        error: 'Scheduling conflicts detected',
+      },
+    },
   },
   {
     name: 'ScheduleValidationResultSkeleton',
@@ -256,6 +438,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Schedule validation results',
+      ariaLive: 'polite',
+      stateAnnouncements: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+        loading: 'Loading validation results...',
+        empty: 'No validation results available',
+      },
+    },
   },
   {
     name: 'SchedulePublishConfirmationSkeleton',
@@ -288,6 +480,17 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_INTERACTIVE_ACCESSIBILITY,
+      ariaLabel: 'Schedule publish confirmation dialog',
+      role: 'alertdialog',
+      ariaLive: 'assertive',
+      stateAnnouncements: {
+        ...OPERATIONS_INTERACTIVE_ACCESSIBILITY.stateAnnouncements,
+        empty: 'Publish confirmation unavailable',
+        error: 'Publish blocked - review conditions',
+      },
+    },
   },
   {
     name: 'ScheduleStaleVersionWarningSkeleton',
@@ -310,6 +513,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Stale version warning',
+      role: 'alert',
+      ariaLive: 'assertive',
+      stateAnnouncements: {
+        error: 'Version mismatch - reload required',
+        contract_pending: 'Version contract pending',
+      },
+    },
   },
   {
     name: 'ScheduleForbiddenStateSkeleton',
@@ -326,6 +539,15 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Access denied message',
+      role: 'alert',
+      ariaLive: 'assertive',
+      stateAnnouncements: {
+        forbidden: 'Access denied to this schedule section',
+      },
+    },
   },
   {
     name: 'AttendanceOverviewPageSkeleton',
@@ -341,6 +563,16 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'Attendance overview page',
+      role: 'main',
+      stateAnnouncements: {
+        ...OPERATIONS_DEFAULT_ACCESSIBILITY.stateAnnouncements,
+        loading: 'Loading attendance overview...',
+        empty: 'No attendance sessions available',
+      },
+    },
   },
   {
     name: 'AttendanceSessionPageSkeleton',
@@ -356,6 +588,15 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_INTERACTIVE_ACCESSIBILITY,
+      ariaLabel: 'Attendance session detail page',
+      stateAnnouncements: {
+        ...OPERATIONS_INTERACTIVE_ACCESSIBILITY.stateAnnouncements,
+        loading: 'Loading attendance session...',
+        empty: 'Attendance session data unavailable',
+      },
+    },
   },
   {
     name: 'AttendancePiiSafeEmptyState',
@@ -370,5 +611,15 @@ export const OPERATIONS_COMPONENT_SKELETONS: readonly OperationsComponentDescrip
     interactionEnabled: false,
     submitEnabled: false,
     runtimeComponent: false,
+    accessibility: {
+      ...OPERATIONS_DEFAULT_ACCESSIBILITY,
+      ariaLabel: 'No student data available',
+      ariaLive: 'polite',
+      stateAnnouncements: {
+        empty: 'No student data available for this session',
+        forbidden: 'Access denied to student roster',
+        contract_pending: 'Waiting for student roster contract...',
+      },
+    },
   },
 ] as const;
