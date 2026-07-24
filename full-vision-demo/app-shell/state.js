@@ -25,12 +25,24 @@
     const attendance = graph.operations.attendance[0];
     return {
       meta: { seed: graph.meta.seed, fixedClock: graph.meta.fixedClock, synthetic: true },
-      leave: { id: leave.id, status: 'pending', assignments: {} },
-      schedule: { previewStatus: 'blocked', conflictCount: 0, acceptedLessonIds: [] },
+      leave: { id: leave.id, status: 'pending', coverageStatus: 'unresolved', assignments: {} },
+      schedule: { previewStatus: 'blocked', conflictCount: 0, acceptedLessonIds: [], openLessonIds: [...leave.affectedLessonIds] },
       attendance: { id: attendance.id, locked: false, statuses: Object.fromEntries(attendance.students.map((student) => [student.id, student.status])) },
       notifications: Object.fromEntries(graph.operations.notifications.map((notification) => [notification.id, notification.status])),
       auditTrail: [],
     };
+  }
+
+  function coverageStatusFor(state, leave) {
+    const assignedCount = leave.affectedLessonIds.filter((lessonId) => state.leave.assignments[lessonId]).length;
+    if (leave.affectedLessonIds.length === 0) return 'not_required';
+    if (assignedCount === 0) return 'unresolved';
+    if (assignedCount === leave.affectedLessonIds.length) return 'covered';
+    return 'partially_covered';
+  }
+
+  function openLessonIdsFor(state, leave) {
+    return leave.affectedLessonIds.filter((lessonId) => !state.leave.assignments[lessonId]);
   }
 
   function withAudit(state, action, detail) {
@@ -48,29 +60,49 @@
     if (event.type === ACTIONS.SELECT_SUBSTITUTE) {
       if (state.leave.status !== 'pending') return state;
       if (!leave.affectedLessonIds.includes(event.lessonId)) return state;
+      if (!event.teacherId) {
+        if (!Object.prototype.hasOwnProperty.call(state.leave.assignments, event.lessonId)) return state;
+        const assignments = { ...state.leave.assignments };
+        delete assignments[event.lessonId];
+        const next = { ...state, leave: { ...state.leave, assignments } };
+        return withAudit({
+          ...next,
+          leave: { ...next.leave, coverageStatus: coverageStatusFor(next, leave) },
+          schedule: { ...next.schedule, openLessonIds: openLessonIdsFor(next, leave) },
+        }, event.type, event.lessonId);
+      }
       const permitted = leave.candidatesByLesson[event.lessonId] || [];
       const teacher = graph.coreDefinitions.teachers.find((item) => item.id === event.teacherId);
       if (!permitted.includes(event.teacherId) || !teacher || !teacher.available) return state;
-      return withAudit({ ...state, leave: { ...state.leave, assignments: { ...state.leave.assignments, [event.lessonId]: event.teacherId } } }, event.type, event.lessonId);
+      const next = { ...state, leave: { ...state.leave, assignments: { ...state.leave.assignments, [event.lessonId]: event.teacherId } } };
+      return withAudit({
+        ...next,
+        leave: { ...next.leave, coverageStatus: coverageStatusFor(next, leave) },
+        schedule: { ...next.schedule, openLessonIds: openLessonIdsFor(next, leave) },
+      }, event.type, event.lessonId);
     }
 
     if (event.type === ACTIONS.APPROVE_LEAVE_DEMO) {
       if (state.leave.status !== 'pending') return state;
-      const complete = leave.affectedLessonIds.every((lessonId) => state.leave.assignments[lessonId]);
-      if (!complete) return state;
+      const coverageStatus = coverageStatusFor(state, leave);
       return withAudit({
         ...state,
-        leave: { ...state.leave, status: 'approved_demo' },
-        schedule: { ...state.schedule, previewStatus: 'ready' },
-      }, event.type, state.leave.id);
+        leave: { ...state.leave, status: 'approved_demo', coverageStatus },
+        schedule: { ...state.schedule, previewStatus: 'ready', openLessonIds: openLessonIdsFor(state, leave) },
+      }, event.type, { leaveId: state.leave.id, coverageStatus });
     }
 
     if (event.type === ACTIONS.ACCEPT_SCHEDULE_PREVIEW) {
       if (state.leave.status !== 'approved_demo' || state.schedule.previewStatus !== 'ready' || state.schedule.conflictCount !== 0) return state;
       return withAudit({
         ...state,
-        schedule: { ...state.schedule, previewStatus: 'accepted_demo', acceptedLessonIds: [...leave.affectedLessonIds] },
-      }, event.type, 'prepared-schedule-preview');
+        schedule: {
+          ...state.schedule,
+          previewStatus: 'accepted_demo',
+          acceptedLessonIds: leave.affectedLessonIds.filter((lessonId) => state.leave.assignments[lessonId]),
+          openLessonIds: openLessonIdsFor(state, leave),
+        },
+      }, event.type, { previewId: 'D-SCH-PREVIEW-001', openLessonCount: openLessonIdsFor(state, leave).length });
     }
 
     if (event.type === ACTIONS.SET_ATTENDANCE) {
@@ -102,7 +134,17 @@
       if (event.screen === 'leave') return { ...state, leave: initial.leave, schedule: initial.schedule, attendance: initial.attendance, notifications: initial.notifications, auditTrail };
       if (event.screen === 'attendance') return { ...state, attendance: initial.attendance, notifications: initial.notifications, auditTrail };
       if (event.screen === 'notifications') return { ...state, notifications: initial.notifications, auditTrail };
-      if (event.screen === 'schedule') return { ...state, schedule: { ...initial.schedule, previewStatus: state.leave.status === 'approved_demo' ? 'ready' : 'blocked' }, attendance: initial.attendance, notifications: initial.notifications, auditTrail };
+      if (event.screen === 'schedule') return {
+        ...state,
+        schedule: {
+          ...initial.schedule,
+          previewStatus: state.leave.status === 'approved_demo' ? 'ready' : 'blocked',
+          openLessonIds: openLessonIdsFor(state, leave),
+        },
+        attendance: initial.attendance,
+        notifications: initial.notifications,
+        auditTrail,
+      };
     }
 
     return state;
@@ -111,11 +153,18 @@
   function getMetrics(state) {
     const graph = fixtures.createFixtureGraph();
     const affectedCount = graph.operations.leaves[0].affectedLessonIds.length;
-    const unassigned = state.leave.status === 'approved_demo' ? 0 : affectedCount - Object.keys(state.leave.assignments).length;
+    const unassigned = affectedCount - Object.keys(state.leave.assignments).length;
     const incompleteAttendance = state.attendance.locked ? 0 : graph.operations.attendance.filter((session) => session.state === 'open').length;
     const pendingNotifications = Object.values(state.notifications).filter((status) => status === 'pending').length;
     const simulatedNotifications = Object.values(state.notifications).filter((status) => status === 'simulated').length;
-    return { pendingLeaves: state.leave.status === 'pending' ? 1 : 0, unassignedLessons: unassigned, incompleteAttendance, pendingNotifications, simulatedNotifications };
+    return {
+      pendingLeaves: state.leave.status === 'pending' ? 1 : 0,
+      unassignedLessons: unassigned,
+      coverageStatus: state.leave.coverageStatus,
+      incompleteAttendance,
+      pendingNotifications,
+      simulatedNotifications,
+    };
   }
 
   function createStateForScenarioStep(stepNumber) {
@@ -136,5 +185,5 @@
     return state;
   }
 
-  return { ACTIONS, createInitialState, createStateForScenarioStep, reduce, getMetrics };
+  return { ACTIONS, createInitialState, createStateForScenarioStep, reduce, getMetrics, coverageStatusFor };
 });

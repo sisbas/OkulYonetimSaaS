@@ -30,11 +30,11 @@
       organization: { id: 'D-ORG-001', name: 'Demo Eğitim Kurumu', campuses: [{ id: 'D-CAM-A', name: 'Kampüs A' }] },
       coreDefinitions: {
         teachers: [
-          { id: 'D-T-014', label: 'Demo Öğretmen A', branch: 'Matematik', available: false },
-          { id: 'D-T-021', label: 'Demo Öğretmen B', branch: 'Matematik', available: true },
-          { id: 'D-T-026', label: 'Demo Öğretmen C', branch: 'Matematik', available: true },
-          { id: 'D-T-031', label: 'Demo Öğretmen D', branch: 'Fizik', available: true },
-          { id: 'D-T-044', label: 'Demo Öğretmen E', branch: 'Matematik', available: false },
+          { id: 'D-T-014', label: 'Demo Öğretmen A', branch: 'Matematik', available: false, dailyLoad: 6, weeklyLoad: 28, availabilityNote: 'İzin talep sahibi' },
+          { id: 'D-T-021', label: 'Demo Öğretmen B', branch: 'Matematik', available: true, dailyLoad: 2, weeklyLoad: 18, availabilityNote: 'Aynı branş ve boş slot' },
+          { id: 'D-T-026', label: 'Demo Öğretmen C', branch: 'Matematik', available: true, dailyLoad: 3, weeklyLoad: 21, availabilityNote: 'Derslik çakışması yok' },
+          { id: 'D-T-031', label: 'Demo Öğretmen D', branch: 'Fizik', available: true, dailyLoad: 4, weeklyLoad: 22, availabilityNote: 'Branş uygun değil' },
+          { id: 'D-T-044', label: 'Demo Öğretmen E', branch: 'Matematik', available: false, dailyLoad: 6, weeklyLoad: 30, availabilityNote: 'Aynı saatte dersi var' },
         ],
         groups: [
           { id: 'D-GRP-12S1', label: '12-SAY-1' },
@@ -54,12 +54,28 @@
           ],
         },
         leaves: [{
-          id: 'D-LV-204', requesterId: 'D-T-014', type: 'Saatlik izin', reasonCode: 'İdari durum', interval: '09:00–16:45', status: 'pending',
+          id: 'D-LV-204', requesterId: 'D-T-014', requesterRole: 'teacher', decisionRole: 'operations_manager',
+          durationKind: 'hourly', durationLabel: 'Saatlik izin', reasonCode: 'administrative', reasonLabel: 'İdari durum',
+          interval: '09:00–16:45', status: 'pending', coveragePolicy: 'manager_may_approve_with_open_lessons',
           affectedLessonIds: ['D-SE-301', 'D-SE-302', 'D-SE-303'],
           candidatesByLesson: {
             'D-SE-301': ['D-T-021', 'D-T-044'],
             'D-SE-302': ['D-T-026', 'D-T-044'],
             'D-SE-303': ['D-T-021', 'D-T-026'],
+          },
+          candidateEvidenceByLesson: {
+            'D-SE-301': [
+              { teacherId: 'D-T-021', status: 'available', evidence: 'Aynı branş, slot boş, günlük yük 2/6' },
+              { teacherId: 'D-T-044', status: 'blocked', evidence: 'Aynı slotta başka ders var' },
+            ],
+            'D-SE-302': [
+              { teacherId: 'D-T-026', status: 'available', evidence: 'Aynı branş, derslik çakışması yok' },
+              { teacherId: 'D-T-044', status: 'blocked', evidence: 'Günlük yük sınırında' },
+            ],
+            'D-SE-303': [
+              { teacherId: 'D-T-021', status: 'available', evidence: 'Slot boş, haftalık yük dengeli' },
+              { teacherId: 'D-T-026', status: 'available', evidence: 'Slot boş, aynı grup çakışması yok' },
+            ],
           },
         }],
         attendance: [{
@@ -75,7 +91,39 @@
           { id: 'D-NT-034', studentId: 'D-S-003', channelLabel: 'Maskeli mobil kanal', template: 'Derse katılım bilgilendirmesi', eligibility: 'eligible', status: 'pending' },
           { id: 'D-NT-035', studentId: 'D-S-004', channelLabel: 'Kanal uygun değil', template: 'Geç katılım bilgilendirmesi', eligibility: 'blocked_kvkk', status: 'blocked' },
         ],
-        schedule: { lessonIds: ['D-SE-301', 'D-SE-302', 'D-SE-303', 'D-SE-304'], conflictCount: 0, generated: false },
+        schedule: {
+          lessonIds: ['D-SE-301', 'D-SE-302', 'D-SE-303', 'D-SE-304'],
+          conflictCount: 0,
+          generated: false,
+          studio: {
+            modeLabel: 'Denge öncelikli hazır çizelgeleme simülasyonu',
+            seed: 'OKUL-SCHEDULER-2026-07-21-v2',
+            requestedLessons: 48,
+            placedLessons: 47,
+            fitRateLabel: '47/48',
+            progressPercent: 98,
+            maxDepth: 180,
+            stages: [
+              { id: 'D-RLX-01', label: 'Sıkı kurallar', rule: 'Aynı ders günde en fazla 2 saat', placedLessons: 44, status: 'partial' },
+              { id: 'D-RLX-02', label: 'Yumuşak gevşetme', rule: 'Blok bütünlüğü korunur, sınıf aralığı esnetilir', placedLessons: 47, status: 'selected' },
+              { id: 'D-RLX-03', label: 'Acil geri dönüş', rule: 'Yalnız açık tanı için gösterilir', placedLessons: 47, status: 'not_used' },
+            ],
+            diagnostics: {
+              classConstraints: [
+                { id: 'D-DIAG-GRP-12S1', scopeId: 'D-GRP-12S1', label: '12-SAY-1 Salı kapasitesi', impact: '1 saat yerleşemedi', evidence: 'Son iki slot dolu' },
+                { id: 'D-DIAG-GRP-MZS1', scopeId: 'D-GRP-MZS1', label: 'MEZ-SAY-1 blok bütünlüğü', impact: 'Çiftli blok korunuyor', evidence: 'Öğleden sonra tek boşluk var' },
+              ],
+              teacherConstraints: [
+                { id: 'D-DIAG-T-014', teacherId: 'D-T-014', label: 'Demo Öğretmen A', impact: 'İzin penceresi nedeniyle kapalı', evidence: '09:00-16:45 arası karar bekliyor' },
+                { id: 'D-DIAG-T-044', teacherId: 'D-T-044', label: 'Demo Öğretmen E', impact: 'Haftalık yük sınırı', evidence: '30/30 saat' },
+              ],
+              balance: [
+                { id: 'D-BAL-12S1', groupId: 'D-GRP-12S1', label: '12-SAY-1', score: 86, evidence: 'Matematik iki güne yayılmış' },
+                { id: 'D-BAL-MZS1', groupId: 'D-GRP-MZS1', label: 'MEZ-SAY-1', score: 78, evidence: 'Geometri öğleden sonraya yığılmış' },
+              ],
+            },
+          },
+        },
         reports: [],
       },
       academics: { strategy: [], assessments: [], results: [], students: [], workload: [], import: [], portal: [] },

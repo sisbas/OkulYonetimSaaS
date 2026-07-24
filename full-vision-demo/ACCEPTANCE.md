@@ -26,3 +26,13 @@
 - Hosted-release exact head'i üzerindeki birleşik output ve browser kanıtı
 - Production API/backend entegrasyonu
 - Faz 2–3 ekranlarının yüksek sadakatli etkileşimi
+
+## 24 Temmuz 2026 ek kabul sınırı
+
+Bu branch, ana repo içindeki demo özelliklerini geliştirme çalışmasıdır. Önceki GATE 2 PASS kararını production/runtime kararı hâline getirmez.
+
+- İzin onayı ile yedek ders kapsaması ayrı durumdur.
+- Yönetici, demo içinde açık ders kalırken onayı simüle edebilir.
+- Açık kalan dersler Günlük Operasyon metriğinde ve program önizlemesinde görünür kalmalıdır.
+- Program Stüdyosu `generate` ve `diagnostics` sekmeleri boş placeholder değildir; hazır simülasyon sonucu, gevşetme aşamaları, sınıf/öğretmen kısıtı ve denge analizi gösterir.
+- Bu sekmeler canlı işlem, kalıcı kayıt, gerçek program yayını veya dış sistem bağlantısı iddiası taşıyamaz.
