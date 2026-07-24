@@ -166,6 +166,11 @@ test('state reducer blocks invalid actions and resets exactly', () => {
   assert.equal(state.leave.coverageStatus, 'partially_covered');
   state = reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-302', teacherId: 'D-T-026' });
   state = reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-303', teacherId: 'D-T-021' });
+  state = reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-303', teacherId: '' });
+  assert.equal(state.leave.coverageStatus, 'partially_covered');
+  assert.deepEqual(state.schedule.openLessonIds, ['D-SE-303']);
+  assert.equal(state.leave.assignments['D-SE-303'], undefined);
+  state = reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-303', teacherId: 'D-T-021' });
   assert.equal(state.leave.coverageStatus, 'covered');
   state = reduce(state, { type: ACTIONS.APPROVE_LEAVE_DEMO });
   assert.equal(state.leave.status, 'approved_demo');

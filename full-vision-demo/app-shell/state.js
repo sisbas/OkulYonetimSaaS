@@ -60,6 +60,17 @@
     if (event.type === ACTIONS.SELECT_SUBSTITUTE) {
       if (state.leave.status !== 'pending') return state;
       if (!leave.affectedLessonIds.includes(event.lessonId)) return state;
+      if (!event.teacherId) {
+        if (!Object.prototype.hasOwnProperty.call(state.leave.assignments, event.lessonId)) return state;
+        const assignments = { ...state.leave.assignments };
+        delete assignments[event.lessonId];
+        const next = { ...state, leave: { ...state.leave, assignments } };
+        return withAudit({
+          ...next,
+          leave: { ...next.leave, coverageStatus: coverageStatusFor(next, leave) },
+          schedule: { ...next.schedule, openLessonIds: openLessonIdsFor(next, leave) },
+        }, event.type, event.lessonId);
+      }
       const permitted = leave.candidatesByLesson[event.lessonId] || [];
       const teacher = graph.coreDefinitions.teachers.find((item) => item.id === event.teacherId);
       if (!permitted.includes(event.teacherId) || !teacher || !teacher.available) return state;
