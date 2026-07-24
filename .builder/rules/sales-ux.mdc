@@ -1,0 +1,17 @@
+---
+description: Sales Mode information architecture and copy limits
+globs: full-vision-builder/**/*
+alwaysApply: true
+---
+
+# Sales UX
+
+- Default entry is Sales Mode.
+- Primary navigation contains at most: Yönetici Özeti, Günlük Operasyon, Program ve İzin Sürekliliği, Akademik Gelişim, Akıllı Yönetim Vizyonu, Tüm Modüller.
+- Do not expose the 21 module families directly in the primary navigation.
+- Each sales surface has one main message, one primary action, at most two secondary actions, at most four metrics, one dominant workspace and at most one support panel.
+- Keep phase/persona filters, claim details, scenario controls and technical contract text inside Explore Mode.
+- Titles: maximum 7 words. Supporting text: maximum 18 words. CTA: maximum 4 words. Card descriptions: maximum 20 words.
+- Use the structure Problem → Product behavior → Institution benefit.
+- Do not claim live AI, guaranteed success, complete error elimination, verified ROI, production readiness or live integration.
+- Phase 3 always displays: “Canlı AI sonucu değildir. Önceden hazırlanmış kavramsal simülasyondur.”

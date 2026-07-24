@@ -1,0 +1,40 @@
+---
+description: Files and properties Builder may edit
+globs: full-vision-builder/**/*
+alwaysApply: true
+---
+
+# Builder edit scope
+
+Builder may edit only visual frontend composition inside `full-vision-builder/**`:
+
+- app shell
+- component composition
+- grid/flex layout
+- spacing and typography
+- responsive behavior
+- visual hierarchy
+- approved copy placement
+- card density
+- modal/drawer internal layout
+- Presentation Mode appearance
+
+Builder may not change backend files, root Vercel runtime, package dependencies, route/state/fixture/scenario contracts or any network/storage behavior.
+
+Only these component inputs may be visually editable:
+
+- title
+- subtitle
+- description
+- helperText
+- label
+- icon
+- tone
+- density
+- layout
+- emphasis
+- primaryActionLabel
+
+Do not expose route, entity, fixture, reducer or scenario values as Builder inputs.
+
+Use one bounded UX package per Draft PR. Do not merge from Builder. Do not report completion without exact changed files, visual proof and QA evidence.

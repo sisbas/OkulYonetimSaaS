@@ -1,0 +1,25 @@
+---
+description: Canonical Full Vision behavior contracts that Builder must not change
+globs: full-vision-builder/**/*
+alwaysApply: true
+---
+
+# Protected contracts
+
+`full-vision-demo/**` is the canonical behavior source until explicit parity acceptance.
+
+Builder must not create, modify, expose as editable input or duplicate:
+
+- route IDs or paths
+- scenario IDs
+- fixture IDs or fixture graph
+- reducer events or state transitions
+- reset behavior
+- query allowlist
+- claim classification
+- risk/conflict results
+- legacy aliases
+
+React surfaces may later consume these contracts through a read-only adapter. Do not copy fixture or scenario data into a second behavior implementation.
+
+No production backend, authentication, API, network, cookie, token, localStorage, sessionStorage, IndexedDB, serverless function or real PII is allowed in this bounded frontend.
