@@ -1,0 +1,17 @@
+---
+description: Visual system and responsive rules for Full Vision sales frontend
+globs: full-vision-builder/**/*
+alwaysApply: true
+---
+
+# Design system
+
+- Use a neutral canvas, white or low-contrast surfaces and border-first components.
+- Use an 8 px spacing base, restrained shadows and clear left-aligned hierarchy.
+- Desktop sidebar: 240–264 px. Content readable width: maximum 1280 px.
+- Tablet uses a drawer and one- or two-column composition. Minimum control target: 44 px.
+- Global horizontal overflow is prohibited at 1440×900, 1280×800, 1024×768 and 768×1024.
+- Status is communicated with text, icon and label; never by color alone.
+- Keep focus indicators visible and support keyboard/Escape dismissal for overlays.
+- Do not use gradients, glassmorphism, neon colors, oversized hero headings, decorative charts, excessive rounded cards or nested card stacks.
+- Use a single dominant primary CTA per screen.
