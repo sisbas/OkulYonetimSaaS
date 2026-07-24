@@ -1,5 +1,6 @@
 import type { OperationsModule } from './operations.routes';
 import type { OperationsUiState, ScheduleContractUiState } from './operations.states';
+import type { UiStateVisualPattern, DisclosureTier, BreadcrumbSegment } from './operations.visual-hierarchy';
 
 /**
  * Accessibility configuration for operations skeleton components
@@ -57,6 +58,11 @@ export type OperationsComponentDescriptor = {
   runtimeComponent: false;
   /** Accessibility configuration for screen readers, keyboard navigation, and reduced motion */
   accessibility: OperationsAccessibilityConfig;
+
+  // Visual Hierarchy Extensions
+  visualPattern?: UiStateVisualPattern;
+  defaultDisclosureTier?: DisclosureTier;
+  breadcrumbOverride?: readonly BreadcrumbSegment[];
 };
 
 const OPERATIONS_SAFE_DISPLAY_FIELDS = [
