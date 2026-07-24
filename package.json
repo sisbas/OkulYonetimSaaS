@@ -5,6 +5,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "start:dev": "ts-node src/main.ts",
+    "start:prod": "node dist/main.js",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "demo:start": "node scripts/demo-server.js",
