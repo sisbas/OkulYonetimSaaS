@@ -122,28 +122,42 @@ jobs:
                 violations.push(`PR #${pr.number}, merge öncesinde oluşturulmuş ${unresolvedMergeTimeThreadCount} çözülmemiş review thread taşıyor.`);
               }
 
-              // Do not use filter=latest here. A review or body event created after merge
-              // may start a newer queued check and shadow the checks that protected merge.
-              // The newest check completed at or before merged_at is the audit snapshot.
+              // Fetch every historical check run. The Checks API defaults to latest;
+              // filter=all is required so post-merge reruns cannot hide merge-time evidence.
               const checkRuns = await github.paginate(github.rest.checks.listForRef, {
                 owner,
                 repo,
                 ref: fullPr.head.sha,
-                per_page: 100
+                per_page: 100,
+                filter: "all"
               });
-              const latestCompletedByMerge = new Map();
+
+              // Select the newest run CREATED at or before merge for each exact context.
+              // Do not fall back to an older success when a newer pre-merge run was pending,
+              // cancelled, failed or completed only after the merge.
+              const latestCreatedByMerge = new Map();
               for (const check of checkRuns) {
-                if (!atOrBeforeMerge(check.completed_at)) continue;
-                const current = latestCompletedByMerge.get(check.name);
-                if (!current || check.id > current.id) latestCompletedByMerge.set(check.name, check);
+                if (!atOrBeforeMerge(check.started_at)) continue;
+                const current = latestCreatedByMerge.get(check.name);
+                if (!current || check.id > current.id) latestCreatedByMerge.set(check.name, check);
               }
 
               for (const name of requiredChecks) {
-                const check = latestCompletedByMerge.get(name);
+                const check = latestCreatedByMerge.get(name);
                 if (!check) {
-                  violations.push(`PR #${pr.number} merge anında completed required check kanıtı bulunamadı: ${name}.`);
-                } else if (check.status !== "completed" || check.conclusion !== "success") {
-                  violations.push(`PR #${pr.number} merge anındaki ${name} sonucu SUCCESS değildi: ${check.status}/${check.conclusion || "unknown"}.`);
+                  violations.push(`PR #${pr.number} merge anında oluşturulmuş required check kanıtı bulunamadı: ${name}.`);
+                  continue;
+                }
+                if (check.status !== "completed") {
+                  violations.push(`PR #${pr.number} merge anındaki ${name} terminal değildi: ${check.status}.`);
+                  continue;
+                }
+                if (!atOrBeforeMerge(check.completed_at)) {
+                  violations.push(`PR #${pr.number} merge anındaki ${name} merge sonrasına kadar tamamlanmadı.`);
+                  continue;
+                }
+                if (check.conclusion !== "success") {
+                  violations.push(`PR #${pr.number} merge anındaki ${name} SUCCESS değildi: ${check.conclusion || "unknown"}.`);
                 }
               }
 
@@ -155,7 +169,7 @@ jobs:
                   `Merged at: ${fullPr.merged_at}`,
                   `Independent approvals before merge: ${validApprovals.length}`,
                   `Unresolved threads created before merge: ${unresolvedMergeTimeThreadCount}`,
-                  `Required checks evaluated with completed_at <= merged_at: ${requiredChecks.length}`
+                  `Required checks selected by started_at <= merged_at: ${requiredChecks.length}`
                 ])
                 .write();
             }
