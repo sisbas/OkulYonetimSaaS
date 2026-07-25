@@ -11,6 +11,16 @@ Faz 1–3 ürün vizyonunu gösteren dependency-free, statik ve tamamen sentetik
 - Gerçek API, auth, storage, kişi verisi, mesaj, model veya dış bağlantı yoktur.
 - Root `vercel.json` bu GATE’te değiştirilmez; hosted release ayrı kapıdır.
 
+## 24 Temmuz 2026 çalışma kararı
+
+Bu çalışma artık ayrı demo repository'si yerine ana `sisbas/OkulYonetimSaaS` reposu içindeki `full-vision-demo/` üzerinden ilerler.
+
+- `full-vision-demo/`: Ana satış/demo kaynağıdır; statik, sentetik ve testli kalır.
+- `full-vision-builder/`: Builder.io deneme kabuğudur; ana görüntüleme yolu değildir.
+- Production frontend/backend: GATE 3 runtime bağımlılıkları kapanana kadar demo kaynağı yapılmaz.
+- İzin kararı ve ders kapsaması ayrı gösterilir; yönetici onayı simüle edilebilir, yedek bulunmayan dersler Daily Operations kuyruğunda açık kalır.
+- Program Stüdyosu, hazır çizelgeleme sonucu ve teşhis kanıtı gösterir; canlı çözümleme veya kalıcı yayınlama yapmaz.
+
 ## Çalıştırma
 
 ```bash

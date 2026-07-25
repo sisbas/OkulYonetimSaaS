@@ -109,6 +109,14 @@ test('fixture graph is fully synthetic and deterministic', () => {
   assert.equal(first.vision.precomputed, true);
   assert.equal(first.vision.isPrediction, false);
   assert.equal(first.integrations.networkCall, false);
+  assert.equal(first.operations.leaves[0].durationKind, 'hourly');
+  assert.equal(first.operations.leaves[0].reasonCode, 'administrative');
+  assert.equal(first.operations.leaves[0].coveragePolicy, 'manager_may_approve_with_open_lessons');
+  assert.equal(first.operations.schedule.studio.placedLessons, 47);
+  assert.equal(first.operations.schedule.studio.requestedLessons, 48);
+  assert.equal(first.operations.schedule.studio.stages.length, 3);
+  assert.equal(first.operations.schedule.studio.diagnostics.classConstraints.length, 2);
+  assert.equal(first.operations.schedule.studio.diagnostics.teacherConstraints.length, 2);
 
   function walk(value, key) {
     if (Array.isArray(value)) return value.forEach((item) => walk(item, key));
@@ -139,22 +147,41 @@ test('fixture graph is fully synthetic and deterministic', () => {
 test('state reducer blocks invalid actions and resets exactly', () => {
   const { ACTIONS, createInitialState, reduce } = stateModule;
   const initial = createInitialState();
-  assert.deepEqual(reduce(initial, { type: ACTIONS.APPROVE_LEAVE_DEMO }), initial, 'Leave cannot be approved without substitutes');
+  assert.equal(initial.leave.coverageStatus, 'unresolved');
+  assert.deepEqual(initial.schedule.openLessonIds, ['D-SE-301', 'D-SE-302', 'D-SE-303']);
+  const uncoveredApproval = reduce(initial, { type: ACTIONS.APPROVE_LEAVE_DEMO });
+  assert.equal(uncoveredApproval.leave.status, 'approved_demo', 'Manager may approve while lesson coverage stays open');
+  assert.equal(uncoveredApproval.leave.coverageStatus, 'unresolved');
+  assert.equal(uncoveredApproval.schedule.previewStatus, 'ready');
+  assert.deepEqual(uncoveredApproval.schedule.openLessonIds, ['D-SE-301', 'D-SE-302', 'D-SE-303']);
+  const acceptedUncovered = reduce(uncoveredApproval, { type: ACTIONS.ACCEPT_SCHEDULE_PREVIEW });
+  assert.deepEqual(acceptedUncovered.schedule.acceptedLessonIds, []);
+  assert.deepEqual(acceptedUncovered.schedule.openLessonIds, ['D-SE-301', 'D-SE-302', 'D-SE-303']);
   assert.deepEqual(reduce(initial, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-301', teacherId: 'D-T-044' }), initial, 'Unavailable substitute cannot be selected');
   assert.equal(reduce(initial, { type: ACTIONS.SET_ATTENDANCE, studentId: 'D-S-004', status: 'late' }), initial, 'Attendance cannot start before schedule acceptance');
   assert.equal(reduce(initial, { type: ACTIONS.SIMULATE_NOTIFICATION, notificationId: 'D-NT-034' }), initial, 'Notification cannot start before attendance lock');
 
   let state = initial;
   state = reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-301', teacherId: 'D-T-021' });
+  assert.equal(state.leave.coverageStatus, 'partially_covered');
   state = reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-302', teacherId: 'D-T-026' });
   state = reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-303', teacherId: 'D-T-021' });
+  state = reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-303', teacherId: '' });
+  assert.equal(state.leave.coverageStatus, 'partially_covered');
+  assert.deepEqual(state.schedule.openLessonIds, ['D-SE-303']);
+  assert.equal(state.leave.assignments['D-SE-303'], undefined);
+  state = reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-303', teacherId: 'D-T-021' });
+  assert.equal(state.leave.coverageStatus, 'covered');
   state = reduce(state, { type: ACTIONS.APPROVE_LEAVE_DEMO });
   assert.equal(state.leave.status, 'approved_demo');
+  assert.equal(state.leave.coverageStatus, 'covered');
   assert.equal(state.schedule.previewStatus, 'ready');
+  assert.deepEqual(state.schedule.openLessonIds, []);
   assert.equal(reduce(state, { type: ACTIONS.APPROVE_LEAVE_DEMO }), state, 'Leave approval is idempotent');
   assert.equal(reduce(state, { type: ACTIONS.SELECT_SUBSTITUTE, lessonId: 'D-SE-301', teacherId: 'D-T-021' }), state, 'Finalized leave cannot be mutated');
   state = reduce(state, { type: ACTIONS.ACCEPT_SCHEDULE_PREVIEW });
   assert.equal(state.schedule.previewStatus, 'accepted_demo');
+  assert.deepEqual(state.schedule.acceptedLessonIds, ['D-SE-301', 'D-SE-302', 'D-SE-303']);
   assert.equal(reduce(state, { type: ACTIONS.ACCEPT_SCHEDULE_PREVIEW }), state, 'Schedule acceptance is idempotent');
   assert.deepEqual(reduce(state, { type: ACTIONS.LOCK_ATTENDANCE_DEMO }), state, 'Incomplete attendance cannot be locked');
   state = reduce(state, { type: ACTIONS.SET_ATTENDANCE, studentId: 'D-S-004', status: 'late' });
@@ -213,4 +240,8 @@ test('responsive and accessibility contracts are present', () => {
   assert.match(css, /@media \(max-width: 760px\)/);
   assert.match(css, /prefers-reduced-motion/);
   assert.match(css, /min-height: 44px/);
+  assert.match(css, /\.evidence-grid/);
+  assert.match(css, /\.score-meter/);
+  assert.match(css, /\.candidate-evidence/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'phases/phase-1/operations.js'), 'utf8'), /style=/);
 });

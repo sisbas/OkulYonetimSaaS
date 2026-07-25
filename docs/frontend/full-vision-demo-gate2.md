@@ -17,6 +17,18 @@ Bu çalışma yalnız sentetik verili satış prototipidir. Production roadmap, 
 | Yeni bounded `full-vision-demo/` uygulaması | Production ve eski demodan ayrışır; dependency-free, statik ve allowlist ile test edilebilir | **Seçildi** |
 | Production frontend kabuğunu kullanmak | Görsel yakınlık sağlar; auth/API/runtime ve production-scope sızıntısı riski taşır | Reddedildi |
 
+## 24 Temmuz 2026 yeniden yapılandırma
+
+Kullanıcı kararıyla çalışma ayrı demo repository'sinden ana `sisbas/OkulYonetimSaaS` reposundaki demo alanına taşınmıştır. Yeni uygulama yolu:
+
+| Seçenek | Karar | Trade-off |
+|---|---|---|
+| Ana repo `full-vision-demo/` genişletme | **Seçildi** | Mevcut manifest, fixture, reducer ve GATE 2 testleri korunur; ana repo CI/governance yüzeyine girer |
+| `full-vision-builder/` ana görüntüleme yolu | HOLD | Builder iterasyonunu kolaylaştırır; `latest` bağımlılık, lock eksikliği ve statik sınır testlerinin yeniden kurulması gerekir |
+| Production frontend/backend runtime demo | HOLD | Ürün gerçekçiliği artar; auth, tenant, PII, audit ve GATE 3 bağımlılıkları kapanmadan güvenli değildir |
+
+Bu nedenle yeni demo geliştirmeleri yalnız `full-vision-demo/**` ve ilgili kabul dokümanlarıyla sınırlı tutulur. `full-vision-builder/` erişim/Builder çalışması için ayrı bir teknik kabuk olarak kalır; production runtime veya hosted release iddiası üretmez.
+
 ## Uygulanan GATE 2 kapsamı
 
 - Merkezi route manifestinde 25 canonical route deseni, 21 ürün ekran ailesi ve 5 legacy alias.
