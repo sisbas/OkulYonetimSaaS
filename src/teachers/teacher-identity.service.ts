@@ -16,6 +16,21 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function authorityContext(ctx: RequestContext, tenantId: string, userId: string): RequestContext {
+  return {
+    requestId: ctx.requestId,
+    tenantId,
+    user: {
+      userId,
+      tenantId,
+      roleIds: ctx.user?.roleIds ?? [],
+      permissions: ctx.user?.permissions ?? [],
+      sessionId: ctx.user?.sessionId,
+      authorizationVersion: ctx.user?.authorizationVersion,
+    },
+  };
+}
+
 @Injectable()
 export class TeacherIdentityService {
   constructor(
@@ -31,14 +46,15 @@ export class TeacherIdentityService {
     const tenantId = ctx.tenantId;
     if (!tenantId || !userId) return this.deny(ctx);
 
-    const teacher = await this.teachers.findActiveTeacherForUser(ctx);
-    if (!teacher) return this.deny(ctx);
+    const safeCtx = authorityContext(ctx, tenantId, userId);
+    const teacher = await this.teachers.findActiveTeacherForUser(safeCtx);
+    if (!teacher) return this.deny(safeCtx);
 
-    const memberships = await this.teachers.listActiveBranchMemberships(ctx, teacher.teacherId, {
+    const memberships = await this.teachers.listActiveBranchMemberships(safeCtx, teacher.teacherId, {
       branchId: input.branchId,
       effectiveDate: input.effectiveDate ?? todayIso(),
     });
-    if (memberships.length !== 1) return this.deny(ctx);
+    if (memberships.length !== 1) return this.deny(safeCtx);
 
     return {
       tenantId,
