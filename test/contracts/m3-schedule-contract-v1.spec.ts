@@ -93,5 +93,32 @@ describe('M3 Schedule Contract v1 consistency', () => {
     expect(contract).toContain('runtime controller/service/repository');
     expect(contract).toContain('migration');
     expect(contract).toContain('Runtime or migration code is prohibited in a contract-freeze PR');
+
+import { CANONICAL_SCHEDULE_REASON_CODES, M3_SCHEDULE_CONTRACT_ID, M3_SCHEDULE_CONTRACT_VERSION } from '../../src/schedules/m3-schedule-contract';
+
+describe('M3 Schedule Contract v1 source of truth', () => {
+  it('pins the contract identity and all canonical reason codes', () => {
+    expect(M3_SCHEDULE_CONTRACT_ID).toBe('M3_CONTRACT_V1');
+    expect(M3_SCHEDULE_CONTRACT_VERSION).toBe('1.0.0');
+    expect(CANONICAL_SCHEDULE_REASON_CODES).toEqual(expect.arrayContaining([
+      'TEACHER_TIME_OVERLAP',
+      'STUDENT_GROUP_TIME_OVERLAP',
+      'ROOM_TIME_OVERLAP',
+      'TIMESLOT_INACTIVE',
+      'TEACHER_INACTIVE',
+      'STUDENT_GROUP_INACTIVE',
+      'TEACHER_BRANCH_ASSIGNMENT_MISSING',
+      'TEACHER_COURSE_MISMATCH',
+      'TENANT_REFERENCE_MISMATCH',
+      'BRANCH_REFERENCE_MISMATCH',
+      'PUBLISHED_SCHEDULE_IMMUTABLE',
+      'SCHEDULE_EMPTY',
+      'SCHEDULE_VALIDATION_STALE',
+      'SCHEDULE_HARD_CONFLICTS_PRESENT',
+      'PUBLISHED_SCHEDULE_PERIOD_CONFLICT',
+      'SCHEDULE_VERSION_MISMATCH',
+      'SCHEDULE_VERSION_REQUIRED',
+    ]));
+    expect(new Set(CANONICAL_SCHEDULE_REASON_CODES).size).toBe(17);
   });
 });
