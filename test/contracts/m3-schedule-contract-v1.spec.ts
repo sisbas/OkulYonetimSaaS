@@ -1,4 +1,8 @@
-import { CANONICAL_SCHEDULE_REASON_CODES, M3_SCHEDULE_CONTRACT_ID, M3_SCHEDULE_CONTRACT_VERSION } from '../../src/schedules/m3-schedule-contract';
+import {
+  CANONICAL_SCHEDULE_REASON_CODES,
+  M3_SCHEDULE_CONTRACT_ID,
+  M3_SCHEDULE_CONTRACT_VERSION,
+} from '../../src/schedules/m3-schedule-contract';
 
 describe('M3 Schedule Contract v1 source of truth', () => {
   it('pins the contract identity and all canonical reason codes', () => {
