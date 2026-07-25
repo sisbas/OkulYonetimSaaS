@@ -36,7 +36,10 @@ jobs:
           ! grep -Eq '^\s*cancel-in-progress:\s*true\s*$' "$workflow"
           grep -Fq 'Merge Governance Enforcement' "$ruleset"
           grep -Fq 'completed_at' "$audit"
+          grep -Fq 'started_at' "$audit"
           grep -Fq 'merged_at' "$audit"
+          grep -Fq 'filter: "all"' "$audit"
           ! grep -Fq 'filter: "latest"' "$audit"
+          grep -Fq 'latestCreatedByMerge' "$audit"
 
-          echo 'PASS: exact-name, terminal-run and merge-time snapshot contract.'
+          echo 'PASS: exact-name, terminal-run and exact newest-pre-merge check contract.'
