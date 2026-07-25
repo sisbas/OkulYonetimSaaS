@@ -56,8 +56,6 @@ jobs:
               const mergedAt = new Date(fullPr.merged_at);
               const atOrBeforeMerge = (value) => Boolean(value) && new Date(value) <= mergedAt;
 
-              // Only reviews submitted before the merge are merge-time evidence.
-              // Post-merge bot reviews must not invalidate a completed merge audit.
               const reviews = await github.paginate(github.rest.pulls.listReviews, {
                 owner,
                 repo,
@@ -131,19 +129,35 @@ jobs:
                 per_page: 100,
                 filter: "all"
               });
+              const checkSuites = await github.paginate(github.rest.checks.listSuitesForRef, {
+                owner,
+                repo,
+                ref: fullPr.head.sha,
+                per_page: 100
+              });
+              const suiteCreatedAt = new Map(
+                checkSuites.map((suite) => [suite.id, suite.created_at])
+              );
 
-              // Select the newest run CREATED at or before merge for each exact context.
-              // Do not fall back to an older success when a newer pre-merge run was pending,
-              // cancelled, failed or completed only after the merge.
+              // Select the newest exact context whose check suite was CREATED at or before
+              // merge. A queued check can have no started_at; suite.created_at is the stable
+              // creation boundary. Never fall back to an older success when a newer pre-merge
+              // run was pending, cancelled, failed or completed after merge.
               const latestCreatedByMerge = new Map();
               for (const check of checkRuns) {
-                if (!atOrBeforeMerge(check.started_at)) continue;
+                const createdAt = suiteCreatedAt.get(check.check_suite?.id);
+                if (!atOrBeforeMerge(createdAt)) continue;
                 const current = latestCreatedByMerge.get(check.name);
-                if (!current || check.id > current.id) latestCreatedByMerge.set(check.name, check);
+                const isNewerSuite = !current || new Date(createdAt) > new Date(current.createdAt);
+                const isNewerRunInSuite = current && createdAt === current.createdAt && check.id > current.check.id;
+                if (isNewerSuite || isNewerRunInSuite) {
+                  latestCreatedByMerge.set(check.name, { check, createdAt });
+                }
               }
 
               for (const name of requiredChecks) {
-                const check = latestCreatedByMerge.get(name);
+                const evidence = latestCreatedByMerge.get(name);
+                const check = evidence?.check;
                 if (!check) {
                   violations.push(`PR #${pr.number} merge anında oluşturulmuş required check kanıtı bulunamadı: ${name}.`);
                   continue;
@@ -169,7 +183,7 @@ jobs:
                   `Merged at: ${fullPr.merged_at}`,
                   `Independent approvals before merge: ${validApprovals.length}`,
                   `Unresolved threads created before merge: ${unresolvedMergeTimeThreadCount}`,
-                  `Required checks selected by started_at <= merged_at: ${requiredChecks.length}`
+                  `Required checks selected by check-suite created_at <= merged_at: ${requiredChecks.length}`
                 ])
                 .write();
             }
