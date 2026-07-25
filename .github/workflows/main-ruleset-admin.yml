@@ -67,8 +67,12 @@ jobs:
             echo '::error::Main audit does not use merge-time check completion timestamps.'
             exit 1
           }
-          grep -Fq 'started_at' "$audit" || {
-            echo '::error::Main audit does not select the newest check started before merge.'
+          grep -Fq 'listSuitesForRef' "$audit" || {
+            echo '::error::Main audit does not load check-suite creation timestamps.'
+            exit 1
+          }
+          grep -Fq 'suite.created_at' "$audit" || {
+            echo '::error::Main audit does not select checks by suite creation time.'
             exit 1
           }
           grep -Fq 'merged_at' "$audit" || {
@@ -83,7 +87,7 @@ jobs:
             echo '::error::Main audit must not use post-merge latest-check state.'
             exit 1
           fi
-          echo 'PASS: exact aggregate name, terminal concurrency and exact merge-time check selection verified.'
+          echo 'PASS: exact aggregate name, terminal concurrency and suite-created merge-time check selection verified.'
 
   Live-Main-Ruleset-Verification:
     name: Live Main Ruleset Verification
