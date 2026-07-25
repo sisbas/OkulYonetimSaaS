@@ -3,6 +3,44 @@ import type { CoreDefinitionModule } from './core-definitions.routes';
 
 export type UiState = 'loading' | 'empty' | 'error' | 'forbidden';
 
+/**
+ * Accessibility configuration for skeleton components
+ * Defines ARIA attributes, keyboard navigation, color contrast, and reduced motion support
+ */
+export type AccessibilityConfig = {
+  /** ARIA role for the component container */
+  role: string;
+  /** ARIA label describing the component's purpose */
+  ariaLabel: string;
+  /** ARIA live region policy for dynamic content updates */
+  ariaLive?: 'off' | 'polite' | 'assertive';
+  /** ARIA atomic setting for live regions */
+  ariaAtomic?: boolean;
+  /** Indicates if the component contains interactive elements requiring keyboard navigation */
+  hasInteractiveElements: boolean;
+  /** Tabindex strategy for focus management */
+  tabindexStrategy: 'none' | 'container' | 'individual';
+  /** Focus indicator style requirement */
+  focusIndicatorRequired: boolean;
+  /** Minimum color contrast ratio for text (WCAG 2.1 AA requires 4.5:1 for normal text) */
+  minimumContrastRatio: number;
+  /** Color contrast requirements for state indicators */
+  stateIndicatorContrast: {
+    loading: { foreground: string; background: string; minRatio: number };
+    empty: { foreground: string; background: string; minRatio: number };
+    error: { foreground: string; background: string; minRatio: number };
+    forbidden: { foreground: string; background: string; minRatio: number };
+  };
+  /** Reduced motion alternative - disables animations for users with vestibular disorders */
+  reducedMotionAlternative: {
+    enabled: boolean;
+    prefersReducedMotionQuery: string;
+    fallbackBehavior: 'static' | 'minimal-animation';
+  };
+  /** Screen reader announcement for state changes */
+  stateAnnouncements?: Partial<Record<UiState, string>>;
+};
+
 export type SkeletonImplementationScope = {
   status: 'descriptor_only';
   runtimeImplementationStarted: false;
@@ -23,6 +61,8 @@ export type SkeletonComponentDescriptor = {
   apiBinding: 'not_connected';
   submitEnabled: false;
   permissionBinding: 'pending_catalog';
+  /** Accessibility configuration for screen readers, keyboard navigation, and reduced motion */
+  accessibility: AccessibilityConfig;
 };
 
 const SAFE_DISPLAY_FIELDS = ['title', 'status badge', 'contract notice', 'disabled action placeholder'] as const;
@@ -70,6 +110,52 @@ const TIME_SLOT_DESCRIPTOR_ONLY_SCOPE: SkeletonImplementationScope = {
   note: 'TimeSlot skeleton is not a runtime TimeSlot implementation kickoff. It is only a placeholder for future UX planning.',
 };
 
+/**
+ * Default accessibility configuration meeting WCAG 2.1 AA standards
+ */
+const DEFAULT_ACCESSIBILITY_CONFIG: AccessibilityConfig = {
+  role: 'region',
+  ariaLabel: 'Content loading placeholder',
+  ariaLive: 'polite',
+  ariaAtomic: true,
+  hasInteractiveElements: false,
+  tabindexStrategy: 'none',
+  focusIndicatorRequired: true,
+  minimumContrastRatio: 4.5,
+  stateIndicatorContrast: {
+    loading: { foreground: '#666666', background: '#F5F5F5', minRatio: 4.5 },
+    empty: { foreground: '#666666', background: '#FFFFFF', minRatio: 4.5 },
+    error: { foreground: '#D32F2F', background: '#FFEBEE', minRatio: 4.5 },
+    forbidden: { foreground: '#F57C00', background: '#FFF3E0', minRatio: 4.5 },
+  },
+  reducedMotionAlternative: {
+    enabled: true,
+    prefersReducedMotionQuery: '@media (prefers-reduced-motion: reduce)',
+    fallbackBehavior: 'static',
+  },
+  stateAnnouncements: {
+    loading: 'Loading content...',
+    empty: 'No content available',
+    error: 'An error occurred while loading content',
+    forbidden: 'Access denied to this content',
+  },
+};
+
+/**
+ * Accessibility configuration for components with interactive elements (forms, buttons)
+ */
+const INTERACTIVE_ACCESSIBILITY_CONFIG: AccessibilityConfig = {
+  ...DEFAULT_ACCESSIBILITY_CONFIG,
+  hasInteractiveElements: true,
+  tabindexStrategy: 'individual',
+  role: 'form',
+  stateAnnouncements: {
+    ...DEFAULT_ACCESSIBILITY_CONFIG.stateAnnouncements,
+    loading: 'Loading form fields...',
+    error: 'Form validation errors present',
+  },
+};
+
 export const CORE_DEFINITIONS_COMPONENT_SKELETONS: readonly SkeletonComponentDescriptor[] = [
   {
     name: 'CoreDefinitionsLayout',
@@ -83,6 +169,15 @@ export const CORE_DEFINITIONS_COMPONENT_SKELETONS: readonly SkeletonComponentDes
     apiBinding: 'not_connected',
     submitEnabled: false,
     permissionBinding: 'pending_catalog',
+    accessibility: {
+      ...DEFAULT_ACCESSIBILITY_CONFIG,
+      ariaLabel: 'Core definitions navigation and content area',
+      role: 'navigation',
+      stateAnnouncements: {
+        ...DEFAULT_ACCESSIBILITY_CONFIG.stateAnnouncements,
+        loading: 'Loading core definitions sections...',
+      },
+    },
   },
   {
     name: 'CourseListSkeleton',
@@ -96,6 +191,16 @@ export const CORE_DEFINITIONS_COMPONENT_SKELETONS: readonly SkeletonComponentDes
     apiBinding: 'not_connected',
     submitEnabled: false,
     permissionBinding: 'pending_catalog',
+    accessibility: {
+      ...DEFAULT_ACCESSIBILITY_CONFIG,
+      ariaLabel: 'Course list with loading placeholders',
+      role: 'list',
+      stateAnnouncements: {
+        ...DEFAULT_ACCESSIBILITY_CONFIG.stateAnnouncements,
+        loading: 'Loading course list...',
+        empty: 'No courses available',
+      },
+    },
   },
   {
     name: 'CourseFormSkeleton',
@@ -109,6 +214,14 @@ export const CORE_DEFINITIONS_COMPONENT_SKELETONS: readonly SkeletonComponentDes
     apiBinding: 'not_connected',
     submitEnabled: false,
     permissionBinding: 'pending_catalog',
+    accessibility: {
+      ...INTERACTIVE_ACCESSIBILITY_CONFIG,
+      ariaLabel: 'Course creation form with disabled fields',
+      stateAnnouncements: {
+        ...INTERACTIVE_ACCESSIBILITY_CONFIG.stateAnnouncements,
+        empty: 'Course form fields are currently unavailable',
+      },
+    },
   },
   {
     name: 'RoomListSkeleton',
@@ -122,6 +235,16 @@ export const CORE_DEFINITIONS_COMPONENT_SKELETONS: readonly SkeletonComponentDes
     apiBinding: 'not_connected',
     submitEnabled: false,
     permissionBinding: 'pending_catalog',
+    accessibility: {
+      ...DEFAULT_ACCESSIBILITY_CONFIG,
+      ariaLabel: 'Room list with loading placeholders',
+      role: 'list',
+      stateAnnouncements: {
+        ...DEFAULT_ACCESSIBILITY_CONFIG.stateAnnouncements,
+        loading: 'Loading room list...',
+        empty: 'No rooms available',
+      },
+    },
   },
   {
     name: 'RoomFormSkeleton',
@@ -135,6 +258,14 @@ export const CORE_DEFINITIONS_COMPONENT_SKELETONS: readonly SkeletonComponentDes
     apiBinding: 'not_connected',
     submitEnabled: false,
     permissionBinding: 'pending_catalog',
+    accessibility: {
+      ...INTERACTIVE_ACCESSIBILITY_CONFIG,
+      ariaLabel: 'Room creation form with disabled fields',
+      stateAnnouncements: {
+        ...INTERACTIVE_ACCESSIBILITY_CONFIG.stateAnnouncements,
+        empty: 'Room form fields are currently unavailable',
+      },
+    },
   },
   {
     name: 'TimeSlotGridSkeleton',
@@ -148,6 +279,16 @@ export const CORE_DEFINITIONS_COMPONENT_SKELETONS: readonly SkeletonComponentDes
     apiBinding: 'not_connected',
     submitEnabled: false,
     permissionBinding: 'pending_catalog',
+    accessibility: {
+      ...DEFAULT_ACCESSIBILITY_CONFIG,
+      ariaLabel: 'Time slot grid with loading placeholders',
+      role: 'grid',
+      stateAnnouncements: {
+        ...DEFAULT_ACCESSIBILITY_CONFIG.stateAnnouncements,
+        loading: 'Loading time slot grid...',
+        empty: 'No time slots configured',
+      },
+    },
   },
   {
     name: 'TimeSlotFormSkeleton',
@@ -161,6 +302,14 @@ export const CORE_DEFINITIONS_COMPONENT_SKELETONS: readonly SkeletonComponentDes
     apiBinding: 'not_connected',
     submitEnabled: false,
     permissionBinding: 'pending_catalog',
+    accessibility: {
+      ...INTERACTIVE_ACCESSIBILITY_CONFIG,
+      ariaLabel: 'Time slot creation form with disabled fields',
+      stateAnnouncements: {
+        ...INTERACTIVE_ACCESSIBILITY_CONFIG.stateAnnouncements,
+        empty: 'Time slot form fields are currently unavailable',
+      },
+    },
   },
 ];
 
