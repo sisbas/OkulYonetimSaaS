@@ -53,17 +53,23 @@ jobs:
                 repo,
                 pull_number: pr.number
               })).data;
+              const mergedAt = new Date(fullPr.merged_at);
+              const atOrBeforeMerge = (value) => Boolean(value) && new Date(value) <= mergedAt;
 
+              // Only reviews submitted before the merge are merge-time evidence.
+              // Post-merge bot reviews must not invalidate a completed merge audit.
               const reviews = await github.paginate(github.rest.pulls.listReviews, {
                 owner,
                 repo,
                 pull_number: pr.number,
                 per_page: 100
               });
-              reviews.sort((a, b) => (a.id || 0) - (b.id || 0));
+              const mergeTimeReviews = reviews
+                .filter((review) => atOrBeforeMerge(review.submitted_at))
+                .sort((a, b) => (a.id || 0) - (b.id || 0));
 
               const latestReviewByUser = new Map();
-              for (const review of reviews) {
+              for (const review of mergeTimeReviews) {
                 const login = review.user?.login;
                 if (login) latestReviewByUser.set(login, review);
               }
@@ -78,18 +84,24 @@ jobs:
               });
 
               if (validApprovals.length < 1) {
-                violations.push(`PR #${pr.number} güncel head SHA için bağımsız approval olmadan merge edildi.`);
+                violations.push(`PR #${pr.number} merge anında güncel head SHA için bağımsız approval taşımıyordu.`);
               }
 
+              // GitHub does not expose a reliable resolvedAt timestamp for review threads.
+              // Exclude threads created after merge; pre-merge thread resolution is also
+              // proven by the successful Merge Governance Enforcement check and ruleset.
               let cursor = null;
-              let unresolvedThreadCount = 0;
+              let unresolvedMergeTimeThreadCount = 0;
               do {
                 const result = await github.graphql(
                   `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
                     repository(owner: $owner, name: $repo) {
                       pullRequest(number: $number) {
                         reviewThreads(first: 100, after: $cursor) {
-                          nodes { isResolved }
+                          nodes {
+                            isResolved
+                            comments(first: 1) { nodes { createdAt } }
+                          }
                           pageInfo { hasNextPage endCursor }
                         }
                       }
@@ -99,41 +111,59 @@ jobs:
                 );
 
                 const threads = result.repository.pullRequest.reviewThreads;
-                unresolvedThreadCount += threads.nodes.filter((thread) => !thread.isResolved).length;
+                unresolvedMergeTimeThreadCount += threads.nodes.filter((thread) => {
+                  const createdAt = thread.comments.nodes[0]?.createdAt;
+                  return atOrBeforeMerge(createdAt) && !thread.isResolved;
+                }).length;
                 cursor = threads.pageInfo.hasNextPage ? threads.pageInfo.endCursor : null;
               } while (cursor);
 
-              if (unresolvedThreadCount > 0) {
-                violations.push(`PR #${pr.number}, ${unresolvedThreadCount} çözülmemiş review thread ile merge edildi.`);
+              if (unresolvedMergeTimeThreadCount > 0) {
+                violations.push(`PR #${pr.number}, merge öncesinde oluşturulmuş ${unresolvedMergeTimeThreadCount} çözülmemiş review thread taşıyor.`);
               }
 
+              // Do not use filter=latest here. A review or body event created after merge
+              // may start a newer queued check and shadow the checks that protected merge.
+              // The newest check completed at or before merged_at is the audit snapshot.
               const checkRuns = await github.paginate(github.rest.checks.listForRef, {
                 owner,
                 repo,
                 ref: fullPr.head.sha,
-                per_page: 100,
-                filter: "latest"
+                per_page: 100
               });
-              const latestByName = new Map();
+              const latestCompletedByMerge = new Map();
               for (const check of checkRuns) {
-                const current = latestByName.get(check.name);
-                if (!current || check.id > current.id) latestByName.set(check.name, check);
+                if (!atOrBeforeMerge(check.completed_at)) continue;
+                const current = latestCompletedByMerge.get(check.name);
+                if (!current || check.id > current.id) latestCompletedByMerge.set(check.name, check);
               }
 
               for (const name of requiredChecks) {
-                const check = latestByName.get(name);
+                const check = latestCompletedByMerge.get(name);
                 if (!check) {
-                  violations.push(`PR #${pr.number} merge edildiğinde required check bulunamadı: ${name}.`);
+                  violations.push(`PR #${pr.number} merge anında completed required check kanıtı bulunamadı: ${name}.`);
                 } else if (check.status !== "completed" || check.conclusion !== "success") {
-                  violations.push(`PR #${pr.number} merge edildiğinde ${name} SUCCESS değildi: ${check.status}/${check.conclusion || "unknown"}.`);
+                  violations.push(`PR #${pr.number} merge anındaki ${name} sonucu SUCCESS değildi: ${check.status}/${check.conclusion || "unknown"}.`);
                 }
               }
+
+              await core.summary
+                .addHeading("Merge-time governance snapshot")
+                .addList([
+                  `PR #${pr.number}`,
+                  `Head: ${fullPr.head.sha}`,
+                  `Merged at: ${fullPr.merged_at}`,
+                  `Independent approvals before merge: ${validApprovals.length}`,
+                  `Unresolved threads created before merge: ${unresolvedMergeTimeThreadCount}`,
+                  `Required checks evaluated with completed_at <= merged_at: ${requiredChecks.length}`
+                ])
+                .write();
             }
 
             if (!violations.length) {
               await core.summary
                 .addHeading("Main Governance Audit")
-                .addRaw("main güncellemesi governance şartlarını sağlıyor.")
+                .addRaw("main güncellemesi merge-time governance şartlarını sağlıyor.")
                 .write();
               return;
             }
@@ -145,6 +175,7 @@ jobs:
               "",
               `- Main commit: \`${mergeSha}\``,
               `- Workflow run: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+              "- Audit mode: merge-time snapshot",
               "",
               "## Bulgular",
               ...violations.map((violation) => `- ${violation}`),
@@ -154,7 +185,7 @@ jobs:
             ].join("\n");
 
             const existing = await github.rest.search.issuesAndPullRequests({
-              q: `repo:${owner}/${repo} is:issue in:title \"${title}\"`
+              q: `repo:${owner}/${repo} is:issue in:title "${title}"`
             });
 
             if (!existing.data.items.length) {
