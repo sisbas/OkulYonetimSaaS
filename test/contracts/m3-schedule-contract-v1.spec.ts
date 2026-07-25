@@ -24,5 +24,5 @@ describe('M3 Schedule Contract v1 source of truth', () => {
       'SCHEDULE_VERSION_REQUIRED',
     ]));
     expect(new Set(CANONICAL_SCHEDULE_REASON_CODES).size).toBe(17);
-  });
-});
+  }); // Close the contract identity test before any subsequent imports.
+}); // Close the schedule contract suite before any subsequent imports.
