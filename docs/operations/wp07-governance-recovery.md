@@ -29,8 +29,10 @@ Therefore #136 is an audit race/false-positive, not proof that PR #133 bypassed 
 - Bind Main Governance Audit to `merged_at`:
   - approvals must be submitted at or before merge;
   - post-merge-created review threads are excluded;
-  - checks are selected only when `completed_at <= merged_at`;
-  - `filter: latest` is forbidden in the post-merge audit.
+  - Checks API is queried with `filter: all` so historical runs are visible;
+  - the newest exact check context whose `started_at <= merged_at` is selected;
+  - that exact run must have `status=completed`, `completed_at <= merged_at` and `conclusion=success`;
+  - the audit cannot fall back to an older successful run when a newer pre-merge run was pending, cancelled, failed or completed after merge.
 - Verify active `main-merge-governance` ruleset source, strict required checks, latest-push approval, independent approval count and thread-resolution requirement.
 
 ## PR #115 decision
@@ -45,5 +47,5 @@ The recovery PR remains blocked until:
 - an independent current-head approval exists;
 - unresolved review-thread count is zero;
 - disposable merge attempts prove missing, pending, cancelled, failed, approval-missing and unresolved-thread states are blocked;
-- an all-success disposable PR is accepted by the ruleset;
+- an all-success protected merge is accepted by the ruleset;
 - Repository Admin, DevOps and QA closure comments are recorded on #140.
