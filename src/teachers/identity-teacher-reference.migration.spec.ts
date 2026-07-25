@@ -1,12 +1,12 @@
 import { QueryRunner } from 'typeorm';
 
-import { CreateIdentityTeacherReferenceFoundation1785000000000 } from '../database/migrations/1785000000000-CreateIdentityTeacherReferenceFoundation';
+import { CreateIdentityTeacherReferenceFoundation1800000000000 } from '../database/migrations/1800000000000-CreateIdentityTeacherReferenceFoundation';
 
 describe('CreateIdentityTeacherReferenceFoundation migration', () => {
   it('adds Course-owned prerequisite and teacher reference tables without Schedule or Leave scope', async () => {
     const queries: string[] = [];
     const queryRunner = { query: jest.fn(async (sql: string) => { queries.push(sql); }) } as unknown as QueryRunner;
-    await new CreateIdentityTeacherReferenceFoundation1785000000000().up(queryRunner);
+    await new CreateIdentityTeacherReferenceFoundation1800000000000().up(queryRunner);
     const sql = queries.join('\n');
     expect(sql).toContain('CREATE UNIQUE INDEX IF NOT EXISTS uq_courses_tenant_id');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS teachers');
@@ -20,7 +20,7 @@ describe('CreateIdentityTeacherReferenceFoundation migration', () => {
   it('drops only owned surfaces and blocks unsafe Course prerequisite rollback', async () => {
     const queries: string[] = [];
     const queryRunner = { query: jest.fn(async (sql: string) => { queries.push(sql); }) } as unknown as QueryRunner;
-    await new CreateIdentityTeacherReferenceFoundation1785000000000().down(queryRunner);
+    await new CreateIdentityTeacherReferenceFoundation1800000000000().down(queryRunner);
     const sql = queries.join('\n');
     expect(sql).toContain('DROP TABLE IF EXISTS teacher_branches');
     expect(sql).toContain('DROP TABLE IF EXISTS teachers');
