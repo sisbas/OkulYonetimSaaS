@@ -30,7 +30,8 @@ Therefore #136 is an audit race/false-positive, not proof that PR #133 bypassed 
   - approvals must be submitted at or before merge;
   - post-merge-created review threads are excluded;
   - Checks API is queried with `filter: all` so historical runs are visible;
-  - the newest exact check context whose `started_at <= merged_at` is selected;
+  - check suites are queried and their immutable `created_at` timestamps provide the creation boundary;
+  - the newest exact check context whose suite `created_at <= merged_at` is selected;
   - that exact run must have `status=completed`, `completed_at <= merged_at` and `conclusion=success`;
   - the audit cannot fall back to an older successful run when a newer pre-merge run was pending, cancelled, failed or completed after merge.
 - Verify active `main-merge-governance` ruleset source, strict required checks, latest-push approval, independent approval count and thread-resolution requirement.
