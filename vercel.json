@@ -1,0 +1,103 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "node --version",
+  "buildCommand": "node scripts/build-hosted-demos-static.js",
+  "outputDirectory": "hosted-demos-static-dist",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/full-vision/overview",
+      "permanent": false
+    },
+    {
+      "source": "/demo",
+      "destination": "/demo/today",
+      "permanent": false
+    },
+    {
+      "source": "/full-vision",
+      "destination": "/full-vision/overview",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/demo/:path*",
+      "destination": "/demo-frontend/index.html"
+    },
+    {
+      "source": "/full-vision/:path*",
+      "destination": "/full-vision-demo/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/demo-frontend/(.*)",
+      "headers": [
+        {
+          "key": "X-Demo-Application",
+          "value": "synthetic-static-prototype"
+        }
+      ]
+    },
+    {
+      "source": "/full-vision/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; connect-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
+        {
+          "key": "X-Demo-Application",
+          "value": "full-vision-synthetic-static-prototype"
+        }
+      ]
+    },
+    {
+      "source": "/full-vision-demo/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; connect-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
+        {
+          "key": "X-Demo-Application",
+          "value": "full-vision-synthetic-static-prototype"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Okul Yönetim SaaS deterministik sentetik veri demo uygulaması">
+  <title>Okul Yönetim Demo</title>
+  <link rel="stylesheet" href="/demo-frontend/styles.css">
+  <script src="/demo-frontend/conflict-engine.js" defer></script>
+  <script src="/demo-frontend/demo-state.js" defer></script>
+  <script src="/demo-frontend/app.js" defer></script>
+</head>
+<body>
+  <div class="demo-app" id="demoApp">
+    <aside class="sidebar" aria-label="Demo ana menü">
+      <a class="brand" href="/demo/today" data-route>
+        <span class="brand-mark" aria-hidden="true">OY</span>
+        <span>
+          <strong>Okul Yönetim</strong>
+          <small>Sunum Prototipi</small>
+        </span>
+      </a>
+
+      <nav class="nav-list" aria-label="Demo ekranları">
+        <a href="/demo/today" data-route data-nav="today"><span aria-hidden="true">◫</span> Günlük Operasyon</a>
+        <a href="/demo/schedule" data-route data-nav="schedule"><span aria-hidden="true">▦</span> Ders Programı</a>
+        <a href="/demo/leave/LV-204" data-route data-nav="leave"><span aria-hidden="true">◷</span> İzin Etkisi</a>
+        <a href="/demo/attendance/session/AT-1204" data-route data-nav="attendance"><span aria-hidden="true">✓</span> Yoklama</a>
+        <a href="/demo/notifications" data-route data-nav="notifications"><span aria-hidden="true">✦</span> Veli Bildirimleri</a>
+      </nav>
+
+      <div class="sidebar-note">
+        <span class="status-dot" aria-hidden="true"></span>
+        <div>
+          <strong>Çevrimdışı demo</strong>
+          <small>API, auth ve yetki bağlantısı yok</small>
+        </div>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Ata Akademi · Neşet Ertaş Kültür Evi</p>
+          <h1 id="pageTitle">Demo</h1>
+        </div>
+        <div class="topbar-actions">
+          <span class="demo-badge">Demo Verisi</span>
+          <button class="icon-button" id="resetDemo" type="button" title="Demo verisini başlangıç durumuna getir" aria-label="Demo verisini sıfırla">↻</button>
+          <span class="avatar" aria-label="Demo kullanıcı">SA</span>
+        </div>
+      </header>
+
+      <nav class="mobile-nav" aria-label="Tablet ve mobil demo menüsü">
+        <a href="/demo/today" data-route data-nav="today">Bugün</a>
+        <a href="/demo/schedule" data-route data-nav="schedule">Program</a>
+        <a href="/demo/leave/LV-204" data-route data-nav="leave">İzin</a>
+        <a href="/demo/attendance/session/AT-1204" data-route data-nav="attendance">Yoklama</a>
+        <a href="/demo/notifications" data-route data-nav="notifications">Bildirim</a>
+      </nav>
+
+      <main id="screen" class="screen" tabindex="-1" aria-live="polite"></main>
+    </section>
+
+    <div class="modal-backdrop" id="modalBackdrop" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Demo etkileşimi</p>
+            <h2 id="modalTitle">Modal</h2>
+          </div>
+          <button class="icon-button" id="closeModal" type="button" aria-label="Pencereyi kapat">×</button>
+        </div>
+        <div id="modalBody"></div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  </div>
+</body>
+</html>

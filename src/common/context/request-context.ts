@@ -5,6 +5,8 @@ export type RequestUser = {
   tenantId: string;
   roleIds: string[];
   permissions: string[];
+  sessionId?: string;
+  authorizationVersion?: number;
 };
 
 export type RequestContext = {
