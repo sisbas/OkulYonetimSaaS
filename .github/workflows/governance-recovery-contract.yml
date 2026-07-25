@@ -1,0 +1,167 @@
+name: Governance Recovery Contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr-governance.yml'
+      - '.github/workflows/main-governance-audit.yml'
+      - '.github/workflows/main-ruleset-admin.yml'
+      - '.github/rulesets/main-merge-governance.json'
+      - 'scripts/governance-matrix-contract.js'
+      - 'docs/operations/wp07-governance-recovery.md'
+
+permissions:
+  checks: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  contract:
+    name: Governance Recovery Contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run fail-closed matrix
+        run: node scripts/governance-matrix-contract.js
+      - name: Verify exact names and merge-time audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/pr-governance.yml'
+          audit='.github/workflows/main-governance-audit.yml'
+          ruleset='.github/rulesets/main-merge-governance.json'
+
+          [[ "$(grep -Ec '^    name: Merge Governance Enforcement$' "$workflow")" == '1' ]]
+          ! grep -Eq '^\s*cancel-in-progress:\s*true\s*$' "$workflow"
+          grep -Fq 'Merge Governance Enforcement' "$ruleset"
+          grep -Fq 'completed_at' "$audit"
+          grep -Fq 'listSuitesForRef' "$audit"
+          grep -Fq 'suite.created_at' "$audit"
+          grep -Fq 'merged_at' "$audit"
+          grep -Fq 'filter: "all"' "$audit"
+          ! grep -Fq 'filter: "latest"' "$audit"
+          grep -Fq 'latestCreatedByMerge' "$audit"
+
+          echo 'PASS: exact-name, terminal-run and suite-created newest-pre-merge check contract.'
+      - name: Regress PR 133 merge-time snapshot
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pullNumber = 133;
+            const requiredChecks = [
+              "Sprint 1 Quality Gate",
+              "Backend CI",
+              "DB Smoke",
+              "Gate 1 CI",
+              "Sensitive Pattern Scanner",
+              "GitGuardian scan",
+              "PR Governance / Body Validation",
+              "PR Governance / Issue Reference",
+              "PR Governance / Rollback Plan",
+              "PR Governance / Acceptance Criteria",
+              "Merge Governance Enforcement"
+            ];
+
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: pullNumber })).data;
+            const mergedAt = new Date(pr.merged_at);
+            const atOrBeforeMerge = (value) => Boolean(value) && new Date(value) <= mergedAt;
+            const failures = [];
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner,
+              repo,
+              pull_number: pullNumber,
+              per_page: 100
+            });
+            const latestReviewByUser = new Map();
+            for (const review of reviews
+              .filter((item) => atOrBeforeMerge(item.submitted_at))
+              .sort((a, b) => (a.id || 0) - (b.id || 0))) {
+              if (review.user?.login) latestReviewByUser.set(review.user.login, review);
+            }
+            const approvals = [...latestReviewByUser.values()].filter((review) => {
+              const login = review.user?.login || "";
+              const isBot = review.user?.type === "Bot" || /\[bot\]$/i.test(login);
+              return review.state === "APPROVED" &&
+                review.commit_id === pr.head.sha &&
+                login !== pr.user.login &&
+                !isBot;
+            });
+            if (approvals.length < 1) failures.push("PR #133 had no independent current-head approval at merge time.");
+
+            let cursor = null;
+            let unresolvedBeforeMerge = 0;
+            do {
+              const result = await github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      reviewThreads(first: 100, after: $cursor) {
+                        nodes {
+                          isResolved
+                          comments(first: 1) { nodes { createdAt } }
+                        }
+                        pageInfo { hasNextPage endCursor }
+                      }
+                    }
+                  }
+                }`,
+                { owner, repo, number: pullNumber, cursor }
+              );
+              const threads = result.repository.pullRequest.reviewThreads;
+              unresolvedBeforeMerge += threads.nodes.filter((thread) => {
+                const createdAt = thread.comments.nodes[0]?.createdAt;
+                return atOrBeforeMerge(createdAt) && !thread.isResolved;
+              }).length;
+              cursor = threads.pageInfo.hasNextPage ? threads.pageInfo.endCursor : null;
+            } while (cursor);
+            if (unresolvedBeforeMerge > 0) failures.push(`PR #133 had ${unresolvedBeforeMerge} unresolved merge-time threads.`);
+
+            const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+              owner,
+              repo,
+              ref: pr.head.sha,
+              per_page: 100,
+              filter: "all"
+            });
+            const checkSuites = await github.paginate(github.rest.checks.listSuitesForRef, {
+              owner,
+              repo,
+              ref: pr.head.sha,
+              per_page: 100
+            });
+            const suiteCreatedAt = new Map(checkSuites.map((suite) => [suite.id, suite.created_at]));
+            const latestCreatedByMerge = new Map();
+            for (const check of checkRuns) {
+              const createdAt = suiteCreatedAt.get(check.check_suite?.id);
+              if (!atOrBeforeMerge(createdAt)) continue;
+              const current = latestCreatedByMerge.get(check.name);
+              const isNewerSuite = !current || new Date(createdAt) > new Date(current.createdAt);
+              const isNewerRunInSuite = current && createdAt === current.createdAt && check.id > current.check.id;
+              if (isNewerSuite || isNewerRunInSuite) latestCreatedByMerge.set(check.name, { check, createdAt });
+            }
+
+            for (const name of requiredChecks) {
+              const check = latestCreatedByMerge.get(name)?.check;
+              if (!check) failures.push(`Missing merge-time context: ${name}`);
+              else if (check.status !== "completed") failures.push(`Non-terminal merge-time context: ${name} (${check.status})`);
+              else if (!atOrBeforeMerge(check.completed_at)) failures.push(`Completed after merge: ${name}`);
+              else if (check.conclusion !== "success") failures.push(`Non-success merge-time context: ${name} (${check.conclusion || "unknown"})`);
+            }
+
+            await core.summary
+              .addHeading("PR #133 merge-time regression")
+              .addList([
+                `Head: ${pr.head.sha}`,
+                `Merged at: ${pr.merged_at}`,
+                `Independent approvals: ${approvals.length}`,
+                `Unresolved threads created before merge: ${unresolvedBeforeMerge}`,
+                `Exact successful contexts: ${requiredChecks.length - failures.filter((item) => item.includes("context") || item.includes("Completed after merge")).length}/${requiredChecks.length}`
+              ])
+              .write();
+
+            if (failures.length) core.setFailed(failures.map((item) => `- ${item}`).join("\n"));
