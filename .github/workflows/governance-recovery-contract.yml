@@ -1,0 +1,42 @@
+name: Governance Recovery Contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr-governance.yml'
+      - '.github/workflows/main-governance-audit.yml'
+      - '.github/workflows/main-ruleset-admin.yml'
+      - '.github/rulesets/main-merge-governance.json'
+      - 'scripts/governance-matrix-contract.js'
+      - 'docs/operations/wp07-governance-recovery.md'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Governance Recovery Contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run fail-closed matrix
+        run: node scripts/governance-matrix-contract.js
+      - name: Verify exact names and merge-time audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/pr-governance.yml'
+          audit='.github/workflows/main-governance-audit.yml'
+          ruleset='.github/rulesets/main-merge-governance.json'
+
+          [[ "$(grep -Ec '^    name: Merge Governance Enforcement$' "$workflow")" == '1' ]]
+          ! grep -Eq '^\s*cancel-in-progress:\s*true\s*$' "$workflow"
+          grep -Fq 'Merge Governance Enforcement' "$ruleset"
+          grep -Fq 'completed_at' "$audit"
+          grep -Fq 'merged_at' "$audit"
+          ! grep -Fq 'filter: "latest"' "$audit"
+
+          echo 'PASS: exact-name, terminal-run and merge-time snapshot contract.'
