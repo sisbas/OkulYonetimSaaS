@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   ForbiddenException,
   Get,
@@ -10,11 +9,11 @@ import {
   Query,
   Req,
   UnauthorizedException,
+  Body,
 } from '@nestjs/common';
 import { RequestContext, RequestWithContext } from '../common/context/request-context';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
-import { DecideLeaveRequestDto } from './dto/decide-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { LeaveDecisionStatus } from './leave-request.entity';
 import { LeaveService } from './leave.service';
@@ -65,8 +64,12 @@ export class LeaveController {
     @Req() request: RequestWithContext,
     @Param('id') id: string,
     @Headers('if-match') ifMatch: string | undefined,
-    @Body() dto: DecideLeaveRequestDto,
   ) {
-    return this.leaves.decide(getRequestContext(request), id, { ...dto, decision: LeaveDecisionStatus.REJECTED }, ifMatch);
+    return this.leaves.decide(
+      getRequestContext(request),
+      id,
+      { decision: LeaveDecisionStatus.REJECTED },
+      ifMatch,
+    );
   }
 }
