@@ -47,8 +47,9 @@ describe('Leave runtime contract skeleton', () => {
 
   it('requires an exact resource-bound If-Match tag', () => {
     expect(contract).toContain('exact resource-bound');
+    expect(service).toContain('parseExpectedVersion(ifMatch, id)');
     expect(service).toContain('match[1] !== leaveId');
-    expect(service).toContain('/^(?:W\\/)?"leave:([^:\"]+):v(\\d+)"$/i');
+    expect(service).toContain('throw new LeaveStaleVersionException()');
   });
 
   it('forbids client-controlled teacherId and sensitive audit payloads', () => {
