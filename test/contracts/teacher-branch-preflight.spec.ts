@@ -94,6 +94,34 @@ describe('TeacherBranch read-only preflight', () => {
     expect(new Set(overlapFindings.map((finding) => finding.sourceId)).size).toBe(2);
   });
 
+  it('preserves duplicate findings for every repeated row even when sourceId is reused', () => {
+    const duplicateRow = {
+      sourceId: '32000000-0000-4000-8000-000000000099',
+      tenantId: teacherBranchFixtureIds.tenantA,
+      teacherId: teacherBranchFixtureIds.teacherA,
+      candidateBranchIds: [teacherBranchFixtureIds.branchA],
+      effectiveFrom: '2026-09-01',
+      effectiveTo: null,
+    } as const;
+    const input: TeacherBranchPreflightInput = {
+      teachers: [{ teacherId: teacherBranchFixtureIds.teacherA, tenantId: teacherBranchFixtureIds.tenantA }],
+      branches: [{ branchId: teacherBranchFixtureIds.branchA, tenantId: teacherBranchFixtureIds.tenantA, status: 'active' }],
+      existingRanges: [],
+      sourceRows: [duplicateRow, { ...duplicateRow }],
+    };
+
+    const result = scanTeacherBranchPreflight(input);
+    const duplicateFindings = result.findings.filter(
+      (finding) => finding.reasonCode === 'TB_DUPLICATE_SOURCE',
+    );
+
+    expect(result.status).toBe('HOLD');
+    expect(result.sourceCount).toBe(2);
+    expect(result.eligibleCount).toBe(0);
+    expect(duplicateFindings).toHaveLength(2);
+    expect(result.countsByReason.TB_DUPLICATE_SOURCE).toBe(2);
+  });
+
   it('exposes only opaque IDs, reason codes and counts', () => {
     const serialized = JSON.stringify(
       scanTeacherBranchPreflight(teacherBranchNegativeFixture),
