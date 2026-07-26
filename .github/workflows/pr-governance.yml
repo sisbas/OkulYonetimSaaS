@@ -42,11 +42,7 @@ jobs:
               core.setFailed("Pull request event payload bulunamadı.");
               return;
             }
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: pullNumber
-            });
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
             const body = pr.body || "";
             const requiredSections = [
               "Amaç",
@@ -138,11 +134,7 @@ jobs:
               core.setFailed("Pull request event payload bulunamadı.");
               return;
             }
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: pullNumber
-            });
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
             const text = `${pr.title || ""}\n${pr.body || ""}`;
             if (!/\b(fixes|fix|closes|close|resolves|resolve|refs|references)\s+#\d+\b/i.test(text)) {
               core.setFailed("PR title/body içinde geçerli issue referansı yok. Örnek: Fixes #123 veya Refs #123");
@@ -162,11 +154,7 @@ jobs:
               core.setFailed("Pull request event payload bulunamadı.");
               return;
             }
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: pullNumber
-            });
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
             const body = pr.body || "";
             const rollback = body.match(/(?:^|\n)#{2,3}\s*Rollback\s*\n([\s\S]*?)(?=\n#{2,3}\s|\s*$)/i)?.[1]?.trim() || "";
             const normalized = rollback.replace(/<!--[\s\S]*?-->/g, "").trim();
@@ -190,18 +178,51 @@ jobs:
               core.setFailed("Pull request event payload bulunamadı.");
               return;
             }
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: pullNumber
-            });
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
             const body = pr.body || "";
             const ac = body.match(/(?:^|\n)#{2,3}\s*Acceptance criteria\s*\n([\s\S]*?)(?=\n#{2,3}\s|\s*$)/i)?.[1]?.trim() || "";
-            const hasChecklist = /-\s*\[[ xX]\]\s+.{10,}/.test(ac);
+            const checklistItems = ac.match(/^\s*[-*]\s*\[[ xX]\]\s+.{10,}$/gim) || [];
+            const uncheckedItems = checklistItems.filter((item) => /^\s*[-*]\s*\[\s\]\s+.{10,}$/i.test(item));
             const weak = /^(|[-_. ]+|n\/a|na|none|null|todo|tbd|boş|yok|placeholder)$/i;
-            if (!ac || weak.test(ac.trim()) || !hasChecklist) {
-              core.setFailed("Acceptance criteria bölümü checklist formatında ve ölçülebilir olmalı. Örnek: - [ ] Backend CI PASS");
+            const failures = [];
+
+            function stripMarkdown(line) {
+              return line
+                .replace(/<!--[\s\S]*?-->/g, "")
+                .replace(/^\s*[-*]\s*/, "")
+                .replace(/\*\*/g, "")
+                .replace(/`/g, "")
+                .trim();
             }
+
+            function blockingDecisionLines(markdown) {
+              const withoutCodeBlocks = markdown.replace(/```[\s\S]*?```/g, "");
+              return withoutCodeBlocks
+                .split(/\r?\n/)
+                .map(stripMarkdown)
+                .filter(Boolean)
+                .filter((line) => {
+                  const canonical = /^(?:karar|decision|son karar|merge|ready\/merge|runtime ready\/merge|governance|authorization|merge authorization|runtime|status|durum)\s*[:\-–—]\s*(.+)$/i.exec(line);
+                  if (!canonical) return false;
+                  const decision = canonical[1].trim();
+                  return /\b(hold|not authorized|unauthorized|no-go|no go)\b/i.test(decision);
+                });
+            }
+
+            if (!ac || weak.test(ac.trim()) || checklistItems.length < 1) {
+              failures.push("Acceptance criteria bölümü checklist formatında ve ölçülebilir olmalı. Örnek: - [ ] Backend CI PASS");
+            }
+
+            if (!pr.draft && uncheckedItems.length > 0) {
+              failures.push(`Ready PR içinde ${uncheckedItems.length} tamamlanmamış acceptance criteria maddesi var.`);
+            }
+
+            const blockingDecisions = blockingDecisionLines(body);
+            if (!pr.draft && blockingDecisions.length > 0) {
+              failures.push(`Ready PR body içinde merge/ready engelleyici karar var: ${blockingDecisions.join(" | ")}`);
+            }
+
+            if (failures.length) core.setFailed(failures.join("\n"));
 
   merge-enforcement:
     name: Merge Governance Enforcement
@@ -224,11 +245,7 @@ jobs:
               core.setFailed("Pull request event payload bulunamadı.");
               return;
             }
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: pullNumber
-            });
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
             const requiredChecks = [
               "Sprint 1 Quality Gate",
               "Backend CI",
