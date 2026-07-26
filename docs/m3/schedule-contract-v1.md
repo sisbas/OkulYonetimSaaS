@@ -17,6 +17,9 @@
 6. Empty, stale, hard-conflict and published-period-conflict outcomes remain separate reason codes and UI states.
 7. Teacher and Viewer cannot discover draft or unpublished schedules.
 8. Tenant/branch mismatches use non-enumerating public responses.
+9. Draft creation has no existing resource revision and therefore does not accept or require `If-Match`.
+10. Existing-resource mutations require an exact resource-bound `If-Match` revision.
+11. Canonical UI states in this contract supersede earlier descriptor-only aliases.
 
 ## 2. ScheduleEvent reference contract
 
@@ -156,6 +159,7 @@ interface ScheduleValidationInputV1 {
   references: {
     activeTeacherIds: UUIDv4[];
     activeStudentGroupIds: UUIDv4[];
+    activeRoomIds: UUIDv4[];
     activeTimeSlotIds: UUIDv4[];
     activeTeacherBranchAssignments: Array<{
       teacherBranchId: UUIDv4;
@@ -181,6 +185,8 @@ interface ScheduleValidationEventV1 {
   timeSlotSnapshot: TimeSlotSnapshotV1;
 }
 ```
+
+Every active reference collection is tenant-scoped to `tenantId`; branch-scoped collections, including `activeRoomIds`, are additionally scoped to `branchId`.
 
 ## 7. Validator output schema
 
@@ -221,7 +227,9 @@ interface ValidationReasonV1 {
 
 | Endpoint | Success | Permission | Primary errors |
 | --- | ---: | --- | --- |
-| `POST /api/v1/schedules/drafts` | 201 | `schedule:draft:create` | 400 validation, 404 non-enumerating reference, 409 policy conflict |
+| `POST /api/v1/schedules/drafts` | 201 | `schedule:draft:create` | 400 validation, 404 non-enumerating reference, 409 policy conflict; **no If-Match** |
+| `GET /api/v1/schedules/drafts` | 200 | management draft-read capability | 403, 404 non-enumerating branch |
+| `GET /api/v1/schedules/:scheduleId` | 200 | management draft-read or published read projection | 403 visibility, 404 non-enumerating |
 | `POST /api/v1/schedules/:scheduleId/events` | 201 | `schedule:draft:update` | 404, 409 immutable, 412 mismatch, 422 conflict/reference, 428 required |
 | `PATCH /api/v1/schedules/:scheduleId/events/:eventId` | 200 | `schedule:draft:update`; assignment change also requires `schedule:assignment:update` | 404, 409, 412, 422, 428 |
 | `DELETE /api/v1/schedules/:scheduleId/events/:eventId` | 204 | `schedule:draft:update` | 404, 409, 412, 428 |
@@ -230,13 +238,15 @@ interface ValidationReasonV1 {
 | `POST /api/v1/schedules/:scheduleId/unpublish` | 200 | `schedule:publish` | 404, 409 state, 412, 428 |
 | `GET /api/v1/schedules/published` | 200 | `schedule:read` or `schedule:own:read` | 403 own-scope, 404 published not found |
 
-All mutation endpoints require:
+The draft-create endpoint creates the resource at revision `1`; it must not receive an `If-Match` header. Existing-resource mutations require:
 
 ```http
 If-Match: "schedule:<scheduleId>:v<revision>"
 ```
 
 Missing header: `428 SCHEDULE_VERSION_REQUIRED`. Stale header: `412 SCHEDULE_VERSION_MISMATCH`.
+
+Draft list/detail reads are management-only. Teacher and Viewer receive non-discovering behavior for draft or unpublished schedules.
 
 ## 9. UI reason/state mapping
 
@@ -269,11 +279,14 @@ weekly_grid_ready_published
 
 `publish_blocked_empty`, `publish_blocked_stale`, `publish_blocked_conflicts` and `publish_blocked_period` must never collapse into one generic reason.
 
+Any pre-contract frontend descriptor alias such as `blocked_full_validation_required` is superseded and must not be treated as canonical. Runtime/frontend work must import or reproduce only the canonical states in this section after a dedicated alignment review.
+
 ## 10. Permission and visibility matrix
 
 | Capability | Permission | Tenant Admin | Operations Manager | Teacher | Viewer |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Draft create | `schedule:draft:create` | Yes | Yes | No | No |
+| Draft list/detail read | management draft-read capability | Yes | Yes | **Hidden** | **Hidden** |
 | Draft/event edit | `schedule:draft:update` | Yes | Yes | No | No |
 | Assignment edit | `schedule:assignment:update` | Yes | Yes | No | No |
 | FULL/INCREMENTAL validate | `schedule:validate` | Yes | Yes | No | No |
@@ -283,7 +296,7 @@ weekly_grid_ready_published
 | Published own read | `schedule:own:read` | Yes | Yes | Yes | No |
 | Draft discovery | management permissions | Yes | Yes | **Hidden** | **Hidden** |
 
-Permission enforcement is permission-key based, never inferred from a role name. No Viewer permission key is invented in this contract. Until a catalog key is approved, Viewer published access remains hidden.
+Permission enforcement is permission-key based, never inferred from a role name. This contract does not invent a new permission key: the management draft-read capability must map to an approved Permission Catalog key before runtime. Until then, draft list/detail implementation remains blocked.
 
 Teacher receives only the actor-bound published projection and cannot discover drafts, unpublished schedules, another teacher's events or another branch.
 
@@ -302,9 +315,20 @@ export const M3_CONTRACT_V1 = {
     'roomId',
     'timeSlotId',
   ],
+  validationReferenceCollections: [
+    'activeTeacherIds',
+    'activeStudentGroupIds',
+    'activeRoomIds',
+    'activeTimeSlotIds',
+    'activeTeacherBranchAssignments',
+    'activeTeacherCourseRelations',
+  ],
   validationModes: ['FULL', 'INCREMENTAL'],
   incrementalIsPublishEvidence: false,
   publishedScheduleImmutable: true,
+  draftCreateRequiresIfMatch: false,
+  existingMutationRequiresIfMatch: true,
+  canonicalGridStates: ['weekly_grid_ready_draft', 'weekly_grid_ready_published'],
   publishRequires: {
     validationMode: 'FULL',
     currentScheduleRevision: true,
@@ -317,7 +341,7 @@ export const M3_CONTRACT_V1 = {
 } as const;
 ```
 
-OpenAPI descriptors must declare `If-Match` on mutations, discriminate FULL/INCREMENTAL output, expose the common safe error envelope and keep security-only internal mismatch reasons out of public schemas.
+OpenAPI descriptors must omit `If-Match` from draft creation, declare it on existing-resource mutations, discriminate FULL/INCREMENTAL output, expose the common safe error envelope and keep security-only internal mismatch reasons out of public schemas.
 
 ## 12. Static contract consistency requirements
 
@@ -329,8 +353,12 @@ The repository test must fail when any of the following drifts occur:
 - `INCREMENTAL` can be publish evidence or emit `canPublish=true`.
 - `teacherBranchId` or `teacher_branch_id NOT NULL` is removed.
 - TimeSlot historical snapshot fields are removed.
+- `activeRoomIds` or its tenant/branch-scoped rule is removed.
+- Draft create is incorrectly made subject to `If-Match`.
+- Existing draft list/detail read contracts disappear.
 - Non-enumerating tenant/branch mismatch behavior is removed.
 - Teacher or Viewer draft discovery becomes visible.
+- Canonical UI state names are replaced by superseded descriptor aliases.
 - Contract ID/version/change-control rules are removed.
 
 ## 13. Contract versioning and change control
@@ -345,6 +373,7 @@ The repository test must fail when any of the following drifts occur:
 5. Runtime or migration code is prohibited in a contract-freeze PR.
 6. Required sign-off: Product/PO, Technical Architecture, Data Model, Frontend and QA/KVKK/Security.
 7. No runtime branch may consume a changed contract until static consistency checks and all required sign-offs pass.
+8. The additions in this unmerged freeze PR are pre-acceptance errata; the initial frozen version remains `1.0.0`. Any post-merge behavioral addition requires a new semantic version decision.
 
 ## 14. Audit guardrails
 
@@ -354,6 +383,7 @@ Allowed metadata is limited to IDs, revision, validator version, fingerprint, mo
 
 ```text
 M3 CONTRACT V1 REPOSITORY SOURCE OF TRUTH
+PRE-MERGE ERRATA CLOSED
 CONTRACT-ONLY REVIEW
 M3 RUNTIME HOLD
 ```
