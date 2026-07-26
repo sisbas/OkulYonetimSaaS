@@ -27,28 +27,49 @@ function stripDecisionLine(line) {
     .trim();
 }
 
+function stripHtmlComments(markdown) {
+  return markdown.replace(/<!--[\s\S]*?-->/g, '');
+}
+
+function hasBlockingToken(value) {
+  return /\b(hold|not authorized|unauthorized|no-go|no go)\b/i.test(value);
+}
+
 function blockingDecisionLines(body) {
-  return body
-    .replace(/```[\s\S]*?```/g, '')
-    .split(/\r?\n/)
-    .map(stripDecisionLine)
-    .filter(Boolean)
-    .filter((line) => {
-      const match = /^(?:karar|decision|son karar|merge|ready\/merge|runtime ready\/merge|governance|authorization|merge authorization|runtime|status|durum)\s*[:\-–—]\s*(.+)$/i.exec(line);
-      if (!match) return false;
-      return /\b(hold|not authorized|unauthorized|no-go|no go)\b/i.test(match[1]);
-    });
+  const withoutComments = stripHtmlComments(body);
+  const findings = [];
+
+  const decisionSectionPattern = /(?:^|\n)#{2,3}\s*(karar|decision|son karar|durum|status)\s*\n([\s\S]*?)(?=\n#{1,3}\s|$)/gi;
+  for (const match of withoutComments.matchAll(decisionSectionPattern)) {
+    const sectionBody = match[2].trim();
+    if (hasBlockingToken(sectionBody)) {
+      findings.push(`${match[1]}: ${sectionBody.replace(/\s+/g, ' ').slice(0, 180)}`);
+    }
+  }
+
+  const withoutExamples = withoutComments.replace(/```[\s\S]*?```/g, '');
+  for (const line of withoutExamples.split(/\r?\n/).map(stripDecisionLine).filter(Boolean)) {
+    const match = /^((?:karar|decision|son karar|merge|ready\/merge|runtime|governance|authorization|status|durum)[^:\n]{0,80})\s*[:\-–—]\s*(.+)$/i.exec(line);
+    if (match && hasBlockingToken(match[2])) findings.push(line);
+  }
+
+  return [...new Set(findings)];
 }
 
 function evaluateAcceptance(input) {
   const failures = [];
   const body = input.body || '';
   const ac = extractAcceptanceCriteria(body);
-  const checklistItems = ac.match(/^\s*[-*]\s*\[[ xX]\]\s+.{10,}$/gim) || [];
-  const uncheckedItems = checklistItems.filter((item) => /^\s*[-*]\s*\[\s\]\s+.{10,}$/i.test(item));
+  const allChecklistItems = ac.match(/^\s*[-*]\s*\[[ xX]\]\s+\S.*$/gim) || [];
+  const measurableItems = allChecklistItems.filter((item) =>
+    item.replace(/^\s*[-*]\s*\[[ xX]\]\s+/i, '').trim().length >= 10,
+  );
+  const uncheckedItems = allChecklistItems.filter((item) =>
+    /^\s*[-*]\s*\[\s\]\s+\S/i.test(item),
+  );
   const weak = /^(|[-_. ]+|n\/a|na|none|null|todo|tbd|boş|yok|placeholder)$/i;
 
-  if (!ac || weak.test(ac.trim()) || checklistItems.length < 1) {
+  if (!ac || weak.test(ac.trim()) || measurableItems.length < 1) {
     failures.push('acceptance-checklist-missing');
   }
   if (!input.draft && uncheckedItems.length > 0) {
@@ -103,12 +124,24 @@ const readyUncheckedBody = `## Acceptance criteria
 - [x] Rollback documented
 `;
 
+const readyShortUncheckedBody = `## Acceptance criteria
+- [x] Backend CI PASS
+- [ ] Docs
+`;
+
 const readyHoldBody = `## Acceptance criteria
 - [x] Backend CI PASS
 - [x] Rollback documented
 
 ## Karar
 MERGE: HOLD
+`;
+
+const readyBareDecisionHoldBody = `## Acceptance criteria
+- [x] Backend CI PASS
+
+## Karar
+HOLD
 `;
 
 const readyNotAuthorizedBody = `## Acceptance criteria
@@ -119,12 +152,45 @@ const readyNotAuthorizedBody = `## Acceptance criteria
 AUTHORIZATION: NOT AUTHORIZED
 `;
 
+const readyFencedDecisionBlockerBody = `## Acceptance criteria
+- [x] Backend CI PASS
+
+## Karar
+\`\`\`text
+GOVERNANCE SEMANTIC GATE: MERGE NOT AUTHORIZED
+\`\`\`
+`;
+
 const readyHistoricalHoldBody = `## Acceptance criteria
 - [x] Backend CI PASS
 - [x] Rollback documented
 
 ## Not
 Previous incident used the word HOLD in historical notes only.
+
+## Karar
+MERGE: GO
+`;
+
+const readyHtmlCommentExampleBody = `## Acceptance criteria
+- [x] Backend CI PASS
+
+<!--
+Example only:
+MERGE: HOLD
+-->
+
+## Karar
+MERGE: GO
+`;
+
+const readyFencedExampleOutsideDecisionBody = `## Acceptance criteria
+- [x] Backend CI PASS
+
+## Example
+\`\`\`text
+MERGE: HOLD
+\`\`\`
 
 ## Karar
 MERGE: GO
@@ -142,8 +208,18 @@ const semanticScenarios = [
     acceptanceAllowed: false,
   },
   {
+    name: 'ready-short-unchecked-ac-fails',
+    input: { draft: false, body: readyShortUncheckedBody },
+    acceptanceAllowed: false,
+  },
+  {
     name: 'ready-merge-hold-fails',
     input: { draft: false, body: readyHoldBody },
+    acceptanceAllowed: false,
+  },
+  {
+    name: 'ready-bare-decision-section-hold-fails',
+    input: { draft: false, body: readyBareDecisionHoldBody },
     acceptanceAllowed: false,
   },
   {
@@ -152,8 +228,23 @@ const semanticScenarios = [
     acceptanceAllowed: false,
   },
   {
+    name: 'ready-fenced-decision-blocker-fails',
+    input: { draft: false, body: readyFencedDecisionBlockerBody },
+    acceptanceAllowed: false,
+  },
+  {
     name: 'ready-historical-hold-note-does-not-fail',
     input: { draft: false, body: readyHistoricalHoldBody },
+    acceptanceAllowed: true,
+  },
+  {
+    name: 'ready-multiline-html-comment-example-does-not-fail',
+    input: { draft: false, body: readyHtmlCommentExampleBody },
+    acceptanceAllowed: true,
+  },
+  {
+    name: 'ready-fenced-example-outside-decision-does-not-fail',
+    input: { draft: false, body: readyFencedExampleOutsideDecisionBody },
     acceptanceAllowed: true,
   },
   {
