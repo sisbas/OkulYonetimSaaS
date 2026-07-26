@@ -71,7 +71,7 @@ describe('EnforceScheduleReferenceIntegrity migration', () => {
       'DROP INDEX IF EXISTS uq_schedule_repair_schedules_owner',
     ]);
     expect(queries.join('\n')).not.toContain('DROP TABLE');
-    expect(queries.join('\n')).not.toContain('schedule_events DROP');
+    expect(queries.join('\n')).not.toContain('DROP SCHEMA');
   });
 
   it('supports the migrate, revert and remigrate command cycle at the migration level', async () => {
