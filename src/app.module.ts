@@ -5,6 +5,7 @@ import { AppDataSource } from './database/data-source';
 import { AuthModule } from './auth/auth.module';
 import { SecurityAuditService } from './common/audit/security-audit.service';
 import { TenantContextMiddleware } from './common/context/tenant-context.middleware';
+import { PermissionAuthenticationGuard } from './common/guards/permission-authentication.guard';
 import { PermissionGuard } from './common/guards/permission.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { CoursesModule } from './courses/courses.module';
@@ -29,6 +30,7 @@ import { UsersModule } from './users/users.module';
   ],
   providers: [
     SecurityAuditService,
+    { provide: APP_GUARD, useClass: PermissionAuthenticationGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
