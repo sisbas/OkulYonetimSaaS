@@ -114,10 +114,13 @@ export function scanTeacherBranchPreflight(
 
   const add = (
     row: TeacherBranchSourceRow,
+    rowIndex: number,
     reasonCode: TeacherBranchPreflightReason,
     branchId: string | null = null,
   ): void => {
-    const key = `${row.sourceId}|${reasonCode}|${branchId ?? 'null'}`;
+    // sourceId is an opaque external identifier and is not guaranteed unique.
+    // Findings are therefore de-duplicated per input occurrence, not per sourceId.
+    const key = `${rowIndex}|${reasonCode}|${branchId ?? 'null'}`;
     if (findingKeys.has(key)) return;
     findingKeys.add(key);
     findings.push({
@@ -133,11 +136,11 @@ export function scanTeacherBranchPreflight(
     const teacher = row.teacherId ? teacherById.get(row.teacherId) : undefined;
 
     if (!teacher || teacher.tenantId !== row.tenantId) {
-      add(row, 'TB_UNMAPPED_TEACHER');
+      add(row, rowIndex, 'TB_UNMAPPED_TEACHER');
     }
 
     if (row.candidateBranchIds.length !== 1) {
-      add(row, 'TB_AMBIGUOUS_BRANCH');
+      add(row, rowIndex, 'TB_AMBIGUOUS_BRANCH');
     }
 
     const candidateBranchId =
@@ -145,18 +148,18 @@ export function scanTeacherBranchPreflight(
     const branch = candidateBranchId ? branchById.get(candidateBranchId) : undefined;
 
     if (candidateBranchId && (!branch || branch.tenantId !== row.tenantId)) {
-      add(row, 'TB_CROSS_TENANT_BRANCH', candidateBranchId);
+      add(row, rowIndex, 'TB_CROSS_TENANT_BRANCH', candidateBranchId);
     } else if (branch?.status === 'inactive') {
-      add(row, 'TB_INACTIVE_BRANCH', candidateBranchId);
+      add(row, rowIndex, 'TB_INACTIVE_BRANCH', candidateBranchId);
     }
 
     if (row.effectiveTo !== null && row.effectiveFrom > row.effectiveTo) {
-      add(row, 'TB_EFFECTIVE_RANGE_INVALID', candidateBranchId);
+      add(row, rowIndex, 'TB_EFFECTIVE_RANGE_INVALID', candidateBranchId);
     }
 
     const sourceKey = normalizedSourceKey(row);
     if ((sourceKeyCounts.get(sourceKey) ?? 0) > 1) {
-      add(row, 'TB_DUPLICATE_SOURCE', candidateBranchId);
+      add(row, rowIndex, 'TB_DUPLICATE_SOURCE', candidateBranchId);
     }
 
     if (row.teacherId && candidateBranchId) {
@@ -191,7 +194,7 @@ export function scanTeacherBranchPreflight(
       });
 
       if (overlapsExisting || overlapsAnotherSource) {
-        add(row, 'TB_EFFECTIVE_RANGE_OVERLAP', candidateBranchId);
+        add(row, rowIndex, 'TB_EFFECTIVE_RANGE_OVERLAP', candidateBranchId);
       }
     }
 
