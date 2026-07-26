@@ -1,8 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+  CANONICAL_SCHEDULE_REASON_CODES,
+  M3_SCHEDULE_CONTRACT_ID,
+  M3_SCHEDULE_CONTRACT_VERSION,
+} from '../../src/schedules/m3-schedule-contract';
+
 const contractPath = join(process.cwd(), 'docs/m3/schedule-contract-v1.md');
 const contract = readFileSync(contractPath, 'utf8');
+const reasonCatalog = contract.match(
+  /## 5\. Canonical reason-code catalog\s*([\s\S]*?)\n## 6\./,
+)?.[1] ?? '';
 
 const REQUIRED_REASON_CODES = [
   'TEACHER_TIME_OVERLAP',
@@ -38,8 +47,8 @@ describe('M3 Schedule Contract v1 consistency', () => {
     expect(contract).toContain('Contract versioning and change control');
   });
 
-  it.each(REQUIRED_REASON_CODES)('contains canonical reason code %s', (code) => {
-    expect(contract).toContain(`\`${code}\``);
+  it.each(REQUIRED_REASON_CODES)('contains canonical catalog row for %s', (code) => {
+    expect(reasonCatalog).toContain(`| \`${code}\` |`);
   });
 
   it('keeps publish-block reasons as distinct UI states', () => {
@@ -83,7 +92,7 @@ describe('M3 Schedule Contract v1 consistency', () => {
     expect(contract).toContain('Teacher and Viewer cannot discover draft or unpublished schedules');
   });
 
-  it('requires If-Match and preserves 428 versus 412 behavior', () => {
+  it('requires If-Match for existing-schedule mutations and preserves 428 versus 412 behavior', () => {
     expect(contract).toContain('If-Match:');
     expect(contract).toContain('428 SCHEDULE_VERSION_REQUIRED');
     expect(contract).toContain('412 SCHEDULE_VERSION_MISMATCH');
@@ -93,32 +102,16 @@ describe('M3 Schedule Contract v1 consistency', () => {
     expect(contract).toContain('runtime controller/service/repository');
     expect(contract).toContain('migration');
     expect(contract).toContain('Runtime or migration code is prohibited in a contract-freeze PR');
-
-import { CANONICAL_SCHEDULE_REASON_CODES, M3_SCHEDULE_CONTRACT_ID, M3_SCHEDULE_CONTRACT_VERSION } from '../../src/schedules/m3-schedule-contract';
+  });
+});
 
 describe('M3 Schedule Contract v1 source of truth', () => {
   it('pins the contract identity and all canonical reason codes', () => {
     expect(M3_SCHEDULE_CONTRACT_ID).toBe('M3_CONTRACT_V1');
     expect(M3_SCHEDULE_CONTRACT_VERSION).toBe('1.0.0');
-    expect(CANONICAL_SCHEDULE_REASON_CODES).toEqual(expect.arrayContaining([
-      'TEACHER_TIME_OVERLAP',
-      'STUDENT_GROUP_TIME_OVERLAP',
-      'ROOM_TIME_OVERLAP',
-      'TIMESLOT_INACTIVE',
-      'TEACHER_INACTIVE',
-      'STUDENT_GROUP_INACTIVE',
-      'TEACHER_BRANCH_ASSIGNMENT_MISSING',
-      'TEACHER_COURSE_MISMATCH',
-      'TENANT_REFERENCE_MISMATCH',
-      'BRANCH_REFERENCE_MISMATCH',
-      'PUBLISHED_SCHEDULE_IMMUTABLE',
-      'SCHEDULE_EMPTY',
-      'SCHEDULE_VALIDATION_STALE',
-      'SCHEDULE_HARD_CONFLICTS_PRESENT',
-      'PUBLISHED_SCHEDULE_PERIOD_CONFLICT',
-      'SCHEDULE_VERSION_MISMATCH',
-      'SCHEDULE_VERSION_REQUIRED',
-    ]));
+    expect(CANONICAL_SCHEDULE_REASON_CODES).toEqual(
+      expect.arrayContaining([...REQUIRED_REASON_CODES]),
+    );
     expect(new Set(CANONICAL_SCHEDULE_REASON_CODES).size).toBe(17);
   });
 });
