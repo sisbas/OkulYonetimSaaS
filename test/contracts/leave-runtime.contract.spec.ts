@@ -4,7 +4,13 @@ import { join } from 'node:path';
 const contract = readFileSync(join(process.cwd(), 'docs/leaves/leave-runtime-contract.md'), 'utf8');
 const appModule = readFileSync(join(process.cwd(), 'src/app.module.ts'), 'utf8');
 const controller = readFileSync(join(process.cwd(), 'src/leaves/leave.controller.ts'), 'utf8');
+const repository = readFileSync(join(process.cwd(), 'src/leaves/leave.repository.ts'), 'utf8');
 const service = readFileSync(join(process.cwd(), 'src/leaves/leave.service.ts'), 'utf8');
+const leavesModule = readFileSync(join(process.cwd(), 'src/leaves/leaves.module.ts'), 'utf8');
+const migration = readFileSync(
+  join(process.cwd(), 'src/database/migrations/1784740000000-CreateLeaveRequestRuntime.ts'),
+  'utf8',
+);
 const permissionAuthenticationGuard = readFileSync(
   join(process.cwd(), 'src/common/guards/permission-authentication.guard.ts'),
   'utf8',
@@ -50,6 +56,35 @@ describe('Leave runtime contract skeleton', () => {
     expect(service).toContain('parseExpectedVersion(ifMatch, id)');
     expect(service).toContain('match[1] !== leaveId');
     expect(service).toContain('throw new LeaveStaleVersionException()');
+  });
+
+  it('rejects stale concurrent decisions while holding the pessimistic lock', () => {
+    expect(repository).toContain("lock: { mode: 'pessimistic_write' }");
+    expect(repository).toContain('existing.version !== values.expectedVersion');
+    expect(repository).toContain('throw new LeaveStaleVersionException()');
+    expect(repository).toContain('throw new LeaveTerminalStateException()');
+  });
+
+  it('validates tenant and branch ownership inside the create transaction', () => {
+    expect(repository).toContain('assertBranchOwnership(manager, values.tenantId, values.branchId)');
+    expect(repository).toContain('SELECT 1 FROM branches WHERE tenant_id = $1 AND id = $2');
+  });
+
+  it('writes canonical versioned leave audit events through the shared transaction manager', () => {
+    expect(leavesModule).toContain('TransactionalLeaveAuditAdapter');
+    expect(leavesModule).toContain('TRANSACTIONAL_AUDIT_WRITER');
+    expect(repository).toContain("'leave.requested.v1'");
+    expect(repository).toContain("'leave.approved.v1'");
+    expect(repository).toContain("'leave.rejected.v1'");
+    expect(repository).toContain('this.audit.write(manager');
+    expect(repository).not.toContain('INSERT INTO leave_audit_events');
+    expect(migration).not.toContain('leave_audit_events');
+  });
+
+  it('keeps the reject endpoint bodyless and server-selects the rejected decision', () => {
+    const rejectHandler = controller.match(/@Patch\(':id\/reject'\)([\s\S]*?)\n  }\n}/)?.[1] ?? '';
+    expect(rejectHandler).toContain('LeaveDecisionStatus.REJECTED');
+    expect(rejectHandler).not.toContain('@Body()');
   });
 
   it('forbids client-controlled teacherId and sensitive audit payloads', () => {
