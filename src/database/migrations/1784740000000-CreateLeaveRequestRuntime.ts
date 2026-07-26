@@ -37,19 +37,6 @@ export class CreateLeaveRequestRuntime1784740000000 implements MigrationInterfac
     await queryRunner.query(`CREATE INDEX idx_leave_requests_tenant_branch_status_start ON leave_requests (tenant_id, branch_id, decision_status, starts_at)`);
     await queryRunner.query(`CREATE INDEX idx_leave_requests_tenant_teacher_status ON leave_requests (tenant_id, teacher_id, decision_status)`);
     await queryRunner.query(`
-      CREATE TABLE leave_audit_events (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
-        leave_request_id uuid NOT NULL REFERENCES leave_requests(id) ON DELETE RESTRICT,
-        actor_user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
-        event_name varchar(80) NOT NULL,
-        reason_code varchar(32) NOT NULL,
-        metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
-        created_at timestamptz NOT NULL DEFAULT now()
-      )
-    `);
-    await queryRunner.query(`CREATE INDEX idx_leave_audit_events_tenant_leave ON leave_audit_events (tenant_id, leave_request_id, created_at)`);
-    await queryRunner.query(`
       CREATE TABLE leave_outbox_events (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         event_key varchar(160) NOT NULL UNIQUE,
@@ -66,7 +53,6 @@ export class CreateLeaveRequestRuntime1784740000000 implements MigrationInterfac
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TABLE IF EXISTS leave_outbox_events`);
-    await queryRunner.query(`DROP TABLE IF EXISTS leave_audit_events`);
     await queryRunner.query(`DROP TABLE IF EXISTS leave_requests`);
   }
 }
