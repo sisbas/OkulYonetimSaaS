@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { RequestContext } from '../common/context/request-context';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
-import { DecideLeaveRequestDto } from './dto/decide-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { LeaveIdentityService } from './leave-identity.service';
 import {
@@ -30,6 +29,10 @@ export type LeaveResponse = {
   createdAt: Date;
   updatedAt: Date;
 };
+
+type LeaveDecisionInput = Readonly<{
+  decision: LeaveDecisionStatus.APPROVED | LeaveDecisionStatus.REJECTED;
+}>;
 
 function actorUserId(ctx: RequestContext): string {
   const id = ctx.user?.userId ?? ctx.userId;
@@ -98,7 +101,12 @@ export class LeaveService {
     return this.toResponse(leave);
   }
 
-  async decide(ctx: RequestContext, id: string, dto: DecideLeaveRequestDto, ifMatch: string | undefined): Promise<LeaveResponse> {
+  async decide(
+    ctx: RequestContext,
+    id: string,
+    dto: LeaveDecisionInput,
+    ifMatch: string | undefined,
+  ): Promise<LeaveResponse> {
     const expectedVersion = parseExpectedVersion(ifMatch, id);
     const current = await this.leaves.findTenantScoped(ctx, id);
     if (!current) throw new LeaveNotFoundException();
@@ -122,10 +130,6 @@ export class LeaveService {
       expectedVersion,
     });
     if (!decided) throw new LeaveNotFoundException();
-    if (decided.version === expectedVersion && decided.decisionStatus === LeaveDecisionStatus.PENDING) {
-      throw new LeaveStaleVersionException();
-    }
-    if (decided.version !== expectedVersion + 1) throw new LeaveStaleVersionException();
     return this.toResponse(decided);
   }
 
