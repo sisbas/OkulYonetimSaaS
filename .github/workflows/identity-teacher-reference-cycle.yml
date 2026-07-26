@@ -54,7 +54,8 @@ jobs:
           npx jest --runInBand \
             src/teachers/teacher-identity.service.spec.ts \
             src/teachers/identity-teacher-reference.migration.spec.ts \
-            test/contracts/teacher-branch-preflight.spec.ts
+            test/contracts/teacher-branch-preflight.spec.ts \
+            test/contracts/identity-reference-duplicate-export.spec.ts
       - name: Initial migrate and verify
         run: |
           npm run db:migrate
