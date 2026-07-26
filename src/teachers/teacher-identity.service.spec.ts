@@ -51,6 +51,23 @@ describe('TeacherIdentityService', () => {
     expect(repo.findActiveTeacherForUser).not.toHaveBeenCalled();
   });
 
+  it('rejects shape-valid but impossible tenant-local calendar dates before repository access', async () => {
+    const repo = { findActiveTeacherForUser: jest.fn(), listActiveBranchMemberships: jest.fn() };
+    await expect(new TeacherIdentityService(repo as any, audit as any).resolveForRequest(ctx({ businessDate: { tenantId: '00000000-0000-4000-8000-000000000001', date: '2026-02-31', source: 'tenant_local' } }))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repo.findActiveTeacherForUser).not.toHaveBeenCalled();
+    expect(repo.listActiveBranchMemberships).not.toHaveBeenCalled();
+    expect(audit.emitAuthorizationDenied).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ reasonCode: 'teacher_identity_unresolved' }));
+  });
+
+  it('accepts a valid leap-day tenant-local business date', async () => {
+    const repo = {
+      findActiveTeacherForUser: jest.fn(async () => ({ teacherId: 'teacher-leap' })),
+      listActiveBranchMemberships: jest.fn(async () => [{ teacherBranchId: 'membership-leap', branchId: 'branch-leap' }]),
+    };
+    const result = await new TeacherIdentityService(repo as any, audit as any).resolveForRequest(ctx({ businessDate: { tenantId: '00000000-0000-4000-8000-000000000001', date: '2028-02-29', source: 'tenant_local' } }));
+    expect(result.businessDate).toBe('2028-02-29');
+  });
+
   it('ignores client or token-supplied teacherId authority', async () => {
     const repo = {
       findActiveTeacherForUser: jest.fn(async () => ({ teacherId: 'server-resolved-teacher' })),
