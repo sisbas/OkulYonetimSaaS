@@ -1,5 +1,13 @@
-import { makePublishedSnapshot, ScheduleValidationInput, teacherCourseKey } from '../../src/schedules/m3-schedule-contract';
-import { publishSchedule, filterPublishedSchedules, ScheduleTransactionPort } from '../../src/schedules/schedule-publisher';
+import {
+  makePublishedSnapshot,
+  ScheduleValidationInput,
+  teacherCourseKey,
+} from '../../src/schedules/m3-schedule-contract';
+import {
+  filterPublishedSchedules,
+  publishSchedule,
+  ScheduleTransactionPort,
+} from '../../src/schedules/schedule-publisher';
 import { validateSchedule } from '../../src/schedules/schedule-validator';
 
 const ids = {
@@ -32,20 +40,22 @@ function baseInput(overrides: Partial<ScheduleValidationInput> = {}): ScheduleVa
     effectiveFrom: '2026-09-01',
     effectiveTo: '2027-06-30',
     publishedPeriodConflict: false,
-    events: [{
-      eventId: ids.eventA,
-      teacherId: ids.teacher,
-      teacherBranchId: ids.teacherBranch,
-      studentGroupId: ids.group,
-      courseId: ids.course,
-      roomId: ids.room,
-      timeSlotId: ids.slot,
-      dayOfWeek: 1,
-      startTime: '09:00',
-      endTime: '09:40',
-      timeSlotLabel: '1. Ders',
-      sourceTimeSlotUpdatedAt: '2026-07-20T00:00:00.000Z',
-    }],
+    events: [
+      {
+        eventId: ids.eventA,
+        teacherId: ids.teacher,
+        teacherBranchId: ids.teacherBranch,
+        studentGroupId: ids.group,
+        courseId: ids.course,
+        roomId: ids.room,
+        timeSlotId: ids.slot,
+        dayOfWeek: 1,
+        startTime: '09:00',
+        endTime: '09:40',
+        timeSlotLabel: '1. Ders',
+        sourceTimeSlotUpdatedAt: '2026-07-20T00:00:00.000Z',
+      },
+    ],
     references: {
       activeTeacherIds: new Set([ids.teacher]),
       activeStudentGroupIds: new Set([ids.group]),
@@ -60,10 +70,18 @@ function baseInput(overrides: Partial<ScheduleValidationInput> = {}): ScheduleVa
 
 function tx(log: string[] = []): ScheduleTransactionPort {
   return {
-    insertPublishedVersion: jest.fn(async () => { log.push('version'); }),
-    markSchedulePublished: jest.fn(async () => { log.push('publish'); }),
-    markScheduleUnpublished: jest.fn(async () => { log.push('unpublish'); }),
-    appendAudit: jest.fn(async () => { log.push('audit'); }),
+    insertPublishedVersion: jest.fn(async () => {
+      log.push('version');
+    }),
+    markSchedulePublished: jest.fn(async () => {
+      log.push('publish');
+    }),
+    markScheduleUnpublished: jest.fn(async () => {
+      log.push('unpublish');
+    }),
+    appendAudit: jest.fn(async () => {
+      log.push('audit');
+    }),
   };
 }
 
@@ -78,33 +96,94 @@ describe('Schedule minimum publish source', () => {
   });
 
   it('returns separate reason codes before publish', () => {
-    expect(validateSchedule(baseInput({ events: [] })).reasons.map((r) => r.code)).toContain('SCHEDULE_EMPTY');
-    expect(validateSchedule(baseInput({ validatedRevision: 1 })).reasons.map((r) => r.code)).toContain('SCHEDULE_VALIDATION_STALE');
-    expect(validateSchedule(baseInput({ publishedPeriodConflict: true })).reasons.map((r) => r.code)).toContain('PUBLISHED_SCHEDULE_PERIOD_CONFLICT');
-    expect(validateSchedule(baseInput({ events: [{ ...baseInput().events[0], teacherBranchId: null }] })).reasons.map((r) => r.code)).toContain('TEACHER_BRANCH_ASSIGNMENT_MISSING');
+    expect(validateSchedule(baseInput({ events: [] })).reasons.map((r) => r.code)).toContain(
+      'SCHEDULE_EMPTY',
+    );
+    expect(
+      validateSchedule(baseInput({ validatedRevision: 1 })).reasons.map((r) => r.code),
+    ).toContain('SCHEDULE_VALIDATION_STALE');
+    expect(
+      validateSchedule(baseInput({ publishedPeriodConflict: true })).reasons.map((r) => r.code),
+    ).toContain('PUBLISHED_SCHEDULE_PERIOD_CONFLICT');
+    expect(
+      validateSchedule(
+        baseInput({ events: [{ ...baseInput().events[0], teacherBranchId: null }] }),
+      ).reasons.map((r) => r.code),
+    ).toContain('TEACHER_BRANCH_ASSIGNMENT_MISSING');
   });
 
   it('rejects hard conflicts before publish', async () => {
     const duplicate = { ...baseInput().events[0], eventId: ids.eventB };
     const input = baseInput({ events: [...baseInput().events, duplicate] });
     const validation = validateSchedule(input);
-    expect(validation.reasons.map((r) => r.code)).toEqual(expect.arrayContaining([
-      'TEACHER_TIME_OVERLAP',
-      'STUDENT_GROUP_TIME_OVERLAP',
-      'ROOM_TIME_OVERLAP',
-      'SCHEDULE_HARD_CONFLICTS_PRESENT',
-    ]));
-    await expect(publishSchedule({
-      actorId: 'actor-1',
-      requestId: 'req-1',
-      expectedRevision: 2,
-      scheduleVersionId: ids.version,
-      versionNo: 1,
-      publishedAt: '2026-09-01T00:00:00.000Z',
-      validation,
-      validationInput: input,
-      transaction: tx(),
-    })).rejects.toThrow('TEACHER_TIME_OVERLAP');
+    expect(validation.reasons.map((r) => r.code)).toEqual(
+      expect.arrayContaining([
+        'TEACHER_TIME_OVERLAP',
+        'STUDENT_GROUP_TIME_OVERLAP',
+        'ROOM_TIME_OVERLAP',
+        'SCHEDULE_HARD_CONFLICTS_PRESENT',
+      ]),
+    );
+    await expect(
+      publishSchedule({
+        actorId: 'actor-1',
+        requestId: 'req-1',
+        expectedRevision: 2,
+        scheduleVersionId: ids.version,
+        versionNo: 1,
+        publishedAt: '2026-09-01T00:00:00.000Z',
+        validation,
+        validationInput: input,
+        transaction: tx(),
+      }),
+    ).rejects.toThrow('TEACHER_TIME_OVERLAP');
+  });
+
+  it('rejects partially intersecting teacher, group and room intervals', () => {
+    const overlapping = {
+      ...baseInput().events[0],
+      eventId: ids.eventB,
+      startTime: '09:20',
+      endTime: '10:00',
+    };
+    const validation = validateSchedule(
+      baseInput({ events: [...baseInput().events, overlapping] }),
+    );
+
+    expect(validation.canPublish).toBe(false);
+    expect(validation.reasons.map((reason) => reason.code)).toEqual(
+      expect.arrayContaining([
+        'TEACHER_TIME_OVERLAP',
+        'STUDENT_GROUP_TIME_OVERLAP',
+        'ROOM_TIME_OVERLAP',
+        'SCHEDULE_HARD_CONFLICTS_PRESENT',
+      ]),
+    );
+  });
+
+  it('allows adjacent intervals whose boundaries only touch', () => {
+    const adjacent = {
+      ...baseInput().events[0],
+      eventId: ids.eventB,
+      startTime: '09:40',
+      endTime: '10:20',
+    };
+    const validation = validateSchedule(
+      baseInput({ events: [...baseInput().events, adjacent] }),
+    );
+
+    expect(validation.canPublish).toBe(true);
+    expect(validation.reasons).toHaveLength(0);
+  });
+
+  it('rejects a new publish attempt for an already-published schedule', () => {
+    const validation = validateSchedule(baseInput({ status: 'published' }));
+
+    expect(validation.canPublish).toBe(false);
+    expect(validation.hardConflictCount).toBe(0);
+    expect(validation.reasons.map((reason) => reason.code)).toContain(
+      'PUBLISHED_SCHEDULE_IMMUTABLE',
+    );
   });
 
   it('keeps published snapshots immutable and preserves TimeSlot historical values', () => {
@@ -122,23 +201,30 @@ describe('Schedule minimum publish source', () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.events[0].timeSlotSnapshot)).toBe(true);
     expect(snapshot.events[0].teacherBranchId).toBe(ids.teacherBranch);
-    expect(snapshot.events[0].timeSlotSnapshot).toMatchObject({ dayOfWeek: 1, startTime: '09:00', endTime: '09:40', label: '1. Ders' });
+    expect(snapshot.events[0].timeSlotSnapshot).toMatchObject({
+      dayOfWeek: 1,
+      startTime: '09:00',
+      endTime: '09:40',
+      label: '1. Ders',
+    });
   });
 
   it('enforces optimistic concurrency and publish plus audit order on the same transaction port', async () => {
     const input = baseInput();
     const validation = validateSchedule(input);
-    await expect(publishSchedule({
-      actorId: 'actor-1',
-      requestId: 'req-1',
-      expectedRevision: 1,
-      scheduleVersionId: ids.version,
-      versionNo: 1,
-      publishedAt: '2026-09-01T00:00:00.000Z',
-      validation,
-      validationInput: input,
-      transaction: tx(),
-    })).rejects.toThrow('SCHEDULE_VERSION_MISMATCH');
+    await expect(
+      publishSchedule({
+        actorId: 'actor-1',
+        requestId: 'req-1',
+        expectedRevision: 1,
+        scheduleVersionId: ids.version,
+        versionNo: 1,
+        publishedAt: '2026-09-01T00:00:00.000Z',
+        validation,
+        validationInput: input,
+        transaction: tx(),
+      }),
+    ).rejects.toThrow('SCHEDULE_VERSION_MISMATCH');
 
     const log: string[] = [];
     await publishSchedule({
@@ -157,8 +243,15 @@ describe('Schedule minimum publish source', () => {
 
   it('supports tenant, branch, teacher, date range and published version read filters', () => {
     const first = makePublishedSnapshot({
-      tenantId: ids.tenant, branchId: ids.branch, scheduleId: ids.schedule, scheduleVersionId: ids.version, versionNo: 1,
-      effectiveFrom: '2026-09-01', effectiveTo: '2027-06-30', publishedAt: '2026-09-01T00:00:00.000Z', events: baseInput().events,
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+      scheduleId: ids.schedule,
+      scheduleVersionId: ids.version,
+      versionNo: 1,
+      effectiveFrom: '2026-09-01',
+      effectiveTo: '2027-06-30',
+      publishedAt: '2026-09-01T00:00:00.000Z',
+      events: baseInput().events,
     });
     const filtered = filterPublishedSchedules([first], {
       tenantId: ids.tenant,
