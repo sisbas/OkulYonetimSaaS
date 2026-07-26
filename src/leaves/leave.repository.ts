@@ -1,9 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+
 import { RequestContext } from '../common/context/request-context';
 import { assertTenantScope } from '../common/tenant/assert-tenant-scope';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
+import {
+  LeaveNotFoundException,
+  LeaveStaleVersionException,
+  LeaveTerminalStateException,
+} from './leave-errors';
+import { LEAVE_AUDIT_PORT, LeaveAuditPort } from './leave-audit.adapter';
 import { LeaveDecisionStatus, LeaveRequest } from './leave-request.entity';
 
 export type CreateLeaveRequestValues = Pick<
@@ -22,15 +29,36 @@ export class LeaveRepository {
   constructor(
     @InjectRepository(LeaveRequest) private readonly repository: Repository<LeaveRequest>,
     private readonly dataSource: DataSource,
+    @Inject(LEAVE_AUDIT_PORT) private readonly audit: LeaveAuditPort,
   ) {}
 
   async create(ctx: RequestContext, values: CreateLeaveRequestValues): Promise<LeaveRequest> {
     assertTenantScope(ctx, 'leave_requests');
     return this.dataSource.transaction(async (manager) => {
+      await this.assertBranchOwnership(manager, values.tenantId, values.branchId);
+
       const request = manager.create(LeaveRequest, values);
       const saved = await manager.save(LeaveRequest, request);
-      await this.insertAudit(manager, ctx, 'leave.request_created', saved, 'created');
-      await this.insertOutbox(manager, 'leave.request_created', saved);
+      await this.audit.write(manager, 'leave.requested.v1', {
+        schemaVersion: 1,
+        tenantId: saved.tenantId,
+        actorUserId: this.actorUserId(ctx),
+        actorSessionId: ctx.user?.sessionId ?? null,
+        requestId: ctx.requestId,
+        entityType: 'leave_request',
+        entityId: saved.id,
+        result: 'success',
+        changedFields: [
+          'status',
+          'coverageStatus',
+          'durationKind',
+          'reasonCode',
+          'startAt',
+          'endAt',
+          'version',
+        ],
+      });
+      await this.insertOutbox(manager, 'leave.requested.v1', saved);
       return saved;
     });
   }
@@ -67,8 +95,8 @@ export class LeaveRepository {
         lock: { mode: 'pessimistic_write' },
       });
       if (!existing) return null;
-      if (existing.version !== values.expectedVersion) return existing;
-      if (existing.decisionStatus !== LeaveDecisionStatus.PENDING) return existing;
+      if (existing.version !== values.expectedVersion) throw new LeaveStaleVersionException();
+      if (existing.decisionStatus !== LeaveDecisionStatus.PENDING) throw new LeaveTerminalStateException();
 
       existing.decisionStatus = values.decision;
       existing.decidedByUserId = values.decidedByUserId;
@@ -76,33 +104,41 @@ export class LeaveRepository {
       existing.version += 1;
 
       const saved = await manager.save(LeaveRequest, existing);
-      await this.insertAudit(manager, ctx, `leave.${values.decision}`, saved, values.decision);
-      await this.insertOutbox(manager, `leave.${values.decision}`, saved);
+      const eventName = values.decision === LeaveDecisionStatus.APPROVED
+        ? 'leave.approved.v1'
+        : 'leave.rejected.v1';
+      await this.audit.write(manager, eventName, {
+        schemaVersion: 1,
+        tenantId: saved.tenantId,
+        actorUserId: this.actorUserId(ctx),
+        actorSessionId: ctx.user?.sessionId ?? null,
+        requestId: ctx.requestId,
+        entityType: 'leave_request',
+        entityId: saved.id,
+        result: 'success',
+        changedFields: ['status', 'version'],
+      });
+      await this.insertOutbox(manager, eventName, saved);
       return saved;
     });
   }
 
-  private async insertAudit(manager: EntityManager, ctx: RequestContext, eventName: string, leave: LeaveRequest, result: string): Promise<void> {
-    await manager.query(
-      `INSERT INTO leave_audit_events
-        (tenant_id, leave_request_id, actor_user_id, event_name, reason_code, metadata_json)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        ctx.tenantId,
-        leave.id,
-        ctx.user?.userId ?? ctx.userId,
-        eventName,
-        leave.reasonCode,
-        {
-          schemaVersion: 1,
-          result,
-          branchId: leave.branchId,
-          decisionStatus: leave.decisionStatus,
-          coverageStatus: leave.coverageStatus,
-          version: leave.version,
-        },
-      ],
+  private async assertBranchOwnership(
+    manager: EntityManager,
+    tenantId: string,
+    branchId: string,
+  ): Promise<void> {
+    const rows = await manager.query(
+      `SELECT 1 FROM branches WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
+      [tenantId, branchId],
     );
+    if (!Array.isArray(rows) || rows.length !== 1) throw new LeaveNotFoundException();
+  }
+
+  private actorUserId(ctx: RequestContext): string {
+    const actorUserId = ctx.user?.userId ?? ctx.userId;
+    if (!actorUserId) throw new TypeError('Authenticated actor is required for leave audit events');
+    return actorUserId;
   }
 
   private async insertOutbox(manager: EntityManager, eventName: string, leave: LeaveRequest): Promise<void> {
