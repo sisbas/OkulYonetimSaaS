@@ -17,8 +17,15 @@ export type TeacherIdentityResolutionInput = Readonly<{
   branchId?: string;
 }>;
 
-function isIsoDate(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+function isIsoCalendarDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+  const [year, month, day] = value.split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1) return false;
+
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1];
 }
 
 function tenantLocalBusinessDate(ctx: RequestContext, tenantId: string): string | null {
@@ -26,7 +33,7 @@ function tenantLocalBusinessDate(ctx: RequestContext, tenantId: string): string 
   if (!businessDate) return null;
   if (businessDate.source !== 'tenant_local') return null;
   if (businessDate.tenantId !== tenantId) return null;
-  if (!isIsoDate(businessDate.date)) return null;
+  if (!isIsoCalendarDate(businessDate.date)) return null;
   return businessDate.date;
 }
 
