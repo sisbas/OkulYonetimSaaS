@@ -45,6 +45,7 @@ describe('M3 Schedule Contract v1 consistency', () => {
     expect(contract).toContain('M3_CONTRACT_V1');
     expect(contract).toContain('1.0.0');
     expect(contract).toContain('Contract versioning and change control');
+    expect(contract).toContain('pre-acceptance errata');
   });
 
   it.each(REQUIRED_REASON_CODES)('contains canonical catalog row for %s', (code) => {
@@ -82,6 +83,33 @@ describe('M3 Schedule Contract v1 consistency', () => {
     }
   });
 
+  it('requires active rooms to be validated in tenant and branch scope', () => {
+    expect(contract).toContain('activeRoomIds: UUIDv4[];');
+    expect(contract).toContain('including `activeRoomIds`, are additionally scoped to `branchId`');
+    expect(contract).toContain("'activeRoomIds'");
+  });
+
+  it('keeps draft create outside If-Match and existing mutations inside it', () => {
+    expect(contract).toContain('draftCreateRequiresIfMatch: false');
+    expect(contract).toContain('existingMutationRequiresIfMatch: true');
+    expect(contract).toContain('**no If-Match**');
+    expect(contract).toContain('428 SCHEDULE_VERSION_REQUIRED');
+    expect(contract).toContain('412 SCHEDULE_VERSION_MISMATCH');
+  });
+
+  it('defines management-only draft list and detail reads', () => {
+    expect(contract).toContain('GET /api/v1/schedules/drafts');
+    expect(contract).toContain('GET /api/v1/schedules/:scheduleId');
+    expect(contract).toContain('| Draft list/detail read | management draft-read capability | Yes | Yes | **Hidden** | **Hidden** |');
+    expect(contract).toContain('does not invent a new permission key');
+  });
+
+  it('pins canonical frontend states and marks earlier aliases superseded', () => {
+    expect(contract).toContain("canonicalGridStates: ['weekly_grid_ready_draft', 'weekly_grid_ready_published']");
+    expect(contract).toContain('blocked_full_validation_required');
+    expect(contract).toContain('superseded');
+  });
+
   it('keeps tenant and branch mismatches non-enumerating', () => {
     expect(contract).toContain('REFERENCE_NOT_FOUND');
     expect(contract).toContain('must not reveal whether the reference exists in another tenant or branch');
@@ -90,12 +118,6 @@ describe('M3 Schedule Contract v1 consistency', () => {
   it('keeps Teacher and Viewer draft discovery hidden', () => {
     expect(contract).toContain('| Draft discovery | management permissions | Yes | Yes | **Hidden** | **Hidden** |');
     expect(contract).toContain('Teacher and Viewer cannot discover draft or unpublished schedules');
-  });
-
-  it('requires If-Match for existing-schedule mutations and preserves 428 versus 412 behavior', () => {
-    expect(contract).toContain('If-Match:');
-    expect(contract).toContain('428 SCHEDULE_VERSION_REQUIRED');
-    expect(contract).toContain('412 SCHEDULE_VERSION_MISMATCH');
   });
 
   it('keeps runtime and migration code out of the contract freeze scope', () => {
