@@ -6,6 +6,7 @@ import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { LeaveIdentityService } from './leave-identity.service';
 import {
   LeaveExpectedVersionRequiredException,
+  LeaveImpactAnalysisNotReadyException,
   LeaveNotFoundException,
   LeaveSelfDecisionException,
   LeaveStaleVersionException,
@@ -38,7 +39,7 @@ function actorUserId(ctx: RequestContext): string {
 
 function parseExpectedVersion(ifMatch: string | undefined): number {
   if (!ifMatch?.trim()) throw new LeaveExpectedVersionRequiredException();
-  const match = ifMatch.match(/(?:W\/)?"?leave:[^:]+:v(\d+)"?/i) ?? ifMatch.match(/^\d+$/);
+  const match = ifMatch.match(/(?:W\/)??"?leave:[^:]+:v(\d+)"?/i) ?? ifMatch.match(/^\d+$/);
   const parsed = Number.parseInt(match?.[1] ?? ifMatch, 10);
   if (!Number.isInteger(parsed) || parsed < 1) throw new LeaveExpectedVersionRequiredException();
   return parsed;
@@ -98,6 +99,12 @@ export class LeaveService {
     const current = await this.leaves.findTenantScoped(ctx, id);
     if (!current) throw new LeaveNotFoundException();
     if (current.decisionStatus !== LeaveDecisionStatus.PENDING) throw new LeaveTerminalStateException();
+
+    // Approval remains fail-closed until #160 Schedule acceptance and the
+    // same-transaction impact + Daily Operations persistence path are complete.
+    if (dto.decision === LeaveDecisionStatus.APPROVED) {
+      throw new LeaveImpactAnalysisNotReadyException();
+    }
 
     const actorTeacher = await this.safeActorTeacherId(ctx);
     if (actorTeacher && actorTeacher === current.teacherId) throw new LeaveSelfDecisionException();
