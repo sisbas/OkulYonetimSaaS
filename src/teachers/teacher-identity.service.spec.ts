@@ -7,6 +7,11 @@ function ctx(overrides: Partial<RequestContext> = {}): RequestContext {
   return {
     requestId: 'req-1',
     tenantId: '00000000-0000-4000-8000-000000000001',
+    businessDate: {
+      tenantId: '00000000-0000-4000-8000-000000000001',
+      date: '2026-09-01',
+      source: 'tenant_local',
+    },
     user: {
       userId: '10000000-0000-4000-8000-000000000001',
       tenantId: '00000000-0000-4000-8000-000000000001',
@@ -22,15 +27,28 @@ describe('TeacherIdentityService', () => {
 
   beforeEach(() => audit.emitAuthorizationDenied.mockClear());
 
-  it('resolves teacher identity from authenticated user and active branch membership', async () => {
+  it('resolves teacher identity from authenticated user and tenant-local business date', async () => {
     const repo = {
       findActiveTeacherForUser: jest.fn(async () => ({ teacherId: '20000000-0000-4000-8000-000000000001' })),
       listActiveBranchMemberships: jest.fn(async () => [{ teacherBranchId: '30000000-0000-4000-8000-000000000001', branchId: '40000000-0000-4000-8000-000000000001' }]),
     };
-    const result = await new TeacherIdentityService(repo as any, audit as any).resolveForRequest(ctx(), { branchId: '40000000-0000-4000-8000-000000000001', effectiveDate: '2026-09-01' });
+    const result = await new TeacherIdentityService(repo as any, audit as any).resolveForRequest(ctx(), { branchId: '40000000-0000-4000-8000-000000000001' });
     expect(result.teacherId).toBe('20000000-0000-4000-8000-000000000001');
+    expect(result.businessDate).toBe('2026-09-01');
     expect(repo.findActiveTeacherForUser).toHaveBeenCalledWith(expect.objectContaining({ tenantId: result.tenantId }));
-    expect(repo.listActiveBranchMemberships).toHaveBeenCalledWith(expect.anything(), result.teacherId, expect.objectContaining({ branchId: result.branchId }));
+    expect(repo.listActiveBranchMemberships).toHaveBeenCalledWith(expect.anything(), result.teacherId, expect.objectContaining({ branchId: result.branchId, effectiveDate: '2026-09-01' }));
+  });
+
+  it('does not silently fall back to global UTC when tenant-local business date is missing', async () => {
+    const repo = { findActiveTeacherForUser: jest.fn(), listActiveBranchMemberships: jest.fn() };
+    await expect(new TeacherIdentityService(repo as any, audit as any).resolveForRequest(ctx({ businessDate: undefined }))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repo.findActiveTeacherForUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects business dates that are not scoped to the active tenant', async () => {
+    const repo = { findActiveTeacherForUser: jest.fn(), listActiveBranchMemberships: jest.fn() };
+    await expect(new TeacherIdentityService(repo as any, audit as any).resolveForRequest(ctx({ businessDate: { tenantId: '00000000-0000-4000-8000-000000000099', date: '2026-09-01', source: 'tenant_local' } }))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repo.findActiveTeacherForUser).not.toHaveBeenCalled();
   });
 
   it('ignores client or token-supplied teacherId authority', async () => {
