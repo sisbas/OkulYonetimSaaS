@@ -10,9 +10,7 @@ import {
   Query,
   Req,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { RequestContext, RequestWithContext } from '../common/context/request-context';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
@@ -27,7 +25,6 @@ function getRequestContext(request: RequestWithContext): RequestContext {
   return request.context;
 }
 
-@UseGuards(AuthGuard('jwt'))
 @Controller('leaves')
 export class LeaveController {
   constructor(private readonly leaves: LeaveService) {}
