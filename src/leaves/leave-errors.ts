@@ -32,6 +32,19 @@ export class LeaveSelfDecisionException extends ConflictException {
   }
 }
 
+export class LeaveImpactAnalysisNotReadyException extends HttpException {
+  constructor() {
+    super(
+      {
+        statusCode: 409,
+        code: 'IMPACT_ANALYSIS_NOT_READY',
+        message: 'Schedule impact and Daily Operations work must be persisted before approval',
+      },
+      409,
+    );
+  }
+}
+
 export class LeaveIdentityFoundationRequiredException extends HttpException {
   constructor() {
     super('Teacher identity foundation is required before leave own-scope runtime can be enabled', 424);
