@@ -36,7 +36,17 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const pullNumber = context.payload.pull_request?.number;
+            if (!pullNumber) {
+              core.setFailed("Pull request event payload bulunamadı.");
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber
+            });
             const body = pr.body || "";
             const requiredSections = [
               "Amaç",
@@ -122,7 +132,17 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const pullNumber = context.payload.pull_request?.number;
+            if (!pullNumber) {
+              core.setFailed("Pull request event payload bulunamadı.");
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber
+            });
             const text = `${pr.title || ""}\n${pr.body || ""}`;
             if (!/\b(fixes|fix|closes|close|resolves|resolve|refs|references)\s+#\d+\b/i.test(text)) {
               core.setFailed("PR title/body içinde geçerli issue referansı yok. Örnek: Fixes #123 veya Refs #123");
@@ -136,7 +156,18 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const body = context.payload.pull_request.body || "";
+            const { owner, repo } = context.repo;
+            const pullNumber = context.payload.pull_request?.number;
+            if (!pullNumber) {
+              core.setFailed("Pull request event payload bulunamadı.");
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber
+            });
+            const body = pr.body || "";
             const rollback = body.match(/(?:^|\n)#{2,3}\s*Rollback\s*\n([\s\S]*?)(?=\n#{2,3}\s|\s*$)/i)?.[1]?.trim() || "";
             const normalized = rollback.replace(/<!--[\s\S]*?-->/g, "").trim();
             const weak = /^(|[-_. ]+|n\/a|na|none|null|todo|tbd|boş|yok|sonra|daha sonra|placeholder)$/i;
@@ -153,7 +184,18 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const body = context.payload.pull_request.body || "";
+            const { owner, repo } = context.repo;
+            const pullNumber = context.payload.pull_request?.number;
+            if (!pullNumber) {
+              core.setFailed("Pull request event payload bulunamadı.");
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber
+            });
+            const body = pr.body || "";
             const ac = body.match(/(?:^|\n)#{2,3}\s*Acceptance criteria\s*\n([\s\S]*?)(?=\n#{2,3}\s|\s*$)/i)?.[1]?.trim() || "";
             const hasChecklist = /-\s*\[[ xX]\]\s+.{10,}/.test(ac);
             const weak = /^(|[-_. ]+|n\/a|na|none|null|todo|tbd|boş|yok|placeholder)$/i;
@@ -176,8 +218,17 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
+            const pullNumber = context.payload.pull_request?.number;
+            if (!pullNumber) {
+              core.setFailed("Pull request event payload bulunamadı.");
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber
+            });
             const requiredChecks = [
               "Sprint 1 Quality Gate",
               "Backend CI",
