@@ -22,6 +22,9 @@ export class EnforceScheduleReferenceIntegrity1801000000000 implements Migration
         IF to_regclass(current_schema() || '.student_groups') IS NULL THEN
           RAISE EXCEPTION 'WP07_SCHEDULE_REPAIR_REQUIRES_STUDENT_GROUPS_TABLE';
         END IF;
+        IF to_regclass(current_schema() || '.rooms') IS NULL THEN
+          RAISE EXCEPTION 'WP07_SCHEDULE_REPAIR_REQUIRES_ROOMS_TABLE';
+        END IF;
       END $$
     `);
 
@@ -32,6 +35,7 @@ export class EnforceScheduleReferenceIntegrity1801000000000 implements Migration
     await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_schedule_repair_teachers_tenant_id ON teachers (tenant_id, id)`);
     await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_schedule_repair_teacher_branches_owner ON teacher_branches (tenant_id, branch_id, teacher_id, id)`);
     await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_schedule_repair_student_groups_branch_id ON student_groups (tenant_id, branch_id, id)`);
+    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_schedule_repair_rooms_branch_id ON rooms (tenant_id, branch_id, id)`);
 
     await queryRunner.query(`
       DO $$
@@ -137,6 +141,17 @@ export class EnforceScheduleReferenceIntegrity1801000000000 implements Migration
         IF invalid_count > 0 THEN
           RAISE EXCEPTION 'WP07_SCHEDULE_REFERENCE_PREFLIGHT_HOLD: student_group owner mismatch count=%', invalid_count;
         END IF;
+
+        SELECT COUNT(*) INTO invalid_count
+        FROM schedule_events event
+        LEFT JOIN rooms room
+          ON room.id = event.room_id
+         AND room.tenant_id = event.tenant_id
+         AND room.branch_id = event.branch_id
+        WHERE room.id IS NULL;
+        IF invalid_count > 0 THEN
+          RAISE EXCEPTION 'WP07_SCHEDULE_REFERENCE_PREFLIGHT_HOLD: room owner mismatch count=%', invalid_count;
+        END IF;
       END $$
     `);
 
@@ -203,12 +218,19 @@ export class EnforceScheduleReferenceIntegrity1801000000000 implements Migration
       REFERENCES student_groups (tenant_id, branch_id, id)
       ON DELETE RESTRICT
     `);
+    await queryRunner.query(`
+      ALTER TABLE schedule_events
+      ADD CONSTRAINT fk_schedule_events_room_branch
+      FOREIGN KEY (tenant_id, branch_id, room_id)
+      REFERENCES rooms (tenant_id, branch_id, id)
+      ON DELETE RESTRICT
+    `);
 
     await queryRunner.query(`
       CREATE OR REPLACE FUNCTION schedule_repair_prevent_published_snapshot_mutation()
       RETURNS trigger AS $$
       BEGIN
-        IF OLD.status = 'published' AND (
+        IF OLD.published_at IS NOT NULL AND (
           NEW.snapshot IS DISTINCT FROM OLD.snapshot OR
           NEW.tenant_id IS DISTINCT FROM OLD.tenant_id OR
           NEW.branch_id IS DISTINCT FROM OLD.branch_id OR
@@ -234,6 +256,7 @@ export class EnforceScheduleReferenceIntegrity1801000000000 implements Migration
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TRIGGER IF EXISTS trg_schedule_repair_published_snapshot_immutable ON schedule_versions`);
     await queryRunner.query(`DROP FUNCTION IF EXISTS schedule_repair_prevent_published_snapshot_mutation`);
+    await queryRunner.query(`ALTER TABLE schedule_events DROP CONSTRAINT IF EXISTS fk_schedule_events_room_branch`);
     await queryRunner.query(`ALTER TABLE schedule_events DROP CONSTRAINT IF EXISTS fk_schedule_events_student_group_branch`);
     await queryRunner.query(`ALTER TABLE schedule_events DROP CONSTRAINT IF EXISTS fk_schedule_events_teacher_branch_owner`);
     await queryRunner.query(`ALTER TABLE schedule_events DROP CONSTRAINT IF EXISTS fk_schedule_events_teacher_tenant`);
@@ -243,6 +266,7 @@ export class EnforceScheduleReferenceIntegrity1801000000000 implements Migration
     await queryRunner.query(`ALTER TABLE schedule_events DROP CONSTRAINT IF EXISTS fk_schedule_events_schedule_owner`);
     await queryRunner.query(`ALTER TABLE schedules DROP CONSTRAINT IF EXISTS fk_schedules_active_version_owner`);
     await queryRunner.query(`ALTER TABLE schedule_versions DROP CONSTRAINT IF EXISTS fk_schedule_versions_schedule_owner`);
+    await queryRunner.query(`DROP INDEX IF EXISTS uq_schedule_repair_rooms_branch_id`);
     await queryRunner.query(`DROP INDEX IF EXISTS uq_schedule_repair_student_groups_branch_id`);
     await queryRunner.query(`DROP INDEX IF EXISTS uq_schedule_repair_teacher_branches_owner`);
     await queryRunner.query(`DROP INDEX IF EXISTS uq_schedule_repair_teachers_tenant_id`);
