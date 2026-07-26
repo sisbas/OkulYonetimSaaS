@@ -37,10 +37,14 @@ function actorUserId(ctx: RequestContext): string {
   return id;
 }
 
-function parseExpectedVersion(ifMatch: string | undefined): number {
+function parseExpectedVersion(ifMatch: string | undefined, leaveId: string): number {
   if (!ifMatch?.trim()) throw new LeaveExpectedVersionRequiredException();
-  const match = ifMatch.match(/(?:W\/)??"?leave:[^:]+:v(\d+)"?/i) ?? ifMatch.match(/^\d+$/);
-  const parsed = Number.parseInt(match?.[1] ?? ifMatch, 10);
+
+  const match = /^(?:W\/)?"leave:([^:"]+):v(\d+)"$/i.exec(ifMatch.trim());
+  if (!match) throw new LeaveExpectedVersionRequiredException();
+  if (match[1] !== leaveId) throw new LeaveStaleVersionException();
+
+  const parsed = Number.parseInt(match[2], 10);
   if (!Number.isInteger(parsed) || parsed < 1) throw new LeaveExpectedVersionRequiredException();
   return parsed;
 }
@@ -95,7 +99,7 @@ export class LeaveService {
   }
 
   async decide(ctx: RequestContext, id: string, dto: DecideLeaveRequestDto, ifMatch: string | undefined): Promise<LeaveResponse> {
-    const expectedVersion = parseExpectedVersion(ifMatch);
+    const expectedVersion = parseExpectedVersion(ifMatch, id);
     const current = await this.leaves.findTenantScoped(ctx, id);
     if (!current) throw new LeaveNotFoundException();
     if (current.decisionStatus !== LeaveDecisionStatus.PENDING) throw new LeaveTerminalStateException();
@@ -106,12 +110,15 @@ export class LeaveService {
       throw new LeaveImpactAnalysisNotReadyException();
     }
 
+    const decisionActorUserId = actorUserId(ctx);
+    if (decisionActorUserId === current.requesterUserId) throw new LeaveSelfDecisionException();
+
     const actorTeacher = await this.safeActorTeacherId(ctx);
     if (actorTeacher && actorTeacher === current.teacherId) throw new LeaveSelfDecisionException();
 
     const decided = await this.leaves.decide(ctx, id, {
       decision: dto.decision,
-      decidedByUserId: actorUserId(ctx),
+      decidedByUserId: decisionActorUserId,
       expectedVersion,
     });
     if (!decided) throw new LeaveNotFoundException();
