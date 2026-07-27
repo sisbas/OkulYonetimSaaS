@@ -6,7 +6,7 @@ Implementation: none.
 
 ## Purpose
 
-This matrix defines how the runtime frontend must translate canonical backend reason codes into safe user-facing UI states after #144 stabilizes the API/contract layer.
+This matrix defines how the runtime frontend must translate backend-authored reason codes into safe user-facing UI states after #144 stabilizes the API/contract layer.
 
 The goal is to prevent fake success states, cross-tenant record discovery, stale overwrite and ambiguous leave/coverage decisions.
 
@@ -14,15 +14,16 @@ The goal is to prevent fake success states, cross-tenant record discovery, stale
 
 1. Reason codes are server-authored. The browser must not invent authoritative reason codes.
 2. Forbidden and not-visible states must be non-enumerating unless the response explicitly confirms same-scope empty state.
-3. Stale version states must never auto-retry with mutation.
+3. Version mismatch states must never auto-retry with mutation.
 4. Conflict states must not show success until the server confirms resolution.
 5. Empty state is not the same as forbidden state.
 6. Offline state must not fall back to localStorage or fake API authority.
 7. UI copy must avoid exposing raw internal permission keys or sensitive object identifiers.
+8. If #144 introduces a normalized frontend reason-code envelope, that envelope must explicitly map from the backend codes below; until then the UI must use these backend codes directly.
 
 ## Canonical matrix
 
-| Canonical reason code | HTTP class | UI state | User-facing message stance | Control behavior | Enumeration risk control |
+| Backend reason code | HTTP class | UI state | User-facing message stance | Control behavior | Enumeration risk control |
 | --- | --- | --- | --- | --- | --- |
 | `AUTH_REQUIRED` | 401 | auth_required | Oturum süresi doldu. Yeniden giriş gerekli. | Disable protected actions. | Does not mention target object. |
 | `TENANT_CONTEXT_REQUIRED` | 400/403 | tenant_context_required | Kurum bağlamı doğrulanamadı. | Disable route actions. | Does not infer tenant from client. |
@@ -33,11 +34,17 @@ The goal is to prevent fake success states, cross-tenant record discovery, stale
 | `LEAVE_QUEUE_EMPTY` | 200 | empty_same_scope | Bekleyen izin talebi yok. | Show neutral empty state. | Same-scope only. |
 | `DAILY_QUEUE_EMPTY` | 200 | empty_same_scope | Açık operasyon aksiyonu yok. | Show neutral empty state. | Same-scope only. |
 | `VALIDATION_FAILED` | 422 | validation_error | Alanları kontrol edin. | Keep form state in memory. | No sensitive field echo. |
-| `STALE_VERSION` | 409/412 | stale_version | Kayıt güncellendi. Yenilemeden işlem yapılamaz. | Disable submit until refresh. | No auto-overwrite. |
-| `HARD_CONFLICT_PRESENT` | 409/422 | conflict_blocking | Çakışma çözülmeden işlem tamamlanamaz. | Keep blocking panel visible. | Show only same-scope conflict projection. |
-| `COVERAGE_REQUIRED` | 409/422 | coverage_required | Bu izin için ders kapsamı tamamlanmalı. | Disable final decision if required. | Do not infer candidate availability. |
-| `ASSIGNMENT_CONFLICT` | 409 | conflict_blocking | Görevlendirme mevcut programla çakışıyor. | Keep assignment modal open. | Show API-returned conflict projection only. |
-| `CANDIDATE_UNAVAILABLE` | 409/422 | candidate_unavailable | Seçilen aday bu ders için uygun değil. | Require another server-listed candidate. | No client-side candidate solver. |
+| `LEAVE_VERSION_REQUIRED` | 428 | version_required | Kayıt sürümü doğrulanmadan işlem yapılamaz. | Disable submit until fresh server version is available. | No client-generated version. |
+| `LEAVE_VERSION_MISMATCH` | 412 | stale_version | Kayıt güncellendi. Yenilemeden işlem yapılamaz. | Disable submit until refresh. | No auto-overwrite. |
+| `SCHEDULE_HARD_CONFLICTS_PRESENT` | 409/422 | conflict_blocking | Çakışma çözülmeden işlem tamamlanamaz. | Keep blocking panel visible. | Show only same-scope conflict projection. |
+| `IMPACT_ANALYSIS_NOT_READY` | 409/424 | impact_analysis_not_ready | İzin etkisi netleşmeden karar tamamlanamaz. | Disable final decision until impact is available. | Do not infer hidden schedule/branch existence. |
+| `TEACHER_COURSE_ELIGIBILITY_NOT_READY` | 424 | eligibility_not_ready | Öğretmen-ders uygunluk kaynağı hazır değil. | Disable assignment create. | No client-side eligibility fallback. |
+| `TEACHER_COURSE_MISMATCH` | 409/422 | candidate_unavailable | Seçilen aday bu ders için uygun değil. | Require another server-listed candidate. | No Schedule-history inference. |
+| `SUBSTITUTE_BRANCH_ASSIGNMENT_MISSING` | 409/422 | candidate_unavailable | Seçilen aday bu şube kapsamı için uygun değil. | Require another server-listed candidate. | No cross-branch teacher discovery. |
+| `SUBSTITUTE_LEAVE_OVERLAP` | 409 | conflict_blocking | Seçilen öğretmenin aynı zamanda onaylı izni var. | Keep assignment modal open. | Show only same-scope conflict projection. |
+| `SUBSTITUTE_TIME_CONFLICT` | 409 | conflict_blocking | Görevlendirme mevcut program veya başka aktif yedek görevle çakışıyor. | Keep assignment modal open. | Show API-returned conflict projection only. |
+| `ASSIGNMENT_ALREADY_EXISTS` | 409 | locked_state | Bu ders için aktif görevlendirme zaten var. | Disable duplicate create. | No local override. |
+| `ASSIGNMENT_NOT_FOUND` | 404/409 | empty_or_not_found_same_scope | Aktif görevlendirme bulunamadı. | Refetch impact. | Same-scope only. |
 | `DECISION_LOCKED` | 409 | locked_state | Bu talep artık değiştirilemez. | Disable decision controls. | No local override. |
 | `ATTENDANCE_SESSION_LOCKED` | 409 | locked_state | Yoklama oturumu kilitli. | Disable edit controls. | No client-only update. |
 | `RATE_LIMITED` | 429 | rate_limited | Kısa süre sonra tekrar deneyin. | Disable repeat action briefly. | No sensitive details. |
@@ -70,12 +77,14 @@ The goal is to prevent fake success states, cross-tenant record discovery, stale
 After #144 and implementation:
 
 - Browser E2E must assert forbidden/non-enumerating copy for cross-scope attempts.
-- Browser E2E must assert stale mutation does not auto-retry.
-- Browser E2E must assert hard conflict blocks decision/assignment success.
+- Browser E2E must assert `LEAVE_VERSION_MISMATCH` disables mutation and does not auto-retry.
+- Browser E2E must assert `SCHEDULE_HARD_CONFLICTS_PRESENT` blocks decision/assignment success.
+- Browser E2E must assert `IMPACT_ANALYSIS_NOT_READY` does not become local success.
 - Scanner must confirm no demo fixture, fake API or localStorage authority path.
 
 ## Acceptance coverage
 
 - Reason-code/UI state matrix ready: yes.
+- Backend leave reason-code alignment complete: yes.
 - Cross-tenant non-enumerating behavior represented: yes.
 - Runtime implementation added: no.
