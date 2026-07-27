@@ -51,6 +51,11 @@ describe('Leave runtime contract skeleton', () => {
     expect(controller).not.toContain("@UseGuards(AuthGuard('jwt'))");
   });
 
+  it('validates every leave route id before repository access', () => {
+    expect(controller).toContain('ParseUUIDPipe');
+    expect(controller.match(/@Param\('id', ParseUUIDPipe\)/g)).toHaveLength(4);
+  });
+
   it('requires an exact resource-bound If-Match tag', () => {
     expect(contract).toContain('exact resource-bound');
     expect(service).toContain('parseExpectedVersion(ifMatch, id)');
