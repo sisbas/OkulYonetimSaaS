@@ -120,6 +120,7 @@ export class DailyOperationsRepository {
       const events = await this.loadImpactedEvents(manager, leave);
       const matchingEvents = events.filter((item) => item.scheduleEventId === input.scheduleEventId);
       if (matchingEvents.length === 0) throw new Error('NO_PUBLISHED_SCHEDULE_EVENT');
+      await this.lockSubstituteTeacherForMutation(manager, leave.tenantId, input.substituteTeacherId);
       for (const event of matchingEvents) {
         await this.assertEligibleCandidate(manager, leave, event, input.substituteTeacherId, event.startsAt, event.endsAt);
       }
@@ -276,6 +277,16 @@ export class DailyOperationsRepository {
     return rows[0] ?? null;
   }
 
+  private async lockSubstituteTeacherForMutation(manager: EntityManager, tenantId: string, teacherId: string): Promise<void> {
+    await manager.query(
+      `SELECT id
+       FROM teachers
+       WHERE tenant_id = $1 AND id = $2
+       FOR UPDATE`,
+      [tenantId, teacherId],
+    );
+  }
+
   private async assertEligibleCandidate(manager: EntityManager, leave: LeaveRow, event: ImpactedScheduleEventRow, teacherId: string, startsAt: Date, endsAt: Date): Promise<void> {
     if (!(await this.teacherCoursesReady(manager))) throw new Error('TEACHER_COURSE_ELIGIBILITY_NOT_READY');
     const teacher = await manager.query(
@@ -324,6 +335,10 @@ export class DailyOperationsRepository {
     if (conflict.length > 0) throw new Error('SUBSTITUTE_TIME_CONFLICT');
     const substitutionConflict = await manager.query(
       `SELECT 1 FROM leave_substitution_assignments assignment
+       JOIN leave_requests assigned_leave
+         ON assigned_leave.id = assignment.leave_request_id
+        AND assigned_leave.tenant_id = assignment.tenant_id
+        AND assigned_leave.decision_status = 'approved'
        JOIN schedule_events event
          ON event.id = assignment.schedule_event_id
         AND event.tenant_id = assignment.tenant_id
@@ -347,9 +362,11 @@ export class DailyOperationsRepository {
          AND event.start_time < $6::time AND event.end_time > $5::time
          AND schedule.effective_from <= $7::date
          AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= $7::date
-         AND NOT (assignment.leave_request_id = $8 AND assignment.schedule_event_id = $9)
+         AND assigned_leave.starts_at < $9
+         AND assigned_leave.ends_at > $8
+         AND NOT (assignment.leave_request_id = $10 AND assignment.schedule_event_id = $11)
        LIMIT 1`,
-      [leave.tenantId, leave.branchId, teacherId, event.dayOfWeek, event.startTime, event.endTime, event.occurrenceDate, leave.id, event.scheduleEventId],
+      [leave.tenantId, leave.branchId, teacherId, event.dayOfWeek, event.startTime, event.endTime, event.occurrenceDate, startsAt, endsAt, leave.id, event.scheduleEventId],
     );
     if (substitutionConflict.length > 0) throw new Error('SUBSTITUTE_TIME_CONFLICT');
   }
