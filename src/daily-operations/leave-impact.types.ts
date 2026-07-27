@@ -135,8 +135,8 @@ export function eventOccurrenceForRange(input: {
   for (let index = 0; index < 370 && cursor <= upper && cursor < input.leaveEndsAt; index += 1) {
     if (isoDayOfWeek(cursor) === input.dayOfWeek) {
       const date = isoDate(cursor);
-      const startsAt = new Date(`${date}T${input.startTime}`);
-      const endsAt = new Date(`${date}T${input.endTime}`);
+      const startsAt = new Date(`${date}T${input.startTime}Z`);
+      const endsAt = new Date(`${date}T${input.endTime}Z`);
       if (overlaps(startsAt, endsAt, input.leaveStartsAt, input.leaveEndsAt)) {
         return { occurrenceDate: date, startsAt, endsAt };
       }
