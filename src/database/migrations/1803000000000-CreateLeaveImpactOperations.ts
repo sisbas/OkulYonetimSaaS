@@ -83,6 +83,7 @@ export class CreateLeaveImpactOperations1803000000000 implements MigrationInterf
         leave_request_id uuid NOT NULL,
         schedule_version_id uuid NOT NULL,
         schedule_event_id uuid NOT NULL,
+        occurrence_date date NOT NULL,
         state varchar(16) NOT NULL CHECK (state IN ('open','resolved')),
         coverage_status varchar(32) NOT NULL CHECK (coverage_status IN ('not_required','unresolved','partially_covered','covered')),
         substitute_assignment_id uuid NULL,
@@ -113,7 +114,7 @@ export class CreateLeaveImpactOperations1803000000000 implements MigrationInterf
     `);
     await queryRunner.query(`
       CREATE INDEX idx_daily_operation_lessons_queue
-      ON daily_operation_lessons(tenant_id, branch_id, state, updated_at)
+      ON daily_operation_lessons(tenant_id, branch_id, state, occurrence_date, updated_at)
     `);
     await queryRunner.query(`
       CREATE INDEX idx_daily_operation_lessons_leave
