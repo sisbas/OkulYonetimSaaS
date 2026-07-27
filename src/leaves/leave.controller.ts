@@ -1,15 +1,16 @@
 import {
+  Body,
   Controller,
   ForbiddenException,
   Get,
   Headers,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   Req,
   UnauthorizedException,
-  Body,
 } from '@nestjs/common';
 import { RequestContext, RequestWithContext } from '../common/context/request-context';
 import { Permissions } from '../common/decorators/permissions.decorator';
@@ -36,7 +37,7 @@ export class LeaveController {
 
   @Get('me/:id')
   @Permissions('leave:own:read')
-  getOwn(@Req() request: RequestWithContext, @Param('id') id: string) {
+  getOwn(@Req() request: RequestWithContext, @Param('id', ParseUUIDPipe) id: string) {
     return this.leaves.getOwn(getRequestContext(request), id);
   }
 
@@ -48,13 +49,17 @@ export class LeaveController {
 
   @Get(':id')
   @Permissions('leave:read')
-  get(@Req() request: RequestWithContext, @Param('id') id: string) {
+  get(@Req() request: RequestWithContext, @Param('id', ParseUUIDPipe) id: string) {
     return this.leaves.getForOperations(getRequestContext(request), id);
   }
 
   @Patch(':id/approve')
   @Permissions('leave:approve')
-  approve(@Req() request: RequestWithContext, @Param('id') id: string, @Headers('if-match') ifMatch: string | undefined) {
+  approve(
+    @Req() request: RequestWithContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('if-match') ifMatch: string | undefined,
+  ) {
     return this.leaves.decide(getRequestContext(request), id, { decision: LeaveDecisionStatus.APPROVED }, ifMatch);
   }
 
@@ -62,7 +67,7 @@ export class LeaveController {
   @Permissions('leave:reject')
   reject(
     @Req() request: RequestWithContext,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Headers('if-match') ifMatch: string | undefined,
   ) {
     return this.leaves.decide(
