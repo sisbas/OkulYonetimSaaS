@@ -48,12 +48,12 @@ export class CreateLeaveImpactOperations1803000000000 implements MigrationInterf
           REFERENCES branches(tenant_id, id)
           ON DELETE RESTRICT,
         CONSTRAINT fk_leave_substitution_schedule_version
-          FOREIGN KEY (tenant_id, branch_id, schedule_version_id)
-          REFERENCES schedule_versions(tenant_id, branch_id, id)
+          FOREIGN KEY (schedule_version_id)
+          REFERENCES schedule_versions(id)
           ON DELETE RESTRICT,
         CONSTRAINT fk_leave_substitution_schedule_event
-          FOREIGN KEY (tenant_id, branch_id, schedule_event_id)
-          REFERENCES schedule_events(tenant_id, branch_id, id)
+          FOREIGN KEY (schedule_event_id)
+          REFERENCES schedule_events(id)
           ON DELETE RESTRICT,
         CONSTRAINT fk_leave_substitution_teacher
           FOREIGN KEY (tenant_id, substitute_teacher_id)
@@ -98,12 +98,12 @@ export class CreateLeaveImpactOperations1803000000000 implements MigrationInterf
           REFERENCES branches(tenant_id, id)
           ON DELETE RESTRICT,
         CONSTRAINT fk_daily_operation_lesson_schedule_version
-          FOREIGN KEY (tenant_id, branch_id, schedule_version_id)
-          REFERENCES schedule_versions(tenant_id, branch_id, id)
+          FOREIGN KEY (schedule_version_id)
+          REFERENCES schedule_versions(id)
           ON DELETE RESTRICT,
         CONSTRAINT fk_daily_operation_lesson_schedule_event
-          FOREIGN KEY (tenant_id, branch_id, schedule_event_id)
-          REFERENCES schedule_events(tenant_id, branch_id, id)
+          FOREIGN KEY (schedule_event_id)
+          REFERENCES schedule_events(id)
           ON DELETE RESTRICT,
         CONSTRAINT fk_daily_operation_lesson_assignment
           FOREIGN KEY (substitute_assignment_id)
