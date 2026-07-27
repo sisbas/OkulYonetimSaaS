@@ -5,9 +5,11 @@ import { AppDataSource } from './database/data-source';
 import { AuthModule } from './auth/auth.module';
 import { SecurityAuditService } from './common/audit/security-audit.service';
 import { TenantContextMiddleware } from './common/context/tenant-context.middleware';
+import { PermissionAuthenticationGuard } from './common/guards/permission-authentication.guard';
 import { PermissionGuard } from './common/guards/permission.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { CoursesModule } from './courses/courses.module';
+import { LeavesModule } from './leaves/leaves.module';
 import { HealthModule } from './health/health.module';
 import { RbacModule } from './rbac/rbac.module';
 import { RoomsModule } from './rooms/rooms.module';
@@ -27,10 +29,12 @@ import { UsersModule } from './users/users.module';
     CoursesModule,
     RoomsModule,
     TimeSlotsModule,
+    LeavesModule,
     TeachersModule,
   ],
   providers: [
     SecurityAuditService,
+    { provide: APP_GUARD, useClass: PermissionAuthenticationGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
