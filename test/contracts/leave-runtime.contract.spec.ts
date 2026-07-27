@@ -8,7 +8,7 @@ const repository = readFileSync(join(process.cwd(), 'src/leaves/leave.repository
 const service = readFileSync(join(process.cwd(), 'src/leaves/leave.service.ts'), 'utf8');
 const leavesModule = readFileSync(join(process.cwd(), 'src/leaves/leaves.module.ts'), 'utf8');
 const migration = readFileSync(
-  join(process.cwd(), 'src/database/migrations/1784740000000-CreateLeaveRequestRuntime.ts'),
+  join(process.cwd(), 'src/database/migrations/1802000000000-CreateLeaveRequestRuntime.ts'),
   'utf8',
 );
 const permissionAuthenticationGuard = readFileSync(
@@ -63,6 +63,18 @@ describe('Leave runtime contract skeleton', () => {
     expect(repository).toContain('existing.version !== values.expectedVersion');
     expect(repository).toContain('throw new LeaveStaleVersionException()');
     expect(repository).toContain('throw new LeaveTerminalStateException()');
+  });
+
+  it('runs after the identity teacher foundation and enforces tenant-safe references', () => {
+    expect(migration).toContain('CreateLeaveRequestRuntime1802000000000');
+    expect(migration).toContain('WP07_LEAVE_REQUIRES_TEACHERS_TABLE');
+    expect(migration).toContain('WP07_LEAVE_REQUIRES_TENANT_MEMBERSHIPS_TABLE');
+    expect(migration).toContain('fk_leave_requests_branch_same_tenant');
+    expect(migration).toContain('FOREIGN KEY (tenant_id, branch_id)');
+    expect(migration).toContain('fk_leave_requests_teacher_same_tenant');
+    expect(migration).toContain('FOREIGN KEY (tenant_id, teacher_id)');
+    expect(migration).toContain('fk_leave_requests_requester_same_tenant');
+    expect(migration).toContain('FOREIGN KEY (tenant_id, requester_user_id)');
   });
 
   it('validates tenant and branch ownership inside the create transaction', () => {
