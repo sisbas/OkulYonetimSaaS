@@ -10,8 +10,10 @@ import { PermissionGuard } from './common/guards/permission.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { CoursesModule } from './courses/courses.module';
 import { LeavesModule } from './leaves/leaves.module';
+import { HealthModule } from './health/health.module';
 import { RbacModule } from './rbac/rbac.module';
 import { RoomsModule } from './rooms/rooms.module';
+import { TeachersModule } from './teachers/teachers.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { UsersModule } from './users/users.module';
@@ -19,6 +21,7 @@ import { UsersModule } from './users/users.module';
 @Module({
   imports: [
     TypeOrmModule.forRoot({ ...AppDataSource.options, autoLoadEntities: true }),
+    HealthModule,
     AuthModule,
     TenantsModule,
     UsersModule,
@@ -27,6 +30,7 @@ import { UsersModule } from './users/users.module';
     RoomsModule,
     TimeSlotsModule,
     LeavesModule,
+    TeachersModule,
   ],
   providers: [
     SecurityAuditService,
