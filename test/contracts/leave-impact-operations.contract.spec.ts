@@ -1,10 +1,16 @@
-import { LEAVE_IMPACT_REASON_CODES, computeCoverageStatus, eventOccurrenceForRange, projectionKey } from '../../src/daily-operations/leave-impact.types';
+import {
+  LEAVE_IMPACT_REASON_CODES,
+  computeCoverageStatus,
+  eventOccurrenceForRange,
+  eventOccurrencesForRange,
+  projectionKey,
+} from '../../src/daily-operations/leave-impact.types';
 import { FORBIDDEN_AUDIT_METADATA_KEYS } from '../../src/common/audit/audit-metadata-policy';
 import { LEAVE_SUCCESS_AUDIT_EVENT_NAMES } from '../../src/common/audit/transactional-audit.types';
 import { LeaveCoverageStatus } from '../../src/leaves/leave-request.entity';
 
 describe('WP-07E leave impact operations contract', () => {
-  it('pins coverage, projection key and event overlap behavior', () => {
+  it('pins coverage and occurrence-scoped projection key behavior', () => {
     expect([0, 0, 2, 1].map((_, index) => [
       computeCoverageStatus(0, 0),
       computeCoverageStatus(2, 0),
@@ -16,10 +22,35 @@ describe('WP-07E leave impact operations contract', () => {
       LeaveCoverageStatus.PARTIALLY_COVERED,
       LeaveCoverageStatus.COVERED,
     ]);
-    expect(projectionKey({ leaveRequestId: 'leave-1', scheduleVersionId: 'version-1', scheduleEventId: 'event-1' })).toBe('leave:leave-1:version:version-1:event:event-1');
+    expect(projectionKey({
+      leaveRequestId: 'leave-1',
+      scheduleVersionId: 'version-1',
+      scheduleEventId: 'event-1',
+      occurrenceDate: '2026-09-14',
+    })).toBe('leave:leave-1:version:version-1:event:event-1:date:2026-09-14');
+  });
+
+  it('expands every matching weekly occurrence in the tenant timezone', () => {
+    const occurrences = eventOccurrencesForRange({
+      leaveStartsAt: new Date('2026-09-14T05:30:00.000Z'),
+      leaveEndsAt: new Date('2026-09-28T07:30:00.000Z'),
+      effectiveFrom: '2026-09-01',
+      effectiveTo: '2026-12-31',
+      dayOfWeek: 1,
+      startTime: '09:00:00',
+      endTime: '10:00:00',
+    });
+
+    expect(occurrences.map((occurrence) => occurrence.occurrenceDate)).toEqual([
+      '2026-09-14',
+      '2026-09-21',
+      '2026-09-28',
+    ]);
+    expect(occurrences[0].startsAt.toISOString()).toBe('2026-09-14T06:00:00.000Z');
+    expect(occurrences[0].endsAt.toISOString()).toBe('2026-09-14T07:00:00.000Z');
     expect(eventOccurrenceForRange({
-      leaveStartsAt: new Date('2026-09-14T08:30:00.000Z'),
-      leaveEndsAt: new Date('2026-09-14T10:30:00.000Z'),
+      leaveStartsAt: new Date('2026-09-14T05:30:00.000Z'),
+      leaveEndsAt: new Date('2026-09-14T07:30:00.000Z'),
       effectiveFrom: '2026-09-01',
       effectiveTo: '2026-12-31',
       dayOfWeek: 1,
