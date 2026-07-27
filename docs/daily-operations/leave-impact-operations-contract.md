@@ -53,6 +53,12 @@ Candidate list is decision support only. It creates no assignment side effect.
 
 For a multi-day leave that intersects more than one occurrence of the same weekly `schedule_event`, candidate eligibility and mutation-time enforcement must pass for every affected occurrence.
 
+Substitution conflict checks are bounded to the already assigned leave's approved date/time interval. An assignment on the same weekday/time for a different non-overlapping leave date must not block the candidate.
+
+Assignment mutation serializes concurrent requests for the same substitute teacher by locking the teacher row inside the transaction before eligibility and conflict checks. This prevents simultaneous overlapping substitution assignments from passing the read check in parallel.
+
+Occurrence expansion must cover the full permitted leave/effective schedule date range. It must not silently stop at an arbitrary day limit while leave creation/database contracts allow a longer approved interval.
+
 ## Projection
 
 Projection key:
