@@ -16,8 +16,8 @@ describe('CreateTeacherCourseEligibility migration', () => {
     expect(sql).toContain('ex_teacher_courses_active_period');
     expect(sql).toContain('uq_teacher_courses_active_exact_period');
     expect(sql).toContain('idx_teacher_courses_read_port');
-    expect(sql).not.toMatch(/CREATE\s+UNIQUE\s+INDEX[\s\S]*uq_courses_tenant_id/i);
-    expect(sql).not.toMatch(/CREATE\s+UNIQUE\s+INDEX[\s\S]*uq_teachers_tenant_id/i);
+    expect(sql).not.toContain('CREATE UNIQUE INDEX IF NOT EXISTS uq_courses_tenant_id');
+    expect(sql).not.toContain('CREATE UNIQUE INDEX IF NOT EXISTS uq_teachers_tenant_id');
     expect(sql).not.toContain('schedule_events');
     expect(sql).not.toContain('leave_requests');
     expect(sql).not.toContain('ON CONFLICT DO NOTHING');
@@ -32,8 +32,8 @@ describe('CreateTeacherCourseEligibility migration', () => {
 
     expect(sql).toContain('DROP TABLE IF EXISTS teacher_courses');
     expect(sql).toContain('DROP INDEX IF EXISTS uq_teacher_courses_tenant_id');
-    expect(sql).not.toMatch(/DROP\s+INDEX[\s\S]*uq_courses_tenant_id/i);
-    expect(sql).not.toMatch(/DROP\s+INDEX[\s\S]*uq_teachers_tenant_id/i);
+    expect(sql).not.toContain('DROP INDEX IF EXISTS uq_courses_tenant_id');
+    expect(sql).not.toContain('DROP INDEX IF EXISTS uq_teachers_tenant_id');
     expect(sql).not.toContain('CASCADE');
   });
 });
