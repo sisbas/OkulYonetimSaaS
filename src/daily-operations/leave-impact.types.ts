@@ -1,5 +1,7 @@
 import { LeaveCoverageStatus } from '../leaves/leave-request.entity';
 
+export const DEFAULT_TENANT_TIME_ZONE = 'Europe/Istanbul';
+
 export const DAILY_OPERATION_STATES = ['open', 'resolved'] as const;
 export type DailyOperationState = (typeof DAILY_OPERATION_STATES)[number];
 
@@ -64,12 +66,19 @@ export type CandidateResponse = Readonly<{
   candidates: SubstituteCandidate[];
 }>;
 
+export type EventOccurrence = Readonly<{
+  occurrenceDate: string;
+  startsAt: Date;
+  endsAt: Date;
+}>;
+
 export function projectionKey(input: {
   leaveRequestId: string;
   scheduleVersionId: string;
   scheduleEventId: string;
+  occurrenceDate: string;
 }): string {
-  return `leave:${input.leaveRequestId}:version:${input.scheduleVersionId}:event:${input.scheduleEventId}`;
+  return `leave:${input.leaveRequestId}:version:${input.scheduleVersionId}:event:${input.scheduleEventId}:date:${input.occurrenceDate}`;
 }
 
 export function computeCoverageStatus(total: number, resolved: number): LeaveCoverageStatus {
@@ -112,7 +121,70 @@ export function addDays(date: Date, days: number): Date {
   return next;
 }
 
-export function eventOccurrenceForRange(input: {
+function datePartsInTimeZone(date: Date, timeZone: string): { year: string; month: string; day: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+  return { year: value.year, month: value.month, day: value.day };
+}
+
+function dateStringInTimeZone(date: Date, timeZone: string): string {
+  const { year, month, day } = datePartsInTimeZone(date, timeZone);
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateOnly(value: string): Date {
+  const [year, month, day] = value.split('-').map((part) => Number.parseInt(part, 10));
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function maxDateString(left: string, right: string): string {
+  return left >= right ? left : right;
+}
+
+function minDateString(left: string, right: string): string {
+  return left <= right ? left : right;
+}
+
+function timeZoneOffsetMinutes(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+  const asUtc = Date.UTC(
+    Number(value.year),
+    Number(value.month) - 1,
+    Number(value.day),
+    Number(value.hour) % 24,
+    Number(value.minute),
+    Number(value.second),
+  );
+  return (asUtc - date.getTime()) / 60000;
+}
+
+function zonedDateTimeToUtc(date: string, time: string, timeZone: string): Date {
+  const [year, month, day] = date.split('-').map((part) => Number.parseInt(part, 10));
+  const [hour, minute, second = 0] = time.split(':').map((part) => Number.parseInt(part, 10));
+  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute, second, 0);
+  let instant = new Date(localAsUtc);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    instant = new Date(localAsUtc - timeZoneOffsetMinutes(instant, timeZone) * 60000);
+  }
+  return instant;
+}
+
+export function eventOccurrencesForRange(input: {
   leaveStartsAt: Date;
   leaveEndsAt: Date;
   effectiveFrom: string;
@@ -120,28 +192,32 @@ export function eventOccurrenceForRange(input: {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
-}): { occurrenceDate: string; startsAt: Date; endsAt: Date } | null {
-  const lower = new Date(`${input.effectiveFrom}T00:00:00.000Z`);
-  const leaveStartDay = new Date(Date.UTC(
-    input.leaveStartsAt.getUTCFullYear(),
-    input.leaveStartsAt.getUTCMonth(),
-    input.leaveStartsAt.getUTCDate(),
-  ));
-  let cursor = lower > leaveStartDay ? lower : leaveStartDay;
-  const upper = input.effectiveTo
-    ? new Date(`${input.effectiveTo}T23:59:59.999Z`)
-    : input.leaveEndsAt;
+  timeZone?: string;
+}): EventOccurrence[] {
+  const timeZone = input.timeZone ?? DEFAULT_TENANT_TIME_ZONE;
+  const leaveStartDate = dateStringInTimeZone(input.leaveStartsAt, timeZone);
+  const leaveEndDate = dateStringInTimeZone(input.leaveEndsAt, timeZone);
+  const lowerDate = maxDateString(input.effectiveFrom, leaveStartDate);
+  const upperDate = input.effectiveTo ? minDateString(input.effectiveTo, leaveEndDate) : leaveEndDate;
+  let cursor = parseDateOnly(lowerDate);
+  const upper = parseDateOnly(upperDate);
+  const occurrences: EventOccurrence[] = [];
 
-  for (let index = 0; index < 370 && cursor <= upper && cursor < input.leaveEndsAt; index += 1) {
+  for (let index = 0; index < 370 && cursor <= upper; index += 1) {
     if (isoDayOfWeek(cursor) === input.dayOfWeek) {
-      const date = isoDate(cursor);
-      const startsAt = new Date(`${date}T${input.startTime}Z`);
-      const endsAt = new Date(`${date}T${input.endTime}Z`);
+      const occurrenceDate = isoDate(cursor);
+      const startsAt = zonedDateTimeToUtc(occurrenceDate, input.startTime, timeZone);
+      const endsAt = zonedDateTimeToUtc(occurrenceDate, input.endTime, timeZone);
       if (overlaps(startsAt, endsAt, input.leaveStartsAt, input.leaveEndsAt)) {
-        return { occurrenceDate: date, startsAt, endsAt };
+        occurrences.push({ occurrenceDate, startsAt, endsAt });
       }
     }
     cursor = addDays(cursor, 1);
   }
-  return null;
+
+  return occurrences;
+}
+
+export function eventOccurrenceForRange(input: Parameters<typeof eventOccurrencesForRange>[0]): EventOccurrence | null {
+  return eventOccurrencesForRange(input)[0] ?? null;
 }
