@@ -1,6 +1,8 @@
 import { RequestContext } from '../common/context/request-context';
 import { TeacherCourseEligibilityRepository } from './teacher-course-eligibility.repository';
 
+type QueryMock = jest.Mock<Promise<unknown[]>, [string, unknown[]]>;
+
 function ctx(): RequestContext {
   return {
     requestId: 'req-teacher-course',
@@ -8,19 +10,23 @@ function ctx(): RequestContext {
   };
 }
 
+function dataSourceWith(rows: unknown[]): { query: QueryMock } {
+  return {
+    query: jest.fn<Promise<unknown[]>, [string, unknown[]]>(async () => rows),
+  };
+}
+
 describe('TeacherCourseEligibilityRepository', () => {
   it('uses tenant context, active Teacher/Course joins and effective-period filtering', async () => {
-    const dataSource = {
-      query: jest.fn(async () => [
-        {
-          teacherCourseId: 'tc-ref',
-          teacherId: 'teacher-ref',
-          courseId: 'course-ref',
-          effectiveFrom: '2026-09-01',
-          effectiveTo: null,
-        },
-      ]),
-    };
+    const dataSource = dataSourceWith([
+      {
+        teacherCourseId: 'tc-ref',
+        teacherId: 'teacher-ref',
+        courseId: 'course-ref',
+        effectiveFrom: '2026-09-01',
+        effectiveTo: null,
+      },
+    ]);
 
     const result = await new TeacherCourseEligibilityRepository(dataSource as any).findActiveEligibility(ctx(), {
       teacherId: 'teacher-ref',
@@ -28,7 +34,7 @@ describe('TeacherCourseEligibilityRepository', () => {
       effectiveDate: '2026-09-15',
     });
 
-    const [sql, params] = dataSource.query.mock.calls[0];
+    const [sql, params] = dataSource.query.mock.calls[0] as [string, unknown[]];
     expect(result).toEqual({
       eligible: true,
       reasonCode: 'TC_ELIGIBLE',
@@ -47,17 +53,18 @@ describe('TeacherCourseEligibilityRepository', () => {
   });
 
   it('does not accept client supplied tenant as eligibility authority', async () => {
-    const dataSource = { query: jest.fn(async () => []) };
+    const dataSource = dataSourceWith([]);
     await new TeacherCourseEligibilityRepository(dataSource as any).findActiveEligibility(ctx(), {
       teacherId: 'teacher-ref',
       courseId: 'course-ref',
       effectiveDate: '2026-09-15',
     });
-    expect(dataSource.query.mock.calls[0][1][0]).toBe('tenant-authority');
+    const [, params] = dataSource.query.mock.calls[0] as [string, unknown[]];
+    expect(params[0]).toBe('tenant-authority');
   });
 
   it('fails closed for inactive, expired, cross-tenant or missing references', async () => {
-    const dataSource = { query: jest.fn(async () => []) };
+    const dataSource = dataSourceWith([]);
     const result = await new TeacherCourseEligibilityRepository(dataSource as any).findActiveEligibility(ctx(), {
       teacherId: 'teacher-ref',
       courseId: 'course-ref',
@@ -67,12 +74,10 @@ describe('TeacherCourseEligibilityRepository', () => {
   });
 
   it('fails closed when duplicate active eligibility rows are observed', async () => {
-    const dataSource = {
-      query: jest.fn(async () => [
-        { teacherCourseId: 'tc-a', teacherId: 'teacher-ref', courseId: 'course-ref', effectiveFrom: '2026-09-01', effectiveTo: null },
-        { teacherCourseId: 'tc-b', teacherId: 'teacher-ref', courseId: 'course-ref', effectiveFrom: '2026-09-10', effectiveTo: null },
-      ]),
-    };
+    const dataSource = dataSourceWith([
+      { teacherCourseId: 'tc-a', teacherId: 'teacher-ref', courseId: 'course-ref', effectiveFrom: '2026-09-01', effectiveTo: null },
+      { teacherCourseId: 'tc-b', teacherId: 'teacher-ref', courseId: 'course-ref', effectiveFrom: '2026-09-10', effectiveTo: null },
+    ]);
     const result = await new TeacherCourseEligibilityRepository(dataSource as any).findActiveEligibility(ctx(), {
       teacherId: 'teacher-ref',
       courseId: 'course-ref',
@@ -82,17 +87,15 @@ describe('TeacherCourseEligibilityRepository', () => {
   });
 
   it('returns only opaque IDs, controlled dates and reason code fields', async () => {
-    const dataSource = {
-      query: jest.fn(async () => [
-        {
-          teacherCourseId: 'tc-ref',
-          teacherId: 'teacher-ref',
-          courseId: 'course-ref',
-          effectiveFrom: '2026-09-01',
-          effectiveTo: '2026-12-31',
-        },
-      ]),
-    };
+    const dataSource = dataSourceWith([
+      {
+        teacherCourseId: 'tc-ref',
+        teacherId: 'teacher-ref',
+        courseId: 'course-ref',
+        effectiveFrom: '2026-09-01',
+        effectiveTo: '2026-12-31',
+      },
+    ]);
     const result = await new TeacherCourseEligibilityRepository(dataSource as any).findActiveEligibility(ctx(), {
       teacherId: 'teacher-ref',
       courseId: 'course-ref',
