@@ -1,0 +1,75 @@
+name: TeacherCourse Eligibility Cycle
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: teacher-course-eligibility-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cycle:
+    name: migrate -> verify -> revert -> verify -> migrate -> verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: ataakademi_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ataakademi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: true
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+      TEST_DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_NAME: ataakademi_test
+      TYPEORM_LOGGING: "false"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unit and contract tests
+        run: |
+          npx jest --runInBand \
+            src/teacher-courses/teacher-course-eligibility.repository.spec.ts \
+            src/teacher-courses/teacher-course-eligibility.migration.spec.ts
+      - name: Initial migrate and verify
+        run: |
+          npm run db:migrate
+          npm run db:verify
+      - name: Revert and verify
+        run: |
+          npm run db:migrate:revert
+          npm run db:verify
+      - name: Final migrate and verify
+        run: |
+          npm run db:migrate
+          npm run db:verify
+      - name: Regression gates
+        run: |
+          npm run test:database
+          npm run test:rbac
+          npm run test:kvkk
+          npm run test:audit-redaction
+          npm run build
