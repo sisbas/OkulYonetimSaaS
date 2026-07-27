@@ -1,10 +1,39 @@
 import { QueryRunner } from 'typeorm';
 
+import { CreateStudentGroupReferenceFoundation1784690000000 } from '../database/migrations/1784690000000-CreateStudentGroupReferenceFoundation';
 import { EnforceScheduleReferenceIntegrity1801000000000 } from '../database/migrations/1801000000000-EnforceScheduleReferenceIntegrity';
 
 function mockRunner(queries: string[]): QueryRunner {
   return { query: jest.fn(async (query: string) => { queries.push(query); }) } as unknown as QueryRunner;
 }
+
+describe('StudentGroup reference foundation migration', () => {
+  it('creates tenant/branch-scoped student_groups before schedule publish references need them', async () => {
+    const queries: string[] = [];
+    await new CreateStudentGroupReferenceFoundation1784690000000().up(mockRunner(queries));
+    const sql = queries.join('\n');
+
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS student_groups');
+    expect(sql).toContain('fk_student_groups_branch_same_tenant');
+    expect(sql).toContain('FOREIGN KEY (tenant_id, branch_id)');
+    expect(sql).toContain('uq_student_groups_tenant_id');
+    expect(sql).toContain('uq_student_groups_branch_id');
+    expect(sql).toContain('idx_student_groups_tenant_branch_status');
+  });
+
+  it('reverts only the student group reference foundation objects', async () => {
+    const queries: string[] = [];
+    await new CreateStudentGroupReferenceFoundation1784690000000().down(mockRunner(queries));
+
+    expect(queries).toEqual([
+      'DROP INDEX IF EXISTS idx_student_groups_tenant_branch_status',
+      'DROP INDEX IF EXISTS uq_student_groups_active_code',
+      'DROP INDEX IF EXISTS uq_student_groups_branch_id',
+      'DROP INDEX IF EXISTS uq_student_groups_tenant_id',
+      'DROP TABLE IF EXISTS student_groups',
+    ]);
+  });
+});
 
 describe('EnforceScheduleReferenceIntegrity migration', () => {
   it('preflights invalid rows and enforces tenant/branch ownership without repair, delete or cascade', async () => {
@@ -14,6 +43,7 @@ describe('EnforceScheduleReferenceIntegrity migration', () => {
 
     expect(sql).toContain('WP07_SCHEDULE_REPAIR_REQUIRES_ISSUE_141_TEACHERS_TABLE');
     expect(sql).toContain('WP07_SCHEDULE_REPAIR_REQUIRES_ISSUE_141_TEACHER_BRANCHES_TABLE');
+    expect(sql).toContain('WP07_SCHEDULE_REPAIR_REQUIRES_STUDENT_GROUPS_TABLE');
     expect(sql).toContain('WP07_SCHEDULE_REPAIR_REQUIRES_ROOMS_TABLE');
     expect(sql).toContain('WP07_SCHEDULE_REFERENCE_PREFLIGHT_HOLD');
     expect(sql).toContain('active_version owner mismatch');
