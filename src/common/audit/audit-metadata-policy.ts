@@ -43,6 +43,8 @@ const LEAVE_CHANGED_FIELDS = [
   'reasonCode',
   'startAt',
   'endAt',
+  'substitutionAssignment',
+  'dailyOperationsProjection',
   'version',
 ] as const;
 
@@ -69,6 +71,12 @@ export const FORBIDDEN_AUDIT_METADATA_KEYS = [
   'guardianPhone',
   'guardianEmail',
   'guardianContact',
+  'teacherName',
+  'teacherEmail',
+  'teacherPhone',
+  'leaveDetail',
+  'healthDetail',
+  'freeTextReason',
   'notificationPayload',
   'notificationBody',
   'messageBody',
@@ -83,6 +91,14 @@ type AuditMetadataPolicy = Readonly<{
   branchScoped: boolean;
   actorRequired?: boolean;
 }>;
+
+const LEAVE_EVENT_POLICY: AuditMetadataPolicy = {
+  entityType: 'leave_request',
+  allowedKeys: COMMON_KEYS,
+  allowedChangedFields: LEAVE_CHANGED_FIELDS,
+  branchScoped: false,
+  actorRequired: true,
+};
 
 const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> = {
   'course.created': {
@@ -157,27 +173,12 @@ const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> 
     allowedChangedFields: TIME_SLOT_CHANGED_FIELDS,
     branchScoped: true,
   },
-  'leave.requested.v1': {
-    entityType: 'leave_request',
-    allowedKeys: COMMON_KEYS,
-    allowedChangedFields: LEAVE_CHANGED_FIELDS,
-    branchScoped: false,
-    actorRequired: true,
-  },
-  'leave.approved.v1': {
-    entityType: 'leave_request',
-    allowedKeys: COMMON_KEYS,
-    allowedChangedFields: LEAVE_CHANGED_FIELDS,
-    branchScoped: false,
-    actorRequired: true,
-  },
-  'leave.rejected.v1': {
-    entityType: 'leave_request',
-    allowedKeys: COMMON_KEYS,
-    allowedChangedFields: LEAVE_CHANGED_FIELDS,
-    branchScoped: false,
-    actorRequired: true,
-  },
+  'leave.requested.v1': LEAVE_EVENT_POLICY,
+  'leave.approved.v1': LEAVE_EVENT_POLICY,
+  'leave.rejected.v1': LEAVE_EVENT_POLICY,
+  'leave.substitution_assigned.v1': LEAVE_EVENT_POLICY,
+  'leave.substitution_cleared.v1': LEAVE_EVENT_POLICY,
+  'daily_operations.projected.v1': LEAVE_EVENT_POLICY,
 };
 
 function assertKnownEventName(eventName: string): asserts eventName is TransactionalAuditEventName {
@@ -257,6 +258,12 @@ export function validateTransactionalAuditMetadata<E extends TransactionalAuditE
   if (metadata.schemaVersion !== 1) throw new TypeError('schemaVersion must be 1');
   if (metadata.entityType !== policy.entityType) throw new TypeError(`entityType must be ${policy.entityType}`);
   if (metadata.result !== 'success') throw new TypeError('result must be success');
+
+  for (const forbidden of FORBIDDEN_AUDIT_METADATA_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(metadata, forbidden)) {
+      throw new TypeError(`Audit metadata contains forbidden key: ${forbidden}`);
+    }
+  }
 
   const tenantId = assertUuid(metadata.tenantId, 'tenantId');
   const actorUserId = assertNullableUuid(metadata.actorUserId, 'actorUserId');

@@ -9,6 +9,7 @@ import { PermissionAuthenticationGuard } from './common/guards/permission-authen
 import { PermissionGuard } from './common/guards/permission.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { CoursesModule } from './courses/courses.module';
+import { DailyOperationsModule } from './daily-operations/daily-operations.module';
 import { LeavesModule } from './leaves/leaves.module';
 import { HealthModule } from './health/health.module';
 import { RbacModule } from './rbac/rbac.module';
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module';
     RoomsModule,
     TimeSlotsModule,
     LeavesModule,
+    DailyOperationsModule,
     TeachersModule,
   ],
   providers: [

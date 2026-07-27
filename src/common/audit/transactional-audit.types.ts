@@ -23,6 +23,9 @@ export const LEAVE_SUCCESS_AUDIT_EVENT_NAMES = [
   'leave.requested.v1',
   'leave.approved.v1',
   'leave.rejected.v1',
+  'leave.substitution_assigned.v1',
+  'leave.substitution_cleared.v1',
+  'daily_operations.projected.v1',
 ] as const;
 
 export type CourseSuccessAuditEventName = (typeof COURSE_SUCCESS_AUDIT_EVENT_NAMES)[number];
@@ -61,6 +64,8 @@ export type LeaveAuditChangedField =
   | 'reasonCode'
   | 'startAt'
   | 'endAt'
+  | 'substitutionAssignment'
+  | 'dailyOperationsProjection'
   | 'version';
 
 type CommonSuccessAuditMetadata<
