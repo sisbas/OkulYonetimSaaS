@@ -9,12 +9,19 @@ export type RequestUser = {
   authorizationVersion?: number;
 };
 
+export type TenantLocalBusinessDate = {
+  tenantId: string;
+  date: string;
+  source: 'tenant_local';
+};
+
 export type RequestContext = {
   requestId: string;
   userId?: string;
   tenantId?: string;
   roles?: string[];
   permissions?: string[];
+  businessDate?: TenantLocalBusinessDate;
   user?: RequestUser;
 };
 
