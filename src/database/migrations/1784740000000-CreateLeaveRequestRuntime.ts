@@ -6,14 +6,6 @@ export class CreateLeaveRequestRuntime1784740000000 implements MigrationInterfac
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
     await queryRunner.query(`
-      DO $$
-      BEGIN
-        IF to_regclass('public.teachers') IS NULL THEN
-          RAISE EXCEPTION 'WP07_LEAVE_REQUIRES_ISSUE_141_TEACHERS_TABLE';
-        END IF;
-      END $$;
-    `);
-    await queryRunner.query(`
       CREATE TABLE leave_requests (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
