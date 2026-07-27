@@ -17,6 +17,7 @@ This PR does not add runtime frontend implementation. Therefore it does not run 
 - Server-authored tenant and branch context.
 - Seeded non-PII operational records or synthetic server-side test data approved for CI.
 - No demo frontend, fake API, localStorage authority or Builder artefact import.
+- Leave routes must match the current backend contract: teacher create uses `POST /api/v1/leaves/me`; operations list uses `GET /api/v1/leaves?branchId=<server-context-branchId>`; decisions use split approve/reject endpoints with `If-Match`.
 
 ### Teacher journey
 
@@ -24,8 +25,8 @@ This PR does not add runtime frontend implementation. Therefore it does not run 
 | --- | --- | --- |
 | E2E-T-01 | Teacher logs in and lands on `/app/today`. | Session bootstrap succeeds; own operational summary appears. |
 | E2E-T-02 | Teacher sees own schedule/attendance items only. | No other teacher items visible. |
-| E2E-T-03 | Teacher creates leave request. | POST succeeds; UI renders server response only. |
-| E2E-T-04 | Teacher opens own leave detail. | Status, date and approved projection visible. |
+| E2E-T-03 | Teacher creates leave request through `POST /api/v1/leaves/me`. | POST succeeds; UI renders server response only. |
+| E2E-T-04 | Teacher opens own leave detail or #144-provided own-list/detail equivalent. | Status, date and approved projection visible. |
 | E2E-T-05 | Teacher attempts another teacher's leave URL. | `forbidden_non_enumerating`; no existence leak. |
 | E2E-T-06 | Teacher opens own attendance session and updates state. | PATCH succeeds; refreshed session summary visible. |
 | E2E-T-07 | Teacher opens non-owned attendance session. | Generic forbidden/non-enumerating state. |
@@ -35,13 +36,13 @@ This PR does not add runtime frontend implementation. Therefore it does not run 
 | ID | Scenario | Expected evidence |
 | --- | --- | --- |
 | E2E-O-01 | Operations Manager opens `/app/today`. | Same-branch operations queue appears. |
-| E2E-O-02 | Operations Manager opens leave queue. | Pending same-scope leave requests visible or same-scope empty state. |
-| E2E-O-03 | Opens leave detail and impact. | Server-returned lesson impact visible. |
-| E2E-O-04 | Reads candidate coverage list. | Server-returned candidates only; no client solver. |
-| E2E-O-05 | Approves leave with unresolved coverage conflict. | `conflict_blocking`; no fake success. |
-| E2E-O-06 | Creates assignment. | Server response updates impact and open lesson queue. |
-| E2E-O-07 | Clears assignment. | Server response updates impact and open lesson queue. |
-| E2E-O-08 | Stale assignment mutation. | `stale_version`; no automatic mutation retry. |
+| E2E-O-02 | Operations Manager opens leave queue using server-context `branchId`. | Pending same-scope leave requests visible or same-scope empty state; no `scope=branch` query is sent. |
+| E2E-O-03 | Opens leave detail and Daily Operations impact. | Server-returned lesson impact visible. |
+| E2E-O-04 | Reads candidate coverage list from Daily Operations candidate endpoint. | Server-returned candidates only; no client solver. |
+| E2E-O-05 | Approves leave through `PATCH /api/v1/leaves/:id/approve` with exact `If-Match`. | Success only when server accepts; `IMPACT_ANALYSIS_NOT_READY` blocks fake success. |
+| E2E-O-06 | Creates substitution assignment with exact `If-Match`. | Server response updates impact and open lesson queue. |
+| E2E-O-07 | Clears substitution assignment with exact `If-Match`. | Server response updates impact and open lesson queue. |
+| E2E-O-08 | Stale assignment mutation. | `LEAVE_VERSION_MISMATCH`; no automatic mutation retry. |
 | E2E-O-09 | Cross-branch leave URL. | `forbidden_non_enumerating`; no branch existence leak. |
 
 ### Shared reason-code assertions
@@ -49,8 +50,11 @@ This PR does not add runtime frontend implementation. Therefore it does not run 
 - `AUTH_REQUIRED` redirects or blocks protected route without target object details.
 - `FORBIDDEN` and `RESOURCE_NOT_VISIBLE` use generic non-enumerating copy.
 - `RESOURCE_NOT_FOUND_SAME_SCOPE` appears only for API-confirmed same-scope lookup.
-- `HARD_CONFLICT_PRESENT` blocks decision/assignment success.
-- `STALE_VERSION` disables mutation until refresh.
+- `LEAVE_VERSION_REQUIRED` prevents mutation without a server version.
+- `LEAVE_VERSION_MISMATCH` disables mutation until refresh.
+- `SCHEDULE_HARD_CONFLICTS_PRESENT` blocks decision/assignment success.
+- `IMPACT_ANALYSIS_NOT_READY` disables final decision and must not become local success.
+- `TEACHER_COURSE_ELIGIBILITY_NOT_READY` disables assignment create without client-side eligibility fallback.
 - `OFFLINE_OR_UNAVAILABLE` disables mutation and never uses local authority fallback.
 
 ## Keyboard and focus checklist
@@ -120,7 +124,7 @@ The runtime implementation PR must include a boundary test that fails if product
 | localStorage used as role authority | User can unlock buttons/client routes. | Capability projection only from server; backend still enforces. |
 | Demo fixture imported | Sales data becomes pseudo-production truth. | Boundary test blocks demo imports and seed strings. |
 | Client-generated candidate list | Coverage candidates bypass server rules. | Candidate list only from API response. |
-| Silent stale retry | Overwrites newer decision/assignment. | Stale state disables mutation until explicit refresh. |
+| Silent stale retry | Overwrites newer decision/assignment. | `LEAVE_VERSION_MISMATCH` disables mutation until explicit refresh. |
 | Cross-tenant 404 copy | Confirms record exists elsewhere. | Non-enumerating forbidden/not-visible copy. |
 | Production-like PII fixture | KVKK exposure in tests/screenshots. | Non-PII server test seed; masked screenshots only. |
 
@@ -139,6 +143,7 @@ The later runtime PR must provide:
 ## Acceptance coverage
 
 - P0 E2E test plan ready: yes.
+- Backend leave API route and reason-code alignment complete: yes.
 - Accessibility checklist ready: yes.
 - Demo boundary test plan ready: yes.
 - Fake API/localStorage authority risk list ready: yes.
