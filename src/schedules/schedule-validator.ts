@@ -22,6 +22,43 @@ function requireReference(
   if (!value || !active.has(value)) add(reasons, inactiveCode, event.eventId);
 }
 
+type IndexedEvent = {
+  eventId: string;
+  dayOfWeek: number;
+  start: number;
+  end: number;
+};
+
+function minutes(value: string): number {
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function intersects(left: IndexedEvent, right: IndexedEvent): boolean {
+  return left.dayOfWeek === right.dayOfWeek && left.start < right.end && left.end > right.start;
+}
+
+function indexConflict(
+  reasons: ScheduleValidationReason[],
+  index: Map<string, IndexedEvent[]>,
+  resourceId: string | null,
+  event: ScheduleEventDraft,
+  code: ScheduleValidationReason['code'],
+): void {
+  if (!resourceId) return;
+  const current: IndexedEvent = {
+    eventId: event.eventId,
+    dayOfWeek: event.dayOfWeek,
+    start: minutes(event.startTime),
+    end: minutes(event.endTime),
+  };
+  const bucket = index.get(resourceId) ?? [];
+  const conflict = bucket.find((candidate) => intersects(candidate, current));
+  if (conflict) add(reasons, code, event.eventId, conflict.eventId);
+  bucket.push(current);
+  index.set(resourceId, bucket);
+}
+
 export function validateSchedule(input: ScheduleValidationInput): ScheduleValidationEvidence {
   const reasons: ScheduleValidationReason[] = [];
   const full = input.mode === 'FULL';
@@ -30,10 +67,11 @@ export function validateSchedule(input: ScheduleValidationInput): ScheduleValida
   if (full && input.validatedRevision !== input.currentScheduleRevision) add(reasons, 'SCHEDULE_VALIDATION_STALE');
   if (full && input.validationFingerprint !== input.inputFingerprint) add(reasons, 'SCHEDULE_VALIDATION_STALE');
   if (full && input.publishedPeriodConflict) add(reasons, 'PUBLISHED_SCHEDULE_PERIOD_CONFLICT');
+  if (full && input.status === 'published') add(reasons, 'PUBLISHED_SCHEDULE_IMMUTABLE');
 
-  const teacherSlots = new Map<string, string>();
-  const groupSlots = new Map<string, string>();
-  const roomSlots = new Map<string, string>();
+  const teacherIntervals = new Map<string, IndexedEvent[]>();
+  const groupIntervals = new Map<string, IndexedEvent[]>();
+  const roomIntervals = new Map<string, IndexedEvent[]>();
 
   for (const event of input.events) {
     requireReference(reasons, event, event.teacherId, input.references.activeTeacherIds, 'TEACHER_INACTIVE');
@@ -49,25 +87,16 @@ export function validateSchedule(input: ScheduleValidationInput): ScheduleValida
       add(reasons, 'TEACHER_COURSE_MISMATCH', event.eventId);
     }
 
-    const slotKey = `${event.dayOfWeek}:${event.startTime}:${event.endTime}`;
-    const teacherKey = `${event.teacherId}:${slotKey}`;
-    const groupKey = `${event.studentGroupId}:${slotKey}`;
-    const roomKey = `${event.roomId}:${slotKey}`;
-
-    const teacherConflict = teacherSlots.get(teacherKey);
-    if (teacherConflict) add(reasons, 'TEACHER_TIME_OVERLAP', event.eventId, teacherConflict);
-    else teacherSlots.set(teacherKey, event.eventId);
-
-    const groupConflict = groupSlots.get(groupKey);
-    if (groupConflict) add(reasons, 'STUDENT_GROUP_TIME_OVERLAP', event.eventId, groupConflict);
-    else groupSlots.set(groupKey, event.eventId);
-
-    const roomConflict = roomSlots.get(roomKey);
-    if (roomConflict) add(reasons, 'ROOM_TIME_OVERLAP', event.eventId, roomConflict);
-    else roomSlots.set(roomKey, event.eventId);
+    indexConflict(reasons, teacherIntervals, event.teacherId, event, 'TEACHER_TIME_OVERLAP');
+    indexConflict(reasons, groupIntervals, event.studentGroupId, event, 'STUDENT_GROUP_TIME_OVERLAP');
+    indexConflict(reasons, roomIntervals, event.roomId, event, 'ROOM_TIME_OVERLAP');
   }
 
-  const hardConflictCount = reasons.filter((reason) => !['SCHEDULE_VALIDATION_STALE', 'SCHEDULE_EMPTY', 'PUBLISHED_SCHEDULE_PERIOD_CONFLICT'].includes(reason.code)).length;
+  const hardConflictCount = reasons.filter((reason) => ![
+    'SCHEDULE_VALIDATION_STALE',
+    'SCHEDULE_EMPTY',
+    'PUBLISHED_SCHEDULE_PERIOD_CONFLICT',
+  ].includes(reason.code)).length;
   if (full && hardConflictCount > 0) add(reasons, 'SCHEDULE_HARD_CONFLICTS_PRESENT');
 
   return {
