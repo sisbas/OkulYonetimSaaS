@@ -59,6 +59,20 @@ describe('WP-07E leave impact operations contract', () => {
     })?.occurrenceDate).toBe('2026-09-14');
   });
 
+  it('does not silently stop occurrence expansion after 370 local dates', () => {
+    const occurrences = eventOccurrencesForRange({
+      leaveStartsAt: new Date('2026-09-14T05:30:00.000Z'),
+      leaveEndsAt: new Date('2027-10-04T07:30:00.000Z'),
+      effectiveFrom: '2026-09-01',
+      effectiveTo: '2027-12-31',
+      dayOfWeek: 1,
+      startTime: '09:00:00',
+      endTime: '10:00:00',
+    });
+
+    expect(occurrences.map((occurrence) => occurrence.occurrenceDate)).toContain('2027-09-27');
+  });
+
   it('pins reason codes, audit events and forbidden PII keys', () => {
     expect(LEAVE_IMPACT_REASON_CODES).toEqual(expect.arrayContaining(['TEACHER_COURSE_ELIGIBILITY_NOT_READY', 'TEACHER_COURSE_MISMATCH', 'SUBSTITUTE_LEAVE_OVERLAP', 'SUBSTITUTE_TIME_CONFLICT', 'LEAVE_VERSION_REQUIRED', 'LEAVE_VERSION_MISMATCH']));
     expect(LEAVE_SUCCESS_AUDIT_EVENT_NAMES).toEqual(expect.arrayContaining(['leave.substitution_assigned.v1', 'leave.substitution_cleared.v1', 'daily_operations.projected.v1']));
