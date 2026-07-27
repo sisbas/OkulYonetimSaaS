@@ -17,6 +17,7 @@ Out of scope: frontend, delivery, solver, demo/builder/full-vision, automatic le
 - Leave source: same-tenant approved `leave_requests` only.
 - Schedule source: `schedules.status = published`, `active_version_id`, `schedule_versions.status = published`, same-tenant/branch `schedule_events`.
 - Course eligibility source: #166 `teacher_courses`; Schedule history inference is forbidden.
+- Schedule event date/time expansion is evaluated as branch-local lesson time. Default bounded timezone is `Europe/Istanbul` until a tenant/branch timezone column is introduced.
 
 ## Endpoints
 
@@ -42,21 +43,27 @@ Missing/invalid version: `428`; stale version: `412`.
 
 Coverage is separate from Leave decision. Approved Leave may remain `unresolved`.
 
+Coverage is computed against the current active published schedule impact set only. Active assignments from obsolete schedule versions are ignored for coverage and response state.
+
 ## Candidate Filter
 
-Candidate must be same tenant, same active branch, active teacher, no approved-leave overlap, no published schedule time conflict, and course-eligible through `teacher_courses`.
+Candidate must be same tenant, same active branch, active teacher, no approved-leave overlap, no published schedule time conflict, no overlapping active substitution assignment, and course-eligible through `teacher_courses`.
 
 Candidate list is decision support only. It creates no assignment side effect.
+
+For a multi-day leave that intersects more than one occurrence of the same weekly `schedule_event`, candidate eligibility and mutation-time enforcement must pass for every affected occurrence.
 
 ## Projection
 
 Projection key:
 
 ```text
-leave:<leaveRequestId>:version:<scheduleVersionId>:event:<scheduleEventId>
+leave:<leaveRequestId>:version:<scheduleVersionId>:event:<scheduleEventId>:date:<occurrenceDate>
 ```
 
-`daily_operation_lessons.projection_key` is unique. Replay uses upsert. Assignment clear returns lesson state to `open`.
+`daily_operation_lessons.projection_key` is unique. Replay uses upsert. Assignment clear returns affected current lessons to `open`.
+
+Replay reconciles the projection set for the leave. Rows whose `projection_key` is absent from the current active published schedule impact set are deleted as stale projections. This does not delete Leave, Schedule, Teacher, Course, Student or parent data.
 
 ## KVKK / Audit / Outbox
 
