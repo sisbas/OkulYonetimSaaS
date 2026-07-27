@@ -203,7 +203,7 @@ export function eventOccurrencesForRange(input: {
   const upper = parseDateOnly(upperDate);
   const occurrences: EventOccurrence[] = [];
 
-  for (let index = 0; index < 370 && cursor <= upper; index += 1) {
+  while (cursor <= upper) {
     if (isoDayOfWeek(cursor) === input.dayOfWeek) {
       const occurrenceDate = isoDate(cursor);
       const startsAt = zonedDateTimeToUtc(occurrenceDate, input.startTime, timeZone);
