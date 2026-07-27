@@ -76,6 +76,16 @@ function overlaps(
   return leftFrom <= (rightTo ?? FAR_FUTURE) && rightFrom <= (leftTo ?? FAR_FUTURE);
 }
 
+function normalizedSourceKey(row: TeacherBranchSourceRow): string {
+  return [
+    row.tenantId,
+    row.teacherId ?? 'null',
+    [...row.candidateBranchIds].sort().join(','),
+    row.effectiveFrom,
+    row.effectiveTo ?? 'null',
+  ].join('|');
+}
+
 function emptyCounts(): Record<TeacherBranchPreflightReason, number> {
   return Object.fromEntries(
     TEACHER_BRANCH_PREFLIGHT_REASONS.map((reason) => [reason, 0]),
@@ -94,24 +104,25 @@ export function scanTeacherBranchPreflight(
   const sourceKeyCounts = new Map<string, number>();
 
   for (const row of input.sourceRows) {
-    const key = [
-      row.tenantId,
-      row.teacherId ?? 'null',
-      [...row.candidateBranchIds].sort().join(','),
-      row.effectiveFrom,
-      row.effectiveTo ?? 'null',
-    ].join('|');
+    const key = normalizedSourceKey(row);
     sourceKeyCounts.set(key, (sourceKeyCounts.get(key) ?? 0) + 1);
   }
 
   const findings: TeacherBranchPreflightFinding[] = [];
+  const findingKeys = new Set<string>();
   let eligibleCount = 0;
 
   const add = (
     row: TeacherBranchSourceRow,
+    rowIndex: number,
     reasonCode: TeacherBranchPreflightReason,
     branchId: string | null = null,
   ): void => {
+    // sourceId is an opaque external identifier and is not guaranteed unique.
+    // Findings are therefore de-duplicated per input occurrence, not per sourceId.
+    const key = `${rowIndex}|${reasonCode}|${branchId ?? 'null'}`;
+    if (findingKeys.has(key)) return;
+    findingKeys.add(key);
     findings.push({
       sourceId: row.sourceId,
       teacherId: row.teacherId,
@@ -120,16 +131,16 @@ export function scanTeacherBranchPreflight(
     });
   };
 
-  for (const row of input.sourceRows) {
+  input.sourceRows.forEach((row, rowIndex) => {
     const rowFindingStart = findings.length;
     const teacher = row.teacherId ? teacherById.get(row.teacherId) : undefined;
 
     if (!teacher || teacher.tenantId !== row.tenantId) {
-      add(row, 'TB_UNMAPPED_TEACHER');
+      add(row, rowIndex, 'TB_UNMAPPED_TEACHER');
     }
 
     if (row.candidateBranchIds.length !== 1) {
-      add(row, 'TB_AMBIGUOUS_BRANCH');
+      add(row, rowIndex, 'TB_AMBIGUOUS_BRANCH');
     }
 
     const candidateBranchId =
@@ -137,28 +148,22 @@ export function scanTeacherBranchPreflight(
     const branch = candidateBranchId ? branchById.get(candidateBranchId) : undefined;
 
     if (candidateBranchId && (!branch || branch.tenantId !== row.tenantId)) {
-      add(row, 'TB_CROSS_TENANT_BRANCH', candidateBranchId);
+      add(row, rowIndex, 'TB_CROSS_TENANT_BRANCH', candidateBranchId);
     } else if (branch?.status === 'inactive') {
-      add(row, 'TB_INACTIVE_BRANCH', candidateBranchId);
+      add(row, rowIndex, 'TB_INACTIVE_BRANCH', candidateBranchId);
     }
 
     if (row.effectiveTo !== null && row.effectiveFrom > row.effectiveTo) {
-      add(row, 'TB_EFFECTIVE_RANGE_INVALID', candidateBranchId);
+      add(row, rowIndex, 'TB_EFFECTIVE_RANGE_INVALID', candidateBranchId);
     }
 
-    const sourceKey = [
-      row.tenantId,
-      row.teacherId ?? 'null',
-      [...row.candidateBranchIds].sort().join(','),
-      row.effectiveFrom,
-      row.effectiveTo ?? 'null',
-    ].join('|');
+    const sourceKey = normalizedSourceKey(row);
     if ((sourceKeyCounts.get(sourceKey) ?? 0) > 1) {
-      add(row, 'TB_DUPLICATE_SOURCE', candidateBranchId);
+      add(row, rowIndex, 'TB_DUPLICATE_SOURCE', candidateBranchId);
     }
 
     if (row.teacherId && candidateBranchId) {
-      const hasOverlap = input.existingRanges.some(
+      const overlapsExisting = input.existingRanges.some(
         (range) =>
           range.tenantId === row.tenantId &&
           range.teacherId === row.teacherId &&
@@ -170,15 +175,33 @@ export function scanTeacherBranchPreflight(
             range.effectiveTo,
           ),
       );
-      if (hasOverlap) {
-        add(row, 'TB_EFFECTIVE_RANGE_OVERLAP', candidateBranchId);
+
+      const overlapsAnotherSource = input.sourceRows.some((other, otherIndex) => {
+        if (otherIndex === rowIndex || normalizedSourceKey(other) === sourceKey) return false;
+        const otherBranchId =
+          other.candidateBranchIds.length === 1 ? other.candidateBranchIds[0] : null;
+        return (
+          other.tenantId === row.tenantId &&
+          other.teacherId === row.teacherId &&
+          otherBranchId === candidateBranchId &&
+          overlaps(
+            row.effectiveFrom,
+            row.effectiveTo,
+            other.effectiveFrom,
+            other.effectiveTo,
+          )
+        );
+      });
+
+      if (overlapsExisting || overlapsAnotherSource) {
+        add(row, rowIndex, 'TB_EFFECTIVE_RANGE_OVERLAP', candidateBranchId);
       }
     }
 
     if (findings.length === rowFindingStart) {
       eligibleCount += 1;
     }
-  }
+  });
 
   const countsByReason = emptyCounts();
   for (const finding of findings) {

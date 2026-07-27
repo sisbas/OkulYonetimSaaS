@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { RequestContext } from '../context/request-context';
 
-export type AuthorizationDeniedReasonCode = 'missing_permission' | 'tenant_header_mismatch';
+export type AuthorizationDeniedReasonCode = 'missing_permission' | 'tenant_header_mismatch' | 'teacher_identity_unresolved';
 
 export type AuthorizationDeniedAuditEvent = {
   eventName: 'authorization.denied';
