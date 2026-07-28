@@ -10,11 +10,13 @@ import {
 import { LeaveCoverageStatus, LeaveDecisionStatus } from '../leaves/leave-request.entity';
 import {
   CandidateResponse,
+  DailyOperationsQueueResponse,
   EventOccurrence,
   LeaveImpactEvent,
   LeaveImpactResponse,
   computeCoverageStatus,
   eventOccurrencesForRange,
+  leaveEtag,
   projectionKey,
 } from './leave-impact.types';
 
@@ -56,6 +58,27 @@ type AssignmentRow = {
   substituteTeacherId: string;
 };
 
+type QueueLessonRow = {
+  dailyOperationLessonId: string;
+  leaveRequestId: string;
+  leaveVersion: number;
+  branchId: string;
+  scheduleVersionId: string;
+  scheduleEventId: string;
+  occurrenceDate: string;
+  state: 'open' | 'resolved';
+  coverageStatus: LeaveCoverageStatus;
+  originalTeacherId: string;
+  substituteAssignmentId: string | null;
+  substituteTeacherId: string | null;
+  studentGroupId: string;
+  courseId: string;
+  roomId: string;
+  timeSlotId: string;
+  startTime: string;
+  endTime: string;
+};
+
 function assignmentKey(input: { scheduleEventId: string; scheduleVersionId: string }): string {
   return `${input.scheduleVersionId}:${input.scheduleEventId}`;
 }
@@ -67,6 +90,80 @@ export class DailyOperationsRepository {
     @Inject(TRANSACTIONAL_AUDIT_WRITER)
     private readonly audit: TransactionalAuditWriter,
   ) {}
+
+  async today(ctx: RequestContext, input: { branchId: string; date: string }): Promise<DailyOperationsQueueResponse> {
+    assertTenantScope(ctx, 'daily_operation_lessons');
+    await this.assertBranchOwnership(this.dataSource.manager, ctx.tenantId!, input.branchId);
+    const rows = (await this.dataSource.manager.query(
+      `SELECT
+          lesson.id::text AS "dailyOperationLessonId",
+          lesson.leave_request_id::text AS "leaveRequestId",
+          leave_request.version AS "leaveVersion",
+          lesson.branch_id::text AS "branchId",
+          lesson.schedule_version_id::text AS "scheduleVersionId",
+          lesson.schedule_event_id::text AS "scheduleEventId",
+          lesson.occurrence_date::text AS "occurrenceDate",
+          lesson.state AS "state",
+          lesson.coverage_status AS "coverageStatus",
+          event.teacher_id::text AS "originalTeacherId",
+          lesson.substitute_assignment_id::text AS "substituteAssignmentId",
+          assignment.substitute_teacher_id::text AS "substituteTeacherId",
+          event.student_group_id::text AS "studentGroupId",
+          event.course_id::text AS "courseId",
+          event.room_id::text AS "roomId",
+          event.time_slot_id::text AS "timeSlotId",
+          event.start_time::text AS "startTime",
+          event.end_time::text AS "endTime"
+       FROM daily_operation_lessons lesson
+       JOIN leave_requests leave_request
+         ON leave_request.id = lesson.leave_request_id
+        AND leave_request.tenant_id = lesson.tenant_id
+        AND leave_request.branch_id = lesson.branch_id
+       JOIN schedule_events event
+         ON event.id = lesson.schedule_event_id
+        AND event.tenant_id = lesson.tenant_id
+        AND event.branch_id = lesson.branch_id
+        AND event.version_id = lesson.schedule_version_id
+       LEFT JOIN leave_substitution_assignments assignment
+         ON assignment.id = lesson.substitute_assignment_id
+        AND assignment.tenant_id = lesson.tenant_id
+        AND assignment.branch_id = lesson.branch_id
+        AND assignment.state = 'assigned'
+       WHERE lesson.tenant_id = $1
+         AND lesson.branch_id = $2
+         AND lesson.occurrence_date = $3::date
+       ORDER BY lesson.state ASC, event.start_time ASC, lesson.updated_at ASC, lesson.id ASC`,
+      [ctx.tenantId, input.branchId, input.date],
+    )) as QueueLessonRow[];
+
+    return {
+      tenantScoped: true,
+      branchId: input.branchId,
+      date: input.date,
+      permission: 'daily_operations:read',
+      lessons: rows.map((row) => ({
+        dailyOperationLessonId: row.dailyOperationLessonId,
+        leaveRequestId: row.leaveRequestId,
+        leaveVersion: Number(row.leaveVersion),
+        leaveEtag: leaveEtag(row.leaveRequestId, Number(row.leaveVersion)),
+        branchId: row.branchId,
+        scheduleVersionId: row.scheduleVersionId,
+        scheduleEventId: row.scheduleEventId,
+        occurrenceDate: row.occurrenceDate,
+        startsAt: `${row.occurrenceDate}T${row.startTime}`,
+        endsAt: `${row.occurrenceDate}T${row.endTime}`,
+        state: row.state,
+        coverageStatus: row.coverageStatus,
+        originalTeacherId: row.originalTeacherId,
+        substituteAssignmentId: row.substituteAssignmentId,
+        substituteTeacherId: row.substituteTeacherId,
+        studentGroupId: row.studentGroupId,
+        courseId: row.courseId,
+        roomId: row.roomId,
+        timeSlotId: row.timeSlotId,
+      })),
+    };
+  }
 
   async impact(ctx: RequestContext, leaveId: string): Promise<LeaveImpactResponse> {
     assertTenantScope(ctx, 'daily_operations_leave_impact');
@@ -196,6 +293,14 @@ export class DailyOperationsRepository {
       await this.outbox(manager, leave, 'daily_operations.projected.v1', null, null);
       return this.toImpact(leave, events, assignments);
     });
+  }
+
+  private async assertBranchOwnership(manager: EntityManager, tenantId: string, branchId: string): Promise<void> {
+    const rows = await manager.query(
+      `SELECT 1 FROM branches WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
+      [tenantId, branchId],
+    );
+    if (rows.length !== 1) throw new Error('BRANCH_NOT_VISIBLE');
   }
 
   private async findApprovedLeave(manager: EntityManager, tenantId: string, leaveId: string, lock: boolean): Promise<LeaveRow | null> {
@@ -500,6 +605,8 @@ export class DailyOperationsRepository {
     return {
       leaveRequestId: leave.id,
       branchId: leave.branchId,
+      leaveVersion: leave.version,
+      leaveEtag: leaveEtag(leave.id, leave.version),
       coverageStatus: computeCoverageStatus(responseEvents.length, resolved),
       impactedLessonCount: responseEvents.length,
       resolvedLessonCount: resolved,
