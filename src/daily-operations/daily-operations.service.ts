@@ -1,13 +1,38 @@
-import { ConflictException, HttpException, Injectable, NotFoundException, PreconditionFailedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, Injectable, NotFoundException, PreconditionFailedException } from '@nestjs/common';
 
 import { RequestContext } from '../common/context/request-context';
 import { CreateSubstitutionAssignmentDto } from './dto/create-substitution-assignment.dto';
 import { DailyOperationsRepository } from './daily-operations.repository';
-import { parseLeaveExpectedVersion } from './leave-impact.types';
+import { DEFAULT_TENANT_TIME_ZONE, parseLeaveExpectedVersion } from './leave-impact.types';
+
+type TodayQuery = Readonly<{
+  branchId: string;
+  date?: string;
+}>;
+
+function parseQueueDate(date: string | undefined, fallback?: string): string {
+  const value = date ?? fallback ?? new Intl.DateTimeFormat('en-CA', {
+    timeZone: DEFAULT_TENANT_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new BadRequestException('Daily Operations date must use YYYY-MM-DD');
+  }
+
+  return value;
+}
 
 @Injectable()
 export class DailyOperationsService {
   constructor(private readonly repository: DailyOperationsRepository) {}
+
+  async today(ctx: RequestContext, query: TodayQuery) {
+    const date = parseQueueDate(query.date, ctx.businessDate?.date);
+    return this.mapErrors(() => this.repository.today(ctx, { branchId: query.branchId, date }));
+  }
 
   async impact(ctx: RequestContext, leaveId: string) {
     return this.mapErrors(() => this.repository.impact(ctx, leaveId));
@@ -52,6 +77,7 @@ export class DailyOperationsService {
       return await operation();
     } catch (error) {
       const code = (error as Error).message;
+      if (code === 'BRANCH_NOT_VISIBLE') throw new NotFoundException('Daily Operations queue not found');
       if (code === 'LEAVE_NOT_APPROVED' || code === 'NO_PUBLISHED_SCHEDULE_EVENT') {
         throw new NotFoundException('Leave impact not found');
       }

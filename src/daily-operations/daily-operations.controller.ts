@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -21,6 +22,21 @@ function getRequestContext(request: RequestWithContext): RequestContext {
   if (!request.user && !request.context?.user) throw new UnauthorizedException('Authentication required');
   if (!request.context?.tenantId) throw new ForbiddenException('Tenant context required');
   return request.context;
+}
+
+@Controller('daily-operations')
+export class DailyOperationsQueueController {
+  constructor(private readonly dailyOperations: DailyOperationsService) {}
+
+  @Get('today')
+  @Permissions('daily_operations:read')
+  today(
+    @Req() request: RequestWithContext,
+    @Query('branchId', ParseUUIDPipe) branchId: string,
+    @Query('date') date?: string,
+  ) {
+    return this.dailyOperations.today(getRequestContext(request), { branchId, date });
+  }
 }
 
 @Controller('daily-operations/leaves')
