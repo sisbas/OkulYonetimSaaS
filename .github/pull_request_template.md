@@ -23,14 +23,24 @@
 
 ## Test çıktısı
 
-<!-- Çalıştırılan testleri ve PASS/FAIL sonuçlarını yazın. Belirsiz CI sonucu PASS sayılmaz. -->
+<!--
+Zorunlu kanıt alanıdır. Gerçek PASS/FAIL, SUCCESS/FAILURE veya GitHub Actions run kanıtı içermelidir.
+Belirsiz ifadeler kabul edilmez: Pending, sonra güncellenecek, çalıştırılmadı, N/A.
 
-- `npm ci`: 
-- `npm run ci:sprint1`: 
-- `npm run lint`: 
-- `npm test`: 
-- `npm run build`: 
-- `npm run qa:db`: 
+Planning-only / documentation-only PR için kabul edilebilir minimum format:
+- Planning-only scope guard: PASS.
+- Changed files: `docs/...` veya `.github/...` ile sınırlı.
+- Runtime code: none.
+- Migration: none.
+- Ruleset change: none.
+- Evidence: dosya kapsamı, commit/head SHA veya GitHub Actions run id/URL.
+-->
+
+- Planning-only scope guard: 
+- Changed files: 
+- Runtime code: 
+- Migration: 
+- Ruleset change: 
 - Sprint 1 Quality Gate:
 - Backend CI:
 - DB Smoke:
@@ -42,9 +52,9 @@
 
 <!-- Kişisel veri, veli iletişim bilgisi, öğrenci bilgisi, rehberlik notu, audit log veya notification payload etkisini yazın. Etki yoksa neden yok yazın. -->
 
-- Etki:
+- KVKK etkisi:
+- Audit etkisi:
 - Redaction ihtiyacı:
-- Audit log davranışı:
 
 ## Rollback
 
@@ -55,7 +65,14 @@
 
 ## CI run referansı
 
-<!-- GitHub Actions run id veya URL yazın. -->
+<!--
+Kabul edilen formatlar:
+- GitHub Actions URL: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/<run_id>
+- Run id: <run_id>
+- Açık workflow adı + run id: Backend CI run <run_id>: SUCCESS
+
+Pending/sonra güncellenecek kabul edilmez. Workflow henüz oluşmadıysa PR Draft kalmalı veya Test çıktısı altında planning-only scope guard PASS kanıtı yazılmalıdır.
+-->
 
 - 
 
