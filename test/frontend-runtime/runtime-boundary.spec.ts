@@ -1,0 +1,62 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+describe('WP-07F runtime frontend boundary', () => {
+  const root = process.cwd();
+  const runtimeDir = path.join(root, 'frontend', 'runtime');
+  const app = fs.readFileSync(path.join(runtimeDir, 'app.js'), 'utf8');
+  const html = fs.readFileSync(path.join(runtimeDir, 'index.html'), 'utf8');
+
+  it('uses the real API boundary and required endpoint paths', () => {
+    expect(app).toContain("const API_ROOT = '/api/v1'");
+    expect(app).toContain("/auth/login");
+    expect(app).toContain("/leaves/me");
+    expect(app).toContain("/daily-operations/today?");
+    expect(app).toContain("/impact");
+    expect(app).toContain("/candidates");
+    expect(app).toContain("/substitution");
+  });
+
+  it('does not import demo, Builder or Full Vision artefacts', () => {
+    const forbiddenImports = [
+      'demo-frontend',
+      'full-vision-demo',
+      'full-vision',
+      'builder.io',
+      '@builder.io',
+    ];
+    for (const token of forbiddenImports) {
+      expect(app.toLowerCase()).not.toContain(token.toLowerCase());
+      expect(html.toLowerCase()).not.toContain(token.toLowerCase());
+    }
+  });
+
+  it('does not use browser storage or persistent authority', () => {
+    for (const token of ['localStorage', 'sessionStorage', 'indexedDB', 'document.cookie']) {
+      expect(app).not.toContain(token);
+      expect(html).not.toContain(token);
+    }
+  });
+
+  it('does not include a fake API or local success adapter', () => {
+    for (const token of ['mockApi', 'fakeApi', 'fixture', 'synthetic', 'setTimeout(() =>', 'Promise.resolve({']) {
+      expect(app).not.toContain(token);
+    }
+  });
+
+  it('uses only server-returned ETag for assignment mutations', () => {
+    expect(app).toContain("headers: { 'If-Match': state.activeLeaveEtag }");
+    expect(app).toContain("pick(body, ['leaveEtag', 'etag'], etag || state.activeLeaveEtag)");
+    expect(app).not.toContain('leave:${');
+    expect(app).not.toContain('v${');
+    expect(app).not.toContain('resourceVersion +');
+  });
+
+  it('keeps role and permission authority on the API side', () => {
+    expect(html).not.toContain('role="teacher"');
+    expect(html).not.toContain('role="operations"');
+    expect(app).not.toContain('state.role');
+    expect(app).not.toContain('permissions =');
+    expect(app).toContain('Role ve permission server endpointleri tarafından uygulanır');
+  });
+});
