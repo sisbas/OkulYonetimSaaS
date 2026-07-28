@@ -5,9 +5,43 @@ export const DEFAULT_TENANT_TIME_ZONE = 'Europe/Istanbul';
 export const DAILY_OPERATION_STATES = ['open', 'resolved'] as const;
 export type DailyOperationState = (typeof DAILY_OPERATION_STATES)[number];
 
+export const DAILY_OPERATIONS_TODAY_ROUTE = '/api/v1/daily-operations/today' as const;
+export const DAILY_OPERATIONS_TODAY_PERMISSION = 'daily_operations:read' as const;
+
+export const DAILY_OPERATIONS_QUEUE_LESSON_FIELDS = [
+  'dailyOperationLessonId',
+  'leaveRequestId',
+  'leaveVersion',
+  'leaveEtag',
+  'branchId',
+  'scheduleVersionId',
+  'scheduleEventId',
+  'occurrenceDate',
+  'startsAt',
+  'endsAt',
+  'state',
+  'coverageStatus',
+  'originalTeacherId',
+  'substituteAssignmentId',
+  'substituteTeacherId',
+  'studentGroupId',
+  'courseId',
+  'roomId',
+  'timeSlotId',
+] as const;
+
+export const DAILY_OPERATIONS_QUEUE_RESPONSE_FIELDS = [
+  'tenantScoped',
+  'branchId',
+  'date',
+  'permission',
+  'lessons',
+] as const;
+
 export const LEAVE_IMPACT_REASON_CODES = [
   'LEAVE_NOT_APPROVED',
   'NO_PUBLISHED_SCHEDULE_EVENT',
+  'BRANCH_NOT_VISIBLE',
   'TEACHER_COURSE_ELIGIBILITY_NOT_READY',
   'TEACHER_COURSE_MISMATCH',
   'SUBSTITUTE_TEACHER_INACTIVE',
@@ -21,6 +55,10 @@ export const LEAVE_IMPACT_REASON_CODES = [
 ] as const;
 
 export type LeaveImpactReasonCode = (typeof LEAVE_IMPACT_REASON_CODES)[number];
+
+export function leaveEtag(leaveId: string, version: number): string {
+  return `"leave:${leaveId}:v${version}"`;
+}
 
 export type LeaveImpactEvent = Readonly<{
   scheduleEventId: string;
@@ -43,11 +81,43 @@ export type LeaveImpactEvent = Readonly<{
 export type LeaveImpactResponse = Readonly<{
   leaveRequestId: string;
   branchId: string;
+  leaveVersion: number;
+  leaveEtag: string;
   coverageStatus: LeaveCoverageStatus;
   impactedLessonCount: number;
   resolvedLessonCount: number;
   openLessonCount: number;
   events: LeaveImpactEvent[];
+}>;
+
+export type DailyOperationsQueueLesson = Readonly<{
+  dailyOperationLessonId: string;
+  leaveRequestId: string;
+  leaveVersion: number;
+  leaveEtag: string;
+  branchId: string;
+  scheduleVersionId: string;
+  scheduleEventId: string;
+  occurrenceDate: string;
+  startsAt: string;
+  endsAt: string;
+  state: DailyOperationState;
+  coverageStatus: LeaveCoverageStatus;
+  originalTeacherId: string;
+  substituteAssignmentId: string | null;
+  substituteTeacherId: string | null;
+  studentGroupId: string;
+  courseId: string;
+  roomId: string;
+  timeSlotId: string;
+}>;
+
+export type DailyOperationsQueueResponse = Readonly<{
+  tenantScoped: true;
+  branchId: string;
+  date: string;
+  permission: typeof DAILY_OPERATIONS_TODAY_PERMISSION;
+  lessons: DailyOperationsQueueLesson[];
 }>;
 
 export type SubstituteCandidate = Readonly<{
