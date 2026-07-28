@@ -5,12 +5,12 @@ import {
   TRANSACTIONAL_AUDIT_WRITER,
   TypeOrmTransactionalAuditWriter,
 } from '../common/audit/transactional-audit-writer';
-import { DailyOperationsController } from './daily-operations.controller';
+import { DailyOperationsController, DailyOperationsQueueController } from './daily-operations.controller';
 import { DailyOperationsRepository } from './daily-operations.repository';
 import { DailyOperationsService } from './daily-operations.service';
 
 @Module({
-  controllers: [DailyOperationsController],
+  controllers: [DailyOperationsController, DailyOperationsQueueController],
   providers: [
     AuditLogRepository,
     TypeOrmTransactionalAuditWriter,
