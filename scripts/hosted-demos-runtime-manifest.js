@@ -21,4 +21,10 @@ const fullVisionFiles = [
   'full-vision-demo/shared/ui.js',
 ];
 
-module.exports = { legacyFiles, fullVisionFiles };
+const runtimeFiles = [
+  'runtime/index.html',
+  'runtime/styles.css',
+  'runtime/app.js',
+];
+
+module.exports = { legacyFiles, fullVisionFiles, runtimeFiles };
