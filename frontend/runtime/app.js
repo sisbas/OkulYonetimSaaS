@@ -35,6 +35,8 @@ const reasonUi = {
   OFFLINE_OR_UNAVAILABLE: ['offline_or_unavailable', 'Bağlantı kurulamadı.'],
 };
 
+const GENERIC_NEST_ERRORS = new Set(['Bad Request', 'Forbidden', 'Conflict', 'Precondition Failed', 'Not Found', 'Unauthorized']);
+
 const $ = (selector) => document.querySelector(selector);
 
 function setStatus(text, tone = 'neutral') {
@@ -78,10 +80,39 @@ async function apiRequest(path, options = {}) {
   return { body, etag: response.headers.get('etag') || pick(body, ['leaveEtag', 'etag']) };
 }
 
+function flattenMessage(value) {
+  const message = value?.message;
+  if (Array.isArray(message)) return message.join(' ');
+  return String(message || '');
+}
+
+function findReasonInMessage(message) {
+  const normalized = String(message || '').toUpperCase();
+  return Object.keys(reasonUi).find((code) => normalized.includes(code));
+}
+
 function normalizeApiError(response, body) {
-  const reasonCode = pick(body, ['reasonCode', 'code', 'error'], response.status === 403 ? 'FORBIDDEN' : 'SERVER_ERROR');
+  const messageText = flattenMessage(body);
+  const explicitReason = pick(body, ['reasonCode', 'code']);
+  const messageReason = findReasonInMessage(messageText);
+  const genericError = GENERIC_NEST_ERRORS.has(String(body?.error || ''));
+  const errorReason = !genericError && reasonUi[body?.error] ? body.error : '';
+  let reasonCode = explicitReason || messageReason || errorReason;
+  if (!reasonCode) {
+    if (response.status === 401) reasonCode = 'AUTH_REQUIRED';
+    else if (response.status === 403) reasonCode = 'FORBIDDEN';
+    else if (response.status === 404) reasonCode = 'RESOURCE_NOT_FOUND_SAME_SCOPE';
+    else if (response.status === 409) reasonCode = 'SUBSTITUTE_TIME_CONFLICT';
+    else if (response.status === 412) reasonCode = 'LEAVE_VERSION_MISMATCH';
+    else if (response.status === 400) reasonCode = 'VALIDATION_FAILED';
+    else reasonCode = 'SERVER_ERROR';
+  }
+  if (response.status === 403 && genericError && !messageReason) reasonCode = 'FORBIDDEN';
+  if (response.status === 412) reasonCode = 'LEAVE_VERSION_MISMATCH';
+  if (response.status === 409 && !reasonUi[reasonCode]) reasonCode = 'SUBSTITUTE_TIME_CONFLICT';
   const mapped = reasonUi[reasonCode] || reasonUi.SERVER_ERROR;
-  return { status: response.status, reasonCode, uiState: mapped[0], message: pick(body, ['message'], mapped[1]) };
+  const message = GENERIC_NEST_ERRORS.has(messageText) ? mapped[1] : messageText || mapped[1];
+  return { status: response.status, reasonCode, uiState: mapped[0], message };
 }
 
 function renderError(target, error) {
@@ -92,12 +123,31 @@ function renderError(target, error) {
   announce(error.message || 'İşlem tamamlanamadı.', 'danger');
 }
 
+function renderBlockingState(target, reasonCode) {
+  const mapped = reasonUi[reasonCode] || reasonUi.SERVER_ERROR;
+  target.innerHTML = `<div class="error-state" data-state="${escapeHtml(mapped[0])}">
+    <strong>${escapeHtml(reasonCode)}</strong>
+    <p>${escapeHtml(mapped[1])}</p>
+  </div>`;
+  announce(mapped[1], 'warning');
+}
+
 function requireSession() {
   if (!state.accessToken) {
     announce('Önce oturum açın.', 'warning');
     return false;
   }
   return true;
+}
+
+function getBranchId() {
+  const branchId = state.branchId || $('#branch-id').value.trim();
+  if (branchId) state.branchId = branchId;
+  return branchId;
+}
+
+function toIso8601(value) {
+  return new Date(value).toISOString();
 }
 
 async function login(event) {
@@ -140,12 +190,14 @@ function activateTab(name) {
 async function createLeave(event) {
   event.preventDefault();
   if (!requireSession()) return;
+  const branchId = getBranchId();
+  if (!branchId) return announce('İzin talebi için branchId gerekir.', 'warning');
   const body = {
-    startDate: $('#leave-start').value,
-    endDate: $('#leave-end').value,
-    startTime: $('#leave-start-time').value || undefined,
-    endTime: $('#leave-end-time').value || undefined,
-    note: $('#leave-note').value.trim() || undefined,
+    branchId,
+    durationType: $('#leave-duration-type').value,
+    reasonCode: $('#leave-reason-code').value,
+    startsAt: toIso8601($('#leave-starts-at').value),
+    endsAt: toIso8601($('#leave-ends-at').value),
   };
   const target = $('#teacher-output');
   target.innerHTML = loading('İzin talebi oluşturuluyor');
@@ -176,9 +228,8 @@ async function loadOwnLeave() {
 async function loadQueue() {
   if (!requireSession()) return;
   const target = $('#queue-output');
-  const branchId = state.branchId || $('#branch-id').value.trim();
+  const branchId = getBranchId();
   if (!branchId) return announce('Queue için branchId gerekir; authority server tarafından doğrulanır.', 'warning');
-  state.branchId = branchId;
   state.date = state.date || $('#operation-date').value;
   const query = new URLSearchParams({ branchId });
   if (state.date) query.set('date', state.date);
@@ -194,7 +245,7 @@ async function loadQueue() {
 }
 
 function renderQueueItem(item) {
-  const leaveId = pick(item, ['leaveId', 'linkedLeaveId']);
+  const leaveId = pick(item, ['leaveRequestId']);
   const eventId = pick(item, ['scheduleEventId', 'eventId']);
   const stateLabel = pick(item, ['state', 'coverageStatus', 'assignmentStatus'], 'unknown');
   return `<article class="card">
@@ -216,20 +267,32 @@ async function loadImpact(leaveId, eventId) {
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/impact`);
     captureLeaveVersion(body, etag);
-    const lessons = asArray(body, ['affectedLessons', 'lessons', 'items']);
-    if (!state.activeScheduleEventId && lessons[0]) state.activeScheduleEventId = pick(lessons[0], ['scheduleEventId', 'eventId']);
-    target.innerHTML = renderImpact(body, lessons);
+    const events = asArray(body, ['events', 'affectedLessons', 'lessons', 'items']);
+    if (!state.activeScheduleEventId && events[0]) state.activeScheduleEventId = eventIdentity(events[0]);
+    updateAssignmentStateFromEvents(events);
+    target.innerHTML = renderImpact(body, events);
   } catch (error) {
     renderError(target, error);
   }
 }
 
-function renderImpact(body, lessons) {
-  const rows = lessons.map((lesson) => `<li>
-    <strong>${escapeHtml(pick(lesson, ['courseLabel'], 'Ders'))}</strong>
-    <span>${escapeHtml(pick(lesson, ['occurrenceDate'], ''))} ${escapeHtml(pick(lesson, ['timeRange'], ''))}</span>
-    <span>${escapeHtml(pick(lesson, ['assignmentStatus', 'coverageStatus'], 'open'))}</span>
-    <button type="button" data-action="candidates" data-event-id="${escapeHtml(pick(lesson, ['scheduleEventId', 'eventId']))}">Adayları getir</button>
+function eventIdentity(event) {
+  return pick(event, ['scheduleEventId', 'eventId', 'id']);
+}
+
+function updateAssignmentStateFromEvents(events) {
+  const activeEvent = events.find((event) => eventIdentity(event) === state.activeScheduleEventId) || events.find((event) => pick(event, ['substituteAssignmentId']));
+  if (!activeEvent) return;
+  state.activeScheduleEventId = eventIdentity(activeEvent) || state.activeScheduleEventId;
+  state.activeAssignmentId = pick(activeEvent, ['substituteAssignmentId'], '');
+}
+
+function renderImpact(body, events) {
+  const rows = events.map((event) => `<li>
+    <strong>${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}</strong>
+    <span>${escapeHtml(pick(event, ['occurrenceDate'], ''))} ${escapeHtml(pick(event, ['timeRange'], ''))}</span>
+    <span>${escapeHtml(pick(event, ['assignmentStatus', 'coverageStatus'], 'open'))}</span>
+    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}">Adayları getir</button>
   </li>`).join('');
   return `<div class="summary"><b>Coverage:</b> ${escapeHtml(pick(body, ['coverageStatus'], 'unknown'))}</div>
     <ul class="impact-list">${rows || '<li>Etki satırı yok.</li>'}</ul>`;
@@ -243,6 +306,7 @@ async function loadCandidates(eventId) {
   target.innerHTML = loading('Adaylar getiriliyor');
   try {
     const { body } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/candidates`);
+    if (body?.eligibilityFinalized === false) return renderBlockingState(target, 'TEACHER_COURSE_ELIGIBILITY_NOT_READY');
     const candidates = asArray(body, ['candidates', 'items']);
     target.innerHTML = candidates.length ? candidates.map(renderCandidate).join('') : empty('Aynı scope içinde uygun aday yok.');
   } catch (error) {
@@ -272,8 +336,8 @@ async function createAssignment(teacherId) {
       headers: { 'If-Match': state.activeLeaveEtag },
       body: { substituteTeacherId: teacherId },
     });
-    state.activeAssignmentId = pick(body, ['assignmentId'], state.activeAssignmentId);
     captureLeaveVersion(body, etag);
+    updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
     announce('Görevlendirme server response ile oluşturuldu; queue ve impact yenileniyor.', 'success');
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
@@ -290,8 +354,8 @@ async function clearAssignment() {
       method: 'DELETE',
       headers: { 'If-Match': state.activeLeaveEtag },
     });
-    state.activeAssignmentId = '';
     captureLeaveVersion(body, etag);
+    updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
     announce('Görevlendirme server response ile temizlendi; queue ve impact yenileniyor.', 'success');
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
@@ -301,7 +365,7 @@ async function clearAssignment() {
 }
 
 function captureLeaveVersion(body, etag) {
-  state.activeLeaveId = pick(body, ['leaveId', 'id'], state.activeLeaveId);
+  state.activeLeaveId = pick(body, ['leaveRequestId', 'leaveId', 'id'], state.activeLeaveId);
   state.activeLeaveEtag = pick(body, ['leaveEtag', 'etag'], etag || state.activeLeaveEtag);
 }
 
