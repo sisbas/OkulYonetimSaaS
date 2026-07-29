@@ -39,8 +39,8 @@ Runtime, API, entity, repository, migration, database schema, frontend, ruleset 
 - [x] Çözülmemiş review thread sayısı sıfır.
 - [ ] Güncel head SHA için bağımsız APPROVED review.
 - [ ] Ready sonrası Merge Governance Enforcement SUCCESS.
-- [ ] P0 browser E2E Eksiği
-- [ ] Manual accessibility Eksiği
+- [ ] P0 browser E2E PASS
+- [ ] Manual accessibility PASS
 
 ## Test çıktısı
 
@@ -82,4 +82,5 @@ Regresyon görülürse PR merge commit'i `git revert <merge_commit_sha>` ile ger
 
 ## Karar
 
-MERGE: HOLD (Eksik: P0 E2E, Accessibility, Current-head approval)
+<!-- GOVERNANCE SEMANTIC GATE: TECHNICAL PASS / CURRENT-HEAD INDEPENDENT APPROVAL HOLD / MERGE NOT AUTHORIZED UNTIL READY + AGGREGATE SUCCESS -->
+MERGE: HOLD
