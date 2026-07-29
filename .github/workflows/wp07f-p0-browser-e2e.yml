@@ -94,7 +94,7 @@ jobs:
       - name: Start real Nest backend
         run: |
           mkdir -p artifacts/wp07f-p0-browser-e2e
-          npm run start:prod > artifacts/wp07f-p0-browser-e2e/backend.log 2>&1 &
+          npx ts-node src/main.ts > artifacts/wp07f-p0-browser-e2e/backend.log 2>&1 &
           echo $! > artifacts/wp07f-p0-browser-e2e/backend.pid
           for i in {1..40}; do
             if curl -fsS http://127.0.0.1:3000/runtime/ >/dev/null; then
