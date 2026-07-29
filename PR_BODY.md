@@ -37,12 +37,14 @@ Runtime, API, entity, repository, migration, database schema, frontend, ruleset 
 - [x] Exact-head scanner kontrolleri SUCCESS.
 - [x] PR Governance body alt kontrolleri SUCCESS.
 - [x] Çözülmemiş review thread sayısı sıfır.
-- [x] Güncel head SHA için bağımsız APPROVED review.
-- [x] Ready sonrası Merge Governance Enforcement SUCCESS.
+- [ ] Güncel head SHA için bağımsız APPROVED review.
+- [ ] Ready sonrası Merge Governance Enforcement SUCCESS.
+- [ ] P0 browser E2E Eksiği
+- [ ] Manual accessibility Eksiği
 
 ## Test çıktısı
 
-Final head `9de7454036ca5c5cf0882bcbf4983face6b70ada` üzerinde:
+Final head `09672bb3d4b01a628db511eccba3b0cf66cd923e` üzerinde:
 
 - Governance Recovery Contract `30221348351`: completed/success.
 - Backend CI `30221348342`: completed/success.
@@ -80,4 +82,4 @@ Regresyon görülürse PR merge commit'i `git revert <merge_commit_sha>` ile ger
 
 ## Karar
 
-<!-- GOVERNANCE SEMANTIC GATE: TECHNICAL PASS / CURRENT-HEAD INDEPENDENT APPROVAL HOLD / MERGE NOT AUTHORIZED UNTIL READY + AGGREGATE SUCCESS -->
+MERGE: HOLD (Eksik: P0 E2E, Accessibility, Current-head approval)
