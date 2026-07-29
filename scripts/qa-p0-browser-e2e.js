@@ -513,13 +513,11 @@ async function waitForRuntime(page) {
 async function typeIfExists(page, selector, value) {
   const el = await page.$(selector);
   assertCondition(Boolean(el), `selector not found: ${selector}`);
-  await page.$eval(selector, (input) => {
-    input.value = '';
+  await page.$eval(selector, (input, nextValue) => {
+    input.value = String(nextValue);
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  await el.click();
-  await el.type(String(value));
+  }, value);
 }
 
 async function clickSubmitFor(page, selector) {
@@ -734,6 +732,12 @@ async function runBrowserScenarios() {
     await loginThroughUi(page, safeStrings.opsEmail, 'Operations Manager login');
     await typeIfExists(page, '#branch-id', report.seed.branchId);
     await typeIfExists(page, '#operation-date', report.seed.occurrenceDate);
+    const contextValues = await page.evaluate(() => ({
+      branchId: document.querySelector('#branch-id')?.value || '',
+      operationDate: document.querySelector('#operation-date')?.value || '',
+    }));
+    assertCondition(contextValues.branchId === report.seed.branchId, `branch input was not set: ${contextValues.branchId}`);
+    assertCondition(contextValues.operationDate === report.seed.occurrenceDate, `date input was not set: ${contextValues.operationDate}`);
 
     const replay = await apiCall(page, opsToken, `/daily-operations/leaves/${report.seed.approvedLeaveId}/projection/replay`, { method: 'POST' });
     requireOk(replay, 'Projection replay failed');
