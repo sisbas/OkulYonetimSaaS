@@ -67,7 +67,12 @@ function sleep(ms) {
 }
 
 function record(name, status, details = {}) {
-  report.scenarioResults[name] = { status, ...details };
+  const entry = { ...details };
+  if (Object.prototype.hasOwnProperty.call(entry, 'status')) {
+    entry.httpStatus = entry.status;
+    delete entry.status;
+  }
+  report.scenarioResults[name] = { status, ...entry };
 }
 
 function pass(name, details = {}) {
@@ -508,7 +513,12 @@ async function waitForRuntime(page) {
 async function typeIfExists(page, selector, value) {
   const el = await page.$(selector);
   assertCondition(Boolean(el), `selector not found: ${selector}`);
-  await el.click({ clickCount: 3 });
+  await page.$eval(selector, (input) => {
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await el.click();
   await el.type(String(value));
 }
 
@@ -563,7 +573,17 @@ async function loginThroughUi(page, email, scenarioName) {
   await typeIfExists(page, '#email', email);
   await typeIfExists(page, '#password', safeStrings.password);
   await typeIfExists(page, '#tenant-id', report.seed.tenantId);
+  await page.$eval('#session-status', (el) => {
+    el.textContent = 'Oturum doğrulanıyor';
+    el.dataset.tone = 'neutral';
+  });
+  const loginResponse = page.waitForResponse(
+    (response) => response.url().includes('/api/v1/auth/login') && response.request().method() === 'POST',
+    { timeout: 10000 },
+  );
   await clickSubmitFor(page, '#login-form');
+  const response = await loginResponse;
+  assertCondition(response.ok(), `${scenarioName} auth response failed: ${response.status()}`);
   await waitForText(page, '#session-status', /Oturum aktif/i);
   await screenshot(page, scenarioName.replaceAll(' ', '-').toLowerCase());
   pass(scenarioName);
