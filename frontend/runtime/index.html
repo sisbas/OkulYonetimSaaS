@@ -36,12 +36,12 @@
 
         <form id="context-form" class="stack context-form">
           <label>Branch ID
-            <input id="branch-id" name="branchId" inputmode="latin" aria-describedby="branch-help" />
+            <input id="branch-id" name="branchId" inputmode="latin" aria-describedby="branch-help" required />
           </label>
           <label>Tarih
             <input id="operation-date" name="date" type="date" />
           </label>
-          <p id="branch-help" class="hint">Branch query parametresi server tarafından tenant scope ile doğrulanır.</p>
+          <p id="branch-help" class="hint">Branch query parametresi ve izin talebi branch alanı server tarafından tenant scope ile doğrulanır.</p>
           <button type="submit">Queue getir</button>
         </form>
       </aside>
@@ -63,11 +63,24 @@
             <button id="load-own-leave" type="button">Kendi talebimi getir</button>
           </div>
           <form id="leave-form" class="grid-form">
-            <label>Başlangıç tarihi <input id="leave-start" type="date" required /></label>
-            <label>Bitiş tarihi <input id="leave-end" type="date" required /></label>
-            <label>Başlangıç saati <input id="leave-start-time" type="time" /></label>
-            <label>Bitiş saati <input id="leave-end-time" type="time" /></label>
-            <label class="wide">Not <textarea id="leave-note" rows="3" maxlength="240"></textarea></label>
+            <label>İzin türü
+              <select id="leave-duration-type" required>
+                <option value="hourly">Saatlik</option>
+                <option value="full_day">Tam gün</option>
+                <option value="multi_day">Çok gün</option>
+              </select>
+            </label>
+            <label>Gerekçe kodu
+              <select id="leave-reason-code" required>
+                <option value="administrative">İdari</option>
+                <option value="health">Sağlık</option>
+                <option value="annual_leave">Yıllık izin</option>
+                <option value="other">Diğer</option>
+              </select>
+            </label>
+            <label>Başlangıç zamanı <input id="leave-starts-at" type="datetime-local" required /></label>
+            <label>Bitiş zamanı <input id="leave-ends-at" type="datetime-local" required /></label>
+            <p class="hint wide">Payload yalnız CreateLeaveRequestDto alanlarını gönderir: branchId, durationType, reasonCode, startsAt, endsAt.</p>
             <button type="submit">İzin talebi oluştur</button>
           </form>
           <div id="teacher-output" class="state-box" role="region" aria-label="Teacher izin sonucu"></div>
