@@ -6,6 +6,9 @@ describe('WP-07F runtime frontend boundary', () => {
   const runtimeDir = path.join(root, 'frontend', 'runtime');
   const app = fs.readFileSync(path.join(runtimeDir, 'app.js'), 'utf8');
   const html = fs.readFileSync(path.join(runtimeDir, 'index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(root, 'src', 'main.ts'), 'utf8');
+  const runtimeBuild = fs.readFileSync(path.join(root, 'scripts', 'build-runtime-assets.js'), 'utf8');
+  const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
   it('uses the real API boundary and required endpoint paths', () => {
     expect(app).toContain("const API_ROOT = '/api/v1'");
@@ -15,6 +18,21 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(app).toContain('/impact');
     expect(app).toContain('/candidates');
     expect(app).toContain('/substitution');
+  });
+
+  it('copies runtime assets into the production build output', () => {
+    expect(packageJson.scripts.build).toContain('npm run build:runtime');
+    expect(packageJson.scripts['build:runtime']).toBe('node scripts/build-runtime-assets.js');
+    expect(runtimeBuild).toContain("join(projectRoot, 'frontend', 'runtime')");
+    expect(runtimeBuild).toContain("join(projectRoot, 'dist', 'runtime')");
+    expect(runtimeBuild).toContain('cpSync(sourceDir, outputDir');
+  });
+
+  it('serves the runtime under /runtime without moving API_ROOT off same origin', () => {
+    expect(main).toContain('NestExpressApplication');
+    expect(main).toContain("app.useStaticAssets(join(process.cwd(), 'dist', 'runtime'), { prefix: '/runtime' })");
+    expect(main).toContain("app.setGlobalPrefix('api/v1')");
+    expect(app).toContain("const API_ROOT = '/api/v1'");
   });
 
   it('sends only the CreateLeaveRequestDto payload fields for Teacher leave creation', () => {
