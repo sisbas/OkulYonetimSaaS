@@ -9,12 +9,24 @@ describe('WP-07F runtime frontend boundary', () => {
 
   it('uses the real API boundary and required endpoint paths', () => {
     expect(app).toContain("const API_ROOT = '/api/v1'");
-    expect(app).toContain("/auth/login");
-    expect(app).toContain("/leaves/me");
-    expect(app).toContain("/daily-operations/today?");
-    expect(app).toContain("/impact");
-    expect(app).toContain("/candidates");
-    expect(app).toContain("/substitution");
+    expect(app).toContain('/auth/login');
+    expect(app).toContain('/leaves/me');
+    expect(app).toContain('/daily-operations/today?');
+    expect(app).toContain('/impact');
+    expect(app).toContain('/candidates');
+    expect(app).toContain('/substitution');
+  });
+
+  it('sends only the CreateLeaveRequestDto payload fields for Teacher leave creation', () => {
+    expect(app).toContain('branchId,');
+    expect(app).toContain("durationType: $('#leave-duration-type').value");
+    expect(app).toContain("reasonCode: $('#leave-reason-code').value");
+    expect(app).toContain("startsAt: toIso8601($('#leave-starts-at').value)");
+    expect(app).toContain("endsAt: toIso8601($('#leave-ends-at').value)");
+    for (const forbidden of ['startDate', 'endDate', 'startTime', 'endTime', 'leave-note', 'leave-start-time', 'leave-end-time']) {
+      expect(app).not.toContain(forbidden);
+      expect(html).not.toContain(forbidden);
+    }
   });
 
   it('does not import demo, Builder or Full Vision artefacts', () => {
