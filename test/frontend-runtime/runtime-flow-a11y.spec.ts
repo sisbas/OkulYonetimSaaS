@@ -16,6 +16,39 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(html).toContain('candidate-output');
   });
 
+  it('maps the Daily Operations queue through backend leaveRequestId', () => {
+    expect(app).toContain("pick(item, ['leaveRequestId'])");
+    expect(app).not.toContain('linkedLeaveId');
+  });
+
+  it('renders LeaveImpactResponse events and opens candidate flow from events', () => {
+    expect(app).toContain("asArray(body, ['events', 'affectedLessons', 'lessons', 'items'])");
+    expect(app).toContain('function eventIdentity(event)');
+    expect(app).toContain('data-action="candidates"');
+    expect(app).toContain('data-event-id="${escapeHtml(eventIdentity(event))}"');
+  });
+
+  it('derives assignment clear state from returned impact events', () => {
+    expect(app).toContain('function updateAssignmentStateFromEvents(events)');
+    expect(app).toContain("pick(activeEvent, ['substituteAssignmentId'], '')");
+    expect(app).not.toContain("pick(body, ['assignmentId']");
+  });
+
+  it('normalizes Nest error envelopes into canonical UI states', () => {
+    expect(app).toContain("if (response.status === 403 && genericError && !messageReason) reasonCode = 'FORBIDDEN'");
+    expect(app).toContain("if (response.status === 412) reasonCode = 'LEAVE_VERSION_MISMATCH'");
+    expect(app).toContain("if (response.status === 409 && !reasonUi[reasonCode]) reasonCode = 'SUBSTITUTE_TIME_CONFLICT'");
+    expect(app).toContain('forbidden_non_enumerating');
+    expect(app).toContain('stale_version');
+    expect(app).toContain('conflict_blocking');
+  });
+
+  it('treats unfinished candidate eligibility as a blocking state', () => {
+    expect(app).toContain('body?.eligibilityFinalized === false');
+    expect(app).toContain("renderBlockingState(target, 'TEACHER_COURSE_ELIGIBILITY_NOT_READY')");
+    expect(app).toContain('eligibility_not_ready');
+  });
+
   it('maps canonical stale, forbidden, conflict and empty states', () => {
     for (const code of [
       'FORBIDDEN',
