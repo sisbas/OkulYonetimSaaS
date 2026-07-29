@@ -11,7 +11,7 @@ const OUT_DIR = path.join(ROOT, 'artifacts', 'wp07f-p0-browser-e2e');
 const SCREEN_DIR = path.join(OUT_DIR, 'screenshots');
 const REPORT_PATH = path.join(OUT_DIR, 'report.json');
 const BASE_URL = process.env.APP_BASE_URL || 'http://127.0.0.1:3000';
-const HEAD_SHA = process.env.GITHUB_SHA || 'unknown';
+const HEAD_SHA = process.env.PULL_REQUEST_HEAD_SHA || process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA || 'unknown';
 const RUN_ID = process.env.GITHUB_RUN_ID || 'local';
 const DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const CHROMIUM_EXECUTABLE_PATH = process.env.CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium';
@@ -104,6 +104,210 @@ async function query(client, sql, params = []) {
   return client.query(sql, params);
 }
 
+async function one(client, sql, params = []) {
+  const result = await query(client, sql, params);
+  return result.rows[0] ?? null;
+}
+
+async function insertOrSelect(client, insertSql, insertParams, selectSql, selectParams) {
+  try {
+    const inserted = await query(client, insertSql, insertParams);
+    if (inserted.rows[0]) return inserted.rows[0];
+  } catch (error) {
+    if (error?.code !== '23505' && error?.code !== '23P01') throw error;
+  }
+  const selected = await one(client, selectSql, selectParams);
+  assertCondition(Boolean(selected), 'insert/select helper could not resolve row after conflict');
+  return selected;
+}
+
+async function upsertTenant(client, slug, name) {
+  const existing = await one(client, `SELECT id FROM tenants WHERE slug = $1 LIMIT 1`, [slug]);
+  if (existing) {
+    const updated = await query(client, `UPDATE tenants SET name = $2, status = 'active', updated_at = now() WHERE id = $1 RETURNING id`, [existing.id, name]);
+    return updated.rows[0];
+  }
+  return insertOrSelect(
+    client,
+    `INSERT INTO tenants (name, slug, status) VALUES ($1, $2, 'active') RETURNING id`,
+    [name, slug],
+    `SELECT id FROM tenants WHERE slug = $1 LIMIT 1`,
+    [slug],
+  );
+}
+
+async function upsertBranch(client, tenantId, code, name) {
+  const existing = await one(client, `SELECT id FROM branches WHERE tenant_id = $1 AND code = $2 LIMIT 1`, [tenantId, code]);
+  if (existing) {
+    const updated = await query(client, `UPDATE branches SET name = $2, status = 'active', updated_at = now() WHERE id = $1 RETURNING id`, [existing.id, name]);
+    return updated.rows[0];
+  }
+  return insertOrSelect(
+    client,
+    `INSERT INTO branches (tenant_id, name, code, status) VALUES ($1, $2, $3, 'active') RETURNING id`,
+    [tenantId, name, code],
+    `SELECT id FROM branches WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
+    [tenantId, code],
+  );
+}
+
+async function upsertUser(client, tenantId, email, fullName, passwordHash) {
+  const existing = await one(client, `SELECT id FROM users WHERE email = $1 LIMIT 1`, [email]);
+  const user = existing
+    ? (await query(client, `
+        UPDATE users
+        SET credential_hash = $2,
+            full_name = $3,
+            status = 'active',
+            token_version = token_version + 1,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id
+      `, [existing.id, passwordHash, fullName])).rows[0]
+    : await insertOrSelect(
+        client,
+        `INSERT INTO users (email, credential_hash, full_name, status, token_version) VALUES ($1, $2, $3, 'active', 1) RETURNING id`,
+        [email, passwordHash, fullName],
+        `SELECT id FROM users WHERE email = $1 LIMIT 1`,
+        [email],
+      );
+
+  const membership = await one(client, `SELECT tenant_id FROM tenant_memberships WHERE tenant_id = $1 AND user_id = $2 LIMIT 1`, [tenantId, user.id]);
+  if (membership) {
+    await query(client, `UPDATE tenant_memberships SET status = 'active', deleted_at = NULL, updated_at = now() WHERE tenant_id = $1 AND user_id = $2`, [tenantId, user.id]);
+  } else {
+    await insertOrSelect(
+      client,
+      `INSERT INTO tenant_memberships (tenant_id, user_id, status) VALUES ($1, $2, 'active') RETURNING tenant_id`,
+      [tenantId, user.id],
+      `SELECT tenant_id FROM tenant_memberships WHERE tenant_id = $1 AND user_id = $2 LIMIT 1`,
+      [tenantId, user.id],
+    );
+  }
+  return user.id;
+}
+
+async function attachRole(client, tenantId, userId, roleName) {
+  const role = await one(client, `SELECT id FROM roles WHERE tenant_id = $1 AND name = $2 LIMIT 1`, [tenantId, roleName]);
+  assertCondition(Boolean(role), `role not found: ${roleName}`);
+  const existing = await one(client, `SELECT 1 FROM user_roles WHERE tenant_id = $1 AND user_id = $2 AND role_id = $3 LIMIT 1`, [tenantId, userId, role.id]);
+  if (!existing) {
+    await insertOrSelect(
+      client,
+      `INSERT INTO user_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3) RETURNING tenant_id`,
+      [tenantId, userId, role.id],
+      `SELECT tenant_id FROM user_roles WHERE tenant_id = $1 AND user_id = $2 AND role_id = $3 LIMIT 1`,
+      [tenantId, userId, role.id],
+    );
+  }
+}
+
+async function ensureTeacherBranch(client, tenantId, teacherId, branchId) {
+  const existing = await one(client, `SELECT id FROM teacher_branches WHERE tenant_id = $1 AND teacher_id = $2 AND branch_id = $3 AND status = 'active' LIMIT 1`, [tenantId, teacherId, branchId]);
+  if (existing) return existing.id;
+  const inserted = await insertOrSelect(
+    client,
+    `INSERT INTO teacher_branches (tenant_id, teacher_id, branch_id, status, effective_from, effective_to) VALUES ($1, $2, $3, 'active', CURRENT_DATE - INTERVAL '1 day', NULL) RETURNING id`,
+    [tenantId, teacherId, branchId],
+    `SELECT id FROM teacher_branches WHERE tenant_id = $1 AND teacher_id = $2 AND branch_id = $3 AND status = 'active' LIMIT 1`,
+    [tenantId, teacherId, branchId],
+  );
+  return inserted.id;
+}
+
+async function upsertTeacherForUser(client, tenantId, userId, code, firstName, lastName, branchId) {
+  const existing = await one(client, `SELECT id FROM teachers WHERE tenant_id = $1 AND user_id = $2 AND status = 'active' AND deleted_at IS NULL LIMIT 1`, [tenantId, userId]);
+  const teacher = existing
+    ? (await query(client, `UPDATE teachers SET employee_code = $2, first_name = $3, last_name = $4, status = 'active', updated_at = now() WHERE id = $1 RETURNING id`, [existing.id, code, firstName, lastName])).rows[0]
+    : await insertOrSelect(
+        client,
+        `INSERT INTO teachers (tenant_id, user_id, employee_code, first_name, last_name, status) VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id`,
+        [tenantId, userId, code, firstName, lastName],
+        `SELECT id FROM teachers WHERE tenant_id = $1 AND user_id = $2 AND status = 'active' AND deleted_at IS NULL LIMIT 1`,
+        [tenantId, userId],
+      );
+  const teacherBranchId = await ensureTeacherBranch(client, tenantId, teacher.id, branchId);
+  return { teacherId: teacher.id, teacherBranchId };
+}
+
+async function upsertSubstituteTeacher(client, tenantId, code, firstName, lastName, branchId) {
+  const existing = await one(client, `SELECT id FROM teachers WHERE tenant_id = $1 AND lower(employee_code) = lower($2) AND status = 'active' AND deleted_at IS NULL LIMIT 1`, [tenantId, code]);
+  const teacher = existing
+    ? (await query(client, `UPDATE teachers SET first_name = $2, last_name = $3, status = 'active', updated_at = now() WHERE id = $1 RETURNING id`, [existing.id, firstName, lastName])).rows[0]
+    : await insertOrSelect(
+        client,
+        `INSERT INTO teachers (tenant_id, employee_code, first_name, last_name, status) VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
+        [tenantId, code, firstName, lastName],
+        `SELECT id FROM teachers WHERE tenant_id = $1 AND lower(employee_code) = lower($2) AND status = 'active' AND deleted_at IS NULL LIMIT 1`,
+        [tenantId, code],
+      );
+  const teacherBranchId = await ensureTeacherBranch(client, tenantId, teacher.id, branchId);
+  return { teacherId: teacher.id, teacherBranchId };
+}
+
+async function upsertCourse(client, tenantId) {
+  const code = 'P0-COURSE';
+  const existing = await one(client, `SELECT id FROM courses WHERE tenant_id = $1 AND lower(code) = lower($2) LIMIT 1`, [tenantId, code]);
+  if (existing) {
+    const updated = await query(client, `UPDATE courses SET name = 'P0 Course', status = 'active', updated_at = now() WHERE id = $1 RETURNING id`, [existing.id]);
+    return updated.rows[0];
+  }
+  return insertOrSelect(
+    client,
+    `INSERT INTO courses (tenant_id, name, code, status) VALUES ($1, 'P0 Course', $2, 'active') RETURNING id`,
+    [tenantId, code],
+    `SELECT id FROM courses WHERE tenant_id = $1 AND lower(code) = lower($2) LIMIT 1`,
+    [tenantId, code],
+  );
+}
+
+async function upsertRoom(client, tenantId, branchId) {
+  const code = 'P0-ROOM';
+  const existing = await one(client, `SELECT id FROM rooms WHERE tenant_id = $1 AND branch_id = $2 AND lower(code) = lower($3) LIMIT 1`, [tenantId, branchId, code]);
+  if (existing) {
+    const updated = await query(client, `UPDATE rooms SET name = 'P0 Room', capacity = 24, status = 'active', updated_at = now() WHERE id = $1 RETURNING id`, [existing.id]);
+    return updated.rows[0];
+  }
+  return insertOrSelect(
+    client,
+    `INSERT INTO rooms (tenant_id, branch_id, name, code, capacity, status) VALUES ($1, $2, 'P0 Room', $3, 24, 'active') RETURNING id`,
+    [tenantId, branchId, code],
+    `SELECT id FROM rooms WHERE tenant_id = $1 AND branch_id = $2 AND lower(code) = lower($3) LIMIT 1`,
+    [tenantId, branchId, code],
+  );
+}
+
+async function upsertStudentGroup(client, tenantId, branchId) {
+  const code = 'P0-GROUP';
+  const existing = await one(client, `SELECT id FROM student_groups WHERE tenant_id = $1 AND branch_id = $2 AND lower(code) = lower($3) AND deleted_at IS NULL LIMIT 1`, [tenantId, branchId, code]);
+  if (existing) {
+    const updated = await query(client, `UPDATE student_groups SET name = 'P0 Group', status = 'active', updated_at = now() WHERE id = $1 RETURNING id`, [existing.id]);
+    return updated.rows[0];
+  }
+  return insertOrSelect(
+    client,
+    `INSERT INTO student_groups (tenant_id, branch_id, name, code, status) VALUES ($1, $2, 'P0 Group', $3, 'active') RETURNING id`,
+    [tenantId, branchId, code],
+    `SELECT id FROM student_groups WHERE tenant_id = $1 AND branch_id = $2 AND lower(code) = lower($3) AND deleted_at IS NULL LIMIT 1`,
+    [tenantId, branchId, code],
+  );
+}
+
+async function upsertTimeSlot(client, tenantId, branchId, dayOfWeek) {
+  const existing = await one(client, `SELECT id FROM time_slots WHERE tenant_id = $1 AND branch_id = $2 AND day_of_week = $3 AND start_time = '10:00'::time AND end_time = '11:00'::time AND status = 'active' LIMIT 1`, [tenantId, branchId, dayOfWeek]);
+  if (existing) {
+    const updated = await query(client, `UPDATE time_slots SET name = 'P0 Slot', order_index = 1, updated_at = now() WHERE id = $1 RETURNING id`, [existing.id]);
+    return updated.rows[0];
+  }
+  return insertOrSelect(
+    client,
+    `INSERT INTO time_slots (tenant_id, branch_id, name, day_of_week, start_time, end_time, order_index, status) VALUES ($1, $2, 'P0 Slot', $3, '10:00', '11:00', 1, 'active') RETURNING id`,
+    [tenantId, branchId, dayOfWeek],
+    `SELECT id FROM time_slots WHERE tenant_id = $1 AND branch_id = $2 AND day_of_week = $3 AND start_time = '10:00'::time AND end_time = '11:00'::time AND status = 'active' LIMIT 1`,
+    [tenantId, branchId, dayOfWeek],
+  );
+}
+
 async function seedSyntheticData() {
   const client = new Client({ connectionString: DATABASE_URL });
   await client.connect();
@@ -111,188 +315,71 @@ async function seedSyntheticData() {
     const tenantRows = await query(client, `SELECT id FROM tenants WHERE slug = $1 LIMIT 1`, [safeStrings.tenantSlug]);
     assertCondition(tenantRows.rowCount === 1, 'system-seed tenant not found; db:seed:permissions must run first');
     const tenantId = tenantRows.rows[0].id;
-
-    const foreignTenant = await query(client, `
-      INSERT INTO tenants (name, slug, status)
-      VALUES ('P0 Foreign Tenant', $1, 'active')
-      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, status = 'active', updated_at = now()
-      RETURNING id
-    `, [safeStrings.foreignTenantSlug]);
-    const foreignTenantId = foreignTenant.rows[0].id;
-
-    const branch = await query(client, `
-      INSERT INTO branches (tenant_id, name, code, status)
-      VALUES ($1, 'P0 Synthetic Branch', $2, 'active')
-      ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name, status = 'active', updated_at = now()
-      RETURNING id
-    `, [tenantId, safeStrings.branchCode]);
-    const otherBranch = await query(client, `
-      INSERT INTO branches (tenant_id, name, code, status)
-      VALUES ($1, 'P0 Empty Branch', $2, 'active')
-      ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name, status = 'active', updated_at = now()
-      RETURNING id
-    `, [tenantId, safeStrings.otherBranchCode]);
-    const foreignBranch = await query(client, `
-      INSERT INTO branches (tenant_id, name, code, status)
-      VALUES ($1, 'P0 Foreign Branch', $2, 'active')
-      ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name, status = 'active', updated_at = now()
-      RETURNING id
-    `, [foreignTenantId, safeStrings.foreignBranchCode]);
+    const foreignTenant = await upsertTenant(client, safeStrings.foreignTenantSlug, 'P0 Foreign Tenant');
+    const branch = await upsertBranch(client, tenantId, safeStrings.branchCode, 'P0 Synthetic Branch');
+    const otherBranch = await upsertBranch(client, tenantId, safeStrings.otherBranchCode, 'P0 Empty Branch');
+    const foreignBranch = await upsertBranch(client, foreignTenant.id, safeStrings.foreignBranchCode, 'P0 Foreign Branch');
 
     const passwordHash = await bcrypt.hash(safeStrings.password, 10);
-    async function upsertUser(email, fullName) {
-      const rows = await query(client, `
-        INSERT INTO users (email, credential_hash, full_name, status, token_version)
-        VALUES ($1, $2, $3, 'active', 1)
-        ON CONFLICT (email) DO UPDATE
-        SET credential_hash = EXCLUDED.credential_hash,
-            full_name = EXCLUDED.full_name,
-            status = 'active',
-            token_version = users.token_version + 1,
-            updated_at = now()
-        RETURNING id
-      `, [email, passwordHash, fullName]);
-      await query(client, `
-        INSERT INTO tenant_memberships (tenant_id, user_id, status)
-        VALUES ($1, $2, 'active')
-        ON CONFLICT (tenant_id, user_id) DO UPDATE SET status = 'active', deleted_at = NULL, updated_at = now()
-      `, [tenantId, rows.rows[0].id]);
-      return rows.rows[0].id;
-    }
+    const teacherUserId = await upsertUser(client, tenantId, safeStrings.teacherEmail, 'P0 Synthetic Teacher', passwordHash);
+    const otherTeacherUserId = await upsertUser(client, tenantId, safeStrings.otherTeacherEmail, 'P0 Synthetic Other Teacher', passwordHash);
+    const opsUserId = await upsertUser(client, tenantId, safeStrings.opsEmail, 'P0 Synthetic Operations', passwordHash);
 
-    const teacherUserId = await upsertUser(safeStrings.teacherEmail, 'P0 Synthetic Teacher');
-    const otherTeacherUserId = await upsertUser(safeStrings.otherTeacherEmail, 'P0 Synthetic Other Teacher');
-    const opsUserId = await upsertUser(safeStrings.opsEmail, 'P0 Synthetic Operations');
+    await attachRole(client, tenantId, teacherUserId, 'teacher');
+    await attachRole(client, tenantId, otherTeacherUserId, 'teacher');
+    await attachRole(client, tenantId, opsUserId, 'operations_manager');
 
-    async function attachRole(userId, roleName) {
-      const role = await query(client, `SELECT id FROM roles WHERE tenant_id = $1 AND name = $2 LIMIT 1`, [tenantId, roleName]);
-      assertCondition(role.rowCount === 1, `role not found: ${roleName}`);
-      await query(client, `
-        INSERT INTO user_roles (tenant_id, user_id, role_id)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (tenant_id, user_id, role_id) DO NOTHING
-      `, [tenantId, userId, role.rows[0].id]);
-    }
-    await attachRole(teacherUserId, 'teacher');
-    await attachRole(otherTeacherUserId, 'teacher');
-    await attachRole(opsUserId, 'operations_manager');
-
-    async function upsertTeacherForUser(userId, code, firstName, lastName, branchId) {
-      const rows = await query(client, `
-        INSERT INTO teachers (tenant_id, user_id, employee_code, first_name, last_name, status)
-        VALUES ($1, $2, $3, $4, $5, 'active')
-        ON CONFLICT (tenant_id, user_id) WHERE user_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL
-        DO UPDATE SET employee_code = EXCLUDED.employee_code, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, updated_at = now()
-        RETURNING id
-      `, [tenantId, userId, code, firstName, lastName]);
-      const branchRows = await query(client, `
-        INSERT INTO teacher_branches (tenant_id, teacher_id, branch_id, status, effective_from, effective_to)
-        VALUES ($1, $2, $3, 'active', CURRENT_DATE - INTERVAL '1 day', NULL)
-        ON CONFLICT DO NOTHING
-        RETURNING id
-      `, [tenantId, rows.rows[0].id, branchId]);
-      const existingBranch = branchRows.rows[0]?.id
-        ? branchRows
-        : await query(client, `SELECT id FROM teacher_branches WHERE tenant_id = $1 AND teacher_id = $2 AND branch_id = $3 AND status = 'active' LIMIT 1`, [tenantId, rows.rows[0].id, branchId]);
-      return { teacherId: rows.rows[0].id, teacherBranchId: existingBranch.rows[0].id };
-    }
-
-    async function upsertSubstituteTeacher(code, firstName, lastName, branchId) {
-      const rows = await query(client, `
-        INSERT INTO teachers (tenant_id, employee_code, first_name, last_name, status)
-        VALUES ($1, $2, $3, $4, 'active')
-        ON CONFLICT (tenant_id, lower(employee_code)) WHERE employee_code IS NOT NULL AND status = 'active' AND deleted_at IS NULL
-        DO UPDATE SET first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, updated_at = now()
-        RETURNING id
-      `, [tenantId, code, firstName, lastName]);
-      const branchRows = await query(client, `
-        INSERT INTO teacher_branches (tenant_id, teacher_id, branch_id, status, effective_from, effective_to)
-        VALUES ($1, $2, $3, 'active', CURRENT_DATE - INTERVAL '1 day', NULL)
-        ON CONFLICT DO NOTHING
-        RETURNING id
-      `, [tenantId, rows.rows[0].id, branchId]);
-      const existingBranch = branchRows.rows[0]?.id
-        ? branchRows
-        : await query(client, `SELECT id FROM teacher_branches WHERE tenant_id = $1 AND teacher_id = $2 AND branch_id = $3 AND status = 'active' LIMIT 1`, [tenantId, rows.rows[0].id, branchId]);
-      return { teacherId: rows.rows[0].id, teacherBranchId: existingBranch.rows[0].id };
-    }
-
-    const teacher = await upsertTeacherForUser(teacherUserId, 'P0-T-1', 'P0', 'Teacher', branch.rows[0].id);
-    const otherTeacher = await upsertTeacherForUser(otherTeacherUserId, 'P0-T-2', 'P0', 'Other', branch.rows[0].id);
-    const substitute = await upsertSubstituteTeacher('P0-SUB-1', 'P0', 'Substitute', branch.rows[0].id);
-
-    const course = await query(client, `
-      INSERT INTO courses (tenant_id, name, code, status)
-      VALUES ($1, 'P0 Course', 'P0-COURSE', 'active')
-      ON CONFLICT (tenant_id, lower(code)) WHERE code IS NOT NULL
-      DO UPDATE SET name = EXCLUDED.name, status = 'active', updated_at = now()
-      RETURNING id
-    `, [tenantId]);
-    const room = await query(client, `
-      INSERT INTO rooms (tenant_id, branch_id, name, code, capacity, status)
-      VALUES ($1, $2, 'P0 Room', 'P0-ROOM', 24, 'active')
-      ON CONFLICT (tenant_id, branch_id, lower(code)) WHERE code IS NOT NULL
-      DO UPDATE SET name = EXCLUDED.name, capacity = EXCLUDED.capacity, status = 'active', updated_at = now()
-      RETURNING id
-    `, [tenantId, branch.rows[0].id]);
-    const group = await query(client, `
-      INSERT INTO student_groups (tenant_id, branch_id, name, code, status)
-      VALUES ($1, $2, 'P0 Group', 'P0-GROUP', 'active')
-      ON CONFLICT (tenant_id, branch_id, lower(code)) WHERE code IS NOT NULL AND deleted_at IS NULL
-      DO UPDATE SET name = EXCLUDED.name, status = 'active', updated_at = now()
-      RETURNING id
-    `, [tenantId, branch.rows[0].id]);
+    const teacher = await upsertTeacherForUser(client, tenantId, teacherUserId, 'P0-T-1', 'P0', 'Teacher', branch.id);
+    const otherTeacher = await upsertTeacherForUser(client, tenantId, otherTeacherUserId, 'P0-T-2', 'P0', 'Other', branch.id);
+    const substitute = await upsertSubstituteTeacher(client, tenantId, 'P0-SUB-1', 'P0', 'Substitute', branch.id);
+    const course = await upsertCourse(client, tenantId);
+    const room = await upsertRoom(client, tenantId, branch.id);
+    const group = await upsertStudentGroup(client, tenantId, branch.id);
 
     const target = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     const occurrenceDate = yyyyMmDd(target);
     const dayOfWeek = isoDayOfWeek(target);
-    const timeSlot = await query(client, `
-      INSERT INTO time_slots (tenant_id, branch_id, name, day_of_week, start_time, end_time, order_index, status)
-      VALUES ($1, $2, 'P0 Slot', $3, '10:00', '11:00', 1, 'active')
-      ON CONFLICT (tenant_id, branch_id, day_of_week, start_time, end_time) WHERE status = 'active'
-      DO UPDATE SET name = EXCLUDED.name, order_index = EXCLUDED.order_index, updated_at = now()
-      RETURNING id
-    `, [tenantId, branch.rows[0].id, dayOfWeek]);
+    const timeSlot = await upsertTimeSlot(client, tenantId, branch.id, dayOfWeek);
 
     const schedule = await query(client, `
       INSERT INTO schedules (tenant_id, branch_id, status, revision, effective_from, effective_to)
       VALUES ($1, $2, 'published', 1, $3::date - INTERVAL '1 day', $3::date + INTERVAL '7 days')
       RETURNING id
-    `, [tenantId, branch.rows[0].id, occurrenceDate]);
+    `, [tenantId, branch.id, occurrenceDate]);
     const version = await query(client, `
       INSERT INTO schedule_versions (tenant_id, branch_id, schedule_id, version_no, status, validation_mode, validation_fingerprint, validated_revision, snapshot, published_at)
       VALUES ($1, $2, $3, 1, 'published', 'FULL', 'p0-browser-e2e', 1, '{}'::jsonb, now())
       RETURNING id
-    `, [tenantId, branch.rows[0].id, schedule.rows[0].id]);
+    `, [tenantId, branch.id, schedule.rows[0].id]);
     await query(client, `UPDATE schedules SET active_version_id = $1, updated_at = now() WHERE id = $2`, [version.rows[0].id, schedule.rows[0].id]);
     const event = await query(client, `
       INSERT INTO schedule_events (tenant_id, branch_id, schedule_id, version_id, teacher_id, teacher_branch_id, student_group_id, course_id, room_id, time_slot_id, day_of_week, start_time, end_time, time_slot_snapshot)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '10:00', '11:00', '{"label":"P0 Slot"}'::jsonb)
       RETURNING id
-    `, [tenantId, branch.rows[0].id, schedule.rows[0].id, version.rows[0].id, teacher.teacherId, teacher.teacherBranchId, group.rows[0].id, course.rows[0].id, room.rows[0].id, timeSlot.rows[0].id, dayOfWeek]);
+    `, [tenantId, branch.id, schedule.rows[0].id, version.rows[0].id, teacher.teacherId, teacher.teacherBranchId, group.id, course.id, room.id, timeSlot.id, dayOfWeek]);
 
     await query(client, `
       INSERT INTO teacher_courses (tenant_id, teacher_id, course_id, status, effective_from, effective_to)
       VALUES ($1, $2, $3, 'active', $4::date - INTERVAL '1 day', NULL)
       ON CONFLICT DO NOTHING
-    `, [tenantId, substitute.teacherId, course.rows[0].id, occurrenceDate]);
+    `, [tenantId, substitute.teacherId, course.id, occurrenceDate]);
 
     const approvedLeave = await query(client, `
       INSERT INTO leave_requests (tenant_id, branch_id, teacher_id, requester_user_id, duration_type, reason_code, decision_status, coverage_status, starts_at, ends_at, version)
       VALUES ($1, $2, $3, $4, 'hourly', 'administrative', 'approved', 'unresolved', $5, $6, 1)
       RETURNING id
-    `, [tenantId, branch.rows[0].id, teacher.teacherId, teacherUserId, dateAtUtc(target, 7), dateAtUtc(target, 8)]);
+    `, [tenantId, branch.id, teacher.teacherId, teacherUserId, dateAtUtc(target, 7), dateAtUtc(target, 8)]);
     const otherLeave = await query(client, `
       INSERT INTO leave_requests (tenant_id, branch_id, teacher_id, requester_user_id, duration_type, reason_code, decision_status, coverage_status, starts_at, ends_at, version)
       VALUES ($1, $2, $3, $4, 'hourly', 'administrative', 'pending', 'not_required', $5, $6, 1)
       RETURNING id
-    `, [tenantId, branch.rows[0].id, otherTeacher.teacherId, otherTeacherUserId, dateAtUtc(target, 9), dateAtUtc(target, 10)]);
+    `, [tenantId, branch.id, otherTeacher.teacherId, otherTeacherUserId, dateAtUtc(target, 9), dateAtUtc(target, 10)]);
 
     report.seed = {
       tenantId,
-      branchId: branch.rows[0].id,
-      otherBranchId: otherBranch.rows[0].id,
-      foreignBranchId: foreignBranch.rows[0].id,
+      branchId: branch.id,
+      otherBranchId: otherBranch.id,
+      foreignBranchId: foreignBranch.id,
       occurrenceDate,
       teacherId: teacher.teacherId,
       otherTeacherId: otherTeacher.teacherId,
