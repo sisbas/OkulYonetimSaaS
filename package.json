@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run build:runtime",
+    "build:runtime": "node scripts/build-runtime-assets.js",
     "lint": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js",
     "start:dev": "ts-node src/main.ts",
