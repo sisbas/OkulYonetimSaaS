@@ -410,11 +410,10 @@ export class DailyOperationsRepository {
       `SELECT 1 FROM teacher_courses
        WHERE tenant_id = $1 AND teacher_id = $2 AND course_id = $3
          AND status = 'active'
-         AND (branch_id IS NULL OR branch_id = $4)
-         AND effective_from <= $5::date
-         AND (effective_to IS NULL OR effective_to >= $5::date)
+         AND effective_from <= $4::date
+         AND (effective_to IS NULL OR effective_to >= $4::date)
        LIMIT 1`,
-      [leave.tenantId, teacherId, event.courseId, leave.branchId, event.occurrenceDate],
+      [leave.tenantId, teacherId, event.courseId, event.occurrenceDate],
     );
     if (eligible.length !== 1) throw new Error('TEACHER_COURSE_MISMATCH');
     const leaveOverlap = await manager.query(
