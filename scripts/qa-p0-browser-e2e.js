@@ -730,6 +730,8 @@ async function runBrowserScenarios() {
     pass('Teacher other-record/cross-scope non-enumerating deny', { status: otherRecord.status });
 
     await loginThroughUi(page, safeStrings.opsEmail, 'Operations Manager login');
+    await page.click('.tab[data-tab="ops"]');
+    await page.waitForSelector('#ops-panel:not(.hidden)', { timeout: 5000 });
     await typeIfExists(page, '#branch-id', report.seed.branchId);
     await typeIfExists(page, '#operation-date', report.seed.occurrenceDate);
     const contextValues = await page.evaluate(() => ({
