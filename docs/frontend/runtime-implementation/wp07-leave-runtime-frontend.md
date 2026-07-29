@@ -17,22 +17,33 @@ Authority rules:
 - assignment mutation uses the exact server-returned `leaveEtag`;
 - coverage, open lesson and candidate eligibility are never computed in the browser.
 
+## Production build and serve path
+
+Production build now includes the runtime static assets without adding a separate frontend hosting surface:
+
+- `npm run build` runs `tsc -p tsconfig.json && npm run build:runtime`.
+- `npm run build:runtime` runs `node scripts/build-runtime-assets.js`.
+- `scripts/build-runtime-assets.js` copies `frontend/runtime/` into `dist/runtime/`.
+- Nest serves `dist/runtime/` under `/runtime` through `app.useStaticAssets(..., { prefix: '/runtime' })`.
+- `API_ROOT` remains same-origin `/api/v1`; no CORS-based split hosting is introduced.
+
 ## Implemented P0 flows
 
 ### Teacher
 
 - Login with email/password and optional tenant ID.
-- Create own leave through `POST /api/v1/leaves/me`.
+- Create own leave through `POST /api/v1/leaves/me` using only `CreateLeaveRequestDto` fields: `branchId`, `durationType`, `reasonCode`, `startsAt`, `endsAt`.
 - Read own active leave through `GET /api/v1/leaves/me/:id` after server returns a leave ID.
 - Render loading, validation/error, forbidden and stale-compatible states through canonical reason-code mapping.
 
 ### Operations Manager
 
-- Read Daily Operations queue through `GET /api/v1/daily-operations/today?branchId=<uuid>&date=YYYY-MM-DD`.
-- Open server-authored leave impact through `GET /api/v1/daily-operations/leaves/:leaveId/impact`.
+- Read Daily Operations queue through `GET /api/v1/daily-operations/today?branchId=<uuid>&date=YYYY-MM-DD` and use backend `leaveRequestId` for impact navigation.
+- Open server-authored leave impact through `GET /api/v1/daily-operations/leaves/:leaveId/impact` and consume `LeaveImpactResponse.events`.
 - Read candidates through `GET /api/v1/daily-operations/leaves/:leaveId/events/:scheduleEventId/candidates`.
 - Create assignment through `POST /api/v1/daily-operations/leaves/:leaveId/events/:scheduleEventId/substitution` with exact `If-Match`.
 - Clear assignment through `DELETE /api/v1/daily-operations/leaves/:leaveId/events/:scheduleEventId/substitution` with exact `If-Match`.
+- Derive assignment state from `events[].substituteAssignmentId`.
 - Refetch impact and queue after create/clear so coverage/open lesson state remains server-confirmed.
 
 ## Reason-code handling
@@ -43,10 +54,12 @@ The runtime maps canonical backend reason codes to explicit UI states:
 - `LEAVE_VERSION_REQUIRED` -> mutation blocked until fresh version exists.
 - `LEAVE_VERSION_MISMATCH` -> stale version state with explicit refresh requirement.
 - `IMPACT_ANALYSIS_NOT_READY` -> downstream decision and assignment blocked.
-- `TEACHER_COURSE_ELIGIBILITY_NOT_READY` -> assignment create disabled.
+- `TEACHER_COURSE_ELIGIBILITY_NOT_READY` -> assignment create disabled; `eligibilityFinalized: false` is blocking, not empty.
 - `SUBSTITUTE_LEAVE_OVERLAP`, `SUBSTITUTE_TIME_CONFLICT` -> conflict blocking state.
 - `ASSIGNMENT_ALREADY_EXISTS` -> duplicate create disabled.
 - `ASSIGNMENT_NOT_FOUND` -> same-scope empty/not-found state and impact refetch.
+
+Nest error envelopes are normalized so generic 403/409/412 responses still resolve to canonical frontend states.
 
 ## Accessibility and responsive checks
 
@@ -73,10 +86,14 @@ Jest tests added:
 The tests assert:
 
 - real API paths are present;
+- runtime assets are copied into `dist/runtime` during production build;
+- Nest serves the runtime under `/runtime`;
+- `API_ROOT` remains same-origin `/api/v1`;
 - no demo/Builder/Full Vision imports exist;
 - no persistent browser storage authority exists;
 - no fake API/local success adapter exists;
 - assignment create/clear uses server-returned ETag;
+- DTO, queue, impact events, assignment state and eligibility-finalization contracts are represented;
 - canonical reason-code mapping exists;
 - keyboard/focus/responsive and loading/empty/error states are present.
 
