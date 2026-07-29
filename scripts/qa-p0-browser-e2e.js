@@ -54,6 +54,9 @@ const report = {
   accessibilityResults: {},
   securityDiagnostics: {},
   kvkkDiagnostics: {},
+  consoleDiagnostics: {
+    ignoredExpectedHttpErrors: 0,
+  },
   browserLaunch: {},
   blockingErrors: [],
 };
@@ -603,6 +606,11 @@ function scanTextForLeaks(text) {
   if (/[A-Z0-9._%+-]+@(gmail|hotmail|outlook|yahoo|atasehir|bel)\./i.test(value)) report.piiArtifactLeakCount += 1;
 }
 
+function isExpectedNegativeHttpConsole(text) {
+  return /Failed to load resource/i.test(text)
+    && /status of (403|404|409|412)/i.test(text);
+}
+
 async function collectStorageDiagnostics(page) {
   const storage = await page.evaluate(() => ({
     local: Object.keys(localStorage),
@@ -671,7 +679,12 @@ async function runBrowserScenarios() {
   try {
     const page = await browser.newPage();
     page.on('console', (msg) => {
-      if (msg.type() === 'error') report.consoleErrorCount += 1;
+      if (msg.type() !== 'error') return;
+      if (isExpectedNegativeHttpConsole(msg.text())) {
+        report.consoleDiagnostics.ignoredExpectedHttpErrors += 1;
+        return;
+      }
+      report.consoleErrorCount += 1;
     });
     page.on('pageerror', () => {
       report.consoleErrorCount += 1;
