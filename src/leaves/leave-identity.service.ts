@@ -1,20 +1,51 @@
 import { Injectable } from '@nestjs/common';
 import { RequestContext } from '../common/context/request-context';
-import { LeaveIdentityFoundationRequiredException } from './leave-errors';
+import { TeacherIdentityService } from '../teachers/teacher-identity.service';
 
 export type LeaveActorIdentity = {
   actorUserId: string;
   teacherId: string;
 };
 
-/**
- * Runtime identity is intentionally fail-closed until #141 provides the
- * tenant-safe User -> Teacher link. This prevents client-controlled teacherId
- * from becoming the trust source for own-scope leave creation or reads.
- */
+type ResolveLeaveTeacherIdentityInput = Readonly<{
+  branchId?: string;
+  businessDate?: string;
+}>;
+
+function isoDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function contextWithBusinessDate(
+  ctx: RequestContext,
+  input: ResolveLeaveTeacherIdentityInput,
+): RequestContext {
+  if (ctx.businessDate || !ctx.tenantId) return ctx;
+
+  return {
+    ...ctx,
+    businessDate: {
+      tenantId: ctx.tenantId,
+      date: input.businessDate ?? isoDate(new Date()),
+      source: 'tenant_local',
+    },
+  };
+}
+
 @Injectable()
 export class LeaveIdentityService {
-  async resolveTeacherIdentity(_ctx: RequestContext): Promise<LeaveActorIdentity> {
-    throw new LeaveIdentityFoundationRequiredException();
+  constructor(private readonly teacherIdentity: TeacherIdentityService) {}
+
+  async resolveTeacherIdentity(
+    ctx: RequestContext,
+    input: ResolveLeaveTeacherIdentityInput = {},
+  ): Promise<LeaveActorIdentity> {
+    const resolved = await this.teacherIdentity.resolveForRequest(contextWithBusinessDate(ctx, input), {
+      branchId: input.branchId,
+    });
+    return {
+      actorUserId: resolved.userId,
+      teacherId: resolved.teacherId,
+    };
   }
 }
