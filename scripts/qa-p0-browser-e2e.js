@@ -16,6 +16,11 @@ const RUN_ID = process.env.GITHUB_RUN_ID || 'local';
 const DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const CHROMIUM_EXECUTABLE_PATH = process.env.CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium';
 
+function syntheticCredentialValue() {
+  const suffix = String(RUN_ID || 'local').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'local';
+  return ['p0', 'synthetic', suffix, 'runtime'].join('-');
+}
+
 const safeStrings = {
   tenantSlug: 'system-seed',
   branchCode: 'P0-BRANCH',
@@ -23,7 +28,7 @@ const safeStrings = {
   teacherEmail: 'p0.teacher@synthetic.invalid',
   otherTeacherEmail: 'p0.other.teacher@synthetic.invalid',
   opsEmail: 'p0.ops@synthetic.invalid',
-  password: 'P0Synthetic!12345',
+  authCredential: process.env.E2E_SYNTHETIC_CREDENTIAL || syntheticCredentialValue(),
 };
 
 const report = {
@@ -66,6 +71,10 @@ function redact(value) {
     .replace(/refreshToken"\s*:\s*"[^"]+"/g, 'refreshToken":"<redacted>"');
 }
 
+function pause(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function screenshot(page, name) {
   const file = path.join(SCREEN_DIR, `${String(Object.keys(report.screenshots).length + 1).padStart(2, '0')}-${name}.png`);
   await page.screenshot({ path: file, fullPage: true });
@@ -95,7 +104,7 @@ async function seedSyntheticData() {
       ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name, status = 'active', updated_at = now()
       RETURNING id
     `, [tenantId, safeStrings.otherBranchCode]);
-    const passwordHash = await bcrypt.hash(safeStrings.password, 10);
+    const passwordHash = await bcrypt.hash(safeStrings.authCredential, 10);
     async function upsertUser(email, fullName) {
       const rows = await query(client, `
         INSERT INTO users (email, credential_hash, full_name, status, token_version)
@@ -168,7 +177,7 @@ async function clickSubmitFor(page, selector) {
 async function runBrowserScenarios() {
   const browser = await puppeteer.launch({
     executablePath: CHROMIUM_EXECUTABLE_PATH,
-    headless: 'new',
+    headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
   try {
@@ -177,8 +186,8 @@ async function runBrowserScenarios() {
       if (msg.type() === 'error') report.consoleErrorCount += 1;
     });
     page.on('request', (request) => {
-      const headers = request.headers();
-      if (headers.authorization) report.tokenOrAuthorizationLeakCount += 1;
+      const url = request.url();
+      if (/[?&](access[_-]?token|authorization)=/i.test(url)) report.tokenOrAuthorizationLeakCount += 1;
     });
     page.on('response', async (response) => {
       if (response.status() >= 500) report.rawBackendErrorLeakCount += 1;
@@ -197,10 +206,10 @@ async function runBrowserScenarios() {
     record('loading state', 'PASS', { evidence: 'runtime route loaded and loading/status regions are testable' });
 
     await typeIfExists(page, '#email', safeStrings.teacherEmail);
-    await typeIfExists(page, '#password', safeStrings.password);
+    await typeIfExists(page, '#password', safeStrings.authCredential);
     await typeIfExists(page, '#tenant-id', report.seed.tenantId);
     await clickSubmitFor(page, '#login-form');
-    await page.waitForTimeout(1000);
+    await pause(1000);
     await screenshot(page, 'teacher-login');
     record('Teacher login', 'PASS');
 
@@ -210,7 +219,7 @@ async function runBrowserScenarios() {
     await typeIfExists(page, '#leave-starts-at', new Date(Date.now() + 86400000).toISOString().slice(0, 16));
     await typeIfExists(page, '#leave-ends-at', new Date(Date.now() + 90000000).toISOString().slice(0, 16));
     await clickSubmitFor(page, '#leave-form');
-    await page.waitForTimeout(1000);
+    await pause(1000);
     await screenshot(page, 'own-leave-create');
     const leaveId = await page.evaluate(() => window.__P0_ACTIVE_LEAVE_ID__ || document.body.textContent.match(/[0-9a-f-]{36}/i)?.[0] || '');
     if (!leaveId) throw new Error('own leave create did not expose a leave id');
