@@ -57,7 +57,7 @@ jobs:
       JWT_REFRESH_SECRET: wp07f-${{ github.run_id }}-refresh
       SEED_TENANT_SLUG: system-seed
       SEED_TENANT_NAME: System Seed Tenant
-      CHROMIUM_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_EXECUTABLE_STRATEGY: sparticuz
       E2E_SYNTHETIC_CREDENTIAL: wp07f-${{ github.run_id }}-runtime
       PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
@@ -81,10 +81,19 @@ jobs:
 
       - name: Install pinned browser runner dependencies
         run: |
-          npm install --no-save puppeteer-core@24.15.0
+          npm install --no-save puppeteer-core@24.15.0 @sparticuz/chromium@138.0.2
           sudo apt-get update
           sudo apt-get install -y chromium
-          chromium --version
+          node - <<'NODE'
+          const chromium = require('@sparticuz/chromium');
+          chromium.executablePath().then((executablePath) => {
+            console.log(`@sparticuz/chromium executable: ${executablePath}`);
+            console.log(`@sparticuz/chromium headless: ${chromium.headless}`);
+          }).catch((error) => {
+            console.warn(`@sparticuz/chromium executablePath warning: ${error.message}`);
+          });
+          NODE
+          chromium --version || true
 
       - name: Run migrations
         run: npm run db:migrate
