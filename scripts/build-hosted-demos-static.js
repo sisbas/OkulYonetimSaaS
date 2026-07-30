@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { legacyFiles, fullVisionFiles } = require('./hosted-demos-runtime-manifest.js');
+const { legacyFiles, fullVisionFiles, runtimeFiles } = require('./hosted-demos-runtime-manifest.js');
 
 const repositoryRoot = path.resolve(__dirname, '..');
 const outputRoot = path.join(repositoryRoot, 'hosted-demos-static-dist');
@@ -19,10 +19,17 @@ const sourceOutputs = [
     root: path.join(repositoryRoot, 'full-vision-static-dist'),
     files: fullVisionFiles,
   },
+  {
+    build: null,
+    root: path.join(repositoryRoot, 'frontend'),
+    files: runtimeFiles,
+  },
 ];
 
 for (const source of sourceOutputs) {
-  execFileSync(process.execPath, [path.join(__dirname, source.build)], { cwd: repositoryRoot, stdio: 'inherit' });
+  if (source.build) {
+    execFileSync(process.execPath, [path.join(__dirname, source.build)], { cwd: repositoryRoot, stdio: 'inherit' });
+  }
   for (const relativePath of source.files) {
     const absolutePath = path.join(source.root, relativePath);
     assert(fs.existsSync(absolutePath) && fs.statSync(absolutePath).isFile(), `Bounded build output is missing: ${relativePath}`);
@@ -49,10 +56,11 @@ function walk(directory) {
   });
 }
 
-assert.deepEqual(walk(outputRoot).sort(), emitted.sort(), 'Hosted output contains a file outside the two runtime allowlists.');
+assert.deepEqual(walk(outputRoot).sort(), emitted.sort(), 'Hosted output contains a file outside the runtime allowlists.');
 assert.equal(emitted.filter((file) => file.startsWith('demo-frontend/')).length, 5);
 assert.equal(emitted.filter((file) => file.startsWith('full-vision-demo/')).length, 10);
+assert.equal(emitted.filter((file) => file.startsWith('runtime/')).length, 3);
 
 console.log(`Hosted static output: ${path.relative(repositoryRoot, outputRoot)}`);
-console.log('Applications: legacy demo 5 files; Full-Vision demo 10 files');
+console.log('Applications: legacy demo 5 files; Full-Vision demo 10 files; production runtime 3 files');
 console.log('Serverless functions: 0 (combined bounded static contract)');

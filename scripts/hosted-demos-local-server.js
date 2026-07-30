@@ -13,6 +13,7 @@ const contentTypes = {
 };
 const legacyFiles = new Set(runtimeManifest.legacyFiles);
 const fullVisionFiles = new Set(runtimeManifest.fullVisionFiles);
+const runtimeFiles = new Set(runtimeManifest.runtimeFiles);
 const fullVisionHeaders = {
   'Content-Security-Policy': "default-src 'self'; connect-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   'Referrer-Policy': 'no-referrer',
@@ -20,6 +21,13 @@ const fullVisionHeaders = {
   'X-Robots-Tag': 'noindex, nofollow',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'X-Demo-Application': 'full-vision-synthetic-static-prototype',
+};
+const runtimeHeaders = {
+  'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+  'Referrer-Policy': 'no-referrer',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Robots-Tag': 'noindex, nofollow',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
 };
 
 function decodePathname(pathname) {
@@ -34,7 +42,7 @@ function staticFile(pathname) {
   const decoded = decodePathname(pathname);
   if (!decoded) return null;
   const relativePath = decoded.replace(/^\//, '');
-  return legacyFiles.has(relativePath) || fullVisionFiles.has(relativePath) ? relativePath : null;
+  return legacyFiles.has(relativePath) || fullVisionFiles.has(relativePath) || runtimeFiles.has(relativePath) ? relativePath : null;
 }
 
 function createHostedDemosServer(options = {}) {
@@ -63,12 +71,15 @@ function createHostedDemosServer(options = {}) {
       return;
     }
 
+    const runtime = url.pathname === '/runtime' || url.pathname.startsWith('/runtime/');
     const fullVision = url.pathname.startsWith('/full-vision/') || url.pathname.startsWith('/full-vision-demo/');
-    if (fullVision) Object.entries(fullVisionHeaders).forEach(([key, value]) => response.setHeader(key, value));
+    if (runtime) Object.entries(runtimeHeaders).forEach(([key, value]) => response.setHeader(key, value));
+    else if (fullVision) Object.entries(fullVisionHeaders).forEach(([key, value]) => response.setHeader(key, value));
     else if (url.pathname.startsWith('/demo-frontend/')) response.setHeader('X-Demo-Application', 'synthetic-static-prototype');
 
     const asset = staticFile(url.pathname);
     const relativePath = asset
+      || (url.pathname === '/runtime' ? 'runtime/index.html' : null)
       || (url.pathname.startsWith('/demo/') ? 'demo-frontend/index.html' : null)
       || (url.pathname.startsWith('/full-vision/') ? 'full-vision-demo/index.html' : null);
     const filePath = relativePath ? path.join(root, relativePath) : null;
@@ -90,7 +101,15 @@ if (require.main === module) {
   createHostedDemosServer().listen(port, '127.0.0.1', () => {
     console.log(`Legacy demo: http://127.0.0.1:${port}/demo/today`);
     console.log(`Full-Vision demo: http://127.0.0.1:${port}/full-vision/overview`);
+    console.log(`Production runtime: http://127.0.0.1:${port}/runtime`);
   });
 }
 
-module.exports = { createHostedDemosServer, fullVisionHeaders, legacyFiles, fullVisionFiles };
+module.exports = {
+  createHostedDemosServer,
+  fullVisionHeaders,
+  runtimeHeaders,
+  legacyFiles,
+  fullVisionFiles,
+  runtimeFiles,
+};

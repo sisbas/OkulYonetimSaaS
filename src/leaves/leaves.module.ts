@@ -10,6 +10,7 @@ import {
   LEAVE_AUDIT_PORT,
   TransactionalLeaveAuditAdapter,
 } from './leave-audit.adapter';
+import { TeachersModule } from '../teachers/teachers.module';
 import { LeaveController } from './leave.controller';
 import { LeaveIdentityService } from './leave-identity.service';
 import { LeaveRequest } from './leave-request.entity';
@@ -17,7 +18,7 @@ import { LeaveRepository } from './leave.repository';
 import { LeaveService } from './leave.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([LeaveRequest])],
+  imports: [TypeOrmModule.forFeature([LeaveRequest]), TeachersModule],
   controllers: [LeaveController],
   providers: [
     AuditLogRepository,

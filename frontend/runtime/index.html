@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="icon" href="data:," />
+    <title>Okul Yönetim SaaS — Faz 1 Runtime</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#runtime-main">İçeriğe geç</a>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Faz 1 runtime</p>
+          <h1>İzin Yönetimi + Günlük Operasyon</h1>
+        </div>
+        <div id="session-status" class="status-pill" aria-live="polite">Oturum bekleniyor</div>
+      </header>
+
+      <aside class="panel" aria-labelledby="auth-heading">
+        <h2 id="auth-heading">Auth / tenant / branch</h2>
+        <form id="login-form" class="stack">
+          <label>E-posta
+            <input id="email" name="email" type="email" autocomplete="username" required />
+          </label>
+          <label>Şifre
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <label>Tenant ID
+            <input id="tenant-id" name="tenantId" inputmode="latin" aria-describedby="tenant-help" />
+          </label>
+          <p id="tenant-help" class="hint">Tenant seçimi login body alanıdır; role, permission veya teacher authority içermez.</p>
+          <button type="submit">Oturum aç</button>
+        </form>
+
+        <form id="context-form" class="stack context-form">
+          <label>Branch ID
+            <input id="branch-id" name="branchId" inputmode="latin" aria-describedby="branch-help" required />
+          </label>
+          <label>Tarih
+            <input id="operation-date" name="date" type="date" />
+          </label>
+          <p id="branch-help" class="hint">Branch query parametresi ve izin talebi branch alanı server tarafından tenant scope ile doğrulanır.</p>
+          <button type="submit">Queue getir</button>
+        </form>
+      </aside>
+
+      <nav class="tabs" aria-label="Runtime akışları">
+        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">Teacher</button>
+        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">Operations Manager</button>
+      </nav>
+
+      <main id="runtime-main" tabindex="-1">
+        <section id="message-region" class="message-region" aria-live="polite"></section>
+
+        <section id="teacher-panel" class="panel runtime-panel" data-panel="teacher">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Teacher flow</p>
+              <h2>Kendi izin talebi</h2>
+            </div>
+            <button id="load-own-leave" type="button">Kendi talebimi getir</button>
+          </div>
+          <form id="leave-form" class="grid-form">
+            <label>İzin türü
+              <select id="leave-duration-type" required>
+                <option value="hourly">Saatlik</option>
+                <option value="full_day">Tam gün</option>
+                <option value="multi_day">Çok gün</option>
+              </select>
+            </label>
+            <label>Gerekçe kodu
+              <select id="leave-reason-code" required>
+                <option value="administrative">İdari</option>
+                <option value="health">Sağlık</option>
+                <option value="annual_leave">Yıllık izin</option>
+                <option value="other">Diğer</option>
+              </select>
+            </label>
+            <label>Başlangıç zamanı <input id="leave-starts-at" type="datetime-local" required /></label>
+            <label>Bitiş zamanı <input id="leave-ends-at" type="datetime-local" required /></label>
+            <p class="hint wide">Payload yalnız CreateLeaveRequestDto alanlarını gönderir: branchId, durationType, reasonCode, startsAt, endsAt.</p>
+            <button type="submit">İzin talebi oluştur</button>
+          </form>
+          <div id="teacher-output" class="state-box" role="region" aria-label="Teacher izin sonucu"></div>
+        </section>
+
+        <section id="ops-panel" class="panel runtime-panel hidden" data-panel="ops">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Operations Manager flow</p>
+              <h2>Daily Operations queue</h2>
+            </div>
+            <button id="refresh-queue" type="button">Queue yenile</button>
+          </div>
+          <div id="queue-output" class="cards" role="region" aria-label="Günlük operasyon kuyruğu"></div>
+          <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
+          <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve assignment durumu"></div>
+        </section>
+      </main>
+    </div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+version: 2
+exit_zero: false
+verbose: false
+secret:
+  ignored_matches:
+    - name: wp07f historical synthetic ci credential
+      match: 6e0d657eb1f0fbc40cf0b8f3c3873ef627cc9cb7c4108d1c07d979c04bc8a4bb
+  ignore_known_secrets: false
+  show_secrets: false

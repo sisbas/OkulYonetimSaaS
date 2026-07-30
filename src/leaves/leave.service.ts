@@ -69,8 +69,11 @@ export class LeaveService {
   ) {}
 
   async createOwn(ctx: RequestContext, dto: CreateLeaveRequestDto): Promise<LeaveResponse> {
-    const identity = await this.identity.resolveTeacherIdentity(ctx);
     const range = parseDateRange(dto.startsAt, dto.endsAt);
+    const identity = await this.identity.resolveTeacherIdentity(ctx, {
+      branchId: dto.branchId,
+      businessDate: range.startsAt.toISOString().slice(0, 10),
+    });
     const saved = await this.leaves.create(ctx, {
       tenantId: ctx.tenantId!,
       branchId: dto.branchId,
