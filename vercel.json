@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "node --version",
-  "buildCommand": "node scripts/build-hosted-demos-static.js",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build && npm run demo:hosted:build",
   "outputDirectory": "hosted-demos-static-dist",
   "redirects": [
     {
