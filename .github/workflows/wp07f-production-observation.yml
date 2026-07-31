@@ -1,0 +1,87 @@
+name: WP-07F Production Observation
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_base_url:
+        description: Production deployment or alias URL to observe
+        required: true
+        type: string
+      production_alias:
+        description: Public production alias expected by users
+        required: true
+        type: string
+      production_deployment_url:
+        description: Concrete deployment URL, if different from alias
+        required: false
+        type: string
+      production_deployment_id:
+        description: Deployment identifier from the hosting provider
+        required: false
+        type: string
+      self_test_unreachable_api:
+        description: Intentionally target an unreachable API probe and require overallStatus=FAIL
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  production-observation:
+    name: Production runtime and API observation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OBSERVATION_TARGET_BASE_URL: ${{ inputs.target_base_url }}
+      PRODUCTION_ALIAS: ${{ inputs.production_alias }}
+      PRODUCTION_DEPLOYMENT_URL: ${{ inputs.production_deployment_url }}
+      PRODUCTION_DEPLOYMENT_ID: ${{ inputs.production_deployment_id }}
+      OBSERVATION_SELF_TEST_UNREACHABLE_API: ${{ inputs.self_test_unreachable_api }}
+      PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Clean install
+        run: npm ci
+
+      - name: Build backend and runtime assets
+        run: npm run build
+
+      - name: Hosted demo smoke
+        run: npm run verify:hosted-demos
+
+      - name: Observe production runtime and API
+        id: observe
+        continue-on-error: true
+        run: npm run observe:production-runtime
+
+      - name: Upload production observation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wp07f-production-observation-${{ github.sha }}
+          path: artifacts/wp07f-production-observation
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce observation result
+        if: steps.observe.outcome != 'success' && inputs.self_test_unreachable_api == false
+        run: exit 1
+
+      - name: Enforce deliberate unreachable self-test failure
+        if: steps.observe.outcome == 'success' && inputs.self_test_unreachable_api == true
+        run: |
+          echo "Deliberate unreachable API self-test unexpectedly passed"
+          exit 1
