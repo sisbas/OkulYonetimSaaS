@@ -60,7 +60,9 @@ assert.deepEqual(walk(outputRoot).sort(), emitted.sort(), 'Hosted output contain
 assert.equal(emitted.filter((file) => file.startsWith('demo-frontend/')).length, 5);
 assert.equal(emitted.filter((file) => file.startsWith('full-vision-demo/')).length, 10);
 assert.equal(emitted.filter((file) => file.startsWith('runtime/')).length, 3);
+assert.equal(fs.existsSync(path.join(repositoryRoot, 'api/v1/index.ts')), true, 'Vercel API index function is required');
+assert.equal(fs.existsSync(path.join(repositoryRoot, 'api/v1/[...path].ts')), true, 'Vercel API catch-all function is required');
 
 console.log(`Hosted static output: ${path.relative(repositoryRoot, outputRoot)}`);
 console.log('Applications: legacy demo 5 files; Full-Vision demo 10 files; production runtime 3 files');
-console.log('Serverless functions: 0 (combined bounded static contract)');
+console.log('Serverless functions: Vercel API functions under api/v1 for same-origin /api/v1/*');
