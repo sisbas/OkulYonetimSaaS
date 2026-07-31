@@ -18,7 +18,7 @@
     "typeorm": "typeorm-ts-node-commonjs",
     "db:migrate": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
     "db:migrate:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
-    "db:migrate:show": "typeorm-ts-node-commonjs migration:show",
+    "db:migrate:show": "typeorm-ts-node-commonjs migration:show -d src/database/data-source.ts",
     "db:seed:permissions": "ts-node src/database/seeds/permissions.seed.ts",
     "db:verify": "ts-node scripts/verify-datasource.ts",
     "test:rbac": "jest --runInBand test/rbac",
