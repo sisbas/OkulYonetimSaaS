@@ -2,6 +2,9 @@
   "name": "okul-yonetim-saas-api",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && npm run build:runtime",
     "build:runtime": "node scripts/build-runtime-assets.js",
