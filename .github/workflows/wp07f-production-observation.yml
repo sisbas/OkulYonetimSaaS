@@ -19,8 +19,12 @@ on:
         description: Deployment identifier from the hosting provider
         required: false
         type: string
+      expected_head_sha:
+        description: Exact PR current head SHA expected in the observation artifact
+        required: true
+        type: string
       self_test_unreachable_api:
-        description: Intentionally target an unreachable API probe and require overallStatus=FAIL
+        description: Intentionally target an unreachable API probe and require overallStatus=FAIL with API_UNREACHABLE
         required: false
         type: boolean
         default: false
@@ -34,12 +38,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      CI: true
+      RUNTIME_NODE_VERSION: '22'
       OBSERVATION_TARGET_BASE_URL: ${{ inputs.target_base_url }}
       PRODUCTION_ALIAS: ${{ inputs.production_alias }}
       PRODUCTION_DEPLOYMENT_URL: ${{ inputs.production_deployment_url }}
       PRODUCTION_DEPLOYMENT_ID: ${{ inputs.production_deployment_id }}
+      EXPECTED_PR_HEAD_SHA: ${{ inputs.expected_head_sha }}
       OBSERVATION_SELF_TEST_UNREACHABLE_API: ${{ inputs.self_test_unreachable_api }}
       PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
+      VERCEL_PROTECTION_BYPASS_SECRET: ${{ secrets.VERCEL_PROTECTION_BYPASS_SECRET }}
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
 
     steps:
       - name: Checkout
@@ -50,11 +59,22 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.RUNTIME_NODE_VERSION }}
           cache: npm
 
       - name: Clean install
         run: npm ci
+
+      - name: Runtime version parity
+        run: |
+          node - <<'NODE'
+          const expectedMajor = Number(process.env.RUNTIME_NODE_VERSION || 22);
+          const actualMajor = Number(process.versions.node.split('.')[0]);
+          if (actualMajor !== expectedMajor) {
+            throw new Error(`Node runtime mismatch: expected ${expectedMajor}.x, got ${process.versions.node}`);
+          }
+          console.log(`Node runtime parity PASS: ${process.versions.node}`);
+          NODE
 
       - name: Build backend and runtime assets
         run: npm run build
@@ -76,12 +96,48 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Enforce observation result
-        if: steps.observe.outcome != 'success' && inputs.self_test_unreachable_api == false
-        run: exit 1
-
-      - name: Enforce deliberate unreachable self-test failure
-        if: steps.observe.outcome == 'success' && inputs.self_test_unreachable_api == true
+      - name: Enforce observation report contract
+        if: always()
         run: |
-          echo "Deliberate unreachable API self-test unexpectedly passed"
-          exit 1
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const reportPath = 'artifacts/wp07f-production-observation/observation-identity.json';
+          if (!fs.existsSync(reportPath)) {
+            throw new Error('Observation report missing; stale artifact reuse is forbidden.');
+          }
+          const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+          const expectedHeadSha = process.env.EXPECTED_PR_HEAD_SHA;
+          const selfTest = process.env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
+          const forbiddenSelfTestReasons = new Set(['SCRIPT_EXCEPTION', 'MISSING_ENVIRONMENT', 'ARTIFACT_WRITE_FAILURE']);
+          if (report.commitSha !== expectedHeadSha) {
+            throw new Error(`Artifact commit mismatch: expected ${expectedHeadSha}, got ${report.commitSha || '<missing>'}`);
+          }
+          if (!report.productionDeploymentUrl && !report.productionDeploymentId) {
+            throw new Error('Deployment identity incomplete: deployment URL and ID are both empty.');
+          }
+          if (!report.artifactName || !report.artifactDigest || !report.observationTimestamp || !report.branchRef || !report.targetBaseUrl) {
+            throw new Error('Observation identity schema is incomplete.');
+          }
+          if (selfTest) {
+            if (report.overallStatus !== 'FAIL') {
+              throw new Error(`Deliberate unreachable self-test must produce overallStatus=FAIL, got ${report.overallStatus}`);
+            }
+            if (!Array.isArray(report.failureReasons) || !report.failureReasons.includes('API_UNREACHABLE')) {
+              throw new Error('Deliberate unreachable self-test must include API_UNREACHABLE.');
+            }
+            for (const reason of report.failureReasons || []) {
+              if (forbiddenSelfTestReasons.has(reason)) {
+                throw new Error(`Self-test failed for infrastructure reason instead of API_UNREACHABLE: ${reason}`);
+              }
+            }
+            console.log('Deliberate unreachable self-test PASS: exact API_UNREACHABLE failure observed.');
+            process.exit(0);
+          }
+          if (report.overallStatus !== 'PASS') {
+            throw new Error(`Production observation failed: ${(report.failureReasons || []).join(', ') || 'unknown reason'}`);
+          }
+          if (report.apiReachabilityStatus !== 'PASS') {
+            throw new Error('Production API reachability is not PASS.');
+          }
+          console.log('Production observation report contract PASS.');
+          NODE
