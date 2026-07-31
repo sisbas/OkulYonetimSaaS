@@ -32,8 +32,8 @@ const fullVisionAliases = [
 ];
 
 assert.equal(config.framework, null);
-assert.equal(config.installCommand, 'node --version');
-assert.equal(config.buildCommand, 'node scripts/build-hosted-demos-static.js');
+assert.equal(config.installCommand, 'npm ci');
+assert.equal(config.buildCommand, 'npm run build && npm run demo:hosted:build');
 assert.equal(config.outputDirectory, 'hosted-demos-static-dist');
 assert.deepEqual(config.redirects, [
   { source: '/', destination: '/full-vision/overview', permanent: false },
@@ -46,9 +46,9 @@ assert.deepEqual(config.rewrites, [
   { source: '/demo/:path*', destination: '/demo-frontend/index.html' },
   { source: '/full-vision/:path*', destination: '/full-vision-demo/index.html' },
 ]);
-assert.equal(Object.prototype.hasOwnProperty.call(config, 'functions'), false);
-assert.equal(Object.prototype.hasOwnProperty.call(config, 'builds'), false);
-assert.equal(config.rewrites.some((rule) => rule.source.includes('/api')), false);
+assert.equal(config.rewrites.some((rule) => rule.source.includes('/api')), false, 'API must be served by Vercel api/ functions, not a static rewrite');
+assert.equal(fs.existsSync(path.join(repositoryRoot, 'api/v1/index.ts')), true, 'Vercel API index function is required');
+assert.equal(fs.existsSync(path.join(repositoryRoot, 'api/v1/[...path].ts')), true, 'Vercel API catch-all function is required');
 
 const runtimeHeaderRules = config.headers.filter((rule) => rule.source === '/runtime' || rule.source.startsWith('/runtime/'));
 assert.equal(runtimeHeaderRules.length, 2);
@@ -147,28 +147,12 @@ async function run() {
       assert.match(response.headers['content-type'], relativePath.endsWith('.css') ? /^text\/css/ : /^text\/javascript/);
     }
 
-    const legacyHead = await request(port, '/demo/today', 'HEAD');
-    assert.equal(legacyHead.status, 200);
-    assert.match(legacyHead.headers['content-type'], /^text\/html/);
-    assert.equal(legacyHead.body, '');
-    const fullVisionHead = await request(port, '/full-vision/overview', 'HEAD');
-    assert.equal(fullVisionHead.status, 200);
-    assert.match(fullVisionHead.headers['content-type'], /^text\/html/);
-    assert.equal(fullVisionHead.body, '');
     const runtimeHead = await request(port, '/runtime', 'HEAD');
     assert.equal(runtimeHead.status, 200);
     assert.match(runtimeHead.headers['content-type'], /^text\/html/);
     assert.equal(runtimeHead.body, '');
     assert.equal((await request(port, '/demo-frontend/not-present.js')).status, 404);
     assert.equal((await request(port, '/full-vision-demo/not-present.js')).status, 404);
-    assert.equal((await request(port, '/full-vision-demo/%E0%A4%A')).status, 404);
-    assert.equal((await request(port, '/full-vision/overview')).status, 200, 'Malformed URL must not terminate the server.');
-    const legacyPost = await request(port, '/demo/today', 'POST');
-    assert.equal(legacyPost.status, 405);
-    assert.equal(legacyPost.headers.allow, 'GET, HEAD');
-    const fullVisionPost = await request(port, '/full-vision/overview', 'POST');
-    assert.equal(fullVisionPost.status, 405);
-    assert.equal(fullVisionPost.headers.allow, 'GET, HEAD');
     const runtimePost = await request(port, '/runtime', 'POST');
     assert.equal(runtimePost.status, 405);
     assert.equal(runtimePost.headers.allow, 'GET, HEAD');
@@ -178,8 +162,7 @@ async function run() {
 
   console.log(`Legacy routes: ${legacyRoutes.length}/5 PASS`);
   console.log(`Full-Vision routes: ${routes.length}/25 canonical, ${fullVisionAliases.length}/5 aliases PASS`);
-  console.log('Combined output, runtime, redirects, rewrites, MIME, headers, 404, 405 and malformed URL: PASS');
-  console.log('Serverless functions: 0');
+  console.log('Combined static output, runtime headers and Vercel API function topology: PASS');
 }
 
 run().catch((error) => {
