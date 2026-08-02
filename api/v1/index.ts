@@ -6,8 +6,10 @@ import type { Request, Response } from 'express';
 import { AppModule } from '../../src/app.module';
 
 type ExpressHandler = (request: Request, response: Response) => void;
+type CreateNestHandler = () => Promise<ExpressHandler>;
 
 let cachedHandler: Promise<ExpressHandler> | undefined;
+let createNestHandlerFactory: CreateNestHandler = createNestHandler;
 
 async function createNestHandler(): Promise<ExpressHandler> {
   const app = await NestFactory.create(AppModule, new ExpressAdapter(), {
@@ -20,8 +22,33 @@ async function createNestHandler(): Promise<ExpressHandler> {
   return app.getHttpAdapter().getInstance() as ExpressHandler;
 }
 
+function bootstrapWithRecovery(): Promise<ExpressHandler> {
+  const bootstrapPromise = Promise.resolve().then(() => createNestHandlerFactory());
+  const recoverablePromise = bootstrapPromise.catch((error) => {
+    if (cachedHandler === recoverablePromise) {
+      cachedHandler = undefined;
+    }
+    throw error;
+  });
+  cachedHandler = recoverablePromise;
+  return recoverablePromise;
+}
+
+export function getCachedNestHandler(): Promise<ExpressHandler> {
+  return cachedHandler ?? bootstrapWithRecovery();
+}
+
+export function __setCreateNestHandlerForTest(factory: CreateNestHandler): void {
+  createNestHandlerFactory = factory;
+  cachedHandler = undefined;
+}
+
+export function __resetCreateNestHandlerForTest(): void {
+  createNestHandlerFactory = createNestHandler;
+  cachedHandler = undefined;
+}
+
 export default async function handler(request: Request, response: Response) {
-  cachedHandler ??= createNestHandler();
-  const nestHandler = await cachedHandler;
+  const nestHandler = await getCachedNestHandler();
   return nestHandler(request, response);
 }
