@@ -24,7 +24,8 @@ async function createNestHandler(): Promise<ExpressHandler> {
 
 function bootstrapWithRecovery(): Promise<ExpressHandler> {
   const bootstrapPromise = Promise.resolve().then(() => createNestHandlerFactory());
-  const recoverablePromise = bootstrapPromise.catch((error) => {
+  let recoverablePromise: Promise<ExpressHandler>;
+  recoverablePromise = bootstrapPromise.catch((error) => {
     if (cachedHandler === recoverablePromise) {
       cachedHandler = undefined;
     }
