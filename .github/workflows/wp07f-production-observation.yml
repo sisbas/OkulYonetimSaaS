@@ -76,6 +76,9 @@ jobs:
           console.log(`Node runtime parity PASS: ${process.versions.node}`);
           NODE
 
+      - name: Runtime integration regression tests
+        run: npm run test:runtime-integration
+
       - name: Build backend and runtime assets
         run: npm run build
 
@@ -108,7 +111,6 @@ jobs:
           const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
           const expectedHeadSha = process.env.EXPECTED_PR_HEAD_SHA;
           const selfTest = process.env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
-          const forbiddenSelfTestReasons = new Set(['SCRIPT_EXCEPTION', 'MISSING_ENVIRONMENT', 'ARTIFACT_WRITE_FAILURE']);
           if (report.commitSha !== expectedHeadSha) {
             throw new Error(`Artifact commit mismatch: expected ${expectedHeadSha}, got ${report.commitSha || '<missing>'}`);
           }
@@ -122,13 +124,13 @@ jobs:
             if (report.overallStatus !== 'FAIL') {
               throw new Error(`Deliberate unreachable self-test must produce overallStatus=FAIL, got ${report.overallStatus}`);
             }
-            if (!Array.isArray(report.failureReasons) || !report.failureReasons.includes('API_UNREACHABLE')) {
-              throw new Error('Deliberate unreachable self-test must include API_UNREACHABLE.');
+            const failureReasons = Array.isArray(report.failureReasons) ? report.failureReasons : [];
+            if (failureReasons.length !== 1 || failureReasons[0] !== 'API_UNREACHABLE') {
+              throw new Error(`Deliberate unreachable self-test failureReasons must be exactly API_UNREACHABLE, got ${failureReasons.join(', ') || '<empty>'}`);
             }
-            for (const reason of report.failureReasons || []) {
-              if (forbiddenSelfTestReasons.has(reason)) {
-                throw new Error(`Self-test failed for infrastructure reason instead of API_UNREACHABLE: ${reason}`);
-              }
+            const checkNames = Array.isArray(report.checks) ? report.checks.map((check) => check.name) : [];
+            if (checkNames.length !== 1 || checkNames[0] !== 'deliberate unreachable api self-test') {
+              throw new Error(`Self-test must run only the deliberate unreachable probe, got ${checkNames.join(', ') || '<empty>'}`);
             }
             console.log('Deliberate unreachable self-test PASS: exact API_UNREACHABLE failure observed.');
             process.exit(0);
