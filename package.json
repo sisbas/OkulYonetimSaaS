@@ -18,6 +18,7 @@
     "test": "jest --passWithNoTests",
     "test:unit": "jest --runInBand src --passWithNoTests",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:runtime-integration": "jest --runInBand test/runtime-integration",
     "typeorm": "typeorm-ts-node-commonjs",
     "db:migrate": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
     "db:migrate:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
