@@ -157,6 +157,54 @@ describe('production runtime observation', () => {
     expect(check.failureReason).not.toBe('OBSERVATION_CHECK_FAILED');
   });
 
+  it('classifies Vercel auth redirects as protected preview blocks before API unreachable', async () => {
+    const check = await observation.requestCheck('https://preview.example.test', 'known api application json', '/api/v1/health', {
+      requireJson: true,
+      rejectProtectedPreview: true,
+      statuses: [200],
+      timeoutMs: 50,
+      fetchImpl: async () => new Response('Authentication Required', {
+        status: 302,
+        headers: {
+          'content-type': 'text/html',
+          location: 'https://preview.example.test/_vercel/auth?next=/api/v1/health&token=secret-value',
+        },
+      }),
+    });
+
+    expect(check.ok).toBe(false);
+    expect(check.protectedPreview).toBe(true);
+    expect(check.failureReason).toBe('PROTECTED_PREVIEW_BLOCKED');
+    expect(JSON.stringify(check)).not.toContain('secret-value');
+  });
+
+  it.each([
+    ['static fallback HTML', '<html>fallback</html>', 'text/html'],
+    ['Vercel NOT_FOUND JSON', '{"error":"NOT_FOUND"}', 'application/json'],
+    ['uncontrolled JSON', '{"status":"ok","applicationType":"static-proxy"}', 'application/json'],
+  ])('rejects %s as API reachability evidence', async (_name, body, contentType) => {
+    const check = await observation.requestCheck('https://preview.example.test', 'known api application json', '/api/v1/health', {
+      requireJson: true,
+      requiredJsonValues: {
+        status: 'ok',
+        service: 'okul-yonetim-saas-api',
+        applicationType: 'backend-api',
+      },
+      rejectVercelNotFound: true,
+      rejectProtectedPreview: true,
+      statuses: [200],
+      timeoutMs: 50,
+      fetchImpl: async () => new Response(body, {
+        status: 200,
+        headers: { 'content-type': contentType },
+      }),
+    });
+
+    expect(check.ok).toBe(false);
+    expect(check.failureReason).toBe('API_UNREACHABLE');
+    expect(JSON.stringify(check)).not.toContain('static-proxy');
+  });
+
   it('keeps the deliberate self-test probe absent during normal observation and probes the public health endpoint', async () => {
     const checks = await observation.buildObservationChecks('https://preview.example.test', {
       env: baseEnv,
@@ -373,17 +421,24 @@ describe('production runtime observation', () => {
   });
 
   it('isolates self-test observation to the deliberate probe with exact API_UNREACHABLE failure reason when deployment metadata matches', async () => {
+    const requestedUrls: string[] = [];
     const report = await observation.buildObservationReport({
       ...baseEnv,
       OBSERVATION_SELF_TEST_UNREACHABLE_API: 'true',
-    }, withDeploymentMetadata(async () => htmlResponse('The page could not be found: NOT_FOUND', 404)));
+    }, async (url: string) => {
+      requestedUrls.push(String(url));
+      return htmlResponse('The page could not be found: NOT_FOUND', 404);
+    });
 
     expect(report.overallStatus).toBe('FAIL');
     expect(report.failureReasons).toEqual(['API_UNREACHABLE']);
+    expect(report.deploymentMetadataStatus).toBe('SKIPPED_SELF_TEST');
+    expect(report.targetBaseUrl).toBe('http://127.0.0.1:1/');
     expect(report.checks).toHaveLength(1);
     expect(report.checks[0].name).toBe('deliberate unreachable api self-test');
     expect(report.checks.some((check: { name: string }) => check.name === 'runtime shell')).toBe(false);
     expect(report.checks.some((check: { name: string }) => check.name === 'known api application json')).toBe(false);
+    expect(requestedUrls).toEqual(['http://127.0.0.1:1/__not-api-v1-unreachable-observation-probe__']);
   });
 
   it('redacts secrets, bearer tokens and full URL query values', () => {

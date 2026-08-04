@@ -153,7 +153,10 @@ function detectProtectedPreview(response, body, parsedJson, location) {
   const statusProtected = [302, 401, 403].includes(response.status);
   const markerText = `${location || ''}\n${body || ''}\n${JSON.stringify(parsedJson || {})}`.toLowerCase();
   const markerProtected = [
+    '_vercel/auth',
     'vercel authentication',
+    'vercel-protection',
+    'authentication required',
     'deployment protection',
     'password protection',
     'protection bypass',
@@ -458,6 +461,50 @@ function writeReport(report) {
 }
 
 async function buildObservationReport(env = process.env, fetchImpl = fetch) {
+  const selfTest = env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
+  if (selfTest) {
+    const identity = safeObservationIdentity(env);
+    const selfTestBaseUrl = env.OBSERVATION_SELF_TEST_BASE_URL || 'http://127.0.0.1:1';
+    const selfTestEnv = {
+      ...env,
+      VERCEL_PROTECTION_BYPASS_SECRET: '',
+      VERCEL_AUTOMATION_BYPASS_SECRET: '',
+    };
+    const checks = await buildObservationChecks(selfTestBaseUrl, {
+      selfTest: true,
+      fetchImpl,
+      env: selfTestEnv,
+      timeoutMs: observationRequestTimeoutMs(env),
+    });
+    const failureReasons = checks.filter((check) => !check.ok).map((check) => check.failureReason || 'OBSERVATION_CHECK_FAILED');
+
+    return {
+      overallStatus: failureReasons.length === 0 ? 'PASS' : 'FAIL',
+      issue: 185,
+      purpose: 'WP-07F production runtime and same-origin /api/v1 observation',
+      commitSha: identity.commitSha,
+      expectedHeadSha: identity.expectedHeadSha,
+      branchRef: identity.branchRef,
+      productionDeploymentId: identity.productionDeploymentId,
+      productionDeploymentUrl: identity.productionDeploymentUrl,
+      productionAlias: identity.productionAlias,
+      targetBaseUrl: redactUrl(selfTestBaseUrl),
+      deploymentCommitSha: null,
+      deploymentCommitSource: null,
+      deploymentMetadataLookup: null,
+      deploymentMetadataStatus: 'SKIPPED_SELF_TEST',
+      deploymentTargetHost: null,
+      deploymentAuthorizedHosts: [],
+      observationTimestamp: new Date().toISOString(),
+      artifactName: identity.artifactName,
+      reportContentDigest: null,
+      failureReasons,
+      apiReachabilityStatus: 'FAIL',
+      checks,
+      identityChecks: [],
+    };
+  }
+
   const targetBaseUrl = requiredTargetBaseUrl(env);
   const { productionDeploymentUrl, productionDeploymentId } = deploymentIdentity(env);
   const commitSha = env.PULL_REQUEST_HEAD_SHA || env.GITHUB_SHA || env.VERCEL_GIT_COMMIT_SHA || 'unknown';
@@ -465,7 +512,6 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
   const branchRef = env.GITHUB_HEAD_REF || env.GITHUB_REF_NAME || env.VERCEL_GIT_COMMIT_REF || 'unknown';
   const productionAlias = cleanUrl(env.PRODUCTION_ALIAS) || targetBaseUrl;
   const artifactName = `wp07f-production-observation-${commitSha}`;
-  const selfTest = env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
   const deploymentMetadata = await fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, {
     productionDeploymentId,
     productionDeploymentUrl,
