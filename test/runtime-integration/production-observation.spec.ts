@@ -59,6 +59,28 @@ describe('production runtime observation', () => {
     expect(JSON.stringify(check)).not.toContain('abc123');
   });
 
+  it('classifies protected-preview redirects as PROTECTED_PREVIEW_BLOCKED and never as API reachability PASS', async () => {
+    const check = await observation.requestCheck('https://preview.example.test', 'known api application json', '/api/v1/daily-operations/today?branchId=synthetic-branch', {
+      requireJson: true,
+      rejectProtectedPreview: true,
+      statuses: [200, 400, 404, 422],
+      timeoutMs: 50,
+      fetchImpl: async () => new Response('Redirecting...', {
+        status: 302,
+        headers: {
+          'content-type': 'text/plain',
+          location: 'https://vercel.com/sso-api?url=https%3A%2F%2Fpreview.example.test%2Fapi%2Fv1%2Fdaily-operations%2Ftoday&nonce=synthetic',
+        },
+      }),
+    });
+
+    expect(check.ok).toBe(false);
+    expect(check.protectedPreview).toBe(true);
+    expect(check.failureReason).toBe('PROTECTED_PREVIEW_BLOCKED');
+    expect(check.failureReason).not.toBe('API_UNREACHABLE');
+    expect(check.failureReason).not.toBe('OBSERVATION_CHECK_FAILED');
+  });
+
   it('keeps the deliberate self-test probe absent during normal observation', async () => {
     const checks = await observation.buildObservationChecks('https://preview.example.test', {
       env: baseEnv,
