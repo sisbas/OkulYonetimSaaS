@@ -166,6 +166,19 @@ describe('production runtime observation', () => {
     expect(report.failureReasons).not.toContain('STALE_DEPLOYMENT');
   });
 
+  it('labels the JSON report digest as reportContentDigest instead of artifactDigest', async () => {
+    const report = await observation.buildObservationReport(baseEnv, withDeploymentMetadata(async (url: string) => url.includes('/api/v1/health')
+      ? jsonResponse({
+        status: 'ok',
+        service: 'okul-yonetim-saas-api',
+        applicationType: 'backend-api',
+      })
+      : htmlResponse('<html></html>', 200)));
+
+    expect(Object.prototype.hasOwnProperty.call(report, 'reportContentDigest')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(report, 'artifactDigest')).toBe(false);
+  });
+
   it('rejects a stale deployment even when observed routes otherwise pass', async () => {
     const staleSha = 'ffffffffffffffffffffffffffffffffffffffff';
     const report = await observation.buildObservationReport(baseEnv, withDeploymentMetadata(async (url: string) => url.includes('/api/v1/health')
