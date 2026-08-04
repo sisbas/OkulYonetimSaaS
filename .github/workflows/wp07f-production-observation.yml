@@ -1,0 +1,163 @@
+name: WP-07F Production Observation
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_base_url:
+        description: Production deployment or alias URL to observe
+        required: true
+        type: string
+      production_alias:
+        description: Public production alias expected by users
+        required: true
+        type: string
+      production_deployment_url:
+        description: Concrete deployment URL, if different from alias
+        required: false
+        type: string
+      production_deployment_id:
+        description: Deployment identifier from the hosting provider
+        required: false
+        type: string
+      expected_head_sha:
+        description: Exact PR current head SHA expected in the observation artifact
+        required: true
+        type: string
+      self_test_unreachable_api:
+        description: Intentionally target an unreachable API probe and require overallStatus=FAIL with API_UNREACHABLE
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  production-observation:
+    name: Production runtime and API observation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: true
+      RUNTIME_NODE_VERSION: '22'
+      OBSERVATION_TARGET_BASE_URL: ${{ inputs.target_base_url }}
+      PRODUCTION_ALIAS: ${{ inputs.production_alias }}
+      PRODUCTION_DEPLOYMENT_URL: ${{ inputs.production_deployment_url }}
+      PRODUCTION_DEPLOYMENT_ID: ${{ inputs.production_deployment_id }}
+      EXPECTED_PR_HEAD_SHA: ${{ inputs.expected_head_sha }}
+      OBSERVATION_SELF_TEST_UNREACHABLE_API: ${{ inputs.self_test_unreachable_api }}
+      PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.RUNTIME_NODE_VERSION }}
+          cache: npm
+
+      - name: Clean install
+        run: npm ci
+
+      - name: Runtime version parity
+        run: |
+          node - <<'NODE'
+          const expectedMajor = Number(process.env.RUNTIME_NODE_VERSION || 22);
+          const actualMajor = Number(process.versions.node.split('.')[0]);
+          if (actualMajor !== expectedMajor) {
+            throw new Error(`Node runtime mismatch: expected ${expectedMajor}.x, got ${process.versions.node}`);
+          }
+          console.log(`Node runtime parity PASS: ${process.versions.node}`);
+          NODE
+
+      - name: Runtime integration regression tests
+        run: npm run test:runtime-integration
+
+      - name: Build backend and runtime assets
+        run: npm run build
+
+      - name: Hosted demo smoke
+        run: npm run verify:hosted-demos
+
+      - name: Observe production runtime and API
+        id: observe
+        continue-on-error: true
+        env:
+          VERCEL_PROTECTION_BYPASS_SECRET: ${{ secrets.VERCEL_PROTECTION_BYPASS_SECRET }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          VERCEL_DEPLOYMENT_METADATA_TOKEN: ${{ secrets.VERCEL_DEPLOYMENT_METADATA_TOKEN || secrets.VERCEL_TOKEN || secrets.VERCEL_API_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+        run: npm run observe:production-runtime
+
+      - name: Upload production observation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wp07f-production-observation-${{ github.sha }}
+          path: artifacts/wp07f-production-observation
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce observation report contract
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const reportPath = 'artifacts/wp07f-production-observation/observation-identity.json';
+          if (!fs.existsSync(reportPath)) {
+            throw new Error('Observation report missing; stale artifact reuse is forbidden.');
+          }
+          const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+          const expectedHeadSha = process.env.EXPECTED_PR_HEAD_SHA;
+          const selfTest = process.env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
+          const failureReasons = Array.isArray(report.failureReasons) ? report.failureReasons : [];
+          if (failureReasons.length === 0 && report.overallStatus === 'FAIL') {
+            throw new Error('Observation failed without failureReasons; failure identity is incomplete.');
+          }
+          if (!report.reportContentDigest || !report.observationTimestamp) {
+            throw new Error('Observation report content identity is incomplete.');
+          }
+          if (Object.prototype.hasOwnProperty.call(report, 'artifactDigest')) {
+            throw new Error('artifactDigest is reserved for GitHub uploaded artifact source-of-truth and must not be written inside the pre-upload report. Use reportContentDigest for the report JSON digest.');
+          }
+          if (selfTest) {
+            if (report.overallStatus !== 'FAIL') {
+              throw new Error(`Deliberate unreachable self-test must produce overallStatus=FAIL, got ${report.overallStatus}`);
+            }
+            if (failureReasons.length !== 1 || failureReasons[0] !== 'API_UNREACHABLE') {
+              throw new Error(`Deliberate unreachable self-test failureReasons must be exactly API_UNREACHABLE, got ${failureReasons.join(', ') || '<empty>'}`);
+            }
+            const checkNames = Array.isArray(report.checks) ? report.checks.map((check) => check.name) : [];
+            if (checkNames.length !== 1 || checkNames[0] !== 'deliberate unreachable api self-test') {
+              throw new Error(`Self-test must run only the deliberate unreachable probe, got ${checkNames.join(', ') || '<empty>'}`);
+            }
+            console.log('Deliberate unreachable self-test PASS: exact API_UNREACHABLE failure observed.');
+            process.exit(0);
+          }
+          if (report.overallStatus !== 'PASS') {
+            throw new Error(`Production observation failed: ${failureReasons.join(', ') || 'unknown reason'}`);
+          }
+          if (report.commitSha !== expectedHeadSha) {
+            throw new Error(`Artifact checkout commit mismatch: expected ${expectedHeadSha}, got ${report.commitSha || '<missing>'}`);
+          }
+          if (report.deploymentCommitSha !== expectedHeadSha) {
+            throw new Error(`Observed deployment commit mismatch: expected ${expectedHeadSha}, got ${report.deploymentCommitSha || '<missing>'}`);
+          }
+          if (report.deploymentMetadataStatus !== 'PASS' || report.deploymentCommitSource !== 'vercel_deployment_metadata') {
+            throw new Error('Observed deployment metadata identity is not verified from Vercel deployment metadata.');
+          }
+          if (!report.productionDeploymentUrl && !report.productionDeploymentId) {
+            throw new Error('Deployment identity incomplete: deployment URL and ID are both empty.');
+          }
+          if (!report.artifactName || !report.branchRef || !report.targetBaseUrl) {
+            throw new Error('Observation identity schema is incomplete.');
+          }
+          if (report.apiReachabilityStatus !== 'PASS') {
+            throw new Error('Production API reachability is not PASS.');
+          }
+          console.log('Production observation report contract PASS.');
+          NODE

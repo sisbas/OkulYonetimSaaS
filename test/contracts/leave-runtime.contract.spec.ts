@@ -99,7 +99,7 @@ describe('Leave runtime contract skeleton', () => {
   });
 
   it('keeps the reject endpoint bodyless and server-selects the rejected decision', () => {
-    const rejectHandler = controller.match(/@Patch\(':id\/reject'\)([\s\S]*?)\n  }\n}/)?.[1] ?? '';
+    const rejectHandler = controller.match(/@Patch\(':id\/reject'\)([\s\S]*?)\r?\n  }\r?\n}/)?.[1] ?? '';
     expect(rejectHandler).toContain('LeaveDecisionStatus.REJECTED');
     expect(rejectHandler).not.toContain('@Body()');
   });
