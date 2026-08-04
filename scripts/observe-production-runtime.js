@@ -188,6 +188,21 @@ function deploymentLookupValue({ productionDeploymentId, productionDeploymentUrl
   }
 }
 
+function deploymentHostCandidateValues(value) {
+  if (!value) return [];
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(deploymentHostCandidateValues);
+  if (typeof value === 'object') {
+    return [
+      value.url,
+      value.domain,
+      value.hostname,
+      value.host,
+    ].filter((candidate) => typeof candidate === 'string');
+  }
+  return [];
+}
+
 function extractDeploymentCommitSha(metadata) {
   const candidates = [
     metadata?.meta?.githubCommitSha,
@@ -205,10 +220,11 @@ function deploymentAuthorizedHosts(metadata) {
   const candidates = [
     metadata?.url,
     metadata?.deployment?.url,
-    ...(Array.isArray(metadata?.alias) ? metadata.alias : []),
-    ...(Array.isArray(metadata?.aliases) ? metadata.aliases : []),
-    ...(Array.isArray(metadata?.deployment?.alias) ? metadata.deployment.alias : []),
-  ];
+    metadata?.alias,
+    metadata?.aliases,
+    metadata?.deployment?.alias,
+    metadata?.deployment?.aliases,
+  ].flatMap(deploymentHostCandidateValues);
   return [...new Set(candidates.flatMap((candidate) => {
     if (typeof candidate !== 'string' || !candidate.trim()) return [];
     try {
@@ -217,6 +233,16 @@ function deploymentAuthorizedHosts(metadata) {
       return [];
     }
   }))];
+}
+
+function deploymentTargetBinding(metadata, targetBaseUrl) {
+  const authorizedHosts = deploymentAuthorizedHosts(metadata);
+  const targetHost = new URL(targetBaseUrl).hostname.toLowerCase();
+  return {
+    ok: authorizedHosts.includes(targetHost),
+    targetHost,
+    authorizedHosts,
+  };
 }
 
 async function fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, deployment) {
@@ -257,16 +283,15 @@ async function fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, depl
     if (!deploymentCommitSha) {
       return { ok: false, failureReason: 'DEPLOYMENT_COMMIT_SHA_MISSING', lookup, metadataUrl: redactUrl(metadataUrl.toString()) };
     }
-    const authorizedHosts = deploymentAuthorizedHosts(metadata);
-    const targetHost = new URL(targetBaseUrl).hostname.toLowerCase();
-    if (authorizedHosts.length === 0 || !authorizedHosts.includes(targetHost)) {
+    const targetBinding = deploymentTargetBinding(metadata, targetBaseUrl);
+    if (!targetBinding.ok) {
       return {
         ok: false,
         failureReason: 'DEPLOYMENT_TARGET_MISMATCH',
         lookup,
         metadataUrl: redactUrl(metadataUrl.toString()),
-        targetHost,
-        authorizedHosts,
+        targetHost: targetBinding.targetHost,
+        authorizedHosts: targetBinding.authorizedHosts,
       };
     }
     return {
@@ -275,6 +300,8 @@ async function fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, depl
       metadataUrl: redactUrl(metadataUrl.toString()),
       deploymentCommitSha,
       deploymentCommitSource: 'vercel_deployment_metadata',
+      targetHost: targetBinding.targetHost,
+      authorizedHosts: targetBinding.authorizedHosts,
     };
   } catch (error) {
     return {
@@ -457,6 +484,8 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
       deploymentMetadataLookup: deploymentMetadata.lookup || null,
       metadataUrl: deploymentMetadata.metadataUrl || null,
       status: deploymentMetadata.status || null,
+      targetHost: deploymentMetadata.targetHost || null,
+      authorizedHosts: deploymentMetadata.authorizedHosts || [],
     });
     const failureReasons = identityChecks.filter((check) => !check.ok).map((check) => check.failureReason);
     return {
@@ -474,6 +503,8 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
       deploymentCommitSource: null,
       deploymentMetadataLookup: deploymentMetadata.lookup || null,
       deploymentMetadataStatus: 'FAIL',
+      deploymentTargetHost: deploymentMetadata.targetHost || null,
+      deploymentAuthorizedHosts: deploymentMetadata.authorizedHosts || [],
       observationTimestamp: new Date().toISOString(),
       artifactName,
       reportContentDigest: null,
@@ -497,15 +528,7 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
   } else if (commitSha !== expectedHeadSha) {
     identityChecks.push({ ok: false, failureReason: 'STALE_ARTIFACT_HEAD_MISMATCH', expectedHeadSha, commitSha });
   }
-  if (!deploymentMetadata.ok) {
-    identityChecks.push({
-      ok: false,
-      failureReason: deploymentMetadata.failureReason || 'DEPLOYMENT_METADATA_UNAVAILABLE',
-      deploymentMetadataLookup: deploymentMetadata.lookup || null,
-      metadataUrl: deploymentMetadata.metadataUrl || null,
-      status: deploymentMetadata.status || null,
-    });
-  } else if (expectedHeadSha && deploymentMetadata.deploymentCommitSha !== expectedHeadSha) {
+  if (expectedHeadSha && deploymentMetadata.deploymentCommitSha !== expectedHeadSha) {
     identityChecks.push({
       ok: false,
       failureReason: 'STALE_DEPLOYMENT',
@@ -537,6 +560,8 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
     deploymentCommitSource: deploymentMetadata.deploymentCommitSource || null,
     deploymentMetadataLookup: deploymentMetadata.lookup || null,
     deploymentMetadataStatus: deploymentMetadata.ok ? 'PASS' : 'FAIL',
+    deploymentTargetHost: deploymentMetadata.targetHost || null,
+    deploymentAuthorizedHosts: deploymentMetadata.authorizedHosts || [],
     observationTimestamp: new Date().toISOString(),
     artifactName,
     reportContentDigest: null,
@@ -565,6 +590,8 @@ function buildFailureReport(error, env = process.env) {
     deploymentCommitSource: null,
     deploymentMetadataLookup: null,
     deploymentMetadataStatus: 'FAIL',
+    deploymentTargetHost: null,
+    deploymentAuthorizedHosts: [],
     observationTimestamp: new Date().toISOString(),
     artifactName: identity.artifactName,
     reportContentDigest: null,
@@ -608,7 +635,9 @@ module.exports = {
   buildObservationReport,
   buildReportContentDigest,
   cleanUrl,
+  deploymentAuthorizedHosts,
   deploymentLookupValue,
+  deploymentTargetBinding,
   extractDeploymentCommitSha,
   fetchDeploymentCommitMetadata,
   observationRequestTimeoutMs,

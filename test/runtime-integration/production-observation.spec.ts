@@ -189,9 +189,53 @@ describe('production runtime observation', () => {
     expect(report.deploymentCommitSha).toBe(baseEnv.EXPECTED_PR_HEAD_SHA);
     expect(report.deploymentCommitSource).toBe('vercel_deployment_metadata');
     expect(report.deploymentMetadataStatus).toBe('PASS');
+    expect(report.deploymentTargetHost).toBe('preview.example.test');
+    expect(report.deploymentAuthorizedHosts).toEqual(expect.arrayContaining(['preview.example.test']));
     expect(report.overallStatus).toBe('PASS');
     expect(report.failureReasons).toEqual([]);
     expect(report.failureReasons).not.toContain('STALE_DEPLOYMENT');
+  });
+
+  it('binds a supplied deployment ID to the probed target through deployment aliases', async () => {
+    const fetchImpl = async (url: string) => String(url).startsWith('https://api.vercel.com/')
+      ? jsonResponse({
+        url: 'deployment.example.test',
+        deployment: {
+          aliases: [
+            { url: 'preview.example.test' },
+            { domain: 'branch-alias.example.test' },
+          ],
+        },
+        meta: {
+          githubCommitSha: baseEnv.EXPECTED_PR_HEAD_SHA,
+        },
+      })
+      : url.includes('/api/v1/health')
+        ? jsonResponse({ status: 'ok', service: 'okul-yonetim-saas-api', applicationType: 'backend-api' })
+        : htmlResponse('<html></html>', 200);
+    const report = await observation.buildObservationReport(baseEnv, fetchImpl);
+
+    expect(report.overallStatus).toBe('PASS');
+    expect(report.deploymentMetadataLookup).toBe(baseEnv.PRODUCTION_DEPLOYMENT_ID);
+    expect(report.deploymentTargetHost).toBe('preview.example.test');
+    expect(report.deploymentAuthorizedHosts).toEqual(expect.arrayContaining([
+      'deployment.example.test',
+      'preview.example.test',
+      'branch-alias.example.test',
+    ]));
+  });
+
+  it('rejects explicit HTTP target URLs before sending credentialed probes', async () => {
+    const fetchImpl = jest.fn(async () => jsonResponse(vercelMetadata()));
+
+    await expect(observation.buildObservationReport({
+      ...baseEnv,
+      OBSERVATION_TARGET_BASE_URL: 'http://preview.example.test',
+    }, fetchImpl)).rejects.toMatchObject({
+      canonicalReason: 'INSECURE_TARGET_PROTOCOL',
+    });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('fails closed when the expected PR head SHA is missing', async () => {
@@ -216,6 +260,15 @@ describe('production runtime observation', () => {
 
     expect(report.overallStatus).toBe('FAIL');
     expect(report.failureReasons).toContain('DEPLOYMENT_TARGET_MISMATCH');
+    expect(report.deploymentTargetHost).toBe('preview.example.test');
+    expect(report.deploymentAuthorizedHosts).toEqual(['other-deployment.example.test']);
+    expect(report.identityChecks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        failureReason: 'DEPLOYMENT_TARGET_MISMATCH',
+        targetHost: 'preview.example.test',
+        authorizedHosts: ['other-deployment.example.test'],
+      }),
+    ]));
   });
 
   it('bounds a hanging deployment metadata request', async () => {
