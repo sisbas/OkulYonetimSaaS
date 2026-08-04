@@ -25,18 +25,48 @@ const baseEnv = {
 };
 
 describe('production runtime observation', () => {
-  it('classifies a fast JSON response as PASS', async () => {
+  it('classifies a fast Nest health JSON response as PASS', async () => {
     const check = await observation.requestCheck('https://preview.example.test', 'known api application json', '/api/v1/health?token=secret-value', {
       requireJson: true,
+      requiredJsonValues: {
+        status: 'ok',
+        service: 'okul-yonetim-saas-api',
+        applicationType: 'backend-api',
+      },
       statuses: [200],
       timeoutMs: 50,
-      fetchImpl: async () => jsonResponse({ ok: true }),
+      fetchImpl: async () => jsonResponse({
+        status: 'ok',
+        service: 'okul-yonetim-saas-api',
+        applicationType: 'backend-api',
+      }),
     });
 
     expect(check.ok).toBe(true);
     expect(check.failureReason).toBeNull();
     expect(check.url).not.toContain('secret-value');
     expect(check.pathname).not.toContain('secret-value');
+  });
+
+  it('rejects non-Nest JSON as unreachable API evidence', async () => {
+    const check = await observation.requestCheck('https://preview.example.test', 'known api application json', '/api/v1/health', {
+      requireJson: true,
+      requiredJsonValues: {
+        status: 'ok',
+        service: 'okul-yonetim-saas-api',
+        applicationType: 'backend-api',
+      },
+      statuses: [200],
+      timeoutMs: 50,
+      fetchImpl: async () => jsonResponse({ status: 'ok', applicationType: 'static-proxy' }),
+    });
+
+    expect(check.ok).toBe(false);
+    expect(check.failureReason).toBe('API_UNREACHABLE');
+    expect(check.jsonValueMismatches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'service', expected: 'okul-yonetim-saas-api' }),
+      expect.objectContaining({ key: 'applicationType', expected: 'backend-api', actual: 'static-proxy' }),
+    ]));
   });
 
   it('classifies a hanging request as bounded REQUEST_TIMEOUT without leaking URL query values', async () => {
@@ -60,16 +90,16 @@ describe('production runtime observation', () => {
   });
 
   it('classifies protected-preview redirects as PROTECTED_PREVIEW_BLOCKED and never as API reachability PASS', async () => {
-    const check = await observation.requestCheck('https://preview.example.test', 'known api application json', '/api/v1/daily-operations/today?branchId=synthetic-branch', {
+    const check = await observation.requestCheck('https://preview.example.test', 'known api application json', '/api/v1/health', {
       requireJson: true,
       rejectProtectedPreview: true,
-      statuses: [200, 400, 404, 422],
+      statuses: [200],
       timeoutMs: 50,
       fetchImpl: async () => new Response('Redirecting...', {
         status: 302,
         headers: {
           'content-type': 'text/plain',
-          location: 'https://vercel.com/sso-api?url=https%3A%2F%2Fpreview.example.test%2Fapi%2Fv1%2Fdaily-operations%2Ftoday&nonce=synthetic',
+          location: 'https://vercel.com/sso-api?url=https%3A%2F%2Fpreview.example.test%2Fapi%2Fv1%2Fhealth&nonce=synthetic',
         },
       }),
     });
@@ -81,17 +111,24 @@ describe('production runtime observation', () => {
     expect(check.failureReason).not.toBe('OBSERVATION_CHECK_FAILED');
   });
 
-  it('keeps the deliberate self-test probe absent during normal observation', async () => {
+  it('keeps the deliberate self-test probe absent during normal observation and probes the public health endpoint', async () => {
     const checks = await observation.buildObservationChecks('https://preview.example.test', {
       env: baseEnv,
       timeoutMs: 50,
-      fetchImpl: async (url: string) => url.includes('/api/v1/')
-        ? jsonResponse({ statusCode: 400, message: 'synthetic validation' }, 400)
+      fetchImpl: async (url: string) => url.includes('/api/v1/health')
+        ? jsonResponse({
+          status: 'ok',
+          service: 'okul-yonetim-saas-api',
+          applicationType: 'backend-api',
+        })
         : htmlResponse('<html></html>', 200),
     });
 
+    const apiCheck = checks.find((check: { name: string }) => check.name === 'known api application json');
+
     expect(checks.map((check: { name: string }) => check.name)).not.toContain('deliberate unreachable api self-test');
-    expect(checks.some((check: { name: string }) => check.name === 'known api application json')).toBe(true);
+    expect(apiCheck).toBeDefined();
+    expect(apiCheck.pathname).toBe('/api/v1/health');
   });
 
   it('isolates self-test observation to the deliberate probe with exact API_UNREACHABLE failure reason', async () => {
