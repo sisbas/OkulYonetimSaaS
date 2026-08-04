@@ -84,6 +84,19 @@ function expectedHeaders(headers, required) {
   return missing;
 }
 
+function expectedJsonValues(parsedJson, required = {}) {
+  const mismatches = [];
+  if (!required || Object.keys(required).length === 0) return mismatches;
+  if (!parsedJson || typeof parsedJson !== 'object') {
+    return Object.entries(required).map(([key, expected]) => ({ key, expected, actual: null }));
+  }
+  for (const [key, expected] of Object.entries(required)) {
+    const actual = parsedJson[key];
+    if (actual !== expected) mismatches.push({ key, expected, actual: actual ?? null });
+  }
+  return mismatches;
+}
+
 function safeJson(body) {
   try {
     return JSON.parse(body);
@@ -122,9 +135,9 @@ function detectProtectedPreview(response, body, parsedJson, location) {
   return statusProtected && markerProtected;
 }
 
-function classifyResponseFailure({ protectedPreview, vercelNotFound, jsonOk, statusOk, headersOk, requireJson }) {
+function classifyResponseFailure({ protectedPreview, vercelNotFound, jsonOk, jsonBodyOk, statusOk, headersOk, requireJson }) {
   if (protectedPreview) return 'PROTECTED_PREVIEW_BLOCKED';
-  if (vercelNotFound || (requireJson && !jsonOk)) return 'API_UNREACHABLE';
+  if (vercelNotFound || (requireJson && (!jsonOk || !jsonBodyOk))) return 'API_UNREACHABLE';
   if (!statusOk) return 'UNEXPECTED_STATUS';
   if (!headersOk) return 'HEADER_MISMATCH';
   return 'OBSERVATION_CHECK_FAILED';
@@ -156,6 +169,7 @@ async function requestCheck(baseUrl, name, pathname, options = {}) {
     const body = await response.text();
     const missingHeaders = expectedHeaders(response.headers, options.requiredHeaders || {});
     const parsedJson = contentType.includes('application/json') ? safeJson(body) : null;
+    const jsonValueMismatches = expectedJsonValues(parsedJson, options.requiredJsonValues || {});
     const vercelNotFound = body.includes('The page could not be found')
       || body.includes('NOT_FOUND')
       || parsedJson?.code === 'NOT_FOUND'
@@ -163,16 +177,18 @@ async function requestCheck(baseUrl, name, pathname, options = {}) {
     const protectedPreview = detectProtectedPreview(response, body, parsedJson, location);
     const statusOk = options.statuses ? options.statuses.includes(response.status) : response.status >= 200 && response.status < 500;
     const jsonOk = options.requireJson ? contentType.includes('application/json') && parsedJson !== null : true;
+    const jsonBodyOk = jsonValueMismatches.length === 0;
     const notVercelOk = options.rejectVercelNotFound ? !vercelNotFound : true;
     const protectionOk = options.rejectProtectedPreview ? !protectedPreview : true;
     const headersOk = missingHeaders.length === 0;
-    const ok = statusOk && jsonOk && notVercelOk && protectionOk && headersOk;
+    const ok = statusOk && jsonOk && jsonBodyOk && notVercelOk && protectionOk && headersOk;
     const failureReason = ok
       ? null
       : classifyResponseFailure({
         protectedPreview,
         vercelNotFound,
         jsonOk,
+        jsonBodyOk,
         statusOk,
         headersOk,
         requireJson: Boolean(options.requireJson),
@@ -189,6 +205,7 @@ async function requestCheck(baseUrl, name, pathname, options = {}) {
       finishedAt: new Date().toISOString(),
       timeoutMs,
       missingHeaders,
+      jsonValueMismatches,
       vercelNotFound,
       protectedPreview,
       jsonBodyKeys: parsedJson && typeof parsedJson === 'object' ? Object.keys(parsedJson).sort() : [],
@@ -241,12 +258,17 @@ async function buildObservationChecks(targetBaseUrl, options = {}) {
   checks.push(await requestCheck(targetBaseUrl, 'root hosted contract', '/', { ...requestOptions, statuses: [200, 307, 308] }));
   checks.push(await requestCheck(targetBaseUrl, 'legacy demo contract', '/demo', { ...requestOptions, statuses: [200, 307, 308] }));
   checks.push(await requestCheck(targetBaseUrl, 'full vision contract', '/full-vision', { ...requestOptions, statuses: [200, 307, 308] }));
-  checks.push(await requestCheck(targetBaseUrl, 'known api application json', '/api/v1/daily-operations/today?branchId=00000000-0000-4000-8000-000000000185', {
+  checks.push(await requestCheck(targetBaseUrl, 'known api application json', '/api/v1/health', {
     ...requestOptions,
     requireJson: true,
+    requiredJsonValues: {
+      status: 'ok',
+      service: 'okul-yonetim-saas-api',
+      applicationType: 'backend-api',
+    },
     rejectVercelNotFound: true,
     rejectProtectedPreview: true,
-    statuses: [200, 400, 404, 422],
+    statuses: [200],
   }));
 
   return checks;
