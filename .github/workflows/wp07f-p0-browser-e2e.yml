@@ -79,21 +79,22 @@ jobs:
       - name: npm ci
         run: npm ci
 
-      - name: Install pinned browser runner dependencies
+      - name: Verify locked browser runner dependencies
         run: |
-          npm install --no-save puppeteer-core@24.15.0 @sparticuz/chromium@138.0.2
-          sudo apt-get update
-          sudo apt-get install -y chromium
           node - <<'NODE'
+          const puppeteer = require('puppeteer-core/package.json');
           const chromium = require('@sparticuz/chromium');
-          chromium.executablePath().then((executablePath) => {
-            console.log(`@sparticuz/chromium executable: ${executablePath}`);
-            console.log(`@sparticuz/chromium headless: ${chromium.headless}`);
-          }).catch((error) => {
-            console.warn(`@sparticuz/chromium executablePath warning: ${error.message}`);
-          });
+          console.log(`puppeteer-core locked version: ${puppeteer.version}`);
+          (async () => {
+            try {
+              const executablePath = await chromium.executablePath();
+              console.log(`@sparticuz/chromium executable: ${executablePath}`);
+              console.log(`@sparticuz/chromium headless: ${chromium.headless}`);
+            } catch (error) {
+              console.warn(`@sparticuz/chromium executablePath warning: ${error.message}`);
+            }
+          })();
           NODE
-          chromium --version || true
 
       - name: Run migrations
         run: npm run db:migrate
