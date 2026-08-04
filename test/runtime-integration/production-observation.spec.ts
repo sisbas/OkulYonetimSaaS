@@ -19,10 +19,30 @@ const baseEnv = {
   PRODUCTION_DEPLOYMENT_URL: 'https://deployment.example.test',
   PRODUCTION_DEPLOYMENT_ID: 'dpl_runtime_observation_test',
   PULL_REQUEST_HEAD_SHA: 'head-sha-for-test',
-  EXPECTED_PR_HEAD_SHA: 'head-sha-for-test',
+  EXPECTED_PR_HEAD_SHA: '0123456789abcdef0123456789abcdef01234567',
   GITHUB_REF_NAME: 'wp07f-pr1-production-reachability-v2',
   OBSERVATION_REQUEST_TIMEOUT_MS: '50',
+  VERCEL_DEPLOYMENT_METADATA_TOKEN: 'metadata-token-for-test',
 };
+
+const vercelMetadata = (sha = baseEnv.EXPECTED_PR_HEAD_SHA) => ({
+  meta: {
+    githubCommitSha: sha,
+  },
+});
+
+function withDeploymentMetadata(
+  handler: (url: string, init?: RequestInit) => Promise<Response>,
+  sha = baseEnv.EXPECTED_PR_HEAD_SHA,
+) {
+  return async (url: string, init?: RequestInit) => {
+    if (String(url).startsWith('https://api.vercel.com/')) {
+      expect(init?.headers).toEqual(expect.objectContaining({ authorization: expect.stringMatching(/^Bearer /) }));
+      return jsonResponse(vercelMetadata(sha));
+    }
+    return handler(url, init);
+  };
+}
 
 describe('production runtime observation', () => {
   it('classifies a fast Nest health JSON response as PASS', async () => {
@@ -131,11 +151,57 @@ describe('production runtime observation', () => {
     expect(apiCheck.pathname).toBe('/api/v1/health');
   });
 
-  it('isolates self-test observation to the deliberate probe with exact API_UNREACHABLE failure reason', async () => {
+  it('requires Vercel deployment metadata SHA to match the expected head before PASS', async () => {
+    const report = await observation.buildObservationReport(baseEnv, withDeploymentMetadata(async (url: string) => url.includes('/api/v1/health')
+      ? jsonResponse({
+        status: 'ok',
+        service: 'okul-yonetim-saas-api',
+        applicationType: 'backend-api',
+      })
+      : htmlResponse('<html></html>', 200)));
+
+    expect(report.deploymentCommitSha).toBe(baseEnv.EXPECTED_PR_HEAD_SHA);
+    expect(report.deploymentCommitSource).toBe('vercel_deployment_metadata');
+    expect(report.deploymentMetadataStatus).toBe('PASS');
+    expect(report.failureReasons).not.toContain('STALE_DEPLOYMENT');
+  });
+
+  it('rejects a stale deployment even when observed routes otherwise pass', async () => {
+    const staleSha = 'ffffffffffffffffffffffffffffffffffffffff';
+    const report = await observation.buildObservationReport(baseEnv, withDeploymentMetadata(async (url: string) => url.includes('/api/v1/health')
+      ? jsonResponse({
+        status: 'ok',
+        service: 'okul-yonetim-saas-api',
+        applicationType: 'backend-api',
+      })
+      : htmlResponse('<html></html>', 200), staleSha));
+
+    expect(report.overallStatus).toBe('FAIL');
+    expect(report.failureReasons).toContain('STALE_DEPLOYMENT');
+    expect(report.identityChecks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        failureReason: 'STALE_DEPLOYMENT',
+        expectedHeadSha: baseEnv.EXPECTED_PR_HEAD_SHA,
+        deploymentCommitSha: staleSha,
+      }),
+    ]));
+  });
+
+  it('blocks observation when deployment metadata auth is unavailable', async () => {
+    const report = await observation.buildObservationReport({
+      ...baseEnv,
+      VERCEL_DEPLOYMENT_METADATA_TOKEN: '',
+    }, withDeploymentMetadata(async () => htmlResponse('<html></html>', 200)));
+
+    expect(report.overallStatus).toBe('FAIL');
+    expect(report.failureReasons).toContain('MISSING_DEPLOYMENT_METADATA_AUTH');
+  });
+
+  it('isolates self-test observation to the deliberate probe with exact API_UNREACHABLE failure reason when deployment metadata matches', async () => {
     const report = await observation.buildObservationReport({
       ...baseEnv,
       OBSERVATION_SELF_TEST_UNREACHABLE_API: 'true',
-    }, async () => htmlResponse('The page could not be found: NOT_FOUND', 404));
+    }, withDeploymentMetadata(async () => htmlResponse('The page could not be found: NOT_FOUND', 404)));
 
     expect(report.overallStatus).toBe('FAIL');
     expect(report.failureReasons).toEqual(['API_UNREACHABLE']);
