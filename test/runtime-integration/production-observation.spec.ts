@@ -277,6 +277,25 @@ describe('production runtime observation', () => {
     expect(report.failureReasons).toContain('MISSING_DEPLOYMENT_METADATA_AUTH');
   });
 
+  it('returns early without probing target when deployment metadata fails with DEPLOYMENT_TARGET_MISMATCH', async () => {
+    const targetRequests: string[] = [];
+    const fetchImpl = async (url: string) => {
+      if (String(url).startsWith('https://api.vercel.com/')) {
+        return jsonResponse({ ...vercelMetadata(), url: 'other-deployment.example.test', alias: [] });
+      }
+      targetRequests.push(url);
+      return url.includes('/api/v1/health')
+        ? jsonResponse({ status: 'ok', service: 'okul-yonetim-saas-api', applicationType: 'backend-api' })
+        : htmlResponse('<html></html>', 200);
+    };
+    const report = await observation.buildObservationReport(baseEnv, fetchImpl);
+
+    expect(report.overallStatus).toBe('FAIL');
+    expect(report.failureReasons).toContain('DEPLOYMENT_TARGET_MISMATCH');
+    expect(report.checks).toEqual([]);
+    expect(targetRequests).toEqual([]);
+  });
+
   it('builds fallback failure reports with the full identity schema and original failure reason', () => {
     const error = Object.assign(new Error('missing https://preview.example.test/api?secret=raw-secret token=abc123'), {
       canonicalReason: 'MISSING_ENVIRONMENT',
@@ -322,5 +341,22 @@ describe('production runtime observation', () => {
     expect(redacted).not.toContain('plain-secret');
     expect(redacted).not.toContain('raw-secret');
     expect(redacted).not.toContain('raw-branch');
+  });
+
+  it('rejects HTTP target URLs to prevent bypass secret transmission over unencrypted connections', async () => {
+    const httpEnv = {
+      ...baseEnv,
+      OBSERVATION_TARGET_BASE_URL: 'http://insecure.example.test',
+    };
+
+    await expect(async () => {
+      await observation.buildObservationReport(httpEnv, async () => htmlResponse('<html></html>', 200));
+    }).rejects.toThrow('Target URL must use HTTPS protocol to protect secrets in transit');
+
+    try {
+      await observation.buildObservationReport(httpEnv, async () => htmlResponse('<html></html>', 200));
+    } catch (error: unknown) {
+      expect((error as { canonicalReason?: string }).canonicalReason).toBe('INSECURE_TARGET_PROTOCOL');
+    }
   });
 });

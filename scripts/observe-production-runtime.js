@@ -63,6 +63,9 @@ function requiredTargetBaseUrl(env = process.env) {
     || cleanUrl(env.PRODUCTION_ALIAS)
     || cleanUrl(env.VERCEL_URL);
   if (!target) throw Object.assign(new Error('OBSERVATION_TARGET_BASE_URL or PRODUCTION_ALIAS or PRODUCTION_DEPLOYMENT_URL or VERCEL_URL is required'), { canonicalReason: 'MISSING_ENVIRONMENT' });
+  if (!target.startsWith('https://')) {
+    throw Object.assign(new Error('Target URL must use HTTPS protocol to protect secrets in transit'), { canonicalReason: 'INSECURE_TARGET_PROTOCOL' });
+  }
   return target;
 }
 
@@ -440,6 +443,46 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
     productionDeploymentId,
     productionDeploymentUrl,
   });
+
+  if (!deploymentMetadata.ok) {
+    const identityChecks = [];
+    if (!expectedHeadSha) {
+      identityChecks.push({ ok: false, failureReason: 'MISSING_EXPECTED_PR_HEAD_SHA' });
+    } else if (commitSha !== expectedHeadSha) {
+      identityChecks.push({ ok: false, failureReason: 'STALE_ARTIFACT_HEAD_MISMATCH', expectedHeadSha, commitSha });
+    }
+    identityChecks.push({
+      ok: false,
+      failureReason: deploymentMetadata.failureReason || 'DEPLOYMENT_METADATA_UNAVAILABLE',
+      deploymentMetadataLookup: deploymentMetadata.lookup || null,
+      metadataUrl: deploymentMetadata.metadataUrl || null,
+      status: deploymentMetadata.status || null,
+    });
+    const failureReasons = identityChecks.filter((check) => !check.ok).map((check) => check.failureReason);
+    return {
+      overallStatus: 'FAIL',
+      issue: 185,
+      purpose: 'WP-07F production runtime and same-origin /api/v1 observation',
+      commitSha,
+      expectedHeadSha: expectedHeadSha || null,
+      branchRef,
+      productionDeploymentId,
+      productionDeploymentUrl: productionDeploymentUrl ? redactUrl(productionDeploymentUrl) : null,
+      productionAlias: redactUrl(productionAlias),
+      targetBaseUrl: redactUrl(targetBaseUrl),
+      deploymentCommitSha: null,
+      deploymentCommitSource: null,
+      deploymentMetadataLookup: deploymentMetadata.lookup || null,
+      deploymentMetadataStatus: 'FAIL',
+      observationTimestamp: new Date().toISOString(),
+      artifactName,
+      reportContentDigest: null,
+      failureReasons,
+      apiReachabilityStatus: 'FAIL',
+      checks: [],
+      identityChecks,
+    };
+  }
 
   const checks = await buildObservationChecks(targetBaseUrl, {
     selfTest,
