@@ -166,7 +166,7 @@ describe('production runtime observation', () => {
     expect(report.failureReasons).not.toContain('STALE_DEPLOYMENT');
   });
 
-  it('labels the JSON report digest as reportContentDigest instead of artifactDigest', async () => {
+  it('labels the pre-upload report digest separately from GitHub artifact digest', async () => {
     const report = await observation.buildObservationReport(baseEnv, withDeploymentMetadata(async (url: string) => url.includes('/api/v1/health')
       ? jsonResponse({
         status: 'ok',
@@ -208,6 +208,29 @@ describe('production runtime observation', () => {
 
     expect(report.overallStatus).toBe('FAIL');
     expect(report.failureReasons).toContain('MISSING_DEPLOYMENT_METADATA_AUTH');
+  });
+
+  it('builds fallback failure reports with the full identity schema and original failure reason', () => {
+    const error = Object.assign(new Error('missing https://preview.example.test/api?secret=raw-secret token=abc123'), {
+      canonicalReason: 'MISSING_ENVIRONMENT',
+    });
+    const report = observation.buildFailureReport(error, baseEnv);
+
+    expect(report.overallStatus).toBe('FAIL');
+    expect(report.failureReasons).toEqual(['MISSING_ENVIRONMENT']);
+    expect(report.commitSha).toBe(baseEnv.PULL_REQUEST_HEAD_SHA);
+    expect(report.expectedHeadSha).toBe(baseEnv.EXPECTED_PR_HEAD_SHA);
+    expect(report.branchRef).toBe(baseEnv.GITHUB_REF_NAME);
+    expect(report.productionDeploymentId).toBe(baseEnv.PRODUCTION_DEPLOYMENT_ID);
+    expect(report.targetBaseUrl).toBe('https://preview.example.test/');
+    expect(report.artifactName).toBe(`wp07f-production-observation-${baseEnv.PULL_REQUEST_HEAD_SHA}`);
+    expect(report.apiReachabilityStatus).toBe('FAIL');
+    expect(report.checks).toEqual([]);
+    expect(report.identityChecks).toEqual([{ ok: false, failureReason: 'MISSING_ENVIRONMENT' }]);
+    expect(Object.prototype.hasOwnProperty.call(report, 'reportContentDigest')).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(report, 'artifactDigest')).toBe(false);
+    expect(report.error).not.toContain('raw-secret');
+    expect(report.error).not.toContain('abc123');
   });
 
   it('isolates self-test observation to the deliberate probe with exact API_UNREACHABLE failure reason when deployment metadata matches', async () => {
