@@ -79,21 +79,26 @@ jobs:
       - name: npm ci
         run: npm ci
 
-      - name: Install pinned browser runner dependencies
+      - name: Smoke test pinned browser runner
         run: |
-          npm install --no-save puppeteer-core@24.15.0 @sparticuz/chromium@138.0.2
-          sudo apt-get update
-          sudo apt-get install -y chromium
-          node - <<'NODE'
-          const chromium = require('@sparticuz/chromium');
-          chromium.executablePath().then((executablePath) => {
-            console.log(`@sparticuz/chromium executable: ${executablePath}`);
-            console.log(`@sparticuz/chromium headless: ${chromium.headless}`);
-          }).catch((error) => {
-            console.warn(`@sparticuz/chromium executablePath warning: ${error.message}`);
-          });
+          node --input-type=module - <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          import chromium from '@sparticuz/chromium';
+
+          let browser;
+          try {
+            const executablePath = await chromium.executablePath();
+            browser = await puppeteer.launch({
+              executablePath,
+              args: chromium.args,
+              headless: chromium.headless,
+            });
+            const page = await browser.newPage();
+            await page.goto('about:blank');
+          } finally {
+            if (browser) await browser.close();
+          }
           NODE
-          chromium --version || true
 
       - name: Run migrations
         run: npm run db:migrate
