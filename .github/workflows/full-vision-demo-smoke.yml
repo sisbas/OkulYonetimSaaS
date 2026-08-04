@@ -51,11 +51,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install isolated Chromium QA runtime
-        run: npm install --prefix "$RUNNER_TEMP/gate2-browser" puppeteer-core@24.16.0 @sparticuz/chromium@138.0.2
+          cache: npm
+      - name: Verify lockfile exists
+        run: test -f package-lock.json
+      - name: Install dependencies
+        run: npm ci
       - name: Run four-viewport browser acceptance matrix
         env:
-          GATE2_BROWSER_MODULE_ROOT: ${{ runner.temp }}/gate2-browser/node_modules
           GATE2_BROWSER_OUTPUT: ${{ runner.temp }}/gate2-browser-evidence
         run: npm run demo:full:browser
       - name: Upload browser screenshots and report

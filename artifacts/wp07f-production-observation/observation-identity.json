@@ -1,0 +1,37 @@
+{
+  "overallStatus": "FAIL",
+  "issue": 185,
+  "purpose": "WP-07F production runtime and same-origin /api/v1 observation",
+  "commitSha": "1b52945b56cb0ff4a1b44a781df3bf80e5e8714e",
+  "expectedHeadSha": "1b52945b56cb0ff4a1b44a781df3bf80e5e8714e",
+  "branchRef": "wp07f-pr1-production-reachability-v2",
+  "productionDeploymentId": "4QrM5i5LkynGPhkyZqJK6j1mjRaz",
+  "productionDeploymentUrl": "https://okulyonetimsaas-3vezeqaht-sisbas-projects-d3c081cb.vercel.app/",
+  "productionAlias": "https://okulyonetimsaas-3vezeqaht-sisbas-projects-d3c081cb.vercel.app/",
+  "targetBaseUrl": "https://okulyonetimsaas-3vezeqaht-sisbas-projects-d3c081cb.vercel.app/",
+  "deploymentCommitSha": null,
+  "deploymentCommitSource": null,
+  "deploymentMetadataLookup": "4QrM5i5LkynGPhkyZqJK6j1mjRaz",
+  "deploymentMetadataStatus": "FAIL",
+  "deploymentTargetHost": null,
+  "deploymentAuthorizedHosts": [],
+  "observationTimestamp": "2026-08-04T20:41:04.236Z",
+  "artifactName": "wp07f-production-observation-1b52945b56cb0ff4a1b44a781df3bf80e5e8714e",
+  "reportContentDigest": "c6362150d9424692b9611fe1d4319d5bd5b9f171dc0da425bb4a18fdbbc7b264",
+  "failureReasons": [
+    "MISSING_DEPLOYMENT_METADATA_AUTH"
+  ],
+  "apiReachabilityStatus": "FAIL",
+  "checks": [],
+  "identityChecks": [
+    {
+      "ok": false,
+      "failureReason": "MISSING_DEPLOYMENT_METADATA_AUTH",
+      "deploymentMetadataLookup": "4QrM5i5LkynGPhkyZqJK6j1mjRaz",
+      "metadataUrl": null,
+      "status": null,
+      "targetHost": null,
+      "authorizedHosts": []
+    }
+  ]
+}

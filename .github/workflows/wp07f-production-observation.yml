@@ -135,7 +135,7 @@ jobs:
             if (checkNames.length !== 1 || checkNames[0] !== 'deliberate unreachable api self-test') {
               throw new Error(`Self-test must run only the deliberate unreachable probe, got ${checkNames.join(', ') || '<empty>'}`);
             }
-            console.log('Deliberate unreachable self-test PASS: exact API_UNREACHABLE failure observed.');
+            console.log('Deliberate unreachable self-test verified: exact expected API_UNREACHABLE failure observed.');
             process.exit(0);
           }
           if (report.overallStatus !== 'PASS') {

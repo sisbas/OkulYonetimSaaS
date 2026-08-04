@@ -1,4 +1,6 @@
 const observation = require('../../scripts/observe-production-runtime.js');
+const fs = require('node:fs');
+const path = require('node:path');
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -439,6 +441,20 @@ describe('production runtime observation', () => {
     expect(report.checks.some((check: { name: string }) => check.name === 'runtime shell')).toBe(false);
     expect(report.checks.some((check: { name: string }) => check.name === 'known api application json')).toBe(false);
     expect(requestedUrls).toEqual(['http://127.0.0.1:1/__not-api-v1-unreachable-observation-probe__']);
+  });
+
+  it('does not describe the deliberate unreachable-API self-test as successful in workflow logs', () => {
+    const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/wp07f-production-observation.yml'), 'utf8');
+    const apiUnreachableReason = ['API', 'UNREACHABLE'].join('_');
+    const passLabel = ['P', 'ASS'].join('');
+    const misleadingSelfTestPassPattern = new RegExp([
+      `${apiUnreachableReason}.*${passLabel}`,
+      `${passLabel}.*${apiUnreachableReason}`,
+      `self-test ${passLabel}`,
+    ].join('|'));
+
+    expect(workflow).not.toMatch(misleadingSelfTestPassPattern);
+    expect(workflow).toContain('Deliberate unreachable self-test verified: exact expected API_UNREACHABLE failure observed.');
   });
 
   it('redacts secrets, bearer tokens and full URL query values', () => {

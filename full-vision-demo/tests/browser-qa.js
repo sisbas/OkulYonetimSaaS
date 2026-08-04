@@ -6,9 +6,9 @@ const path = require('node:path');
 const { createServer } = require('../local-server.js');
 const { routes } = require('../app-shell/route-manifest.js');
 
-const moduleRoot = process.env.GATE2_BROWSER_MODULE_ROOT || '/tmp/gate2-browser/node_modules';
-const puppeteer = require(path.join(moduleRoot, 'puppeteer-core'));
-const chromium = require(path.join(moduleRoot, '@sparticuz', 'chromium'));
+const moduleRoot = process.env.GATE2_BROWSER_MODULE_ROOT;
+const puppeteer = moduleRoot ? require(path.join(moduleRoot, 'puppeteer-core')) : require('puppeteer-core');
+const chromium = moduleRoot ? require(path.join(moduleRoot, '@sparticuz', 'chromium')) : require('@sparticuz/chromium');
 const outputRoot = path.resolve(process.env.GATE2_BROWSER_OUTPUT || path.join(__dirname, '..', 'evidence', 'browser'));
 const viewports = [
   { name: '1440x900', width: 1440, height: 900 },
