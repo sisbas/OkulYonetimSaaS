@@ -112,11 +112,14 @@ function expectedJsonValues(parsedJson, required = {}) {
   const mismatches = [];
   if (!required || Object.keys(required).length === 0) return mismatches;
   if (!parsedJson || typeof parsedJson !== 'object') {
-    return Object.entries(required).map(([key, expected]) => ({ key, expected, actual: null }));
+    return Object.entries(required).map(([key, expected]) => ({ key, expected, actualType: 'missing' }));
   }
   for (const [key, expected] of Object.entries(required)) {
     const actual = parsedJson[key];
-    if (actual !== expected) mismatches.push({ key, expected, actual: actual ?? null });
+    if (actual !== expected) {
+      const actualType = actual === undefined ? 'missing' : actual === null ? 'null' : Array.isArray(actual) ? 'array' : typeof actual;
+      mismatches.push({ key, expected, actualType });
+    }
   }
   return mismatches;
 }
@@ -195,6 +198,24 @@ function extractDeploymentCommitSha(metadata) {
   return candidates.find((candidate) => typeof candidate === 'string' && /^[0-9a-f]{40}$/i.test(candidate)) || '';
 }
 
+function deploymentAuthorizedHosts(metadata) {
+  const candidates = [
+    metadata?.url,
+    metadata?.deployment?.url,
+    ...(Array.isArray(metadata?.alias) ? metadata.alias : []),
+    ...(Array.isArray(metadata?.aliases) ? metadata.aliases : []),
+    ...(Array.isArray(metadata?.deployment?.alias) ? metadata.deployment.alias : []),
+  ];
+  return [...new Set(candidates.flatMap((candidate) => {
+    if (typeof candidate !== 'string' || !candidate.trim()) return [];
+    try {
+      return [new URL(cleanUrl(candidate)).hostname.toLowerCase()];
+    } catch {
+      return [];
+    }
+  }))];
+}
+
 async function fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, deployment) {
   const lookup = deploymentLookupValue({ ...deployment, targetBaseUrl });
   if (!lookup) return { ok: false, failureReason: 'MISSING_DEPLOYMENT_LOOKUP' };
@@ -206,11 +227,20 @@ async function fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, depl
   const metadataUrl = new URL(`https://api.vercel.com/v13/deployments/${encodeURIComponent(lookup)}`);
   if (env.VERCEL_TEAM_ID) metadataUrl.searchParams.set('teamId', env.VERCEL_TEAM_ID);
 
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutMs = observationRequestTimeoutMs(env);
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
   try {
     const response = await fetchImpl(metadataUrl.toString(), {
       method: 'GET',
       redirect: 'manual',
       headers: { authorization: `Bearer ${token}` },
+      signal: controller.signal,
     });
     const body = await response.text();
     if (response.status === 401 || response.status === 403) {
@@ -224,6 +254,18 @@ async function fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, depl
     if (!deploymentCommitSha) {
       return { ok: false, failureReason: 'DEPLOYMENT_COMMIT_SHA_MISSING', lookup, metadataUrl: redactUrl(metadataUrl.toString()) };
     }
+    const authorizedHosts = deploymentAuthorizedHosts(metadata);
+    const targetHost = new URL(targetBaseUrl).hostname.toLowerCase();
+    if (authorizedHosts.length === 0 || !authorizedHosts.includes(targetHost)) {
+      return {
+        ok: false,
+        failureReason: 'DEPLOYMENT_TARGET_MISMATCH',
+        lookup,
+        metadataUrl: redactUrl(metadataUrl.toString()),
+        targetHost,
+        authorizedHosts,
+      };
+    }
     return {
       ok: true,
       lookup,
@@ -234,11 +276,13 @@ async function fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, depl
   } catch (error) {
     return {
       ok: false,
-      failureReason: 'DEPLOYMENT_METADATA_UNAVAILABLE',
+      failureReason: timedOut || error?.name === 'AbortError' ? 'DEPLOYMENT_METADATA_TIMEOUT' : 'DEPLOYMENT_METADATA_UNAVAILABLE',
       lookup,
       metadataUrl: redactUrl(metadataUrl.toString()),
-      error: redact(error instanceof Error ? error.message : String(error)),
+      error: timedOut || error?.name === 'AbortError' ? `Deployment metadata request timed out after ${timeoutMs}ms` : redact(error instanceof Error ? error.message : String(error)),
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -405,7 +449,9 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
   });
 
   const identityChecks = [];
-  if (expectedHeadSha && commitSha !== expectedHeadSha) {
+  if (!expectedHeadSha) {
+    identityChecks.push({ ok: false, failureReason: 'MISSING_EXPECTED_PR_HEAD_SHA' });
+  } else if (commitSha !== expectedHeadSha) {
     identityChecks.push({ ok: false, failureReason: 'STALE_ARTIFACT_HEAD_MISMATCH', expectedHeadSha, commitSha });
   }
   if (!deploymentMetadata.ok) {
@@ -517,6 +563,7 @@ module.exports = {
   buildFailureReport,
   buildObservationChecks,
   buildObservationReport,
+  buildReportContentDigest,
   cleanUrl,
   deploymentLookupValue,
   extractDeploymentCommitSha,

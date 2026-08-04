@@ -41,7 +41,9 @@ The identity file must include:
 - `overallStatus`
 - `checks[]`
 
-`reportContentDigest` is the digest of `observation-identity.json` content before upload. It is not the GitHub uploaded artifact archive digest. The GitHub artifact `id`, `name`, and `digest` remain the Actions artifact API or `actions/upload-artifact` output source of truth and must be recorded separately during evidence reconciliation.
+`reportContentDigest` is a self-excluding canonical digest, not a digest of the final file bytes. To verify it, parse `observation-identity.json`, set `reportContentDigest` to `null`, serialize with `JSON.stringify(report, null, 2)`, and calculate the SHA-256 hex digest. This avoids a circular self-hash. It is not the GitHub uploaded artifact archive digest. The GitHub artifact `id`, `name`, and `digest` remain the Actions artifact API or `actions/upload-artifact` output source of truth and must be recorded separately during evidence reconciliation.
+
+The Vercel deployment metadata response must bind the observed target hostname to the concrete deployment URL or one of its aliases. A SHA match from one deployment cannot authorize probes against another host.
 
 The report must not contain an `artifactDigest` field because that name is reserved for the uploaded artifact source-of-truth digest.
 

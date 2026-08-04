@@ -10,7 +10,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 function htmlResponse(body: string, status = 200): Response {
   return new Response(body, {
     status,
-    headers: { 'content-type': 'text/html' },
+    headers: {
+      'content-type': 'text/html',
+      'content-security-policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer',
+      'x-content-type-options': 'nosniff',
+      'x-robots-tag': 'noindex, nofollow',
+      'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+    },
   });
 }
 
@@ -18,7 +25,7 @@ const baseEnv = {
   OBSERVATION_TARGET_BASE_URL: 'https://preview.example.test',
   PRODUCTION_DEPLOYMENT_URL: 'https://deployment.example.test',
   PRODUCTION_DEPLOYMENT_ID: 'dpl_runtime_observation_test',
-  PULL_REQUEST_HEAD_SHA: 'head-sha-for-test',
+  PULL_REQUEST_HEAD_SHA: '0123456789abcdef0123456789abcdef01234567',
   EXPECTED_PR_HEAD_SHA: '0123456789abcdef0123456789abcdef01234567',
   GITHUB_REF_NAME: 'wp07f-pr1-production-reachability-v2',
   OBSERVATION_REQUEST_TIMEOUT_MS: '50',
@@ -26,6 +33,8 @@ const baseEnv = {
 };
 
 const vercelMetadata = (sha = baseEnv.EXPECTED_PR_HEAD_SHA) => ({
+  url: 'preview.example.test',
+  alias: ['deployment.example.test'],
   meta: {
     githubCommitSha: sha,
   },
@@ -85,8 +94,25 @@ describe('production runtime observation', () => {
     expect(check.failureReason).toBe('API_UNREACHABLE');
     expect(check.jsonValueMismatches).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: 'service', expected: 'okul-yonetim-saas-api' }),
-      expect.objectContaining({ key: 'applicationType', expected: 'backend-api', actual: 'static-proxy' }),
+      expect.objectContaining({ key: 'applicationType', expected: 'backend-api', actualType: 'string' }),
     ]));
+    expect(JSON.stringify(check)).not.toContain('static-proxy');
+  });
+
+  it('never serializes a reflected protection bypass secret in JSON mismatch evidence', async () => {
+    const bypassSecret = 'synthetic-bypass-secret-that-must-not-leak';
+    const check = await observation.requestCheck('https://preview.example.test', 'known api application json', '/api/v1/health', {
+      env: { VERCEL_PROTECTION_BYPASS_SECRET: bypassSecret },
+      requireJson: true,
+      requiredJsonValues: { service: 'okul-yonetim-saas-api' },
+      statuses: [200],
+      timeoutMs: 50,
+      fetchImpl: async () => jsonResponse({ service: bypassSecret }),
+    });
+
+    expect(check.ok).toBe(false);
+    expect(check.jsonValueMismatches).toEqual([{ key: 'service', expected: 'okul-yonetim-saas-api', actualType: 'string' }]);
+    expect(JSON.stringify(check)).not.toContain(bypassSecret);
   });
 
   it('classifies a hanging request as bounded REQUEST_TIMEOUT without leaking URL query values', async () => {
@@ -163,7 +189,45 @@ describe('production runtime observation', () => {
     expect(report.deploymentCommitSha).toBe(baseEnv.EXPECTED_PR_HEAD_SHA);
     expect(report.deploymentCommitSource).toBe('vercel_deployment_metadata');
     expect(report.deploymentMetadataStatus).toBe('PASS');
+    expect(report.overallStatus).toBe('PASS');
+    expect(report.failureReasons).toEqual([]);
     expect(report.failureReasons).not.toContain('STALE_DEPLOYMENT');
+  });
+
+  it('fails closed when the expected PR head SHA is missing', async () => {
+    const report = await observation.buildObservationReport({
+      ...baseEnv,
+      EXPECTED_PR_HEAD_SHA: '',
+    }, withDeploymentMetadata(async (url: string) => url.includes('/api/v1/health')
+      ? jsonResponse({ status: 'ok', service: 'okul-yonetim-saas-api', applicationType: 'backend-api' })
+      : htmlResponse('<html></html>', 200)));
+
+    expect(report.overallStatus).toBe('FAIL');
+    expect(report.failureReasons).toContain('MISSING_EXPECTED_PR_HEAD_SHA');
+  });
+
+  it('fails closed when deployment metadata is bound to a different host', async () => {
+    const fetchImpl = async (url: string) => String(url).startsWith('https://api.vercel.com/')
+      ? jsonResponse({ ...vercelMetadata(), url: 'other-deployment.example.test', alias: [] })
+      : url.includes('/api/v1/health')
+        ? jsonResponse({ status: 'ok', service: 'okul-yonetim-saas-api', applicationType: 'backend-api' })
+        : htmlResponse('<html></html>', 200);
+    const report = await observation.buildObservationReport(baseEnv, fetchImpl);
+
+    expect(report.overallStatus).toBe('FAIL');
+    expect(report.failureReasons).toContain('DEPLOYMENT_TARGET_MISMATCH');
+  });
+
+  it('bounds a hanging deployment metadata request', async () => {
+    const report = await observation.buildObservationReport({
+      ...baseEnv,
+      OBSERVATION_REQUEST_TIMEOUT_MS: '5',
+    }, (_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    }));
+
+    expect(report.overallStatus).toBe('FAIL');
+    expect(report.failureReasons).toContain('DEPLOYMENT_METADATA_TIMEOUT');
   });
 
   it('labels the pre-upload report digest separately from GitHub artifact digest', async () => {
@@ -177,6 +241,9 @@ describe('production runtime observation', () => {
 
     expect(Object.prototype.hasOwnProperty.call(report, 'reportContentDigest')).toBe(true);
     expect(Object.prototype.hasOwnProperty.call(report, 'artifactDigest')).toBe(false);
+    const firstDigest = observation.buildReportContentDigest(report);
+    report.reportContentDigest = firstDigest;
+    expect(observation.buildReportContentDigest(report)).toBe(firstDigest);
   });
 
   it('rejects a stale deployment even when observed routes otherwise pass', async () => {
