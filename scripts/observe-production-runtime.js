@@ -143,6 +143,81 @@ function classifyResponseFailure({ protectedPreview, vercelNotFound, jsonOk, jso
   return 'OBSERVATION_CHECK_FAILED';
 }
 
+function deploymentMetadataToken(env = process.env) {
+  return env.VERCEL_DEPLOYMENT_METADATA_TOKEN || env.VERCEL_TOKEN || env.VERCEL_API_TOKEN || '';
+}
+
+function deploymentLookupValue({ productionDeploymentId, productionDeploymentUrl, targetBaseUrl }) {
+  if (productionDeploymentId) return String(productionDeploymentId).trim();
+  const candidate = productionDeploymentUrl || targetBaseUrl;
+  if (!candidate) return '';
+  try {
+    return new URL(candidate).hostname;
+  } catch {
+    return String(candidate).replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim();
+  }
+}
+
+function extractDeploymentCommitSha(metadata) {
+  const candidates = [
+    metadata?.meta?.githubCommitSha,
+    metadata?.meta?.gitCommitSha,
+    metadata?.gitSource?.sha,
+    metadata?.gitMetadata?.commitSha,
+    metadata?.githubCommitSha,
+    metadata?.deployment?.meta?.githubCommitSha,
+    metadata?.deployment?.gitSource?.sha,
+  ];
+  return candidates.find((candidate) => typeof candidate === 'string' && /^[0-9a-f]{40}$/i.test(candidate)) || '';
+}
+
+async function fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, deployment) {
+  const lookup = deploymentLookupValue({ ...deployment, targetBaseUrl });
+  if (!lookup) return { ok: false, failureReason: 'MISSING_DEPLOYMENT_LOOKUP' };
+  const token = deploymentMetadataToken(env);
+  if (!token) {
+    return { ok: false, failureReason: 'MISSING_DEPLOYMENT_METADATA_AUTH', lookup };
+  }
+
+  const metadataUrl = new URL(`https://api.vercel.com/v13/deployments/${encodeURIComponent(lookup)}`);
+  if (env.VERCEL_TEAM_ID) metadataUrl.searchParams.set('teamId', env.VERCEL_TEAM_ID);
+
+  try {
+    const response = await fetchImpl(metadataUrl.toString(), {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const body = await response.text();
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, failureReason: 'DEPLOYMENT_METADATA_AUTH_FAILED', lookup, metadataUrl: redactUrl(metadataUrl.toString()) };
+    }
+    if (!response.ok) {
+      return { ok: false, failureReason: 'DEPLOYMENT_METADATA_UNAVAILABLE', lookup, metadataUrl: redactUrl(metadataUrl.toString()), status: response.status };
+    }
+    const metadata = safeJson(body);
+    const deploymentCommitSha = extractDeploymentCommitSha(metadata);
+    if (!deploymentCommitSha) {
+      return { ok: false, failureReason: 'DEPLOYMENT_COMMIT_SHA_MISSING', lookup, metadataUrl: redactUrl(metadataUrl.toString()) };
+    }
+    return {
+      ok: true,
+      lookup,
+      metadataUrl: redactUrl(metadataUrl.toString()),
+      deploymentCommitSha,
+      deploymentCommitSource: 'vercel_deployment_metadata',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      failureReason: 'DEPLOYMENT_METADATA_UNAVAILABLE',
+      lookup,
+      metadataUrl: redactUrl(metadataUrl.toString()),
+      error: redact(error instanceof Error ? error.message : String(error)),
+    };
+  }
+}
+
 async function requestCheck(baseUrl, name, pathname, options = {}) {
   const url = new URL(pathname, baseUrl).toString();
   const startedAt = new Date().toISOString();
@@ -293,6 +368,10 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
   const productionAlias = cleanUrl(env.PRODUCTION_ALIAS) || targetBaseUrl;
   const artifactName = `wp07f-production-observation-${commitSha}`;
   const selfTest = env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
+  const deploymentMetadata = await fetchDeploymentCommitMetadata(env, fetchImpl, targetBaseUrl, {
+    productionDeploymentId,
+    productionDeploymentUrl,
+  });
 
   const checks = await buildObservationChecks(targetBaseUrl, {
     selfTest,
@@ -304,6 +383,23 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
   const identityChecks = [];
   if (expectedHeadSha && commitSha !== expectedHeadSha) {
     identityChecks.push({ ok: false, failureReason: 'STALE_ARTIFACT_HEAD_MISMATCH', expectedHeadSha, commitSha });
+  }
+  if (!deploymentMetadata.ok) {
+    identityChecks.push({
+      ok: false,
+      failureReason: deploymentMetadata.failureReason || 'DEPLOYMENT_METADATA_UNAVAILABLE',
+      deploymentMetadataLookup: deploymentMetadata.lookup || null,
+      metadataUrl: deploymentMetadata.metadataUrl || null,
+      status: deploymentMetadata.status || null,
+    });
+  } else if (expectedHeadSha && deploymentMetadata.deploymentCommitSha !== expectedHeadSha) {
+    identityChecks.push({
+      ok: false,
+      failureReason: 'STALE_DEPLOYMENT',
+      expectedHeadSha,
+      deploymentCommitSha: deploymentMetadata.deploymentCommitSha,
+      deploymentMetadataLookup: deploymentMetadata.lookup || null,
+    });
   }
 
   const failureReasons = [
@@ -324,6 +420,10 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
     productionDeploymentUrl: productionDeploymentUrl ? redactUrl(productionDeploymentUrl) : null,
     productionAlias: redactUrl(productionAlias),
     targetBaseUrl: redactUrl(targetBaseUrl),
+    deploymentCommitSha: deploymentMetadata.deploymentCommitSha || null,
+    deploymentCommitSource: deploymentMetadata.deploymentCommitSource || null,
+    deploymentMetadataLookup: deploymentMetadata.lookup || null,
+    deploymentMetadataStatus: deploymentMetadata.ok ? 'PASS' : 'FAIL',
     observationTimestamp: new Date().toISOString(),
     artifactName,
     artifactDigest: null,
@@ -375,6 +475,9 @@ module.exports = {
   buildObservationChecks,
   buildObservationReport,
   cleanUrl,
+  deploymentLookupValue,
+  extractDeploymentCommitSha,
+  fetchDeploymentCommitMetadata,
   observationRequestTimeoutMs,
   redact,
   redactPathname,
