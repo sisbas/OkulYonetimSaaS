@@ -349,13 +349,13 @@ async function buildObservationChecks(targetBaseUrl, options = {}) {
   return checks;
 }
 
-function buildReportDigest(report) {
-  return digest(JSON.stringify({ ...report, artifactDigest: null }, null, 2));
+function buildReportContentDigest(report) {
+  return digest(JSON.stringify({ ...report, reportContentDigest: null }, null, 2));
 }
 
 function writeReport(report) {
   fs.mkdirSync(outDir, { recursive: true });
-  report.artifactDigest = buildReportDigest(report);
+  report.reportContentDigest = buildReportContentDigest(report);
   fs.writeFileSync(observationPath, JSON.stringify(report, null, 2));
 }
 
@@ -426,7 +426,7 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
     deploymentMetadataStatus: deploymentMetadata.ok ? 'PASS' : 'FAIL',
     observationTimestamp: new Date().toISOString(),
     artifactName,
-    artifactDigest: null,
+    reportContentDigest: null,
     failureReasons,
     apiReachabilityStatus: apiReachability?.ok ? 'PASS' : 'FAIL',
     checks,
