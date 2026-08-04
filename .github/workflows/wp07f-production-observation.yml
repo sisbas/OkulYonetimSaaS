@@ -113,6 +113,33 @@ jobs:
           const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
           const expectedHeadSha = process.env.EXPECTED_PR_HEAD_SHA;
           const selfTest = process.env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
+          const failureReasons = Array.isArray(report.failureReasons) ? report.failureReasons : [];
+          if (failureReasons.length === 0 && report.overallStatus === 'FAIL') {
+            throw new Error('Observation failed without failureReasons; failure identity is incomplete.');
+          }
+          if (!report.reportContentDigest || !report.observationTimestamp) {
+            throw new Error('Observation report content identity is incomplete.');
+          }
+          if (Object.prototype.hasOwnProperty.call(report, 'artifactDigest')) {
+            throw new Error('artifactDigest is reserved for GitHub uploaded artifact source-of-truth and must not be written inside the pre-upload report. Use reportContentDigest for the report JSON digest.');
+          }
+          if (selfTest) {
+            if (report.overallStatus !== 'FAIL') {
+              throw new Error(`Deliberate unreachable self-test must produce overallStatus=FAIL, got ${report.overallStatus}`);
+            }
+            if (failureReasons.length !== 1 || failureReasons[0] !== 'API_UNREACHABLE') {
+              throw new Error(`Deliberate unreachable self-test failureReasons must be exactly API_UNREACHABLE, got ${failureReasons.join(', ') || '<empty>'}`);
+            }
+            const checkNames = Array.isArray(report.checks) ? report.checks.map((check) => check.name) : [];
+            if (checkNames.length !== 1 || checkNames[0] !== 'deliberate unreachable api self-test') {
+              throw new Error(`Self-test must run only the deliberate unreachable probe, got ${checkNames.join(', ') || '<empty>'}`);
+            }
+            console.log('Deliberate unreachable self-test PASS: exact API_UNREACHABLE failure observed.');
+            process.exit(0);
+          }
+          if (report.overallStatus !== 'PASS') {
+            throw new Error(`Production observation failed: ${failureReasons.join(', ') || 'unknown reason'}`);
+          }
           if (report.commitSha !== expectedHeadSha) {
             throw new Error(`Artifact checkout commit mismatch: expected ${expectedHeadSha}, got ${report.commitSha || '<missing>'}`);
           }
@@ -125,29 +152,8 @@ jobs:
           if (!report.productionDeploymentUrl && !report.productionDeploymentId) {
             throw new Error('Deployment identity incomplete: deployment URL and ID are both empty.');
           }
-          if (!report.artifactName || !report.reportContentDigest || !report.observationTimestamp || !report.branchRef || !report.targetBaseUrl) {
+          if (!report.artifactName || !report.branchRef || !report.targetBaseUrl) {
             throw new Error('Observation identity schema is incomplete.');
-          }
-          if (Object.prototype.hasOwnProperty.call(report, 'artifactDigest')) {
-            throw new Error('artifactDigest is reserved for GitHub uploaded artifact source-of-truth and must not be written inside the pre-upload report. Use reportContentDigest for the report JSON digest.');
-          }
-          if (selfTest) {
-            if (report.overallStatus !== 'FAIL') {
-              throw new Error(`Deliberate unreachable self-test must produce overallStatus=FAIL, got ${report.overallStatus}`);
-            }
-            const failureReasons = Array.isArray(report.failureReasons) ? report.failureReasons : [];
-            if (failureReasons.length !== 1 || failureReasons[0] !== 'API_UNREACHABLE') {
-              throw new Error(`Deliberate unreachable self-test failureReasons must be exactly API_UNREACHABLE, got ${failureReasons.join(', ') || '<empty>'}`);
-            }
-            const checkNames = Array.isArray(report.checks) ? report.checks.map((check) => check.name) : [];
-            if (checkNames.length !== 1 || checkNames[0] !== 'deliberate unreachable api self-test') {
-              throw new Error(`Self-test must run only the deliberate unreachable probe, got ${checkNames.join(', ') || '<empty>'}`);
-            }
-            console.log('Deliberate unreachable self-test PASS: exact API_UNREACHABLE failure observed.');
-            process.exit(0);
-          }
-          if (report.overallStatus !== 'PASS') {
-            throw new Error(`Production observation failed: ${(report.failureReasons || []).join(', ') || 'unknown reason'}`);
           }
           if (report.apiReachabilityStatus !== 'PASS') {
             throw new Error('Production API reachability is not PASS.');
