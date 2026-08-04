@@ -1,0 +1,93 @@
+name: WP-07F Production Observation
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Run normal observation or the isolated negative self-test
+        type: choice
+        required: true
+        default: normal
+        options: [normal, self-test]
+      target_base_url:
+        description: Production deployment base URL (normal mode only)
+        type: string
+        required: false
+      deployment_id:
+        description: Vercel deployment ID for artifact provenance
+        type: string
+        required: false
+      deployment_alias:
+        description: Vercel deployment alias for artifact provenance
+        type: string
+        required: false
+      expected_head_sha:
+        description: Expected deployed head SHA
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wp07f-production-observation-${{ github.event.inputs.mode || 'normal' }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    name: ${{ github.event.inputs.mode == 'self-test' && 'Isolated API unreachable self-test' || 'Production route observation' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BASE_URL: ${{ inputs.target_base_url || vars.PRODUCTION_BASE_URL }}
+      DEPLOYMENT_URL: ${{ inputs.target_base_url || vars.PRODUCTION_BASE_URL }}
+      DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+      DEPLOYMENT_ALIAS: ${{ inputs.deployment_alias }}
+      EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha || github.sha }}
+      OBSERVATION_ARTIFACT: artifacts/production-observation/observation.json
+    steps:
+      - name: Checkout observation ref
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run normal production observation
+        if: ${{ github.event.inputs.mode != 'self-test' }}
+        run: node scripts/observe-production-runtime.js
+
+      - name: Run isolated unreachable API self-test
+        if: ${{ github.event.inputs.mode == 'self-test' }}
+        run: node scripts/observe-production-runtime.js --self-test
+
+      - name: Gate isolated self-test contract
+        if: ${{ github.event.inputs.mode == 'self-test' }}
+        run: |
+          jq -e '
+            (.checks | length) == 1 and
+            .checks[0].name == "deliberate unreachable api self-test" and
+            .overallStatus == "FAIL" and
+            .failureReasons == ["API_UNREACHABLE"]
+          ' "$OBSERVATION_ARTIFACT"
+
+      - name: Upload sanitized observation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wp07f-production-observation-${{ github.event.inputs.mode || 'normal' }}-${{ github.run_id }}
+          path: artifacts/production-observation/observation.json
+          if-no-files-found: error
+          retention-days: 14
+
+# Normal observation and the destructive negative self-test intentionally use
+# different workflow_dispatch runs; they are never combined in one evidence run.
