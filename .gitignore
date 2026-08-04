@@ -187,6 +187,10 @@ tests/__snapshots__/
 
 # Documentation
 docs/
+!docs/
+docs/*
+!docs/agents/
+!docs/agents/**
 
 # Assets
 assets/
