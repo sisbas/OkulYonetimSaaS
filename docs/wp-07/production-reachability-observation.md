@@ -17,7 +17,7 @@ The bounded production routing decision is:
 
 ## Observation identity contract
 
-The production observation artifact is written to:
+The production observation report is written inside the uploaded artifact at:
 
 ```text
 artifacts/wp07f-production-observation/observation-identity.json
@@ -33,10 +33,17 @@ The identity file must include:
 - `targetBaseUrl`
 - `observationTimestamp`
 - `artifactName`
-- `artifactDigest`
+- `reportContentDigest`
+- `deploymentCommitSha`
+- `deploymentCommitSource`
+- `deploymentMetadataStatus`
 - `apiReachabilityStatus`
 - `overallStatus`
 - `checks[]`
+
+`reportContentDigest` is the digest of `observation-identity.json` content before upload. It is not the GitHub uploaded artifact archive digest. The GitHub artifact `id`, `name`, and `digest` remain the Actions artifact API or `actions/upload-artifact` output source of truth and must be recorded separately during evidence reconciliation.
+
+The report must not contain an `artifactDigest` field because that name is reserved for the uploaded artifact source-of-truth digest.
 
 `overallStatus` is `FAIL` whenever a known `/api/v1/*` endpoint is not application-controlled JSON or looks like Vercel platform `NOT_FOUND`.
 
