@@ -75,6 +75,30 @@ function deploymentIdentity(env = process.env) {
   return { productionDeploymentUrl, productionDeploymentId };
 }
 
+function safeObservationIdentity(env = process.env) {
+  const targetBaseUrl = cleanUrl(env.OBSERVATION_TARGET_BASE_URL)
+    || cleanUrl(env.PRODUCTION_DEPLOYMENT_URL)
+    || cleanUrl(env.PRODUCTION_ALIAS)
+    || cleanUrl(env.VERCEL_URL)
+    || null;
+  const productionDeploymentUrl = cleanUrl(env.PRODUCTION_DEPLOYMENT_URL) || cleanUrl(env.VERCEL_URL) || null;
+  const productionDeploymentId = env.PRODUCTION_DEPLOYMENT_ID || env.VERCEL_DEPLOYMENT_ID || null;
+  const commitSha = env.PULL_REQUEST_HEAD_SHA || env.GITHUB_SHA || env.VERCEL_GIT_COMMIT_SHA || 'unknown';
+  const expectedHeadSha = env.EXPECTED_PR_HEAD_SHA || null;
+  const branchRef = env.GITHUB_HEAD_REF || env.GITHUB_REF_NAME || env.VERCEL_GIT_COMMIT_REF || 'unknown';
+  const productionAlias = cleanUrl(env.PRODUCTION_ALIAS) || targetBaseUrl || null;
+  return {
+    commitSha,
+    expectedHeadSha,
+    branchRef,
+    productionDeploymentId,
+    productionDeploymentUrl: productionDeploymentUrl ? redactUrl(productionDeploymentUrl) : null,
+    productionAlias: productionAlias ? redactUrl(productionAlias) : null,
+    targetBaseUrl: targetBaseUrl ? redactUrl(targetBaseUrl) : null,
+    artifactName: `wp07f-production-observation-${commitSha}`,
+  };
+}
+
 function expectedHeaders(headers, required) {
   const missing = [];
   for (const [key, expected] of Object.entries(required)) {
@@ -434,6 +458,35 @@ async function buildObservationReport(env = process.env, fetchImpl = fetch) {
   };
 }
 
+function buildFailureReport(error, env = process.env) {
+  const failureReason = error && error.canonicalReason ? error.canonicalReason : 'SCRIPT_EXCEPTION';
+  const identity = safeObservationIdentity(env);
+  return {
+    overallStatus: 'FAIL',
+    issue: 185,
+    purpose: 'WP-07F production runtime and same-origin /api/v1 observation',
+    commitSha: identity.commitSha,
+    expectedHeadSha: identity.expectedHeadSha,
+    branchRef: identity.branchRef,
+    productionDeploymentId: identity.productionDeploymentId,
+    productionDeploymentUrl: identity.productionDeploymentUrl,
+    productionAlias: identity.productionAlias,
+    targetBaseUrl: identity.targetBaseUrl,
+    deploymentCommitSha: null,
+    deploymentCommitSource: null,
+    deploymentMetadataLookup: null,
+    deploymentMetadataStatus: 'FAIL',
+    observationTimestamp: new Date().toISOString(),
+    artifactName: identity.artifactName,
+    reportContentDigest: null,
+    failureReasons: [failureReason],
+    apiReachabilityStatus: 'FAIL',
+    checks: [],
+    identityChecks: [{ ok: false, failureReason }],
+    error: redact(error instanceof Error ? error.message : String(error)),
+  };
+}
+
 async function main() {
   const report = await buildObservationReport(process.env, fetch);
   writeReport(report);
@@ -442,25 +495,14 @@ async function main() {
 }
 
 function writeFailureReport(error) {
-  const failureReason = error && error.canonicalReason ? error.canonicalReason : 'SCRIPT_EXCEPTION';
-  const report = {
-    overallStatus: 'FAIL',
-    issue: 185,
-    purpose: 'WP-07F production runtime and same-origin /api/v1 observation',
-    observationTimestamp: new Date().toISOString(),
-    failureReasons: [failureReason],
-    error: redact(error instanceof Error ? error.message : String(error)),
-  };
+  const report = buildFailureReport(error, process.env);
   try {
     writeReport(report);
   } catch (writeError) {
-    console.error(JSON.stringify({
-      overallStatus: 'FAIL',
-      issue: 185,
-      observationTimestamp: new Date().toISOString(),
-      failureReasons: ['ARTIFACT_WRITE_FAILURE'],
-      error: redact(writeError instanceof Error ? writeError.message : String(writeError)),
-    }, null, 2));
+    const writeFailureReportBody = buildFailureReport(writeError, process.env);
+    writeFailureReportBody.failureReasons = ['ARTIFACT_WRITE_FAILURE'];
+    writeFailureReportBody.identityChecks = [{ ok: false, failureReason: 'ARTIFACT_WRITE_FAILURE' }];
+    console.error(JSON.stringify(writeFailureReportBody, null, 2));
   }
   console.error(JSON.stringify(report, null, 2));
   process.exitCode = 1;
@@ -472,6 +514,7 @@ if (require.main === module) {
 
 module.exports = {
   DEFAULT_REQUEST_TIMEOUT_MS,
+  buildFailureReport,
   buildObservationChecks,
   buildObservationReport,
   cleanUrl,
