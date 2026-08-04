@@ -125,8 +125,11 @@ jobs:
           if (!report.productionDeploymentUrl && !report.productionDeploymentId) {
             throw new Error('Deployment identity incomplete: deployment URL and ID are both empty.');
           }
-          if (!report.artifactName || !report.artifactDigest || !report.observationTimestamp || !report.branchRef || !report.targetBaseUrl) {
+          if (!report.artifactName || !report.reportContentDigest || !report.observationTimestamp || !report.branchRef || !report.targetBaseUrl) {
             throw new Error('Observation identity schema is incomplete.');
+          }
+          if (Object.prototype.hasOwnProperty.call(report, 'artifactDigest')) {
+            throw new Error('artifactDigest is reserved for GitHub uploaded artifact source-of-truth and must not be written inside the pre-upload report. Use reportContentDigest for the report JSON digest.');
           }
           if (selfTest) {
             if (report.overallStatus !== 'FAIL') {
