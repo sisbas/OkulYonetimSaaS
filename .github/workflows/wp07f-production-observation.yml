@@ -49,6 +49,8 @@ jobs:
       PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
       VERCEL_PROTECTION_BYPASS_SECRET: ${{ secrets.VERCEL_PROTECTION_BYPASS_SECRET }}
       VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      VERCEL_DEPLOYMENT_METADATA_TOKEN: ${{ secrets.VERCEL_DEPLOYMENT_METADATA_TOKEN || secrets.VERCEL_TOKEN || secrets.VERCEL_API_TOKEN }}
+      VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
 
     steps:
       - name: Checkout
@@ -112,7 +114,13 @@ jobs:
           const expectedHeadSha = process.env.EXPECTED_PR_HEAD_SHA;
           const selfTest = process.env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
           if (report.commitSha !== expectedHeadSha) {
-            throw new Error(`Artifact commit mismatch: expected ${expectedHeadSha}, got ${report.commitSha || '<missing>'}`);
+            throw new Error(`Artifact checkout commit mismatch: expected ${expectedHeadSha}, got ${report.commitSha || '<missing>'}`);
+          }
+          if (report.deploymentCommitSha !== expectedHeadSha) {
+            throw new Error(`Observed deployment commit mismatch: expected ${expectedHeadSha}, got ${report.deploymentCommitSha || '<missing>'}`);
+          }
+          if (report.deploymentMetadataStatus !== 'PASS' || report.deploymentCommitSource !== 'vercel_deployment_metadata') {
+            throw new Error('Observed deployment metadata identity is not verified from Vercel deployment metadata.');
           }
           if (!report.productionDeploymentUrl && !report.productionDeploymentId) {
             throw new Error('Deployment identity incomplete: deployment URL and ID are both empty.');
