@@ -21,8 +21,7 @@ const BASE_URL = process.env.APP_BASE_URL || 'http://127.0.0.1:3000';
 const HEAD_SHA = process.env.PULL_REQUEST_HEAD_SHA || process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA || 'unknown';
 const RUN_ID = process.env.GITHUB_RUN_ID || 'local';
 const DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
-const CHROMIUM_EXECUTABLE_PATH = process.env.CHROMIUM_EXECUTABLE_PATH || '';
-const PUPPETEER_EXECUTABLE_STRATEGY = process.env.PUPPETEER_EXECUTABLE_STRATEGY || 'auto';
+const PUPPETEER_EXECUTABLE_STRATEGY = process.env.PUPPETEER_EXECUTABLE_STRATEGY || 'sparticuz';
 
 const safeStrings = {
   tenantSlug: 'system-seed',
@@ -108,82 +107,46 @@ function isExecutable(filePath) {
   }
 }
 
-function buildSystemChromiumCandidate(executablePath, strategy) {
-  return {
-    strategy,
-    executablePath,
-    headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-first-run',
-      '--no-default-browser-check',
-    ],
-  };
-}
-
-async function resolveChromiumLaunchCandidates() {
-  const systemCandidates = [
-    CHROMIUM_EXECUTABLE_PATH,
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-  ].filter(Boolean);
-  const candidates = [];
+async function resolveChromiumLaunchOptions() {
   const resolutionErrors = [];
 
-  async function addSparticuzCandidate() {
-    if (!sparticuzChromium) return;
-    try {
-      const executablePath = await sparticuzChromium.executablePath();
-      if (!isExecutable(executablePath)) {
-        resolutionErrors.push(`@sparticuz/chromium executable is not runnable: ${executablePath}`);
-        return;
-      }
-      candidates.push({
-        strategy: '@sparticuz/chromium',
-        executablePath,
-        headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : sparticuzChromium.headless,
-        args: Array.from(new Set([
-          ...(sparticuzChromium.args || []),
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-        ])),
-      });
-    } catch (error) {
-      resolutionErrors.push(`@sparticuz/chromium executablePath failed: ${redact(error && error.message ? error.message : error)}`);
+  if (PUPPETEER_EXECUTABLE_STRATEGY !== 'sparticuz') {
+    resolutionErrors.push(`Unsupported PUPPETEER_EXECUTABLE_STRATEGY: ${redact(PUPPETEER_EXECUTABLE_STRATEGY)}`);
+    report.browserLaunch.resolutionErrors = resolutionErrors;
+    assertCondition(false, 'P0 browser evidence requires PUPPETEER_EXECUTABLE_STRATEGY=sparticuz.');
+  }
+
+  if (!sparticuzChromium) {
+    resolutionErrors.push('@sparticuz/chromium module is not available after npm ci.');
+    report.browserLaunch.resolutionErrors = resolutionErrors;
+    assertCondition(false, 'P0 browser evidence requires @sparticuz/chromium from the repository lockfile.');
+  }
+
+  try {
+    const executablePath = await sparticuzChromium.executablePath();
+    if (!isExecutable(executablePath)) {
+      resolutionErrors.push(`@sparticuz/chromium executable is not runnable: ${executablePath}`);
+      report.browserLaunch.resolutionErrors = resolutionErrors;
+      assertCondition(false, '@sparticuz/chromium executable is not runnable.');
     }
+    report.browserLaunch.resolutionErrors = resolutionErrors;
+    return {
+      strategy: '@sparticuz/chromium',
+      executablePath,
+      headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : sparticuzChromium.headless,
+      args: Array.from(new Set([
+        ...(sparticuzChromium.args || []),
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+      ])),
+    };
+  } catch (error) {
+    resolutionErrors.push(`@sparticuz/chromium executablePath failed: ${redact(error && error.message ? error.message : error)}`);
+    report.browserLaunch.resolutionErrors = resolutionErrors;
+    assertCondition(false, `Unable to resolve @sparticuz/chromium executable: ${redact(JSON.stringify(resolutionErrors))}`);
   }
-
-  function addSystemCandidates() {
-    for (const executablePath of systemCandidates) {
-      if (isExecutable(executablePath) && !candidates.some((candidate) => candidate.executablePath === executablePath)) {
-        candidates.push(buildSystemChromiumCandidate(
-          executablePath,
-          executablePath === CHROMIUM_EXECUTABLE_PATH ? 'env' : 'system',
-        ));
-      }
-    }
-  }
-
-  if (PUPPETEER_EXECUTABLE_STRATEGY === 'sparticuz') {
-    await addSparticuzCandidate();
-    addSystemCandidates();
-  } else if (PUPPETEER_EXECUTABLE_STRATEGY === 'system') {
-    addSystemCandidates();
-  } else {
-    addSystemCandidates();
-    await addSparticuzCandidate();
-  }
-
-  report.browserLaunch.resolutionErrors = resolutionErrors;
-  assertCondition(candidates.length > 0, 'No runnable Chromium executable found for Puppeteer. Install @sparticuz/chromium or set CHROMIUM_EXECUTABLE_PATH.');
-  return candidates;
 }
 
 function yyyyMmDd(date) {
@@ -641,41 +604,36 @@ async function verifyConsoleCapture(page) {
 }
 
 async function runBrowserScenarios() {
-  const launchCandidates = await resolveChromiumLaunchCandidates();
+  const launchOptions = await resolveChromiumLaunchOptions();
   const launchErrors = [];
-  let launchOptions = null;
   let browser = null;
-  for (const candidate of launchCandidates) {
-    try {
-      browser = await puppeteer.launch({
-        executablePath: candidate.executablePath,
-        headless: candidate.headless,
-        args: candidate.args,
-        timeout: 90000,
-        protocolTimeout: 90000,
-        dumpio: Boolean(process.env.PUPPETEER_DUMPIO),
-      });
-      launchOptions = candidate;
-      break;
-    } catch (error) {
-      launchErrors.push({
-        strategy: candidate.strategy,
-        executablePath: candidate.executablePath,
-        message: redact(error && error.message ? error.message : error),
-      });
-    }
+  try {
+    browser = await puppeteer.launch({
+      executablePath: launchOptions.executablePath,
+      headless: launchOptions.headless,
+      args: launchOptions.args,
+      timeout: 90000,
+      protocolTimeout: 90000,
+      dumpio: Boolean(process.env.PUPPETEER_DUMPIO),
+    });
+  } catch (error) {
+    launchErrors.push({
+      strategy: launchOptions.strategy,
+      executablePath: launchOptions.executablePath,
+      message: redact(error && error.message ? error.message : error),
+    });
   }
   report.browserLaunch = {
     ...report.browserLaunch,
-    strategy: launchOptions && launchOptions.strategy,
-    executablePath: launchOptions && launchOptions.executablePath,
-    headless: launchOptions && launchOptions.headless,
+    strategy: launchOptions.strategy,
+    executablePath: launchOptions.executablePath,
+    headless: launchOptions.headless,
     timeoutMs: 90000,
-    args: launchOptions && launchOptions.args,
-    attemptedStrategies: launchCandidates.map((candidate) => candidate.strategy),
+    args: launchOptions.args,
+    attemptedStrategies: [launchOptions.strategy],
     launchErrors,
   };
-  assertCondition(Boolean(browser && launchOptions), `Chromium launch failed for all candidates: ${redact(JSON.stringify(launchErrors))}`);
+  assertCondition(Boolean(browser), `Chromium launch failed: ${redact(JSON.stringify(launchErrors))}`);
   try {
     const page = await browser.newPage();
     page.on('console', (msg) => {

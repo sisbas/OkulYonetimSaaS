@@ -81,19 +81,29 @@ jobs:
 
       - name: Verify locked browser runner dependencies
         run: |
-          node - <<'NODE'
-          const puppeteer = require('puppeteer-core/package.json');
-          const chromium = require('@sparticuz/chromium');
-          console.log(`puppeteer-core locked version: ${puppeteer.version}`);
-          (async () => {
-            try {
-              const executablePath = await chromium.executablePath();
-              console.log(`@sparticuz/chromium executable: ${executablePath}`);
-              console.log(`@sparticuz/chromium headless: ${chromium.headless}`);
-            } catch (error) {
-              console.warn(`@sparticuz/chromium executablePath warning: ${error.message}`);
-            }
-          })();
+          node --input-type=module - <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          import puppeteerPackage from 'puppeteer-core/package.json' with { type: 'json' };
+          import chromium from '@sparticuz/chromium';
+
+          let browser;
+          const executablePath = await chromium.executablePath();
+          try {
+            browser = await puppeteer.launch({
+              executablePath,
+              args: chromium.args,
+              headless: chromium.headless,
+              timeout: 90000,
+              protocolTimeout: 90000,
+            });
+            const page = await browser.newPage();
+            await page.goto('about:blank');
+            console.log(`puppeteer-core locked version: ${puppeteerPackage.version}`);
+            console.log(`@sparticuz/chromium executable: ${executablePath}`);
+            console.log(`@sparticuz/chromium headless: ${chromium.headless}`);
+          } finally {
+            if (browser) await browser.close();
+          }
           NODE
 
       - name: Run migrations
