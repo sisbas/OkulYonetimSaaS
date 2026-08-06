@@ -60,7 +60,7 @@ Final head `9de7454036ca5c5cf0882bcbf4983face6b70ada` üzerinde:
 ## KVKK/audit etkisi
 
 Kişisel veri, öğrenci, veli, guardian, personel, notification payload veya gerçek production verisi etkilenmez. Değişiklikler yalnızca GitHub PR body semantic validation, check-run simulation ve governance contract test davranışını etkiler.
-Buna ek olarak, PR-2a ve PR-2b kapsamında üretilen tüm log ve artifact dosyaları manuel olarak denetlenmiş; token, cookie, credential, raw request/response body, öğrenci/veli/guardian PII veya notification payload barındırmadıkları doğrulanmıştır. Detaylı bulgular [pr2-security-kvkk-review.md](file:///c:/Users/semih.isbas/Documents/Codex/2026-08-04/npx-skills-latest-add-mattpocock-skills-2/OkulYonetimSaaS/docs/security/pr2-security-kvkk-review.md) altında raporlanmıştır.
+Buna ek olarak, PR-2a ve PR-2b kapsamında üretilen tüm log ve artifact dosyaları manuel olarak denetlenmiş; token, cookie, credential, raw request/response body, öğrenci/veli/guardian PII veya notification payload barındırmadıkları doğrulanmıştır. Detaylı bulgular [pr2-security-kvkk-review.md](docs/security/pr2-security-kvkk-review.md) altında raporlanmıştır.
 
 Security/KVKK: PASS
 
