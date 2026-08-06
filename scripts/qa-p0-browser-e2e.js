@@ -7,10 +7,12 @@ const bcrypt = require('bcryptjs');
 const puppeteer = require('puppeteer-core');
 
 let sparticuzChromium = null;
+let sparticuzChromiumLoadError = null;
 try {
   sparticuzChromium = require('@sparticuz/chromium');
-} catch {
+} catch (error) {
   sparticuzChromium = null;
+  sparticuzChromiumLoadError = error;
 }
 
 const ROOT = process.cwd();
@@ -117,9 +119,12 @@ async function resolveChromiumLaunchOptions() {
   }
 
   if (!sparticuzChromium) {
-    resolutionErrors.push('@sparticuz/chromium module is not available after npm ci.');
+    const loadDetail = sparticuzChromiumLoadError
+      ? redact(`: ${sparticuzChromiumLoadError.code ? `${sparticuzChromiumLoadError.code} ` : ''}${sparticuzChromiumLoadError.message || sparticuzChromiumLoadError}`)
+      : '';
+    resolutionErrors.push(`@sparticuz/chromium module is not available after npm ci${loadDetail}.`);
     report.browserLaunch.resolutionErrors = resolutionErrors;
-    assertCondition(false, 'P0 browser evidence requires @sparticuz/chromium from the repository lockfile.');
+    assertCondition(false, `P0 browser evidence requires @sparticuz/chromium from the repository lockfile${loadDetail}.`);
   }
 
   try {
