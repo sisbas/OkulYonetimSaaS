@@ -79,7 +79,7 @@ jobs:
       - name: npm ci
         run: npm ci
 
-      - name: Verify locked browser runner dependencies
+      - name: Verify locked browser runner dependencies (mirrors runner args)
         run: |
           node --input-type=module - <<'NODE'
           import puppeteer from 'puppeteer-core';
@@ -91,7 +91,7 @@ jobs:
           try {
             browser = await puppeteer.launch({
               executablePath,
-              args: chromium.args,
+              args: Array.from(new Set([...(chromium.args || []), '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])),
               headless: chromium.headless,
               timeout: 90000,
               protocolTimeout: 90000,
