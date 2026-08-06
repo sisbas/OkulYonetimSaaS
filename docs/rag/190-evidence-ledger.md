@@ -2,15 +2,15 @@
 
 Source-bound, evidence-based decision record. Güncellenmez push'den sonra; append-only karar için Notion token sonrası `docs/rag/` altında yürütülür.
 
-- **Active head SHA:** `59e53021c7c1599d045c9d6166ca8c7f4b8a556b`
-- **PR #190:** `wp07f-pr2-production-closure` — open / draft=true / mergeable=true
+- **Active head SHA:** `e0ed1ff` (CTO routing uygulaması sonrası — PR-2a browser salvage head)
+- **PR #190:** `wp07f-pr2-production-closure` — open / draft=true / mergeable=true / **PR-2a browser salvage only**
 - **Canonical source:** GitHub live API + CTO comment (sisbas, 2026-08-05T10:30:51Z) > Notion (MCP kuruldu, `NOTION_TOKEN` yok → `ACCESS_BLOCKED`, GitHub-canonical).
 
 ## 1. Canonical state
 
 | Kaynak | Durum |
 |---|---|
-| #190 | open, draft, mergeable; title `Wp07f pr2 production closure` (TITLE_OVERCLAIM); body template boş, `Fixes #` ile bitsin (BODY_TEMPLATE_REMAINS / FIXES_USED_WHERE_REFS_REQUIRED) |
+| #190 | open, draft, mergeable; PR-2a browser salvage; title `Wp07f pr2 production closure` (TITLE_OVERCLAIM — API/CI routing düzeltme gerekli); body doldurulacak (`Refs #185`/`Refs #145`, `Fixes` YOK) |
 | #185 | open (qa-kvkk-required, acceptance-evidence) |
 | #145 | open (parent #139; depends #141-144; #185 kapanınca kapanır) |
 | #42 | open / Attendance HOLD |
@@ -52,11 +52,11 @@ Source-bound, evidence-based decision record. Güncellenmez push'den sonra; appe
 
 ## 4. Contradictions (flag list)
 
-`TITLE_OVERCLAIM`, `BODY_TEMPLATE_REMAINS`, `FIXES_USED_WHERE_REFS_REQUIRED`, `SCOPE_DRIFT` (`.specify/memory/constitution.md`, governance doc — PR-2b dışı), `CI_PARTIAL_SUCCESS` (functional SUCCESS, governance FAILURE), `CODERABBIT_SKIPPED` (draft), `NO_INDEPENDENT_APPROVAL` (0 reviews), `API_REACHABILITY_UNPROVEN` (`/api/v1/health` → 200 text/html), `PRODUCTION_OBSERVATION_MISSING`, `EXACT_HEAD_FUTURE_RISK` (PR-2b observation head eşleşmesi).
+`TITLE_OVERCLAIM` (repair sonrası title güncellenecek), `BODY_TEMPLATE_REMAINS` (repair sonrası doldurulacak), `FIXES_USED_WHERE_REFS_REQUIRED` (repair sonrası `Refs` yapılacak), `SCOPE_DRIFT` (`.specify/memory/constitution.md`, governance doc — PR-2b dışı; **ÇÖZÜLDÜ**: `wp07f-governance-constitution` branch'ine taşındı, PR #190 diff'inden çıkarıldı), `CI_PARTIAL_SUCCESS` (functional SUCCESS, governance FAILURE), `CODERABBIT_SKIPPED` (draft), `NO_INDEPENDENT_APPROVAL` (0 reviews), `API_REACHABILITY_UNPROVEN` (`/api/v1/health` → 200 text/html), `PRODUCTION_OBSERVATION_MISSING`, `EXACT_HEAD_FUTURE_RISK` (PR-2b observation head eşleşmesi).
 
 ## 5. Missing evidence (next gates)
 
-- PR-2a: düzeltilmiş title `WP-07F PR-2a: Browser runner reproducibility salvage for #185`, body (Kapsam/Kapsam dışı/Refs/Rollback/Evidence/KVKK/CI), `Refs #185` / `Refs #145` (sadece `Fixes` YOK), `.specify/memory/constitution.md` → ayrı governance PR.
+- PR-2a: düzeltilmiş title `WP-07F PR-2a: Browser runner reproducibility salvage for #185`, body (Kapsam/Kapsam dışı/Refs/Rollback/Evidence/KVKK/CI), `Refs #185` / `Refs #145` (sadece `Fixes` YOK). ✅ constitution ayrıldı (`wp07f-governance-constitution`).
 - PR-2a: PR Governance x4 + Merge Enforcement PASS; CodeRabbit current-head review (draft dışından sonra); ≥1 independent approval.
 - PR-2b: `/api/v1/health` → Nest JSON (`content-type: application/json`, `{status:ok, service:'okul-yonetim-saas-api', applicationType:'backend-api'}`); `vercel.json` + `api/v1/*` routing delta.
 - #185: AC9 regression (tenant-local occurrence-date, multi-branch own-read), frontend tab/state evidence, production observation exact-head PASS (apiReachabilityStatus=PASS).
@@ -93,10 +93,10 @@ flowchart TD
 
 ## 8. GitHub update draft (CTO uygulamalı)
 
-- PR #190 title: `WP-07F PR-2a: Browser runner reproducibility salvage for #185`
-- Label: `draft`, `merge-blocked`, `PR2A`, `needs-governance-repair`, `Refs #185 / Refs #145`
-- Body: Kapsam=8 dosya (#187 salvage + hijyen), Kapsam dışı=vercel.json/api/v1/AC9/frontend/observation/PR-2b, Evidence=E2 artifact/digest + E1 run 30996686864, KVKK=no PII (constitution.md governance-only), Rollback=lockfile revert, CI=E10-12 durumu.
-- `.specify/memory/constitution.md`: yeni branch `wp07f-governance-constitution` → ayrı PR.
-- PR-2b draft aç: `WP-07F PR-2b: production /api/v1 reachability for #185`.
+- PR #190 title: `WP-07F PR-2a: Browser runner reproducibility salvage for #185`.
+- Label: `draft`, `merge-blocked`, `PR2A`, `needs-governance-repair`, `Refs #185 / Refs #145`.
+- Body: Kapsam=8 dosya (#187 salvage + hijyen), Kapsam dışı=vercel.json/api/v1/AC9/frontend/observation/PR-2b, Evidence=E2 artifact/digest + E1 run 30996686864, KVKK=no PII, Rollback=lockfile revert, CI=E10-12 durumu.
+- `.specify/memory/constitution.md`: `wp07f-governance-constitution` branch'i hazır (sadece constitution) → ayrı PR.
+- PR-2b draft aç: `WP-07F PR-2b: production /api/v1 reachability for #185` (reachability bloker — #190 kapsamında kapatılamaz).
 
 Not: Bu dosya sadece **dokümantasyon** (implementation/merge/workflow trigger yok).
