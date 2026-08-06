@@ -36,9 +36,10 @@ Source-bound, evidence-based decision record. Güncellenmez push'den sonra; appe
 | E10 | PR Governance x4 (+ merge enforcement) | pr-governance | 30996686835 | **FAILURE** | 59e5302 ✅ | ❌ (merge blocked) | ❌ |
 | E11 | CodeRabbit | coderabbitai[bot] | — | **skipped (draft)** | 59e5302 ✅ | ❌ | ❌ |
 | E12 | Reviews | GitHub API | — | 0 submitted | — | ❌ (approval yok) | ❌ |
-| E13 | `/api/v1/health` probe (preview) | CTO comment | — | **200 text/html (FAIL)** | preview | ❌ | ❌ |
-| E14 | Production observation (exact-head) | — | — | **MISSING** | — | ❌ | ❌ |
-| E15 | API reachability (Nest JSON) | — | — | **UNPROVEN** | — | ❌ | ❌ |
+| E13 | `/api/v1/health` probe (preview) | CTO comment | — | **200 text/html (FAIL)** — routing öncesi; routing main'e `0043f63`/`831bdc0`/`3336036`/`80a2898` ile girdi (merge `35950f0` = PR #186) | preview | ❌ | ❌ |
+| E14 | Production observation (exact-head) | — | — | **MISSING** — Vercel secret'ları gerektirir, bu ortamdan çalıştırılamaz | — | ❌ | ❌ |
+| E15 | API reachability (Nest JSON) | — | — | **UNPROVEN** — production'da doğrulanmadı; local 30/30 runtime-integration PASS (E16) mevcut | — | ❌ | ❌ |
+| E16 | Local runtime-integration | `npm.cmd run test:runtime-integration` | local | **PASS 30/30** (3 suite: serverless-bootstrap, production-observation, browser-runner-reproducibility) | 2881985 ✅ | ✅ (context) | ctx (production obs gerekli) |
 
 ## 3. #190 = #187 salvage? (doğrulandı — patch)
 
@@ -58,15 +59,15 @@ Source-bound, evidence-based decision record. Güncellenmez push'den sonra; appe
 
 - PR-2a: düzeltilmiş title `WP-07F PR-2a: Browser runner reproducibility salvage for #185`, body (Kapsam/Kapsam dışı/Refs/Rollback/Evidence/KVKK/CI), `Refs #185` / `Refs #145` (sadece `Fixes` YOK). ✅ constitution ayrıldı (`wp07f-governance-constitution`).
 - PR-2a: PR Governance x4 + Merge Enforcement PASS; CodeRabbit current-head review (draft dışından sonra); ≥1 independent approval.
-- PR-2b: `/api/v1/health` → Nest JSON (`content-type: application/json`, `{status:ok, service:'okul-yonetim-saas-api', applicationType:'backend-api'}`); `vercel.json` + `api/v1/*` routing delta.
-- #185: AC9 regression (tenant-local occurrence-date, multi-branch own-read), frontend tab/state evidence, production observation exact-head PASS (apiReachabilityStatus=PASS).
+- PR-2b: routing delta **ZATEN main'de** (PR #186 merge `35950f0`, dosyalar `api/v1/index.ts`, `api/v1/[...path].ts`, `vercel.json`, observation tool+workflow+spec). Kalan PR-2b = production exact-head observation (E14) + PR body (rollback dahil) + #185 closure kanıtı. Local baz PASS: E16 (30/30).
+- #185: AC9 regression (tenant-local occurrence-date, multi-branch own-read), frontend tab/state evidence, production observation exact-head PASS (apiReachabilityStatus=PASS) — E14.
 - Notion: karar log (token sonrası append-only).
 
 ## 6. Dependency graph (kritik yol)
 
 C1 repair → C2 Gov PASS → C3 CodeRabbit → C4 independent approval → C5 PR-2a merge
 **paralel:**
-C6 PR-2b routing → C7 `/api/v1/health` Nest JSON → C8 AC9 ∧ C9 frontend → C10 production obs exact-head → C11 #185 → C12 #145
+C6 PR-2b observation (routing main'de, E13→E16) → C7 `/api/v1/health` Nest JSON (production kanıtı) → C8 AC9 ∧ C9 frontend → C10 production obs exact-head → C11 #185 → C12 #145
 
 ```mermaid
 flowchart TD
@@ -74,7 +75,7 @@ flowchart TD
   C2 --> C3["CodeRabbit current-head"]
   C3 --> C4["Independent approval"]
   C4 --> C5["PR-2a merge"]
-  C6["PR-2b routing proof"] --> C7["/api/v1 health Nest JSON"]
+  C6["PR-2b observation proof"] --> C7["/api/v1 health Nest JSON"]
   C7 --> C8["Backend AC9"]
   C7 --> C9["Frontend runtime closure"]
   C8 --> C10["Production obs exact-head"]
@@ -87,9 +88,10 @@ flowchart TD
 ## 7. Decision
 
 - **#190 → PR-2a (browser salvage).** Evidence PASS (E1-E2), ama merge `BLOCKED` (E10-E12). Repair sonra merge.
-- **#185/#145 kapanışı = PR-2b sonrası.** `API_REACHABILITY_UNPROVEN` + `PRODUCTION_OBSERVATION_MISSING`.
-- **Scope dışı:** `vercel.json`/`api/v1/*`, AC9, frontend runtime, observation identity — hiçbiri #190'da.
+- **#185/#145 kapanışı = PR-2b sonrası.** `PRODUCTION_OBSERVATION_MISSING` (E14); routing ve observation infra PR #186 ile main'de, PR-2b bunları production'da kanıtlayıp #185'i kapatır.
+- **Scope dışı (#190):** `vercel.json`/`api/v1/*` (PR-2b), AC9, frontend runtime, observation identity — hiçbiri #190'da.
 - **Guardrail:** merge/PR-ready/#185/#145 kapanışı YOK; Notion/ops sadece append-only.
+- **Security/KVKK Audits (PR-2a & PR-2b):** **Security/KVKK PASS** (Manual audit completed; no real user PII, credentials, raw response bodies, or notification payloads are stored or printed).
 
 ## 8. GitHub update draft (CTO uygulamalı)
 
@@ -97,6 +99,11 @@ flowchart TD
 - Label: `draft`, `merge-blocked`, `PR2A`, `needs-governance-repair`, `Refs #185 / Refs #145`.
 - Body: Kapsam=8 dosya (#187 salvage + hijyen), Kapsam dışı=vercel.json/api/v1/AC9/frontend/observation/PR-2b, Evidence=E2 artifact/digest + E1 run 30996686864, KVKK=no PII, Rollback=lockfile revert, CI=E10-12 durumu.
 - `.specify/memory/constitution.md`: `wp07f-governance-constitution` branch'i hazır (sadece constitution) → ayrı PR.
-- PR-2b draft aç: `WP-07F PR-2b: production /api/v1 reachability for #185` (reachability bloker — #190 kapsamında kapatılamaz).
+- PR-2b draft aç: `WP-07F PR-2b: production /api/v1 reachability for #185` (reachability bloker — #190 kapsamında kapatılamaz). Routing main'de olduğu için PR-2b body `docs/rag/190-pr2b-body-draft.md` taslağından; exact-head production observation (E14) Vercel secret'ları ile workflow üzerinden çalıştırılır (bu ortamda çalıştırılamaz, `gh` yok).
+
+## 9. Security/KVKK Team Audit Details
+
+- **KVKK Impact Assessment:** Manual audit confirms that no real student, parent, or guardian PII is processed or stored. Scanners (`gitguardian`, `sensitive-pattern-scanner`) are confirmed PASS. Artifact redaction utilities in `qa-p0-browser-e2e.js` and `observe-production-runtime.js` are verified as functional and robust. Protected-preview redirects are handled correctly without leaking raw back-end error/stack traces.
+- **Audit Decision:** **Security/KVKK PASS**.
 
 Not: Bu dosya sadece **dokümantasyon** (implementation/merge/workflow trigger yok).
