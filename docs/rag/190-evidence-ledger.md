@@ -2,7 +2,7 @@
 
 Source-bound, evidence-based decision record. Güncellenmez push'den sonra; append-only karar için Notion token sonrası `docs/rag/` altında yürütülür.
 
-- **Active head SHA:** `e0ed1ff` (CTO routing uygulaması sonrası — PR-2a browser salvage head)
+- **Active head SHA:** `080717f` (CTO routing uygulaması sonrası — PR-2a browser salvage head)
 - **PR #190:** `wp07f-pr2-production-closure` — open / draft=true / mergeable=true / **PR-2a browser salvage only**
 - **Canonical source:** GitHub live API + CTO comment (sisbas, 2026-08-05T10:30:51Z) > Notion (MCP kuruldu, `NOTION_TOKEN` yok → `ACCESS_BLOCKED`, GitHub-canonical).
 
