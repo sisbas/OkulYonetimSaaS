@@ -2,7 +2,7 @@
 
 Source-bound, evidence-based decision record. Güncellenmez push'den sonra; append-only karar için Notion token sonrası `docs/rag/` altında yürütülür.
 
-- **Active head SHA:** `080717f` (CTO routing uygulaması sonrası — PR-2a browser salvage head)
+- **Active head SHA:** `47327ca` (CTO reconciliation 2026-08-07 — CodeRabbit auto-fix dahil current head; önceki pin `080717f`)
 - **PR #190:** `wp07f-pr2-production-closure` — open / draft=true / mergeable=true / **PR-2a browser salvage only**
 - **Canonical source:** GitHub live API + CTO comment (sisbas, 2026-08-05T10:30:51Z) > Notion (MCP kuruldu, `NOTION_TOKEN` yok → `ACCESS_BLOCKED`, GitHub-canonical).
 
@@ -107,3 +107,12 @@ flowchart TD
 - **Audit Decision:** **Security/KVKK PASS**.
 
 Not: Bu dosya sadece **dokümantasyon** (implementation/merge/workflow trigger yok).
+
+## 10. Current-head reconciliation (CTO, 2026-08-07)
+
+- **Head ilerlemesi (eski pin `080717f` → current `47327ca`):** `2881985` (ledger pin) → `514c0bb` (Security/KVKK review) → `f59a6e3` (ci: mirror runner chromium args) → `6dc192b` (e2e: sparticuz load error detail) → `47327ca` (CodeRabbit auto-fixes, PR_BODY.md link fix). Ledger active head bu commit'te current'e re-pin edildi.
+- **E16 yeniden doğrulandı (current head `47327ca`):** `npm.cmd run test:runtime-integration` → **PASS 30/30** (3 suite). E16 artık current-head kanıtıdır.
+- **Unit yeniden koşuldu (current head `47327ca`):** sonuç bu commit'in mesajında/Test çıktısında kayıtlı.
+- **PR_BODY.md yeniden yazıldı (current head):** eski #162/#140 governance PR içeriği (stale head `9de7454`, run `302213483xx`, yanlış issue refs) #190'ın kendi PR-2a body'siyle değiştirildi. Stale head/run ID/false PASS claim kalmadı; geçmiş head run'ları `historical` olarak etiketli.
+- **Güncel head CI run'ları: PENDING** (draft) — run ID'ler draft→ready sonrası ledger §2'ye eklenir. E1 (`30996686864` @ `59e5302`) ve matrix run (`31109208974` @ `2881985`) historical'dir; current-head PASS olarak kullanılamaz.
+- **Merge Governance Enforcement:** PASS değil (draft + approval yok) → merge önerilmez. #185/#145 closure claim yok.
