@@ -60,22 +60,39 @@ Refs #145
 
 ### PASS identity rules
 
-- `deploymentCommitSha` = `expected_head_sha` VE deployment state READY
-- Target URL host, deployment metadata'da yetkili host kümesinde
+- `deploymentCommitSha` = `expected_head_sha` (STALE_DEPLOYMENT fail-closed)
+- `deploymentCommitSource` = `vercel_deployment_metadata` VE
+  `deploymentMetadataStatus` = PASS
+- Target URL host, deployment metadata yetkili host kümesinde
+  (DEPLOYMENT_TARGET_MISMATCH fail-closed)
 - `/runtime`, `/runtime/app.js`, `/`, `/demo`, `/full-vision` PASS
-- Known `/api/v1` endpoint Nest-controlled JSON
-- `protectedPreview = false`; static HTML / Vercel NOT_FOUND / uncontrolled JSON yok
+- `/api/v1/health` Nest-controlled JSON (`status=ok`,
+  `service=okul-yonetim-saas-api`, `applicationType=backend-api`)
+- `protectedPreview = false`; static HTML / Vercel NOT_FOUND / uncontrolled
+  JSON yok
 - Artifact ID/name/digest mevcut; artifact head SHA = expected head SHA
 - Security/KVKK redaction onaylı
+- Not: Vercel `readyState` alanı enforcement'da ayrıca okunmaz; deployment
+  identity, commit SHA + metadata host binding + metadata status üzerinden
+  doğrulanır (observe-production-runtime.js / wp07f-production-observation.yml)
 
-### FAIL identity rules
+### FAIL identity rules (literal failureReasons — observe-production-runtime.js taksonomisi)
 
-- `STATIC_HTML_RESPONSE` = FAIL
-- `VERCEL_NOT_FOUND` = FAIL
-- `UNCONTROLLED_JSON` = FAIL
+- `/api/v1` üzerinde static HTML / Vercel NOT_FOUND / uncontrolled JSON →
+  `API_UNREACHABLE` = FAIL (normal observation)
 - `PROTECTED_PREVIEW_BLOCKED` = FAIL
-- `API_UNREACHABLE` = FAIL (normal observation)
-- `API_UNREACHABLE` = EXPECTED FAIL (yalnız izole self-test)
+- `UNEXPECTED_STATUS` / `HEADER_MISMATCH` / `OBSERVATION_CHECK_FAILED` /
+  `REQUEST_TIMEOUT` = FAIL
+- `STALE_ARTIFACT_HEAD_MISMATCH` / `STALE_DEPLOYMENT` = FAIL; kullanım yasak
+  (no-close)
+- `DEPLOYMENT_METADATA_AUTH_FAILED` / `DEPLOYMENT_METADATA_UNAVAILABLE` /
+  `DEPLOYMENT_METADATA_TIMEOUT` / `DEPLOYMENT_COMMIT_SHA_MISSING` /
+  `DEPLOYMENT_TARGET_MISMATCH` / `MISSING_DEPLOYMENT_LOOKUP` /
+  `MISSING_DEPLOYMENT_METADATA_AUTH` / `MISSING_EXPECTED_PR_HEAD_SHA` /
+  `SCRIPT_EXCEPTION` / `ARTIFACT_WRITE_FAILURE` = FAIL
+- `API_UNREACHABLE` = EXPECTED FAIL (yalnız izole self-test: failureReasons
+  tam olarak [`API_UNREACHABLE`], checks tam olarak
+  [`deliberate unreachable api self-test`], overallStatus = FAIL)
 
 ### Stale deployment rejection (architecture blocker)
 
