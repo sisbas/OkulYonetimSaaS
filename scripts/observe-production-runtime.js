@@ -144,7 +144,6 @@ function observationHeaders(env = process.env) {
   const bypassSecret = env.VERCEL_PROTECTION_BYPASS_SECRET || env.VERCEL_AUTOMATION_BYPASS_SECRET || '';
   if (bypassSecret) {
     headers['x-vercel-protection-bypass'] = bypassSecret;
-    headers['x-vercel-set-bypass-cookie'] = 'true';
   }
   return headers;
 }
