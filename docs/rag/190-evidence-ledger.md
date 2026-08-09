@@ -132,3 +132,16 @@ Status:
 - **PR-2b = PLAN**; CEO secret/authority required (Vercel secret'ları; merge authorization authority path)
 - **#185 close-ready = NO** (E14/E15 missing)
 - **#145 close-ready = NO** (#185 close-ready değil)
+
+## 12. Current-head live evidence (live GitHub API, 2026-08-07)
+
+- **PR #190 live:** open / **draft=false** / mergeable=true / title `WP-07F PR-2a: Browser runner reproducibility salvage for #185` (hedef title ✅) / head `3985859`.
+- **Check runs @ `3985859` (filter=latest):**
+  - Backend CI `93245220499` ✅ | DB Smoke `93245220524` ✅ | Gate 1 CI `93245220738` ✅ | Sprint 1 Quality Gate `93245220566` ✅
+  - P0 browser E2E `93245220715` ✅ + **artifact `9038098139`** (name `wp07f-p0-browser-e2e-3985859...`, workflow_run head `3985859` → **CURRENT_HEAD**; digest: auth download gerekli — PENDING)
+  - Sensitive Pattern Scanner `93245220433` ✅ | GitGuardian `93245220345`/`93245216212`/`93245225817` ✅
+  - PR Governance: Body Validation `93245312622` ✅, Rollback Plan `93245312606` ✅, Issue Reference `93245312587` ✅, **Acceptance Criteria `93245312596` FAILED** (ready PR + 3 unchecked AC maddesi — fail-closed tasarım, beklenen)
+  - Merge Governance Enforcement `93245332109`: **in_progress** → beklenen FAIL (AC FAIL + independent approval yok)
+- **Reviews:** valid APPROVED **0**; `semihisbas-hub` DISMISSED @ `2881985`; CodeRabbit COMMENTED @ `8eb9eb6` (pre-3985859; 3985859 doc-only delta → **STALE**); Qodo COMMENTED @ `2881985` (→ **STALE**). Review comments: 7.
+- **Canlı PR body:** gerekli başlıklar tam ✅; ancak Test çıktısı **STALE** — "Current head: `2881985`" + run set `3110920xxxx` + artifact `8970943986` (hepsi HISTORICAL). Canlı body güncellemesi token gerektirir → **PENDING**.
+- **#191 live:** open / **draft=true** / mergeable / title `Governance: Adopt Backend API Constitution` / head `ac26b79` → **HOLD** (draft=true).

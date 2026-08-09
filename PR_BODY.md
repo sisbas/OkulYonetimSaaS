@@ -38,20 +38,24 @@ Refs #145
 - [x] Local runtime-integration PASS 30/30 — head `47327ca` (doc-only sonrası geçerli).
 - [x] Local unit PASS — head `47327ca` (doc-only sonrası geçerli).
 - [x] Security/KVKK: PASS (manuel audit, `docs/security/pr2-security-kvkk-review.md`).
-- [ ] Güncel head `8eb9eb6` için CI run'ları (Backend CI, DB Smoke, Gate 1, Sprint 1 QGate, scanner, GitGuardian) — PENDING (draft).
-- [ ] PR Governance x4 + Merge Governance Enforcement PASS — PENDING (draft).
-- [ ] CodeRabbit güncel head disposition — PENDING (draft sonrası).
-- [ ] Güncel head SHA için en az bir bağımsız APPROVED review — PENDING.
+- [x] Güncel head `3985859` CI run seti PASS (Backend CI, DB Smoke, Gate 1, Sprint 1 QGate, P0 E2E, scanner, GitGuardian — §Test çıktısı).
+- [ ] PR Governance / Acceptance Criteria PASS — FAILED: ready PR + 3 unchecked AC maddesi (fail-closed, beklenen; maddeler tamamlanınca rerun).
+- [ ] Merge Governance Enforcement PASS — PENDING (AC FAIL + independent approval yok).
+- [ ] CodeRabbit güncel head disposition — STALE (son review @ `8eb9eb6`; `3985859` doc-only delta kapsanmadı).
+- [ ] Güncel head SHA için en az bir bağımsız APPROVED review — PENDING (0 valid; 1 DISMISSED @ `2881985`).
 
 ## Test çıktısı
 
-Güncel head `8eb9eb6` (doc-only; kanıt değerleri `47327ca`'da doğrulandı — 2026-08-07, CTO reconciliation):
+Güncel head `3985859` (canlı GitHub API, 2026-08-07):
 
-- Local runtime-integration: **PASS 30/30** (serverless-bootstrap, production-observation, browser-runner-reproducibility) — `6dc192b` working tree'de yeniden doğrulandı; doc-only commit'ler sonrası geçerli (ledger E16, §10).
-- Local unit: **PASS 194/194** (36 suite) — head `47327ca`'da yeniden koşuldu; doc-only commit'ler sonrası geçerli.
-- Güncel head CI: **PENDING** — PR draft; run'lar draft→ready sonrası toplanacak.
-- Geçmiş head kanıtları (historical, current-head PASS değil): run `30996686864` @ `59e5302` (E1 P0 Browser E2E SUCCESS — ledger E1 ile birebir); run `31109208974` + artifact `8970943986` digest `sha256:b8ba7c59...` @ `2881985` (matrix PASS — QA/ACCEPTANCE matrix kanıtı, `docs/rag/185-acceptance-evidence-matrix.md` §1; ledger §2 E1/E2 setinden ayrı evidence'dır, §10'da `historical` olarak kayıtlı).
+- Local runtime-integration: **PASS 30/30** — `6dc192b` working tree'de doğrulandı; doc-only commit'ler sonrası geçerli (ledger E16, §10).
+- Local unit: **PASS 194/194** (36 suite) — head `47327ca`'da koşuldu; doc-only commit'ler sonrası geçerli.
+- **Current-head CI @ `3985859`:** Backend CI `93245220499` ✅; DB Smoke `93245220524` ✅; Gate 1 CI `93245220738` ✅; Sprint 1 Quality Gate `93245220566` ✅; P0 browser E2E `93245220715` ✅ + artifact `9038098139` (name `wp07f-p0-browser-e2e-3985859...`, head `3985859` — **CURRENT_HEAD**; digest auth download gerekli, PENDING); Sensitive Pattern Scanner `93245220433` ✅; GitGuardian `93245220345`/`93245216212`/`93245225817` ✅.
+- PR Governance @ `3985859`: Body Validation `93245312622` ✅, Rollback Plan `93245312606` ✅, Issue Reference `93245312587` ✅, **Acceptance Criteria `93245312596` FAILED** (ready PR + unchecked AC — beklenen). Merge Governance Enforcement `93245332109`: in_progress (beklenen FAIL: AC + approval yok).
+- Geçmiş head kanıtları (historical, current-head PASS değil): run `30996686864` @ `59e5302` (ledger E1); matrix run `31109208974` + artifact `8970943986` digest `sha256:b8ba7c59...` @ `2881985` (QA matrix, `docs/rag/185-acceptance-evidence-matrix.md` §1 — ledger §2'den ayrı evidence).
 - Security/KVKK: PASS (manuel audit `514c0bb`).
+
+> Not: Canlı GitHub PR body'si (2026-08-07 itibarıyla) hâlâ `2881985` current-head iddiası ve eski run seti taşıyor (STALE); bu dosya güncel body taslağıdır. Token ile canlıya yansıtılacak (ledger §12).
 
 ## KVKK/audit etkisi
 
@@ -65,13 +69,21 @@ Regresyon görülürse PR merge commit'i `git revert <merge_commit_sha>` ile ger
 
 ## CI run referansı
 
+- Güncel head `3985859`:
+  - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/93245220499 (Backend CI)
+  - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/93245220524 (DB Smoke)
+  - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/93245220738 (Gate 1 CI)
+  - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/93245220566 (Sprint 1 Quality Gate)
+  - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/93245220715 (P0 browser E2E + artifact `9038098139`)
+  - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/93245312622 (PR Gov / Body Validation)
+  - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/93245312596 (PR Gov / Acceptance Criteria — FAILED, beklenen)
+  - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/93245332109 (Merge Governance Enforcement — in_progress)
 - Geçmiş head (historical, current-head değil):
   - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/30996686864
   - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/31109208974
-- Güncel head `8eb9eb6` CI run'ları: PENDING — run ID'ler draft→ready sonrası eklenecek.
 
 ## Karar
 
 Security/KVKK: PASS
 
-<!-- GOVERNANCE SEMANTIC GATE: TECHNICAL PASS (LOCAL EVIDENCE) / CURRENT-HEAD CI PENDING / INDEPENDENT APPROVAL HOLD / MERGE NOT AUTHORIZED UNTIL READY + AGGREGATE SUCCESS -->
+<!-- GOVERNANCE SEMANTIC GATE: TECHNICAL PASS / CURRENT-HEAD CI PASS / MERGE GOVERNANCE PENDING / INDEPENDENT APPROVAL HOLD / MERGE NOT AUTHORIZED UNTIL AGGREGATE SUCCESS -->
