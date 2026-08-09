@@ -178,6 +178,9 @@ body'de aynı tablo kullanılır.)
 
 ## Rollback
 
+- **Karar (Release Governance): GO** — PROMPT 6, 2026-08-09. CTO recommendation: GO;
+  no-close guardrails issue state'ini değiştirmez, yalnız gelecekteki closure için
+  fail-closed koşul tanımlar. Blocked actions respected: YES.
 - Draft paket: rollback yüzeyi yok (dosya yok, diff yok).
 - Execution sonrası: production-reachability PR merge commit revert
   (api/v1/index.ts, api/v1/[...path].ts, vercel.json,
@@ -185,7 +188,12 @@ body'de aynı tablo kullanılır.)
   scripts/test-hosted-demos-static-deployment.js,
   .github/workflows/wp07f-production-observation.yml,
   docs/wp-07/production-reachability-observation.md, package.json).
-- Detaylı plan: PROMPT 6 — Release Governance.
+- Deployment rollback karar ağacı: observation FAIL + deploy hatası → önce triage,
+  deployment geri alınmaz; doğrulanmış davranış bozukluğu → önceki READY deployment'a
+  rollback, sonra merge revert; metadata doğrulaması başarısız → no-close.
+- Artifact mismatch / protected-preview blocked / API_UNREACHABLE / Security-KVKK leak
+  → no-close + ilgili triage (§5.3, §8.1 `pr2b-a-draft-package.md`).
+- Detaylı plan: PROMPT 6 — Release Governance (`pr2b-a-draft-package.md` §5–§8).
 
 ## Reviewer/check matrix
 
