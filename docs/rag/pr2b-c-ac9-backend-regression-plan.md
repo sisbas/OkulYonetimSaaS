@@ -221,6 +221,15 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
 - **#145:** #185 close-ready'ye bağlı (`190-evidence-ledger.md` C12); bu plan #145
   kapsamına girmez.
 
+## Implementation readiness
+
+- **READY_AFTER_PLAN_APPROVAL** — suite tasarımı (case'ler, fixture policy,
+  evidence model) bu plan onayıyla uygulanabilir durumdadır; kod yazımı, PR açma
+  ve workflow trigger ayrı yetkilendirme gerektirir.
+- NOT_READY koşulu: Blocking gaps #1 (UTC fallback) ve #2 (multi-branch identity
+  kontratı) CTO kararları kod yazımı öncesi verilmedikçe implementation
+  başlamaz.
+
 ## Blocking gaps
 
 1. **UTC fallback çelişkisi:** `leave-identity.service.ts:29` — `ctx.businessDate`
