@@ -197,9 +197,30 @@ body'de aynı tablo kullanılır.)
 
 ## Reviewer/check matrix
 
-(Detay: PROMPT 7 — Reviewer / Check Matrix; body'ye özet tablo gömülür:
-PR Governance 4 check, CodeRabbit/Qodo current-head, Scanner, GitGuardian,
-Independent current-head APPROVED, Merge Governance.)
+**Karar (Reviewer / Check Matrix): GO** — PROMPT 7, 2026-08-09. CTO recommendation: GO;
+matrix, PR-2a review konvansiyonuyla aynı; hiçbir review/check tetiklenmedi.
+Blocked actions respected: YES. (Detay: `pr2b-a-draft-package.md` §6.)
+
+Özet tablo (PR-2b-A):
+
+| Check | Durum |
+|---|---|
+| PR Governance 4 check (Body / AC / Rollback / Issue Reference) | PLANLAMA — tetiklenmedi |
+| CodeRabbit current-head review | PLANLAMA — tetiklenmedi |
+| Qodo current-head review | PLANLAMA — tetiklenmedi |
+| Sensitive Pattern Scanner | PLANLAMA — tetiklenmedi |
+| GitGuardian | PLANLAMA — tetiklenmedi |
+| Independent current-head APPROVED review | PLANLAMA — tetiklenmedi |
+| Merge Governance Enforcement | PLANLAMA — tetiklenmedi |
+
+- **Required before Ready:** Body/AC/Rollback/Issue Reference PASS (draft→ready geçişi);
+  execution sonrası evidence alanları dolu; CEO checkpoint kaydı var.
+- **Required before merge:** current-head CI set PASS (observation execution sonrası);
+  CodeRabbit + Qodo current-head disposition PASS; Scanner + GitGuardian PASS (ek kanıt,
+  tek başına Security/KVKK PASS değil); ≥1 bağımsız current-head APPROVED review;
+  Merge Governance Enforcement PASS; CEO authority checkpoint kaydı.
+- **CEO authority checkpoint:** draft/review matrisi NOT REQUIRED;
+  production observation/deployment authority REQUIRED LATER.
 
 ## CEO authority checkpoint
 
