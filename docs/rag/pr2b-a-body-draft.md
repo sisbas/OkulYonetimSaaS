@@ -18,9 +18,75 @@ Bu PR:
 Refs #185
 Refs #145
 
+## Karar (Architecture & Platform)
+
+- **PR-2B-A AUTHORITY BOUNDARY: GO** — draft aşaması planning only; execution yok.
+- **CTO recommendation: GO.** Sınırlar #190/#191/#145 ile tutarlı; PR-2b-A tek
+  sorumluluğu production `/api/v1` authority evidence olarak sabitlenir.
+
+## Split strategy
+
+- **PR-2b-A (bu paket):** production `/api/v1` routing authority evidence.
+- **PR-2b-B (öneri, bu pakette değil):** #145 frontend runtime binding / P0 E2E
+  release gate reconciliation — #185 close-ready olduktan sonra.
+- **PR-2b-C (öneri, bu pakette değil):** Backend AC9 regression disposition /
+  tenant-local occurrence-date çalışması — observation PASS'inden bağımsız
+  kod/regresyon hattı.
+
+## Authority boundary
+
+### Routing authority
+
+- Yetki kaynağı yalnız gözlenen deployment'ın Vercel metadata'sıdır:
+  `deploymentCommitSha = expected_head_sha` VE
+  `deploymentCommitSource = vercel_deployment_metadata` zorunludur.
+- SHA eşleşmesi tek başına yetki vermez: gözlenen host, deployment URL veya
+  alias listesine metadata ile bağlanmalıdır
+  (`targetBaseUrl`/`productionAlias`/`productionDeploymentUrl` host binding).
+- Static hosted kontratlar (`/runtime`, `/`, `/demo`, `/full-vision`) `/api/v1`
+  authority ispatına katkı vermez.
+
+### Deployment identity fields
+
+- `expected_head_sha` (workflow `expected_head_sha` girişi)
+- `targetBaseUrl` (production target URL)
+- `productionAlias`
+- `productionDeploymentUrl`
+- `productionDeploymentId`
+- `deploymentCommitSha` + `deploymentCommitSource` (Vercel metadata)
+- `deploymentMetadataStatus` (PASS)
+- `observationTimestamp`
+- artifact name / `reportContentDigest` (+ GitHub artifact id/name/digest)
+
+### PASS identity rules
+
+- `deploymentCommitSha` = `expected_head_sha` VE deployment state READY
+- Target URL host, deployment metadata'da yetkili host kümesinde
+- `/runtime`, `/runtime/app.js`, `/`, `/demo`, `/full-vision` PASS
+- Known `/api/v1` endpoint Nest-controlled JSON
+- `protectedPreview = false`; static HTML / Vercel NOT_FOUND / uncontrolled JSON yok
+- Artifact ID/name/digest mevcut; artifact head SHA = expected head SHA
+- Security/KVKK redaction onaylı
+
+### FAIL identity rules
+
+- `STATIC_HTML_RESPONSE` = FAIL
+- `VERCEL_NOT_FOUND` = FAIL
+- `UNCONTROLLED_JSON` = FAIL
+- `PROTECTED_PREVIEW_BLOCKED` = FAIL
+- `API_UNREACHABLE` = FAIL (normal observation)
+- `API_UNREACHABLE` = EXPECTED FAIL (yalnız izole self-test)
+
+### Stale deployment rejection (architecture blocker)
+
+- PASS yalnızca SHA + metadata host binding iki koşulu birden sağlanırsa atanır;
+  tek koşul → `STALE_DEPLOYMENT`/`DEPLOYMENT_METADATA_*` fail.
+- Draft aşaması blocker yok; execution öncesi Vercel deployment metadata erişimi
+  ve secret authority CEO checkpoint'i gerekir.
+
 ## Kapsam
 
-- Exact-head expected SHA kaydı (draft zamanı head: `71afdd4`; execution
+- Exact-head expected SHA kaydı (draft zamanı head: `754b0db`; execution
   sırasında workflow `expected_head_sha` girişiyle yeniden doğrulanır)
 - Production target URL / deployment URL / deployment ID / alias alanları
   kaydı (observation-identity.json sözleşmesi: productionDeploymentUrl,
@@ -37,6 +103,8 @@ Refs #145
 
 ## Kapsam dışı
 
+- PR-2b-B (frontend runtime binding / P0 E2E release gate) — ayrı paket
+- PR-2b-C (Backend AC9 regression disposition) — ayrı paket
 - #190 browser reproducibility implementation
 - #191 governance constitution
 - Attendance implementation
@@ -110,10 +178,18 @@ Independent current-head APPROVED, Merge Governance.)
 
 ## CEO authority checkpoint
 
-CEO checkpoint is NOT required for draft package preparation.
-CEO checkpoint IS required before any production observation, deployment
-authority execution, Vercel metadata/protection authority use, workflow
-dispatch, or secret-bearing operation.
+- **Draft için: NOT REQUIRED** (planning only; dosya/diff yok).
+- **Execution için: REQUIRED LATER** — production observation,
+  deployment/metadata authority, Vercel protection authority kullanımı,
+  workflow dispatch veya secret-bearing işlemlerden ÖNCE zorunlu.
+
+## Architecture blockers
+
+- **Draft:** blocker yok.
+- **Execution öncesi:** Vercel deployment metadata erişimi ve secret
+  authority CEO checkpoint'i gerekir.
+- **Stale deployment reddi:** SHA + metadata host binding iki koşulu birden
+  sağlanmadan PASS asla atanmaz (STALE_DEPLOYMENT fail-closed).
 
 ## #185/#145 no-close guardrails
 
