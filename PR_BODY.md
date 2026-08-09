@@ -35,22 +35,22 @@ Refs #145
 - [x] `browser-runner-reproducibility.spec.ts` ekli ve geçiyor.
 - [x] jest `.worktrees/`/`dist/` ignore; `.gitignore` `.worktrees/` içeriyor.
 - [x] Constitution scope drift yok (#191'e ayrıldı, diff'te yok).
-- [x] Local runtime-integration PASS 30/30 — güncel head `47327ca`.
-- [x] Local unit PASS — güncel head `47327ca`.
+- [x] Local runtime-integration PASS 30/30 — head `47327ca` (doc-only sonrası geçerli).
+- [x] Local unit PASS — head `47327ca` (doc-only sonrası geçerli).
 - [x] Security/KVKK: PASS (manuel audit, `docs/security/pr2-security-kvkk-review.md`).
-- [ ] Güncel head `47327ca` için CI run'ları (Backend CI, DB Smoke, Gate 1, Sprint 1 QGate, scanner, GitGuardian) — PENDING (draft).
+- [ ] Güncel head `8eb9eb6` için CI run'ları (Backend CI, DB Smoke, Gate 1, Sprint 1 QGate, scanner, GitGuardian) — PENDING (draft).
 - [ ] PR Governance x4 + Merge Governance Enforcement PASS — PENDING (draft).
 - [ ] CodeRabbit güncel head disposition — PENDING (draft sonrası).
 - [ ] Güncel head SHA için en az bir bağımsız APPROVED review — PENDING.
 
 ## Test çıktısı
 
-Güncel head `47327ca` (2026-08-07, CTO reconciliation):
+Güncel head `8eb9eb6` (doc-only; kanıt değerleri `47327ca`'da doğrulandı — 2026-08-07, CTO reconciliation):
 
-- Local runtime-integration: **PASS 30/30** (serverless-bootstrap, production-observation, browser-runner-reproducibility) — güncel head'de yeniden doğrulandı (ledger E16).
-- Local unit: **PASS 194/194** (36 suite) — güncel head'de yeniden koşuldu.
+- Local runtime-integration: **PASS 30/30** (serverless-bootstrap, production-observation, browser-runner-reproducibility) — `6dc192b` working tree'de yeniden doğrulandı; doc-only commit'ler sonrası geçerli (ledger E16, §10).
+- Local unit: **PASS 194/194** (36 suite) — head `47327ca`'da yeniden koşuldu; doc-only commit'ler sonrası geçerli.
 - Güncel head CI: **PENDING** — PR draft; run'lar draft→ready sonrası toplanacak.
-- Geçmiş head kanıtları (historical, current-head PASS değil): run `30996686864` @ `59e5302` (E1 P0 Browser E2E SUCCESS); run `31109208974` + artifact `8970943986` digest `sha256:b8ba7c59...` @ `2881985` (matrix PASS).
+- Geçmiş head kanıtları (historical, current-head PASS değil): run `30996686864` @ `59e5302` (E1 P0 Browser E2E SUCCESS — ledger E1 ile birebir); run `31109208974` + artifact `8970943986` digest `sha256:b8ba7c59...` @ `2881985` (matrix PASS — QA/ACCEPTANCE matrix kanıtı, `docs/rag/185-acceptance-evidence-matrix.md` §1; ledger §2 E1/E2 setinden ayrı evidence'dır, §10'da `historical` olarak kayıtlı).
 - Security/KVKK: PASS (manuel audit `514c0bb`).
 
 ## KVKK/audit etkisi
@@ -68,7 +68,7 @@ Regresyon görülürse PR merge commit'i `git revert <merge_commit_sha>` ile ger
 - Geçmiş head (historical, current-head değil):
   - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/30996686864
   - https://github.com/sisbas/OkulYonetimSaaS/actions/runs/31109208974
-- Güncel head `47327ca` CI run'ları: PENDING — run ID'ler draft→ready sonrası eklenecek.
+- Güncel head `8eb9eb6` CI run'ları: PENDING — run ID'ler draft→ready sonrası eklenecek.
 
 ## Karar
 

@@ -2,15 +2,15 @@
 
 Source-bound, evidence-based decision record. Güncellenmez push'den sonra; append-only karar için Notion token sonrası `docs/rag/` altında yürütülür.
 
-- **Active head SHA:** `47327ca` (CTO reconciliation 2026-08-07 — CodeRabbit auto-fix dahil current head; önceki pin `080717f`)
-- **PR #190:** `wp07f-pr2-production-closure` — open / draft=true / mergeable=true / **PR-2a browser salvage only**
+- **Active head SHA:** `8eb9eb6` (CTO reconciliation 2026-08-07 — `47327ca` üzerine doc-only commit; kanıt değerleri `47327ca`/`6dc192b`'de doğrulandı; önceki pin `080717f`)
+- **PR #190:** `wp07f-pr2-production-closure` — open / draft=true / mergeable=true / **PR-2a browser salvage only** (canlı durum snapshot: 2026-08-05, §1)
 - **Canonical source:** GitHub live API + CTO comment (sisbas, 2026-08-05T10:30:51Z) > Notion (MCP kuruldu, `NOTION_TOKEN` yok → `ACCESS_BLOCKED`, GitHub-canonical).
 
 ## 1. Canonical state
 
 | Kaynak | Durum |
 |---|---|
-| #190 | open, draft, mergeable; PR-2a browser salvage; title `Wp07f pr2 production closure` (TITLE_OVERCLAIM — API/CI routing düzeltme gerekli); body doldurulacak (`Refs #185`/`Refs #145`, `Fixes` YOK) |
+| #190 | open, draft, mergeable; PR-2a browser salvage; title `Wp07f pr2 production closure` (TITLE_OVERCLAIM — canlı title repair GitHub-side PENDING, §8 hedef: `WP-07F PR-2a: ...`); canlı PR body hâlâ eski #162 içerik (canlı güncelleme PENDING — repo `PR_BODY.md` 2026-08-07'de yeniden yazıldı, §10); snapshot 2026-08-05 |
 | #185 | open (qa-kvkk-required, acceptance-evidence) |
 | #145 | open (parent #139; depends #141-144; #185 kapanınca kapanır) |
 | #42 | open / Attendance HOLD |
@@ -39,7 +39,7 @@ Source-bound, evidence-based decision record. Güncellenmez push'den sonra; appe
 | E13 | `/api/v1/health` probe (preview) | CTO comment | — | **200 text/html (FAIL)** — routing öncesi; routing main'e `0043f63`/`831bdc0`/`3336036`/`80a2898` ile girdi (merge `35950f0` = PR #186) | preview | ❌ | ❌ |
 | E14 | Production observation (exact-head) | — | — | **MISSING** — Vercel secret'ları gerektirir, bu ortamdan çalıştırılamaz | — | ❌ | ❌ |
 | E15 | API reachability (Nest JSON) | — | — | **UNPROVEN** — production'da doğrulanmadı; local 30/30 runtime-integration PASS (E16) mevcut | — | ❌ | ❌ |
-| E16 | Local runtime-integration | `npm.cmd run test:runtime-integration` | local | **PASS 30/30** (3 suite: serverless-bootstrap, production-observation, browser-runner-reproducibility) | 2881985 ✅ | ✅ (context) | ctx (production obs gerekli) |
+| E16 | Local runtime-integration | `npm.cmd run test:runtime-integration` | local | **PASS 30/30** (3 suite: serverless-bootstrap, production-observation, browser-runner-reproducibility) | 2881985 ✅; 2026-08-07 current-head re-verify (§10) | ✅ (context) | ctx (production obs gerekli) |
 
 ## 3. #190 = #187 salvage? (doğrulandı — patch)
 
@@ -110,9 +110,25 @@ Not: Bu dosya sadece **dokümantasyon** (implementation/merge/workflow trigger y
 
 ## 10. Current-head reconciliation (CTO, 2026-08-07)
 
-- **Head ilerlemesi (eski pin `080717f` → current `47327ca`):** `2881985` (ledger pin) → `514c0bb` (Security/KVKK review) → `f59a6e3` (ci: mirror runner chromium args) → `6dc192b` (e2e: sparticuz load error detail) → `47327ca` (CodeRabbit auto-fixes, PR_BODY.md link fix). Ledger active head bu commit'te current'e re-pin edildi.
-- **E16 yeniden doğrulandı (current head `47327ca`):** `npm.cmd run test:runtime-integration` → **PASS 30/30** (3 suite). E16 artık current-head kanıtıdır.
-- **Unit yeniden koşuldu (current head `47327ca`):** sonuç bu commit'in mesajında/Test çıktısında kayıtlı.
-- **PR_BODY.md yeniden yazıldı (current head):** eski #162/#140 governance PR içeriği (stale head `9de7454`, run `302213483xx`, yanlış issue refs) #190'ın kendi PR-2a body'siyle değiştirildi. Stale head/run ID/false PASS claim kalmadı; geçmiş head run'ları `historical` olarak etiketli.
-- **Güncel head CI run'ları: PENDING** (draft) — run ID'ler draft→ready sonrası ledger §2'ye eklenir. E1 (`30996686864` @ `59e5302`) ve matrix run (`31109208974` @ `2881985`) historical'dir; current-head PASS olarak kullanılamaz.
+- **Head ilerlemesi (eski pin `080717f` → current `8eb9eb6`):** `2881985` (ledger pin) → `514c0bb` (Security/KVKK review) → `f59a6e3` (ci: mirror runner chromium args) → `6dc192b` (e2e: sparticuz load error detail) → `47327ca` (CodeRabbit auto-fixes, PR_BODY.md link fix) → `8eb9eb6` (doc-only: PR_BODY.md + ledger + tsbuildinfo). Ledger active head bu commit'te current'e re-pin edildi.
+- **E16 yeniden doğrulandı (working tree `6dc192b`, 2026-08-07):** `npm.cmd run test:runtime-integration` → **PASS 30/30** (3 suite). Sonraki commit'ler (`47327ca`: PR_BODY.md link + tsbuildinfo; `8eb9eb6`: docs) runtime kodu değiştirmediği için E16 current head `8eb9eb6` için de geçerlidir; ledger §2 satırı ilk kayıt head'ini (`2881985`) korur.
+- **Unit yeniden koşuldu (head `47327ca`):** PASS 194/194 (36 suite) — doc-only commit'lerden etkilenmez; sonuç PR_BODY.md Test çıktısında kayıtlı.
+- **PR_BODY.md yeniden yazıldı (repo dosyası):** eski #162/#140 governance PR içeriği (stale head `9de7454`, run `302213483xx`, yanlış issue refs) #190'ın kendi PR-2a body'siyle değiştirildi. Repo dosyasında stale head/run ID/false PASS claim kalmadı; geçmiş head run'ları `historical` olarak etiketli. **Canlı GitHub PR body'si ayrıdır:** §1'deki gözlem hâlâ geçerli, canlı güncelleme GitHub-side PENDING.
+- **Güncel head CI run'ları: PENDING** (draft) — run ID'ler draft→ready sonrası ledger §2'ye eklenir. E1 (`30996686864` @ `59e5302`, ledger §2) ve matrix run (`31109208974` + artifact `8970943986` digest `sha256:b8ba7c59...` @ `2881985`, `185-acceptance-evidence-matrix.md` §1) historical'dir; current-head PASS olarak kullanılamaz. Matrix run, ledger §2'den ayrı bir QA/ACCEPTANCE evidence kaydıdır.
 - **Merge Governance Enforcement:** PASS değil (draft + approval yok) → merge önerilmez. #185/#145 closure claim yok.
+
+## 11. Head classification & status (Docs & Evidence Reconciliation, 2026-08-07)
+
+- `080717f` = **HISTORICAL** (ledger eski pin)
+- `59e5302` = **HISTORICAL** (E1/E2 run seti head'i; current-head PASS değil)
+- `2881985` = **HISTORICAL / STALE** (matrix run `31109208974` head'i; current-head PASS değil)
+- `6dc192b` = **HISTORICAL / STALE** (E16 doğrulama tree'si; E16 sonucu doc-only commit'ler nedeniyle current head `8eb9eb6` için geçerli, §10)
+- `47327ca` = **HISTORICAL** (CodeRabbit auto-fix head'i; kanıt değerleri burada doğrulandı)
+- `8eb9eb6` = **ACTIVE HEAD** (canlı PR metadata head)
+
+Status:
+- **#190 = HOLD** until current-head evidence + independent approval + Merge Governance PASS
+- **#191 = HOLD** while draft=true (governance-only scope teyitli; canlı gate'ler PENDING)
+- **PR-2b = PLAN**; CEO secret/authority required (Vercel secret'ları; merge authorization authority path)
+- **#185 close-ready = NO** (E14/E15 missing)
+- **#145 close-ready = NO** (#185 close-ready değil)
