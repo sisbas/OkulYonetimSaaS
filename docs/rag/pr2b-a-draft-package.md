@@ -7,7 +7,7 @@
 ## 0. Dispatch kaydı & sınırlar
 
 - **Karar:** GO — PR-2b-A draft package hazırlığı (PLANNING ONLY).
-- **Bağlayıcı sınırlar:** #190 = HOLD · #191 = HOLD · PR-2b = PLANNING ONLY · Keystone = TASK ROUTING / PLANNING ONLY.
+- **Bağlayıcı sınırlar:** #190 = MERGED/CLOSED (merge `a85fab3`, 2026-08-09T14:16:00Z; closure claim yok) · #191 = HOLD · PR-2b-A = PLANNING ONLY · Keystone = TASK ROUTING / PLANNING ONLY.
 - **Records:** GitHub #167 comment `5232108708` (dispatch kaydı) · GitHub #185 comment `5232109995` (closure hattı yalnız planlanır) · Notion WP-07 (09.08.2026 17:47 TRT, CTO Task Assignment).
 - **Bu pakette asla uygulanmaz:** implementation · branch creation · workflow/deploy trigger · merge · mark-ready · issue close · secret use · GitHub/Notion mutation (yetki yok) · reviewer request · check trigger · observation execution.
 
@@ -314,7 +314,7 @@ implicit authority VERMEZ. Her biri ayrı yetkilendirilir ve kayıt altına alı
 | #145 closure | **YASAK** — #185 close-ready olmadan kapanmaz (parent #139, depends #141–144). |
 | Body dili | PR-2b body'de `Fixes #185` / `Closes` YOK; yalnızca `Refs`. Closure claim ayrı bir evidence pack'tir (K3). |
 | Title/etiket | Closure etiketi (`closed`/`done` vb.) veya #185/#145 üzerinde durum mutation'ı yok. |
-| #190/#191 | HOLD korunur: #190 = PR-2a (ready, AC FAIL + 0 approval → HOLD); #191 = draft=true → HOLD. |
+| #190 | MERGED/CLOSED (merge `a85fab3`; HOLD değil; #185/#145 closure claim yok). |
 | Notion | Yalnızca append-only karar log (token sonrası); mutation yok. |
 | Ops | `workflow_dispatch`-only observation; merge enforcer ve ruleset'in fail-closed davranışı korunur. |
 
@@ -334,11 +334,12 @@ Her kart için kural: bu paket yalnızca routing kaydıdır; kartın aksiyonu ay
 ## 10. CTO Final Synthesis (PROMPT 9)
 
 - **Karar:** GO — PR-2b-A draft package tamamlandı (PLANNING ONLY). Kapsam doğrulandı: routing main'de (PR #186 `35950f0`), eksik tek kanıt production exact-head observation'dur (E14/E15).
+- **Keystone routing:** 8 kart (PR2BA-DRAFT-BODY · PR2BA-ARCH-AUTHORITY · PR2BA-BACKEND-JSON-AUTHORITY · PR2BA-QA-EVIDENCE-CHECKLIST · PR2BA-SECURITY-KVKK-CHECKLIST · PR2BA-ROLLBACK-NOCLOSE · PR2BA-REVIEWER-CHECK-MATRIX · PR2BA-CTO-SYNTHESIS) `evidence_ready`; registry: `docs/rag/pr2b-a-keystone-routing.md`. Bu paket, PR2BA-CTO-SYNTHESIS kartının çıktısıdır (9 deliverable derlenmiş; execution kartları CEO checkpoint'e bağlı).
 - **Teknik risk:** `EXACT_HEAD_FUTURE_RISK` (AC-5) — head pin'i K2 dispatch anında yapılır; gözlemden sonra head değişirse kanıt yenilenir.
 - **Güvenlik:** Security/KVKK PASS (manuel audit); run-time artifact re-check (S-8) açık kalem.
 - **Merge:** NOT AUTHORIZED — PENDING (observation + current-head CI + approval).
 - **Kapanış:** #185/#145 close-ready = NO (guardrail §8).
-- **Bağlayıcı sınırlar korundu:** #190 HOLD · #191 HOLD · PR-2b PLANNING ONLY · Keystone routing-only. Bu pakette hiçbir mutation/trigger/merge/close/secret kullanımı yapılmadı.
+- **Bağlayıcı sınırlar korundu:** #190 MERGED/CLOSED · #191 HOLD · PR-2b-A PLANNING ONLY · Keystone routing-only. Bu pakette hiçbir mutation/trigger/merge/close/secret kullanımı yapılmadı.
 - **Next synthesis trigger:** PROMPT 1–8 çıktıları (bu paket) toplandığında PROMPT 9 (bu bölüm) çalıştı. Bir sonraki dispatches: Keystone kartları (K1–K6) ayrı yetkilendirme ile.
 
 <!-- PR-2B-A DRAFT PACKAGE: PLANNING ONLY / NO MUTATION / NO TRIGGER / NO CLOSE / NO SECRET USE -->
