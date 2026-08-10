@@ -79,21 +79,32 @@ jobs:
       - name: npm ci
         run: npm ci
 
-      - name: Install pinned browser runner dependencies
+      - name: Verify locked browser runner dependencies (mirrors runner args)
         run: |
-          npm install --no-save puppeteer-core@24.15.0 @sparticuz/chromium@138.0.2
-          sudo apt-get update
-          sudo apt-get install -y chromium
-          node - <<'NODE'
-          const chromium = require('@sparticuz/chromium');
-          chromium.executablePath().then((executablePath) => {
+          node --input-type=module - <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          import puppeteerPackage from 'puppeteer-core/package.json' with { type: 'json' };
+          import chromium from '@sparticuz/chromium';
+
+          let browser;
+          const executablePath = await chromium.executablePath();
+          try {
+            browser = await puppeteer.launch({
+              executablePath,
+              args: Array.from(new Set([...(chromium.args || []), '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])),
+              headless: chromium.headless,
+              timeout: 90000,
+              protocolTimeout: 90000,
+            });
+            const page = await browser.newPage();
+            await page.goto('about:blank');
+            console.log(`puppeteer-core locked version: ${puppeteerPackage.version}`);
             console.log(`@sparticuz/chromium executable: ${executablePath}`);
             console.log(`@sparticuz/chromium headless: ${chromium.headless}`);
-          }).catch((error) => {
-            console.warn(`@sparticuz/chromium executablePath warning: ${error.message}`);
-          });
+          } finally {
+            if (browser) await browser.close();
+          }
           NODE
-          chromium --version || true
 
       - name: Run migrations
         run: npm run db:migrate
