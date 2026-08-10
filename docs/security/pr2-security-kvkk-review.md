@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-This audit report records the security, privacy, and compliance review of the evidence and artifacts associated with **PR-2a** (Browser Runner Reproducibility Salvage) and **PR-2b** (Production API Reachability Observation) under the WP-07F milestone. 
+This audit report records the security, privacy, and compliance review of the evidence and artifacts associated with **PR-2a** (Browser Runner Reproducibility Salvage) and **PR-2b** (Production API Reachability Observation) under the WP-07F milestone.
 
 The review was performed to verify that no sensitive credentials, cookies, tokens, raw request/response bodies, student/parent/guardian PII (Personally Identifiable Information), or rendered notification payloads are stored or leaked into logs or artifacts.
 
@@ -33,10 +33,10 @@ We reviewed the following code paths, scripts, test configurations, and evidence
 
 ### A. Tokens, Cookies, and Credentials
 - **E2E Credentials**: The test runner (`qa-p0-browser-e2e.js`) uses dynamic synthetic credentials based on the unique `GITHUB_RUN_ID` (or `local` prefix). No hard-coded, static, or real credentials are used.
-- **Redaction Filters**: 
+- **Redaction Filters**:
   - `qa-p0-browser-e2e.js` uses a strict regex-based `redact` utility to clean JWT tokens (`/eyJ[A-Za-z0-9._-]+/`), Bearer headers, and response field properties (`accessToken`, `refreshToken`).
   - `observe-production-runtime.js` applies a `redact` filter on all output URLs, errors, and metadata parameters, replacing sensitive tokens, Vercel protection bypass headers (`x-vercel-protection-bypass`), and JWTs with `<redacted>` or `<jwt-redacted>`.
-- **Leak Detection**: 
+- **Leak Detection**:
   - `qa-p0-browser-e2e.js` runs `scanTextForLeaks` on the final page body text and execution reports. It checks for JWTs, Bearer keywords, database queries, and credentials.
   - `collectStorageDiagnostics` monitors localStorage, sessionStorage, and cookies. If any storage fields exist, they are tracked, preventing hidden token leaks.
 - **Result**: **NO CREDENTIAL/TOKEN/COOKIE LEAK DETECTED.**
