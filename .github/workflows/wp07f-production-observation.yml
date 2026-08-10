@@ -104,6 +104,7 @@ jobs:
           retention-days: 14
 
       - name: Record uploaded artifact identity
+        id: record-uploaded-artifact-identity
         if: always()
         env:
           UPLOADED_ARTIFACT_ID: ${{ steps.upload-production-observation.outputs.artifact-id }}
@@ -139,11 +140,22 @@ jobs:
           ].join('\n'));
           NODE
 
+      - name: Upload production observation artifact receipt
+        id: upload-production-observation-receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wp07f-production-observation-receipt-${{ github.sha }}
+          path: artifacts/wp07f-production-observation/uploaded-artifact-identity.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Enforce observation report contract
         if: always()
         run: |
           node - <<'NODE'
           const fs = require('node:fs');
+          const schema = require('./scripts/observation-identity-schema.json');
           const reportPath = 'artifacts/wp07f-production-observation/observation-identity.json';
           if (!fs.existsSync(reportPath)) {
             throw new Error('Observation report missing; stale artifact reuse is forbidden.');
@@ -152,37 +164,12 @@ jobs:
           const expectedHeadSha = process.env.EXPECTED_PR_HEAD_SHA;
           const selfTest = process.env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
           const failureReasons = Array.isArray(report.failureReasons) ? report.failureReasons : [];
-          const allowedKeys = new Set([
-            'overallStatus',
-            'issue',
-            'purpose',
-            'commitSha',
-            'expectedHeadSha',
-            'branchRef',
-            'productionDeploymentId',
-            'productionDeploymentUrl',
-            'productionAlias',
-            'targetBaseUrl',
-            'deploymentCommitSha',
-            'deploymentCommitSource',
-            'deploymentMetadataLookup',
-            'deploymentMetadataStatus',
-            'deploymentTargetHost',
-            'deploymentAuthorizedHosts',
-            'observationTimestamp',
-            'artifactName',
-            'reportContentDigest',
-            'failureReasons',
-            'apiReachabilityStatus',
-            'checks',
-            'identityChecks',
-            'error',
-          ]);
+          const allowedKeys = new Set(schema.allowedKeys);
           const unexpectedKeys = Object.keys(report).filter((key) => !allowedKeys.has(key));
           if (unexpectedKeys.length > 0) {
             throw new Error(`Observation report contains non-allowlisted keys: ${unexpectedKeys.join(', ')}`);
           }
-          for (const requiredKey of ['deploymentMetadataLookup', 'deploymentTargetHost', 'deploymentAuthorizedHosts', 'failureReasons', 'identityChecks']) {
+          for (const requiredKey of schema.requiredKeys) {
             if (!Object.prototype.hasOwnProperty.call(report, requiredKey)) {
               throw new Error(`Observation report missing identity evidence field: ${requiredKey}`);
             }

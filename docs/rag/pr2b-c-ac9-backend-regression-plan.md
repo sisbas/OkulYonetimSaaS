@@ -24,10 +24,11 @@ gerçek verisiyle regresyon olarak sınanmamıştır:
    DEFAULT_TENANT_TIME_ZONE` (Europe/Istanbul) taşır; `leave-identity.service.ts:29`
    ise `ctx.businessDate` yokken `isoDate(new Date())` (UTC) değerini `source:
    'tenant_local'` etiketiyle **sentezler** — `docs/wp-07/tenant-local-business-date-decision.md`
-   ("GLOBAL_UTC_FALLBACK: REJECTED") kararıyla çelişen yüzey. Regression suite bu
-  davranışı fail-closed kontratla pinler. Missing-`businessDate` route testleri,
-  `leave-identity.service.ts` UTC fallback'i kaldırılana veya route boundary
-  context enrichment öncesi 403 verdiği kanıtlanana kadar BLOCKED sayılır.
+   ("GLOBAL_UTC_FALLBACK: REJECTED") kararıyla çelişen yüzey. Planlanan
+  regression suite bu davranışı fail-closed kontratla pinleyecektir. Missing-
+  `businessDate` için PASS kanıtı, `leave-identity.service.ts` UTC fallback'i
+  kaldırılana veya route boundary context enrichment öncesi 403 verdiği
+  kanıtlanana kadar yoktur; bu route testleri BLOCKED sayılır.
 2. **Multi-branch own-leave read:** `leave.repository.ts:85-88` (`findOwn`) tenant +
    teacherId ile scoped'tır, branch filtresi içermez; identity katmanı ise
    `teacher-identity.service.ts:78-82`'de `memberships.length !== 1 → deny` yapar.
@@ -51,9 +52,9 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
 - **Hedef kontrat:** Occurrence-date hiçbir koşulda global UTC gününden türetilmez.
   Authoritative tarih `ctx.businessDate.date (tenant_local)` değeridir.
   `query.date` yalnız opsiyonel filter olarak kalacaksa ISO calendar date
-  doğrulamasından geçmeli, `ctx.businessDate.date` ile çelişirse 400/403 ile
-  reddedilmeli ve impossible dates (`2026-99-99`, `2026-02-31`) kabul
-  edilmemelidir. Fallback yalnız `DEFAULT_TENANT_TIME_ZONE`
+  doğrulamasından geçmeli; malformed/impossible values (`2026-99-99`,
+  `2026-02-31`) 400 ile, `ctx.businessDate.date`/authority/context çelişkileri
+  403 ile reddedilmelidir. Fallback yalnız `DEFAULT_TENANT_TIME_ZONE`
   `Intl.DateTimeFormat` çıktısı olabilir (`daily-operations.service.ts:13-19`).
 - **Yüzeyler:**
   - `daily-operations.service.ts:33` — `today()`: `parseQueueDate(query.date,
@@ -88,8 +89,9 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
 - **Hedef kontrat:** Own-read fail-closed identity resolution sonrası çalışır.
   `teacher-identity.service.ts` 2+ aktif membership durumunu `findOwn` öncesi
   reddettiği için multi-active teacher branch-independent 200 kontratı yoktur.
-  Tek aktif membership çözüldükten sonra `findOwn` yalnız `{id, tenantId,
-  teacherId}` ile tenant/teacher scoped çalışır (`leave.repository.ts:85-88`).
+  Tek aktif membership çözüldükten sonra `LeaveIdentityService` resolved
+  `branchId` bilgisini korur ve `findOwn` yalnız `{id, tenantId, teacherId,
+  branchId}` ile tenant/teacher/branch scoped çalışır (`leave.repository.ts:85-88`).
 - **Yüzeyler:**
   - `leave.controller.ts:38-42` — `GET /leaves/me/:id` (`leave:own:read`),
     teacherId client'tan kabul edilmez (server-side identity;
@@ -97,13 +99,14 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
   - `teacher-identity.service.ts:78-82` — `listActiveBranchMemberships` +
     `memberships.length !== 1 → deny`.
 - **Senaryolar:**
-  - Tek aktif üyeliği olan öğretmen: kendi tenant/teacher scoped kaydını
-    `GET /leaves/me/:id` ile okuyabilir.
+  - Tek aktif üyeliği olan öğretmen: kendi tenant/teacher/branch scoped kaydını
+    `GET /leaves/me/:id` ile okuyabilir; aynı teacher'a ait fakat farklı branch'teki
+    leave kaydı 404 döner.
   - İki aktif üyeliği olan öğretmen: identity resolution kontratı pinlenir —
     unambiguous tek aktif üyelik → resolve; 2+ aktif üyelik → deny (fail-closed,
     `teacher-identity.service.ts:82`) ve `findOwn` çağrılmaz.
-- **PASS kuralı:** Tek aktif membership own-read 200; multi-membership
-  belirsizliği 403 (deny), asla yanlış branch kaydı dönmez.
+- **PASS kuralı:** Tek aktif membership own-read 200; başka branch kaydı 404;
+  multi-membership belirsizliği 403 (deny), asla yanlış branch kaydı dönmez.
 
 ### cross-tenant negative
 
@@ -204,8 +207,12 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
 - Jest çıktısı + CI run ID'leri `docs/rag/190-evidence-ledger.md`'ye işlenir
   (E-prefix, head SHA pin).
 - Artifact/log allowlist fields: `occurrenceDate`, opaque `tenantId`,
-  `teacherId`, `branchId`, `statusCode`, canonical error code, and digest of
-  normalized 404 fields.
+  `teacherId`, `branchId`, `statusCode`, canonical error code, and
+  `notFoundShapeDigest` for normalized 404 fields.
+- `notFoundShapeDigest` contract: SHA-256 over UTF-8 JSON with deterministic
+  lexicographic key ordering for `{statusCode, errorCode, resource}`, where
+  `statusCode=404`, `errorCode` is the canonical application code, and
+  `resource` is a non-PII enum such as `leave_request` or `daily_operations_queue`.
 - Raw request/response bodies and request IDs remain excluded. Stack trace,
   secret/token/cookie/Authorization header, production PII, contact data,
   notification payload and free-text PII remain forbidden.

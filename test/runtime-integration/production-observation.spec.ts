@@ -1,4 +1,5 @@
 const observation = require('../../scripts/observe-production-runtime.js');
+const observationIdentitySchema = require('../../scripts/observation-identity-schema.json');
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -40,31 +41,8 @@ const vercelMetadata = (sha = baseEnv.EXPECTED_PR_HEAD_SHA) => ({
   },
 });
 
-const allowedObservationIdentityKeys = [
-  'apiReachabilityStatus',
-  'artifactName',
-  'branchRef',
-  'checks',
-  'commitSha',
-  'deploymentAuthorizedHosts',
-  'deploymentCommitSha',
-  'deploymentCommitSource',
-  'deploymentMetadataLookup',
-  'deploymentMetadataStatus',
-  'deploymentTargetHost',
-  'expectedHeadSha',
-  'failureReasons',
-  'identityChecks',
-  'issue',
-  'observationTimestamp',
-  'overallStatus',
-  'productionAlias',
-  'productionDeploymentId',
-  'productionDeploymentUrl',
-  'purpose',
-  'reportContentDigest',
-  'targetBaseUrl',
-];
+const successObservationIdentityKeys = observationIdentitySchema.allowedKeys
+  .filter((key: string) => key !== 'error');
 
 function withDeploymentMetadata(
   handler: (url: string, init?: RequestInit) => Promise<Response>,
@@ -308,7 +286,7 @@ describe('production runtime observation', () => {
       })
       : htmlResponse('<html></html>', 200)));
 
-    expect(Object.keys(report).sort()).toEqual(allowedObservationIdentityKeys.sort());
+    expect(Object.keys(report).sort()).toEqual([...successObservationIdentityKeys].sort());
     expect(report.deploymentMetadataLookup).toBe(baseEnv.PRODUCTION_DEPLOYMENT_ID);
     expect(report.deploymentTargetHost).toBe('preview.example.test');
     expect(report.deploymentAuthorizedHosts).toEqual(expect.arrayContaining(['preview.example.test']));
@@ -458,6 +436,7 @@ describe('production runtime observation', () => {
     expect(report.apiReachabilityStatus).toBe('FAIL');
     expect(report.checks).toEqual([]);
     expect(report.identityChecks).toEqual([{ ok: false, failureReason: 'MISSING_ENVIRONMENT' }]);
+    expect(Object.keys(report).sort()).toEqual([...observationIdentitySchema.allowedKeys].sort());
     expect(Object.prototype.hasOwnProperty.call(report, 'reportContentDigest')).toBe(true);
     expect(Object.prototype.hasOwnProperty.call(report, 'artifactDigest')).toBe(false);
     expect(report.error).not.toContain('raw-secret');

@@ -1,0 +1,35 @@
+{
+  "allowedKeys": [
+    "apiReachabilityStatus",
+    "artifactName",
+    "branchRef",
+    "checks",
+    "commitSha",
+    "deploymentAuthorizedHosts",
+    "deploymentCommitSha",
+    "deploymentCommitSource",
+    "deploymentMetadataLookup",
+    "deploymentMetadataStatus",
+    "deploymentTargetHost",
+    "error",
+    "expectedHeadSha",
+    "failureReasons",
+    "identityChecks",
+    "issue",
+    "observationTimestamp",
+    "overallStatus",
+    "productionAlias",
+    "productionDeploymentId",
+    "productionDeploymentUrl",
+    "purpose",
+    "reportContentDigest",
+    "targetBaseUrl"
+  ],
+  "requiredKeys": [
+    "deploymentMetadataLookup",
+    "deploymentTargetHost",
+    "deploymentAuthorizedHosts",
+    "failureReasons",
+    "identityChecks"
+  ]
+}

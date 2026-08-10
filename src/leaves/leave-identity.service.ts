@@ -5,6 +5,7 @@ import { TeacherIdentityService } from '../teachers/teacher-identity.service';
 export type LeaveActorIdentity = {
   actorUserId: string;
   teacherId: string;
+  branchId: string;
 };
 
 type ResolveLeaveTeacherIdentityInput = Readonly<{
@@ -46,6 +47,7 @@ export class LeaveIdentityService {
     return {
       actorUserId: resolved.userId,
       teacherId: resolved.teacherId,
+      branchId: resolved.branchId,
     };
   }
 }
