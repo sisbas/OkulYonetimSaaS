@@ -58,10 +58,12 @@ notifications, or consents MUST document RBAC, KVKK, and audit impact before it
 is considered complete. Personal data, credentials, tokens, authorization
 headers, cookies, notification payloads, parent or guardian contact details,
 student identity fields, health notes, counseling notes, and raw request or
-response bodies MUST NOT be persisted to audit metadata or logs unless a
-specific allowlist and legal/product review explicitly permit it. Success audits
-for lifecycle mutations MUST commit or roll back in the same PostgreSQL
-transaction as the domain mutation.
+response bodies MUST NOT be persisted to audit metadata or logs. A reviewed
+allowlist MAY permit only explicitly identified non-secret metadata fields that
+are necessary for auditability and contain no raw payloads, credentials,
+authorization material, cookies, tokens, contact values, or personal/sensitive
+data. Success audits for lifecycle mutations MUST commit or roll back in the
+same PostgreSQL transaction as the domain mutation.
 
 Rationale: Authorization, privacy, and auditability are not optional features in
 an education SaaS; they are release blockers when wrong.
