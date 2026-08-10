@@ -94,6 +94,7 @@ jobs:
         run: npm run observe:production-runtime
 
       - name: Upload production observation artifact
+        id: upload-production-observation
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -101,6 +102,42 @@ jobs:
           path: artifacts/wp07f-production-observation
           if-no-files-found: error
           retention-days: 14
+
+      - name: Record uploaded artifact identity
+        if: always()
+        env:
+          UPLOADED_ARTIFACT_ID: ${{ steps.upload-production-observation.outputs.artifact-id }}
+          UPLOADED_ARTIFACT_URL: ${{ steps.upload-production-observation.outputs.artifact-url }}
+          UPLOADED_ARTIFACT_DIGEST: ${{ steps.upload-production-observation.outputs.artifact-digest }}
+          UPLOADED_ARTIFACT_NAME: wp07f-production-observation-${{ github.sha }}
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const reportPath = 'artifacts/wp07f-production-observation/observation-identity.json';
+          const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+          const identity = {
+            artifactId: process.env.UPLOADED_ARTIFACT_ID,
+            artifactName: process.env.UPLOADED_ARTIFACT_NAME,
+            artifactUrl: process.env.UPLOADED_ARTIFACT_URL,
+            artifactDigest: process.env.UPLOADED_ARTIFACT_DIGEST,
+            reportContentDigest: report.reportContentDigest,
+            commitSha: report.commitSha,
+            expectedHeadSha: report.expectedHeadSha,
+          };
+          for (const [key, value] of Object.entries(identity)) {
+            if (!value) throw new Error(`Uploaded artifact identity missing ${key}`);
+          }
+          fs.writeFileSync('artifacts/wp07f-production-observation/uploaded-artifact-identity.json', JSON.stringify(identity, null, 2));
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+            '### WP-07F production observation artifact',
+            '',
+            `- artifactId: ${identity.artifactId}`,
+            `- artifactName: ${identity.artifactName}`,
+            `- artifactDigest: ${identity.artifactDigest}`,
+            `- reportContentDigest: ${identity.reportContentDigest}`,
+            '',
+          ].join('\n'));
+          NODE
 
       - name: Enforce observation report contract
         if: always()
@@ -115,6 +152,41 @@ jobs:
           const expectedHeadSha = process.env.EXPECTED_PR_HEAD_SHA;
           const selfTest = process.env.OBSERVATION_SELF_TEST_UNREACHABLE_API === 'true';
           const failureReasons = Array.isArray(report.failureReasons) ? report.failureReasons : [];
+          const allowedKeys = new Set([
+            'overallStatus',
+            'issue',
+            'purpose',
+            'commitSha',
+            'expectedHeadSha',
+            'branchRef',
+            'productionDeploymentId',
+            'productionDeploymentUrl',
+            'productionAlias',
+            'targetBaseUrl',
+            'deploymentCommitSha',
+            'deploymentCommitSource',
+            'deploymentMetadataLookup',
+            'deploymentMetadataStatus',
+            'deploymentTargetHost',
+            'deploymentAuthorizedHosts',
+            'observationTimestamp',
+            'artifactName',
+            'reportContentDigest',
+            'failureReasons',
+            'apiReachabilityStatus',
+            'checks',
+            'identityChecks',
+            'error',
+          ]);
+          const unexpectedKeys = Object.keys(report).filter((key) => !allowedKeys.has(key));
+          if (unexpectedKeys.length > 0) {
+            throw new Error(`Observation report contains non-allowlisted keys: ${unexpectedKeys.join(', ')}`);
+          }
+          for (const requiredKey of ['deploymentMetadataLookup', 'deploymentTargetHost', 'deploymentAuthorizedHosts', 'failureReasons', 'identityChecks']) {
+            if (!Object.prototype.hasOwnProperty.call(report, requiredKey)) {
+              throw new Error(`Observation report missing identity evidence field: ${requiredKey}`);
+            }
+          }
           if (failureReasons.length === 0 && report.overallStatus === 'FAIL') {
             throw new Error('Observation failed without failureReasons; failure identity is incomplete.');
           }

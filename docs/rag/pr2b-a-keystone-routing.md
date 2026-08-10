@@ -1,4 +1,4 @@
-# WP-07F — PR-2B-A Keystone Task-Routing Cards
+﻿# WP-07F — PR-2B-A Keystone Task-Routing Cards
 
 > **Karar: GO** — TASK ROUTING / PLANNING ONLY.
 >
@@ -87,7 +87,7 @@ owner | reviewer | status | next_trigger | requires_human_approval
 | lane | planning |
 | scope | evidence checklist + PASS contract |
 | out_of_scope | observation execution |
-| acceptance_criteria | 14 PENDING alan + PASS/FAIL contract |
+| acceptance_criteria | Unresolved evidence list is explicit: E14=MISSING, E15=UNPROVEN, CI-01..13=PENDING, REV-01=PENDING, REV-02=PENDING, ART-01=PENDING; PASS/FAIL contract preserved |
 | required_evidence | `docs/rag/pr2b-a-draft-package.md` §3 (E13–E17, CI-01…13, REV-01/02, ART-01; PASS/FAIL contract) |
 | blockers | CEO checkpoint (yalnız execution için) |
 | dependencies | PR2BA-BACKEND-JSON-AUTHORITY |
@@ -163,7 +163,7 @@ owner | reviewer | status | next_trigger | requires_human_approval
 | lane | planning |
 | scope | final draft package |
 | out_of_scope | execution |
-| acceptance_criteria | 9 çıktı derlendi |
+| acceptance_criteria | 10 bölüm derlendi (9 team deliverable + CTO Final Synthesis) |
 | required_evidence | tüm kart çıktıları → `docs/rag/pr2b-a-draft-package.md` (1 Draft PR Body · 2 Acceptance Matrix · 3 Evidence Checklist · 4 Security/KVKK Checklist · 5 Rollback Plan · 6 Reviewer/Check Matrix · 7 CEO Authority Checkpoint · 8 No-Close Guardrails · 9 Task-Routing Cards · 10 CTO Final Synthesis) |
 | blockers | none |
 | dependencies | PR2BA-DRAFT-BODY, PR2BA-ARCH-AUTHORITY, PR2BA-BACKEND-JSON-AUTHORITY, PR2BA-QA-EVIDENCE-CHECKLIST, PR2BA-SECURITY-KVKK-CHECKLIST, PR2BA-ROLLBACK-NOCLOSE, PR2BA-REVIEWER-CHECK-MATRIX |
@@ -204,7 +204,7 @@ observation execution.
 ## CTO handoff (synthesis kaydı)
 
 - 8 kart `evidence_ready` durumunda **PROMPT 9** (CTO Final Synthesis) çalıştı:
-  çıktı paketi `docs/rag/pr2b-a-draft-package.md` (9 deliverable derlenmiş).
+  çıktı paketi `docs/rag/pr2b-a-draft-package.md` (10 bölüm derlenmiş: 9 team deliverable + CTO Final Synthesis).
 - Execution kartları (PR2BA-QA-EVIDENCE-CHECKLIST, PR2BA-SECURITY-KVKK-CHECKLIST,
   PR2BA-REVIEWER-CHECK-MATRIX) `requires_human_approval=true` ile CEO checkpoint'e
   bağlıdır; bu paket hiçbir execution yetkisi vermez.

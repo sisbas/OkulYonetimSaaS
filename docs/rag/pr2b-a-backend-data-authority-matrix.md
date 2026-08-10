@@ -14,8 +14,8 @@
 - Kanıt: application-controlled JSON yanıtı; Vercel platform NOT_FOUND,
   static HTML, uncontrolled JSON hiçbiri PASS sayılmaz.
 - Identity: response content-type `application/json`; expected status 200;
-  health contract alanları (ör. status/uptime alan seti) routes catalog'a
-  göre doğrulanır.
+  exact health contract values are `status=ok`,
+  `service=okul-yonetim-saas-api`, and `applicationType=backend-api`.
 
 ## Known endpoint response matrix
 
@@ -32,19 +32,22 @@
 - endpoint: `/api/v1/health` (birincil)
 - expected status: 200
 - expected content-type: `application/json` (Nest üretimi)
-- required JSON keys: routes catalog'daki health kontrat alanları
-  (execution öncesi exact anahtar seti kodla çapraz doğrulanır)
-- required JSON values: kontrat tarafından sabitlenen değerler
+- required JSON keys: `status`, `service`, `applicationType`
+- required JSON values: `status=ok`, `service=okul-yonetim-saas-api`,
+  `applicationType=backend-api`
 - forbidden response types: `text/html`, platform NOT_FOUND body, raw
   backend error body, uncontrolled passthrough JSON
-- failureReason mapping: `STATIC_HTML_RESPONSE` | `VERCEL_NOT_FOUND` |
-  `UNCONTROLLED_JSON` | `PROTECTED_PREVIEW_BLOCKED` | `API_UNREACHABLE`
+- emitted artifact failureReason mapping: `API_UNREACHABLE` |
+  `PROTECTED_PREVIEW_BLOCKED` | `UNEXPECTED_STATUS` | `HEADER_MISMATCH` |
+  `OBSERVATION_CHECK_FAILED` | `REQUEST_TIMEOUT`
+- response classifications folded into `API_UNREACHABLE`: static HTML,
+  Vercel NOT_FOUND, uncontrolled JSON
 
 ## Forbidden response matrix
 
-- `STATIC_HTML_RESPONSE` = FAIL
-- `VERCEL_NOT_FOUND` = FAIL
-- `UNCONTROLLED_JSON` = FAIL
+- static HTML = FAIL; emitted failureReason `API_UNREACHABLE`
+- Vercel NOT_FOUND = FAIL; emitted failureReason `API_UNREACHABLE`
+- uncontrolled JSON = FAIL; emitted failureReason `API_UNREACHABLE`
 - `PROTECTED_PREVIEW_BLOCKED` = FAIL
 - `API_UNREACHABLE` = FAIL (normal observation)
 - `API_UNREACHABLE` = EXPECTED FAIL (yalnız izole self-test; failure

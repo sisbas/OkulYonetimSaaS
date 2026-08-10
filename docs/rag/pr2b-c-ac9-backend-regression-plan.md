@@ -13,7 +13,7 @@
 
 ## Problem statement
 
-#185 AC9 ("Tenant-local occurrence-date + multi-branch own-read regressions",
+## `#185` AC9 ("Tenant-local occurrence-date + multi-branch own-read regressions",
 `docs/rag/185-acceptance-evidence-matrix.md` §2.5) için backend kanıtı eksiktir.
 Mevcut kanıt unit bazlıdır (194/194 unit; `src/teachers/teacher-identity.service.spec.ts`
 business-date fail-closed davranışını pinler), ancak aşağıdaki iki yüzey PostgreSQL
@@ -25,7 +25,9 @@ gerçek verisiyle regresyon olarak sınanmamıştır:
    ise `ctx.businessDate` yokken `isoDate(new Date())` (UTC) değerini `source:
    'tenant_local'` etiketiyle **sentezler** — `docs/wp-07/tenant-local-business-date-decision.md`
    ("GLOBAL_UTC_FALLBACK: REJECTED") kararıyla çelişen yüzey. Regression suite bu
-   davranışı fail-closed kontratla pinler.
+  davranışı fail-closed kontratla pinler. Missing-`businessDate` route testleri,
+  `leave-identity.service.ts` UTC fallback'i kaldırılana veya route boundary
+  context enrichment öncesi 403 verdiği kanıtlanana kadar BLOCKED sayılır.
 2. **Multi-branch own-leave read:** `leave.repository.ts:85-88` (`findOwn`) tenant +
    teacherId ile scoped'tır, branch filtresi içermez; identity katmanı ise
    `teacher-identity.service.ts:78-82`'de `memberships.length !== 1 → deny` yapar.
@@ -46,10 +48,13 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
 
 ### tenant-local occurrence-date
 
-- **Hedef kontrat:** Occurrence-date hiçbir koşulda global UTC gününden türetilmez;
-  kaynak sırası `query.date → ctx.businessDate.date (tenant_local) →
-  DEFAULT_TENANT_TIME_ZONE` `Intl.DateTimeFormat` çıktısıdır
-  (`daily-operations.service.ts:13-19`).
+- **Hedef kontrat:** Occurrence-date hiçbir koşulda global UTC gününden türetilmez.
+  Authoritative tarih `ctx.businessDate.date (tenant_local)` değeridir.
+  `query.date` yalnız opsiyonel filter olarak kalacaksa ISO calendar date
+  doğrulamasından geçmeli, `ctx.businessDate.date` ile çelişirse 400/403 ile
+  reddedilmeli ve impossible dates (`2026-99-99`, `2026-02-31`) kabul
+  edilmemelidir. Fallback yalnız `DEFAULT_TENANT_TIME_ZONE`
+  `Intl.DateTimeFormat` çıktısı olabilir (`daily-operations.service.ts:13-19`).
 - **Yüzeyler:**
   - `daily-operations.service.ts:33` — `today()`: `parseQueueDate(query.date,
     ctx.businessDate?.date)`.
@@ -65,19 +70,26 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
     `eventOccurrencesForRange` çıktısında occurrence-date `2026-09-01` kalır
     (UTC günü farklı olsa bile — ör. Türkiye saati 2026-09-01 00:30 iken UTC
     `2026-08-31 21:30`).
+  - `query.date=2026-09-01` + matching `ctx.businessDate.date=2026-09-01` kabul;
+    conflicting `query.date=2026-08-31` veya impossible date reddedilir.
   - UTC gece yarısı sınırı: `new Date('2026-08-31T21:30:00Z')` + Istanbul TZ →
     occurrence-date `2026-09-01`; UTC `slice(0,10)` uygulanırsa `2026-08-31`
     (kayma tespiti).
   - `businessDate` eksik / yanlış tenant / `source='global_utc'` → identity deny
     (403), DB sorgusuna hiç ulaşılmaz (`teacher-identity.service.ts:71-72`).
+    Missing-`businessDate` case'i, current UTC fallback kaldırılmadan veya route
+    boundary deny kanıtı eklenmeden PASS sayılamaz.
 - **PASS kuralı:** occurrence-date her senaryoda tenant-local calendar günüdür;
-  UTC kayması tespit eden hiçbir çıktı yoktur; fail-closed path 403 ile döner.
+  UTC kayması tespit eden hiçbir çıktı yoktur; conflicting/impossible
+  `query.date` reddedilir; fail-closed path 403 ile döner.
 
 ### multi-branch own-leave read
 
-- **Hedef kontrat:** Öğretmen, kendi kayıtlarını branch'inden bağımsız okuyabilir
-  (tenant-scoped); `findOwn` yalnız `{id, tenantId, teacherId}` ile scoped'tır
-  (`leave.repository.ts:85-88`).
+- **Hedef kontrat:** Own-read fail-closed identity resolution sonrası çalışır.
+  `teacher-identity.service.ts` 2+ aktif membership durumunu `findOwn` öncesi
+  reddettiği için multi-active teacher branch-independent 200 kontratı yoktur.
+  Tek aktif membership çözüldükten sonra `findOwn` yalnız `{id, tenantId,
+  teacherId}` ile tenant/teacher scoped çalışır (`leave.repository.ts:85-88`).
 - **Yüzeyler:**
   - `leave.controller.ts:38-42` — `GET /leaves/me/:id` (`leave:own:read`),
     teacherId client'tan kabul edilmez (server-side identity;
@@ -85,13 +97,12 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
   - `teacher-identity.service.ts:78-82` — `listActiveBranchMemberships` +
     `memberships.length !== 1 → deny`.
 - **Senaryolar:**
-  - Aynı tenant'ta iki farklı branch'te aktif öğretmen: branch-A kaydı ve branch-B
-    kaydı ikisi de `GET /leaves/me/:id` ile okunabilir (findOwn branch-filtersiz).
+  - Tek aktif üyeliği olan öğretmen: kendi tenant/teacher scoped kaydını
+    `GET /leaves/me/:id` ile okuyabilir.
   - İki aktif üyeliği olan öğretmen: identity resolution kontratı pinlenir —
     unambiguous tek aktif üyelik → resolve; 2+ aktif üyelik → deny (fail-closed,
-    `teacher-identity.service.ts:82`). Bu kontrat kod yazımı öncesi CTO
-    onayına sunulur (Blocking gaps #2).
-- **PASS kuralı:** Own kayıtlar branch fark etmeksizin 200; multi-membership
+    `teacher-identity.service.ts:82`) ve `findOwn` çağrılmaz.
+- **PASS kuralı:** Tek aktif membership own-read 200; multi-membership
   belirsizliği 403 (deny), asla yanlış branch kaydı dönmez.
 
 ### cross-tenant negative
@@ -149,12 +160,14 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
 - **Synthetic:** Tüm fixture'lar deterministik UUID + sabit değerlerle üretilir
   (`00000000-0000-4000-8000-0000000000xx` ailesi; mevcut
   `teacher-identity.service.spec.ts` ve 185 matrix E2E fixture deseni).
-- **PII-free:** İsim, telefon, e-posta, free-text reason, health detayı, guidance
-  verisi içermez; `@qa.invalid` e-posta kuralı korunur
+- **PII-free:** Production PII kesinlikle yasaktır. Synthetic fixture'larda isim,
+  telefon, free-text reason, health detayı, guidance verisi kullanılmaz; yalnız
+  synthetic e-posta gerekiyorsa `@qa.invalid` domain'i kullanılabilir
   (`productionLikePiiFixture=false`).
 - **PostgreSQL-backed:** `TEST_DATABASE_URL` (`.env.test.example`) üzerinden
-  izole/disposable DB; `test/database/migrations.spec.ts:3-4` `describeIfDb`
-  deseni korunur (DB yoksa skip, PASS taklidi yok).
+  izole/disposable DB zorunludur. Backend CI ve DB Smoke PostgreSQL provision
+  eder, connection preflight çalıştırır ve database suite skip edilirse job fail
+  olur; AC9 evidence DB'siz PASS üretemez.
 - **Production PII fixture: YASAK.** Gerçek tenant/öğrenci/veli verisi hiçbir
   şekilde suite'e girmez; seed yalnızca synthetic tenant/branch/teacher/schedule.
 
@@ -177,10 +190,10 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
 
 ### required CI
 
-- `backend-ci.yml` — unit + yeni spec'ler (DB-backed testler `TEST_DATABASE_URL`
-  ile).
-- `db-smoke.yml` — `npm run qa:db` zinciri (migrations → tenant-guard → database
-  → kvkk) yeni spec'lerle birlikte.
+- `backend-ci.yml` — unit + yeni spec'ler; PostgreSQL service + `TEST_DATABASE_URL`
+  preflight + DB-backed suite skip guard ile.
+- `db-smoke.yml` — `npm run qa:db` zinciri (migrations → tenant-guard →
+  database-required → kvkk) PostgreSQL preflight ve zero-skipped DB assertion ile.
 - `gate1.yml`, `sprint1-quality-gate.yml` — mevcut gate'ler.
 - `sensitive-pattern-scanner.yml`, `gitguardian.yml` — fixture PII-free doğrulaması.
 - Workflow trigger: **yok** (bu kayıttan tetiklenmez; PR açılışında otomatik
@@ -190,9 +203,12 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
 
 - Jest çıktısı + CI run ID'leri `docs/rag/190-evidence-ledger.md`'ye işlenir
   (E-prefix, head SHA pin).
-- Artifact'ta raw request/response body, stack trace, secret/cookie/header yok;
-  yalnızca allowlist metadata (`pr2b-a-security-kvkk-review.md` allowlist
-  deseni).
+- Artifact/log allowlist fields: `occurrenceDate`, opaque `tenantId`,
+  `teacherId`, `branchId`, `statusCode`, canonical error code, and digest of
+  normalized 404 fields.
+- Raw request/response bodies and request IDs remain excluded. Stack trace,
+  secret/token/cookie/Authorization header, production PII, contact data,
+  notification payload and free-text PII remain forbidden.
 - Fixture logları PII regex ile doğrulanır (health no-PII spec deseni).
 
 ### security/KVKK expectations

@@ -80,6 +80,8 @@ Refs #145
 
 - `/api/v1` üzerinde static HTML / Vercel NOT_FOUND / uncontrolled JSON →
   `API_UNREACHABLE` = FAIL (normal observation)
+- Static HTML, Vercel NOT_FOUND, and uncontrolled JSON are response
+  classifications only; the uploaded artifact records `API_UNREACHABLE`.
 - `PROTECTED_PREVIEW_BLOCKED` = FAIL
 - `UNEXPECTED_STATUS` / `HEADER_MISMATCH` / `OBSERVATION_CHECK_FAILED` /
   `REQUEST_TIMEOUT` = FAIL
@@ -108,7 +110,9 @@ Refs #145
 - Production target URL / deployment URL / deployment ID / alias alanları
   kaydı (observation-identity.json sözleşmesi: productionDeploymentUrl,
   productionDeploymentId, productionAlias, targetBaseUrl, deploymentCommitSha,
-  deploymentCommitSource=vercel_deployment_metadata)
+  deploymentCommitSource=vercel_deployment_metadata,
+  deploymentMetadataLookup, deploymentTargetHost, deploymentAuthorizedHosts,
+  failureReasons, identityChecks)
 - /api/v1/health veya known endpoint controlled JSON proof
 - Static HTML / Vercel NOT_FOUND / uncontrolled JSON rejection
 - Protected-preview redirect rejection (PROTECTED_PREVIEW_BLOCKED)
@@ -137,13 +141,28 @@ Refs #145
 
 ## Acceptance criteria
 
-- [ ] Draft PR body + acceptance matrix hazır (bu PR)
-- [ ] Evidence checklist PENDING alanları execution öncesi doldurulacak
-- [ ] Exact-head production observation PASS (execution — CEO checkpoint sonrası)
-- [ ] Known /api/v1 endpoint Nest-controlled JSON proof (execution)
-- [ ] Normal + isolated self-test artifact identity kaydı (execution)
-- [ ] Security/KVKK redaction PASS (execution)
-- [ ] #185/#145 no-close guardrails ihlali yok
+- [x] Draft PR body + acceptance matrix hazır.
+- [x] Evidence checklist PENDING alanları fail-closed execution gate olarak
+  ayrıldı; bu doc package içinde closure claim yok.
+- [x] `/api/v1/health` Nest-controlled JSON contract exact values ile
+  sabitlendi (`status=ok`, `service=okul-yonetim-saas-api`,
+  `applicationType=backend-api`).
+- [x] Normal + isolated self-test artifact identity planı, upload artifact
+  id/name/digest reconciliation kuralıyla tanımlandı.
+- [x] Security/KVKK redaction allowlist emitted observation schema ile
+  reconcile edildi.
+- [x] #185/#145 no-close guardrails ihlali yok (`Refs` only; `Fixes` yok).
+
+## Execution gates
+
+- Exact-head production observation PASS, CEO checkpoint sonrası ayrı execution
+  yetkisi gerektirir.
+- Known `/api/v1` endpoint Nest-controlled JSON proof, production observation
+  artifact'ı ile doldurulur.
+- Normal + isolated self-test artifact ID/name/digest kaydı, workflow run
+  sonrasında closure evidence olarak işlenir.
+- Security/KVKK run-time artifact re-check, execution sonrası manuel audit ile
+  tamamlanır.
 
 ## Test çıktısı
 
@@ -164,16 +183,16 @@ body'de aynı tablo kullanılır.)
 
 ## Security/KVKK checklist
 
-- [ ] No raw secret logs
-- [ ] No Authorization header logs
-- [ ] No cookie logs
-- [ ] No raw backend body
-- [ ] No raw stack trace
-- [ ] No production PII fixture
-- [ ] No parent/guardian contact data
-- [ ] No notification payload
-- [ ] Artifact metadata allowlist uygulanacak
-- [ ] Sanitized redirect location only
+- [x] No raw secret logs
+- [x] No Authorization header logs
+- [x] No cookie logs
+- [x] No raw backend body
+- [x] No raw stack trace
+- [x] No production PII fixture
+- [x] No parent/guardian contact data
+- [x] No notification payload
+- [x] Artifact metadata allowlist emitted observation schema ile reconcile edildi
+- [x] Sanitized redirect location only
 - (Tam liste: PROMPT 5 — Security/KVKK)
 
 ## Rollback

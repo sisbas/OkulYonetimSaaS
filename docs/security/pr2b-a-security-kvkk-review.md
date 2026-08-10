@@ -34,8 +34,8 @@
 
 ## Allowed artifact fields
 
-- `observation-identity.json` sözleşme alanları (`commitSha`, `branchRef`, `productionDeploymentId`, `productionDeploymentUrl`, `productionAlias`, `targetBaseUrl`, `observationTimestamp`, `artifactName`, `reportContentDigest`, `deploymentCommitSha`, `deploymentCommitSource`, `deploymentMetadataStatus`, `apiReachabilityStatus`, `overallStatus`, `checks[]`)
-- Sanitize redirect location; `failureReason`; status/content-type; kontrat JSON anahtarları
+- `observation-identity.json` sözleşme alanları (`commitSha`, `expectedHeadSha`, `branchRef`, `productionDeploymentId`, `productionDeploymentUrl`, `productionAlias`, `targetBaseUrl`, `observationTimestamp`, `artifactName`, `reportContentDigest`, `deploymentCommitSha`, `deploymentCommitSource`, `deploymentMetadataLookup`, `deploymentMetadataStatus`, `deploymentTargetHost`, `deploymentAuthorizedHosts`, `apiReachabilityStatus`, `overallStatus`, `failureReasons`, `checks[]`, `identityChecks`)
+- Sanitized-only fields: redirect location, `error`; status/content-type; kontrat JSON anahtarları
 
 ## Forbidden artifact fields
 

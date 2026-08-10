@@ -17,13 +17,14 @@
 |---|---|---|---|
 | 1 | Repository Governance | Draft PR Body | §1 (kaynak: `190-pr2b-body-draft.md`) |
 | 2 | Architecture & Platform | Acceptance Matrix | §2 |
-| 3 | Backend & Data | Evidence Checklist | §3 |
-| 4 | Trust & Quality / QA Evidence | (evidence checklist) | §3 |
-| 5 | Security/KVKK | Security/KVKK Checklist | §4 |
-| 6 | Release Governance | Rollback Plan + No-Close Guardrails | §5, §8 |
-| 7 | Reviewer / Check Matrix | Reviewer/Check Matrix | §6 |
-| 8 | Product / Keystone | CEO Checkpoint + Task-Routing Cards | §7, §9 |
-| 9 | CTO | Final Synthesis | §10 |
+| 3 | Backend & Data / Trust & Quality | Evidence Checklist | §3 |
+| 4 | Security/KVKK | Security/KVKK Checklist | §4 |
+| 5 | Release Governance | Rollback Plan | §5 |
+| 6 | Reviewer / Check Matrix | Reviewer/Check Matrix | §6 |
+| 7 | Executive / CEO | CEO Authority Checkpoint | §7 |
+| 8 | Release Governance | No-Close Guardrails | §8 |
+| 9 | Product / Keystone | Task-Routing Cards | §9 |
+| 10 | CTO | Final Synthesis | §10 |
 
 ---
 
@@ -70,7 +71,7 @@ Canonical Backend & Data karar kaydı: **`docs/rag/pr2b-a-backend-data-authority
 | CI-13 | Merge Governance Enforcement | ruleset | PENDING (AC + approval + checks sonrası) |
 | REV-01 | CodeRabbit current-head review | PR #190'da STALE (`8eb9eb6` → `3985859`); PR-2b'de **current-head** olmalı | PENDING |
 | REV-02 | ≥1 independent APPROVED review (current head) | PR #190'da 0 valid | PENDING |
-| ART-01 | Observation artifact (identity JSON + digest auth download sonrası digest kaydı) | `actions/upload-artifact` | PENDING |
+| ART-01 | Observation artifact reconciliation (identity JSON + upload artifact id/name/digest/url + auth download sonrası digest kaydı) | named `actions/upload-artifact` step outputs + closure evidence summary | PENDING |
 
 **Notlar:** Historical run'lar (E1 `30996686864`, matrix `31109208974` @ `2881985`) PR-2b için **current-head PASS sayılmaz** (ledger §11). P0 E2E artifact `9038098139` digest kaydı (auth download) PR-2a hattında PENDING'dir, PR-2b'yi beklemez.
 
@@ -106,8 +107,8 @@ Canonical karar kaydı: **`docs/security/pr2b-a-security-kvkk-review.md`** (16 m
 
 ### Allowed artifact fields
 
-- `observation-identity.json` sözleşme alanları: `commitSha`, `branchRef`, `productionDeploymentId`, `productionDeploymentUrl`, `productionAlias`, `targetBaseUrl`, `observationTimestamp`, `artifactName`, `reportContentDigest`, `deploymentCommitSha`, `deploymentCommitSource`, `deploymentMetadataStatus`, `apiReachabilityStatus`, `overallStatus`, `checks[]`
-- Sanitize redirect location; `failureReason`; status/content-type; kontrat JSON anahtarları
+- `observation-identity.json` sözleşme alanları: `commitSha`, `expectedHeadSha`, `branchRef`, `productionDeploymentId`, `productionDeploymentUrl`, `productionAlias`, `targetBaseUrl`, `observationTimestamp`, `artifactName`, `reportContentDigest`, `deploymentCommitSha`, `deploymentCommitSource`, `deploymentMetadataLookup`, `deploymentMetadataStatus`, `deploymentTargetHost`, `deploymentAuthorizedHosts`, `apiReachabilityStatus`, `overallStatus`, `failureReasons`, `checks[]`, `identityChecks`
+- Sanitized-only fields: redirect location, `error`; status/content-type; contract JSON key names. Raw request/response bodies remain forbidden.
 
 ### Forbidden artifact fields
 
@@ -334,7 +335,7 @@ Her kart için kural: bu paket yalnızca routing kaydıdır; kartın aksiyonu ay
 ## 10. CTO Final Synthesis (PROMPT 9)
 
 - **Karar:** GO — PR-2b-A draft package tamamlandı (PLANNING ONLY). Kapsam doğrulandı: routing main'de (PR #186 `35950f0`), eksik tek kanıt production exact-head observation'dur (E14/E15).
-- **Keystone routing:** 8 kart (PR2BA-DRAFT-BODY · PR2BA-ARCH-AUTHORITY · PR2BA-BACKEND-JSON-AUTHORITY · PR2BA-QA-EVIDENCE-CHECKLIST · PR2BA-SECURITY-KVKK-CHECKLIST · PR2BA-ROLLBACK-NOCLOSE · PR2BA-REVIEWER-CHECK-MATRIX · PR2BA-CTO-SYNTHESIS) `evidence_ready`; registry: `docs/rag/pr2b-a-keystone-routing.md`. Bu paket, PR2BA-CTO-SYNTHESIS kartının çıktısıdır (9 deliverable derlenmiş; execution kartları CEO checkpoint'e bağlı).
+- **Keystone routing:** 8 kart (PR2BA-DRAFT-BODY · PR2BA-ARCH-AUTHORITY · PR2BA-BACKEND-JSON-AUTHORITY · PR2BA-QA-EVIDENCE-CHECKLIST · PR2BA-SECURITY-KVKK-CHECKLIST · PR2BA-ROLLBACK-NOCLOSE · PR2BA-REVIEWER-CHECK-MATRIX · PR2BA-CTO-SYNTHESIS) `evidence_ready`; registry: `docs/rag/pr2b-a-keystone-routing.md`. Bu paket, PR2BA-CTO-SYNTHESIS kartının çıktısıdır (10 bölüm derlenmiş: 9 team deliverable + CTO Final Synthesis; execution kartları CEO checkpoint'e bağlı).
 - **Teknik risk:** `EXACT_HEAD_FUTURE_RISK` (AC-5) — head pin'i K2 dispatch anında yapılır; gözlemden sonra head değişirse kanıt yenilenir.
 - **Güvenlik:** Security/KVKK PASS (manuel audit); run-time artifact re-check (S-8) açık kalem.
 - **Merge:** NOT AUTHORIZED — PENDING (observation + current-head CI + approval).

@@ -40,6 +40,32 @@ const vercelMetadata = (sha = baseEnv.EXPECTED_PR_HEAD_SHA) => ({
   },
 });
 
+const allowedObservationIdentityKeys = [
+  'apiReachabilityStatus',
+  'artifactName',
+  'branchRef',
+  'checks',
+  'commitSha',
+  'deploymentAuthorizedHosts',
+  'deploymentCommitSha',
+  'deploymentCommitSource',
+  'deploymentMetadataLookup',
+  'deploymentMetadataStatus',
+  'deploymentTargetHost',
+  'expectedHeadSha',
+  'failureReasons',
+  'identityChecks',
+  'issue',
+  'observationTimestamp',
+  'overallStatus',
+  'productionAlias',
+  'productionDeploymentId',
+  'productionDeploymentUrl',
+  'purpose',
+  'reportContentDigest',
+  'targetBaseUrl',
+];
+
 function withDeploymentMetadata(
   handler: (url: string, init?: RequestInit) => Promise<Response>,
   sha = baseEnv.EXPECTED_PR_HEAD_SHA,
@@ -271,6 +297,24 @@ describe('production runtime observation', () => {
       'preview.example.test',
       'branch-alias.example.test',
     ]));
+  });
+
+  it('keeps observation-identity.json on the documented allowlist and preserves identity evidence', async () => {
+    const report = await observation.buildObservationReport(baseEnv, withDeploymentMetadata(async (url: string) => url.includes('/api/v1/health')
+      ? jsonResponse({
+        status: 'ok',
+        service: 'okul-yonetim-saas-api',
+        applicationType: 'backend-api',
+      })
+      : htmlResponse('<html></html>', 200)));
+
+    expect(Object.keys(report).sort()).toEqual(allowedObservationIdentityKeys.sort());
+    expect(report.deploymentMetadataLookup).toBe(baseEnv.PRODUCTION_DEPLOYMENT_ID);
+    expect(report.deploymentTargetHost).toBe('preview.example.test');
+    expect(report.deploymentAuthorizedHosts).toEqual(expect.arrayContaining(['preview.example.test']));
+    expect(report.failureReasons).toEqual([]);
+    expect(report.identityChecks).toEqual([]);
+    expect(Object.prototype.hasOwnProperty.call(report, 'artifactDigest')).toBe(false);
   });
 
   it('rejects explicit HTTP target URLs before sending credentialed probes', async () => {

@@ -81,6 +81,23 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      - name: PostgreSQL preflight
+        run: |
+          node - <<'NODE'
+          const { Client } = require('pg');
+          const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+          client.connect()
+            .then(() => client.query('select 1 as ok'))
+            .then((result) => {
+              if (result.rows[0].ok !== 1) throw new Error('unexpected PostgreSQL preflight result');
+            })
+            .finally(() => client.end())
+            .catch((error) => {
+              console.error(error);
+              process.exit(1);
+            });
+          NODE
+
       - name: Verify required migrations
         run: |
           set -euo pipefail
