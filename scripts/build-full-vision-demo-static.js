@@ -37,7 +37,7 @@ function walk(directory) {
   fs.readdirSync(directory).sort().forEach((name) => {
     const absolute = path.join(directory, name);
     if (fs.statSync(absolute).isDirectory()) walk(absolute);
-    else emitted.push(path.relative(outputApp, absolute));
+    else emitted.push(path.relative(outputApp, absolute).replace(/\\/g, '/'));
   });
 }
 walk(outputApp);

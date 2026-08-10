@@ -187,6 +187,10 @@ tests/__snapshots__/
 
 # Documentation
 docs/
+!docs/
+docs/*
+!docs/agents/
+!docs/agents/**
 
 # Assets
 assets/
@@ -429,5 +433,6 @@ dist/
 demo-static-dist/
 full-vision-static-dist/
 hosted-demos-static-dist/
+hosted-runtime-static-dist/
 full-vision-demo/evidence/browser/
 .worktrees/
