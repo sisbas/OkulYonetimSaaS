@@ -6,23 +6,38 @@ const path = require('node:path');
 const { runtimeFiles } = require('./hosted-demos-runtime-manifest.js');
 
 const repositoryRoot = path.resolve(__dirname, '..');
-const outputRoot = path.join(repositoryRoot, 'hosted-runtime-static-dist');
-const sourceRoot = path.join(repositoryRoot, 'frontend');
+const outputRoot = path.resolve(repositoryRoot, 'hosted-runtime-static-dist');
+const sourceRoot = path.resolve(repositoryRoot, 'frontend');
+
+function assertContained(resolvedPath, root, label) {
+  assert(path.isAbsolute(resolvedPath), `${label} must be absolute: ${resolvedPath}`);
+  assert(resolvedPath.startsWith(`${root}${path.sep}`), `${label} escapes allowed root: ${resolvedPath}`);
+}
 
 for (const relativePath of runtimeFiles) {
-  const sourcePath = path.join(sourceRoot, relativePath);
-  assert(fs.existsSync(sourcePath) && fs.statSync(sourcePath).isFile(), `Runtime asset is missing: ${relativePath}`);
+  assert(!path.isAbsolute(relativePath), `Runtime path must be relative: ${relativePath}`);
+  const sourcePath = path.resolve(sourceRoot, relativePath);
+  assertContained(sourcePath, sourceRoot, 'Runtime source path');
+  const stat = fs.lstatSync(sourcePath);
+  assert(stat.isFile() && !stat.isSymbolicLink(), `Runtime asset must be a regular file: ${relativePath}`);
 }
 
 fs.rmSync(outputRoot, { recursive: true, force: true });
 
 for (const relativePath of runtimeFiles) {
-  const sourcePath = path.join(sourceRoot, relativePath);
-  const targetPath = path.join(outputRoot, relativePath);
+  const sourcePath = path.resolve(sourceRoot, relativePath);
+  const targetPath = path.resolve(outputRoot, relativePath);
+  assertContained(targetPath, outputRoot, 'Runtime target path');
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.copyFileSync(sourcePath, targetPath);
 }
 
+/**
+ * Recursively lists files under the given directory as forward-slash paths
+ * relative to the output root.
+ * @param {string} directory - Absolute path to start walking from.
+ * @returns {string[]} Sorted-independent list of emitted relative file paths.
+ */
 function walk(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const absolutePath = path.join(directory, entry.name);
