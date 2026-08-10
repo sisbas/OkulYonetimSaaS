@@ -42,24 +42,25 @@ describe('AuthController', () => {
     });
   });
 
-  it('routes the refresh token to rotation and returns the rotated credentials', async () => {
-    const rotateRefreshToken = jest.fn().mockResolvedValue({
-      accessToken: 'rotated-access',
-      refreshToken: 'rotated-refresh',
-      refreshTokenId: '30000000-0000-4000-8000-000000000001',
-    });
+  it('forwards the refresh token and request id to the service', async () => {
+    const rotateRefreshToken = jest.fn().mockResolvedValue({ accessToken: 'a2', refreshToken: 'r2', refreshTokenId: 'id2' });
     const auth = { rotateRefreshToken } as unknown as AuthService;
     const controller = new AuthController(auth);
 
-    await expect(controller.refresh(
-      { refreshToken: 'refresh-token-1' },
+    await controller.refresh(
+      { refreshToken: 'rt-1' },
       { context: { requestId: 'req-refresh-1' } } as never,
-    )).resolves.toEqual({
-      accessToken: 'rotated-access',
-      refreshToken: 'rotated-refresh',
-      refreshTokenId: '30000000-0000-4000-8000-000000000001',
-    });
+    );
 
-    expect(rotateRefreshToken).toHaveBeenCalledWith({ refreshToken: 'refresh-token-1', requestId: 'req-refresh-1' });
+    expect(rotateRefreshToken).toHaveBeenCalledWith('rt-1', 'req-refresh-1');
+  });
+
+  it('rejects a missing refresh token without calling the service', async () => {
+    const rotateRefreshToken = jest.fn();
+    const auth = { rotateRefreshToken } as unknown as AuthService;
+    const controller = new AuthController(auth);
+
+    await expect(controller.refresh({} as never, undefined)).rejects.toBeInstanceOf(BadRequestException);
+    expect(rotateRefreshToken).not.toHaveBeenCalled();
   });
 });

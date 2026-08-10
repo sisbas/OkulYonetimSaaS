@@ -43,19 +43,6 @@ type UserCredentialRow = Readonly<{
   authorizationVersion: number;
 }>;
 
-type RefreshTokenPayload = Readonly<{
-  sub: string;
-  tenant_id: string;
-  session_id: string;
-  jti: string;
-}>;
-
-type RefreshSessionRow = Readonly<{
-  userId: string;
-  authorizationVersion: number;
-  refreshSecretHash: string;
-}>;
-
 type MembershipRow = Readonly<{ tenantId: string }>;
 type AuthorityRow = Readonly<{ roleId: string; permission: string | null }>;
 
@@ -66,6 +53,8 @@ type AuthenticationDeniedReasonCode =
   | 'inactive_membership'
   | 'invalid_session'
   | 'stale_authorization_version';
+
+type AuthenticationDeniedAction = 'login' | 'refresh';
 
 function isUuid(value: string | undefined): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -104,21 +93,19 @@ export class AuthService {
       }
 
       const tenantId = await this.resolveTenantMembership(manager, user.userId, command.tenantId, command.requestId);
-      const authority = await this.resolveAuthority(manager, user.userId, tenantId);
       return this.issueTokenPair(manager, {
         userId: user.userId,
         tenantId,
         authorizationVersion: Number(user.authorizationVersion),
-        roleIds: authority.roleIds,
-        permissions: authority.permissions,
       });
     });
   }
 
-  private async signTokenPair(
-    subject: Omit<AuthenticatedRequestUser, 'sessionId'>,
-    sessionId: string,
+  private async issueTokenPair(
+    manager: EntityManager,
+    subject: Pick<AuthenticatedRequestUser, 'userId' | 'tenantId' | 'authorizationVersion'>,
   ) {
+    const sessionId = randomUUID();
     const accessToken = await this.jwt.signAsync(
       {
         sub: subject.userId,
@@ -148,15 +135,6 @@ export class AuthService {
         expiresIn: REFRESH_TOKEN_TTL,
       },
     );
-    return { accessToken, refreshToken, refreshTokenId: sessionId };
-  }
-
-  private async issueTokenPair(
-    manager: EntityManager,
-    subject: Omit<AuthenticatedRequestUser, 'sessionId'>,
-  ) {
-    const sessionId = randomUUID();
-    const tokens = await this.signTokenPair(subject, sessionId);
     await manager.query(
       `
         INSERT INTO user_sessions (
@@ -173,11 +151,11 @@ export class AuthService {
         sessionId,
         subject.tenantId,
         subject.userId,
-        await bcrypt.hash(tokens.refreshToken, 12),
+        await bcrypt.hash(refreshToken, 12),
         new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
       ],
     );
-    return tokens;
+    return { accessToken, refreshToken, refreshTokenId: sessionId };
   }
 
   async validateAccessTokenSession(payload: AccessTokenPayload): Promise<AuthenticatedRequestUser> {
@@ -234,6 +212,61 @@ export class AuthService {
     };
   }
 
+  async rotateRefreshToken(refreshToken: string, requestId?: string) {
+    let payload: Pick<AccessTokenPayload, 'sub' | 'tenant_id' | 'session_id'>;
+    try {
+      payload = await this.jwt.verifyAsync(refreshToken, {
+        secret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret',
+        issuer: AUTH_TOKEN_ISSUER,
+        audience: AUTH_REFRESH_TOKEN_AUDIENCE,
+      });
+    } catch {
+      this.emitAuthenticationDenied('invalid_session', { action: 'refresh', requestId });
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    if (!isUuid(payload.sub) || !isUuid(payload.tenant_id) || !isUuid(payload.session_id)) {
+      this.emitAuthenticationDenied('invalid_session', { action: 'refresh', requestId, tenantId: payload.tenant_id, userId: payload.sub });
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const rows = await manager.query(
+        `
+          SELECT s.refresh_secret_hash AS "refreshSecretHash",
+                 u.token_version AS "authorizationVersion"
+          FROM user_sessions s
+          JOIN users u
+            ON u.id = s.user_id
+          WHERE s.id = $1::uuid
+            AND s.tenant_id = $2::uuid
+            AND s.user_id = $3::uuid
+            AND s.status = 'active'
+            AND s.revoked_at IS NULL
+            AND s.expires_at > now()
+            AND u.status = 'active'
+            AND u.deleted_at IS NULL
+          LIMIT 1
+          FOR UPDATE OF s
+        `,
+        [payload.session_id, payload.tenant_id, payload.sub],
+      );
+      const row = rows[0] as { refreshSecretHash: string; authorizationVersion: number } | undefined;
+      if (!row || !(await bcrypt.compare(refreshToken, row.refreshSecretHash))) {
+        this.emitAuthenticationDenied('invalid_session', { action: 'refresh', requestId, tenantId: payload.tenant_id, userId: payload.sub });
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+      await manager.query(
+        `UPDATE user_sessions SET status = 'revoked', revoked_at = now() WHERE id = $1::uuid`,
+        [payload.session_id],
+      );
+      return this.issueTokenPair(manager, {
+        userId: payload.sub,
+        tenantId: payload.tenant_id,
+        authorizationVersion: Number(row.authorizationVersion),
+      });
+    });
+  }
+
   async assertRefreshToken(refreshToken: string, storedHash: string) {
     const ok = await bcrypt.compare(refreshToken, storedHash);
     if (!ok) throw new UnauthorizedException('Invalid refresh token');
@@ -241,84 +274,6 @@ export class AuthService {
       secret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret',
       issuer: AUTH_TOKEN_ISSUER,
       audience: AUTH_REFRESH_TOKEN_AUDIENCE,
-    });
-  }
-
-  async rotateRefreshToken(command: { refreshToken: string; requestId?: string }) {
-    const refreshToken = typeof command.refreshToken === 'string' ? command.refreshToken : '';
-    if (!refreshToken) {
-      this.emitAuthenticationDenied('invalid_session', { requestId: command.requestId });
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-    let payload: RefreshTokenPayload;
-    try {
-      payload = (await this.jwt.verifyAsync(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret',
-        issuer: AUTH_TOKEN_ISSUER,
-        audience: AUTH_REFRESH_TOKEN_AUDIENCE,
-      })) as RefreshTokenPayload;
-    } catch {
-      this.emitAuthenticationDenied('invalid_session', { requestId: command.requestId });
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-    if (!isUuid(payload.sub) || !isUuid(payload.tenant_id) || !isUuid(payload.session_id)) {
-      this.emitAuthenticationDenied('invalid_session', { requestId: command.requestId, tenantId: payload.tenant_id, userId: payload.sub });
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    return this.dataSource.transaction(async (manager) => {
-      const rows = await manager.query(
-        `
-          SELECT u.id::text AS "userId", u.token_version AS "authorizationVersion", s.refresh_secret_hash AS "refreshSecretHash"
-          FROM user_sessions s
-          JOIN users u
-            ON u.id = s.user_id
-          JOIN tenant_memberships tm
-            ON tm.user_id = u.id
-           AND tm.tenant_id = $2::uuid
-           AND tm.status = 'active'
-           AND tm.deleted_at IS NULL
-          JOIN tenants t
-            ON t.id = tm.tenant_id
-           AND t.status = 'active'
-           AND t.deleted_at IS NULL
-          WHERE s.id = $3::uuid
-            AND s.user_id = $1::uuid
-            AND s.tenant_id = $2::uuid
-            AND s.status = 'active'
-            AND s.revoked_at IS NULL
-            AND s.expires_at > now()
-            AND u.status = 'active'
-            AND u.deleted_at IS NULL
-          LIMIT 1
-        `,
-        [payload.sub, payload.tenant_id, payload.session_id],
-      );
-      const row = rows[0] as RefreshSessionRow | undefined;
-      if (!row || !(await bcrypt.compare(refreshToken, row.refreshSecretHash))) {
-        this.emitAuthenticationDenied('invalid_session', { tenantId: payload.tenant_id, userId: payload.sub });
-        throw new UnauthorizedException('Invalid refresh token');
-      }
-      const authority = await this.resolveAuthority(manager, payload.sub, payload.tenant_id);
-      const tokens = await this.signTokenPair(
-        {
-          userId: payload.sub,
-          tenantId: payload.tenant_id,
-          authorizationVersion: Number(row.authorizationVersion),
-          roleIds: authority.roleIds,
-          permissions: authority.permissions,
-        },
-        payload.session_id,
-      );
-      await manager.query(
-        `
-          UPDATE user_sessions
-          SET refresh_secret_hash = $2, expires_at = $3
-          WHERE id = $1
-        `,
-        [payload.session_id, await bcrypt.hash(tokens.refreshToken, 12), new Date(Date.now() + REFRESH_TOKEN_TTL_MS)],
-      );
-      return tokens;
     });
   }
 
@@ -406,10 +361,12 @@ export class AuthService {
 
   private emitAuthenticationDenied(
     reasonCode: AuthenticationDeniedReasonCode,
-    input: { requestId?: string; tenantId?: string; userId?: string },
+    input: { action?: AuthenticationDeniedAction; requestId?: string; tenantId?: string; userId?: string },
   ): void {
+    const action = input.action ?? 'login';
     this.logger.warn(JSON.stringify({
-      eventName: 'auth.login.denied',
+      eventName: `auth.${action}.denied`,
+      action,
       requestId: input.requestId ?? 'unknown',
       tenantId: input.tenantId,
       actorId: input.userId,

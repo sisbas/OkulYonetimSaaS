@@ -36,9 +36,9 @@ export class AuthController {
   @Post('refresh')
   @AuditAction({ action: 'auth.refresh', resource: 'auth' })
   async refresh(@Body() body: { refreshToken: string }, @Req() req?: RequestWithContext) {
-    return this.auth.rotateRefreshToken({
-      refreshToken: body.refreshToken,
-      requestId: req?.context?.requestId,
-    });
+    if (typeof body?.refreshToken !== 'string' || body.refreshToken.length === 0) {
+      throw new BadRequestException('refreshToken is required');
+    }
+    return this.auth.rotateRefreshToken(body.refreshToken, req?.context?.requestId);
   }
 }
