@@ -26,7 +26,7 @@ for (const relativePath of runtimeFiles) {
 function walk(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const absolutePath = path.join(directory, entry.name);
-    return entry.isDirectory() ? walk(absolutePath) : [path.relative(outputRoot, absolutePath)];
+    return entry.isDirectory() ? walk(absolutePath) : [path.relative(outputRoot, absolutePath).replace(/\\/g, '/')];
   });
 }
 
