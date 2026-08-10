@@ -4,6 +4,7 @@ import { ExpressAdapter } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 
 import { AppModule } from '../../src/app.module';
+import { assertDatabaseUrlConfigured } from '../../src/database/data-source';
 
 type ExpressHandler = (request: Request, response: Response) => void;
 type CreateNestHandler = () => Promise<ExpressHandler>;
@@ -12,6 +13,7 @@ let cachedHandler: Promise<ExpressHandler> | undefined;
 let createNestHandlerFactory: CreateNestHandler = createNestHandler;
 
 async function createNestHandler(): Promise<ExpressHandler> {
+  assertDatabaseUrlConfigured();
   const app = await NestFactory.create(AppModule, new ExpressAdapter(), {
     bodyParser: true,
     logger: process.env.NODE_ENV === 'production' ? ['error', 'warn'] : ['error', 'warn', 'log'],

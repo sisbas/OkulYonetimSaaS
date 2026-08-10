@@ -1,4 +1,4 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { DataSource, EntityManager } from 'typeorm';
@@ -122,6 +122,98 @@ describe('AuthService login', () => {
     })).rejects.toBeInstanceOf(UnauthorizedException);
 
     expect(query).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AuthService refresh rotation', () => {
+  const refreshTokenPayload = {
+    sub: USER_ID,
+    tenant_id: TENANT_ID,
+    session_id: SESSION_ID,
+    jti: SESSION_ID,
+  };
+
+  it('revokes the presented session and issues a rotated token pair in one transaction', async () => {
+    const refreshToken = `signed:${JSON.stringify(refreshTokenPayload)}`;
+    const secretHash = await bcrypt.hash(refreshToken, 4);
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ refreshSecretHash: secretHash, authorizationVersion: 7 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const { service, jwt } = authService(query);
+    jwt.verifyAsync.mockResolvedValue(refreshTokenPayload);
+
+    const result = await service.rotateRefreshToken(refreshToken, 'req-refresh-1');
+
+    expect(result.refreshTokenId).toMatch(/[0-9a-f-]{36}/);
+    expect(result.refreshTokenId).not.toBe(SESSION_ID);
+    expect(query).toHaveBeenNthCalledWith(1, expect.stringContaining('FROM user_sessions s'), expect.arrayContaining([
+      SESSION_ID,
+      TENANT_ID,
+      USER_ID,
+    ]));
+    expect(query.mock.calls[0][0]).toContain('FOR UPDATE OF s');
+    expect(query).toHaveBeenNthCalledWith(2, expect.stringContaining("SET status = 'revoked', revoked_at = now()"), [SESSION_ID]);
+    expect(query).toHaveBeenNthCalledWith(3, expect.stringContaining('INSERT INTO user_sessions'), expect.arrayContaining([
+      result.refreshTokenId,
+      TENANT_ID,
+      USER_ID,
+      expect.any(String),
+      expect.any(Date),
+    ]));
+    expect(JSON.parse(result.accessToken.replace('signed:', ''))).toEqual(expect.objectContaining({
+      sub: USER_ID,
+      tenant_id: TENANT_ID,
+      authorization_version: 7,
+    }));
+  });
+
+  it('rejects an unverifiable refresh token without touching the database', async () => {
+    const query = jest.fn();
+    const { service, jwt } = authService(query);
+    jwt.verifyAsync.mockRejectedValue(new Error('jwt expired'));
+
+    await expect(service.rotateRefreshToken('bad-rt', 'req-refresh-2')).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('rejects a revoked session or a refresh token that does not match the stored hash', async () => {
+    const refreshToken = `signed:${JSON.stringify(refreshTokenPayload)}`;
+    const query = jest.fn().mockResolvedValueOnce([{ refreshSecretHash: 'x', authorizationVersion: 7 }]);
+    const { service, jwt } = authService(query);
+    jwt.verifyAsync.mockResolvedValue(refreshTokenPayload);
+
+    await expect(service.rotateRefreshToken(refreshToken)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a payload with non-uuid subject, tenant or session claims', async () => {
+    const query = jest.fn();
+    const { service, jwt } = authService(query);
+    jwt.verifyAsync.mockResolvedValue({ sub: 'not-a-uuid', tenant_id: TENANT_ID, session_id: SESSION_ID });
+
+    await expect(service.rotateRefreshToken('signed:{}')).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('labels refresh denials separately from login denials and keeps request correlation', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const query = jest.fn();
+    const { service, jwt } = authService(query);
+    jwt.verifyAsync.mockRejectedValue(new Error('jwt expired'));
+
+    await expect(service.rotateRefreshToken('bad-rt', 'req-refresh-3')).rejects.toBeInstanceOf(UnauthorizedException);
+
+    const event = JSON.parse(String(warn.mock.calls.at(-1)?.[0]));
+    expect(event).toEqual(expect.objectContaining({
+      eventName: 'auth.refresh.denied',
+      action: 'refresh',
+      requestId: 'req-refresh-3',
+      outcome: 'denied',
+      reasonCode: 'invalid_session',
+    }));
+    warn.mockRestore();
   });
 });
 

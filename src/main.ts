@@ -3,8 +3,10 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'node:path';
 import { AppModule } from './app.module';
+import { assertDatabaseUrlConfigured } from './database/data-source';
 
 async function bootstrap() {
+  assertDatabaseUrlConfigured();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useStaticAssets(join(process.cwd(), 'dist', 'runtime'), { prefix: '/runtime' });
   app.setGlobalPrefix('api/v1');

@@ -41,4 +41,26 @@ describe('AuthController', () => {
       requestId: 'req-auth-1',
     });
   });
+
+  it('forwards the refresh token and request id to the service', async () => {
+    const rotateRefreshToken = jest.fn().mockResolvedValue({ accessToken: 'a2', refreshToken: 'r2', refreshTokenId: 'id2' });
+    const auth = { rotateRefreshToken } as unknown as AuthService;
+    const controller = new AuthController(auth);
+
+    await controller.refresh(
+      { refreshToken: 'rt-1' },
+      { context: { requestId: 'req-refresh-1' } } as never,
+    );
+
+    expect(rotateRefreshToken).toHaveBeenCalledWith('rt-1', 'req-refresh-1');
+  });
+
+  it('rejects a missing refresh token without calling the service', async () => {
+    const rotateRefreshToken = jest.fn();
+    const auth = { rotateRefreshToken } as unknown as AuthService;
+    const controller = new AuthController(auth);
+
+    await expect(controller.refresh({} as never, undefined)).rejects.toBeInstanceOf(BadRequestException);
+    expect(rotateRefreshToken).not.toHaveBeenCalled();
+  });
 });
