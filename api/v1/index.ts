@@ -43,12 +43,16 @@ export function getCachedNestHandler(): Promise<ExpressHandler> {
   return cachedHandler ?? bootstrapWithRecovery();
 }
 
-export function restoreRewrittenApiRequestUrl(request: Pick<Request, 'url'>): void {
+export function restoreRewrittenApiRequestUrl(request: Pick<Request, 'url' | 'query'>): void {
   const rewrittenUrl = new URL(request.url, 'http://vercel.internal');
   const nestedPath = rewrittenUrl.searchParams.get(VERCEL_API_PATH_PARAM);
   if (!nestedPath) return;
 
   rewrittenUrl.searchParams.delete(VERCEL_API_PATH_PARAM);
+  if (request.query && typeof request.query === 'object') {
+    delete request.query[VERCEL_API_PATH_PARAM];
+  }
+
   const normalizedPath = nestedPath.replace(/^\/+/, '');
   rewrittenUrl.pathname = normalizedPath ? `/api/v1/${normalizedPath}` : '/api/v1';
   request.url = `${rewrittenUrl.pathname}${rewrittenUrl.search}`;
