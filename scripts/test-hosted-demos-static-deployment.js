@@ -6,9 +6,13 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const {
   createHostedDemosServer,
+  fullVisionHeaders,
   runtimeHeaders,
+  legacyFiles,
+  fullVisionFiles,
   runtimeFiles,
 } = require('./hosted-demos-local-server.js');
+const { routes, legacyAliases } = require('../full-vision-demo/app-shell/route-manifest.js');
 
 const repositoryRoot = path.resolve(__dirname, '..');
 const config = JSON.parse(fs.readFileSync(path.join(repositoryRoot, 'vercel.json'), 'utf8'));
@@ -19,8 +23,7 @@ const legacyRoutes = [
   '/demo/attendance/session/AT-1204',
   '/demo/notifications',
 ];
-const fullVisionRoutes = [
-  '/full-vision/overview',
+const fullVisionAliases = [
   '/full-vision/today',
   '/full-vision/schedule',
   '/full-vision/leave/LV-204',
@@ -29,33 +32,26 @@ const fullVisionRoutes = [
 ];
 
 assert.equal(config.framework, null);
-assert.equal(config.installCommand, 'node --version');
-assert.equal(config.buildCommand, 'node scripts/build-hosted-runtime-static.js');
-assert.equal(config.outputDirectory, 'hosted-runtime-static-dist');
+assert.equal(config.installCommand, 'npm ci');
+assert.equal(config.buildCommand, 'npm run build && npm run demo:hosted:build');
+assert.equal(config.outputDirectory, 'hosted-demos-static-dist');
 assert.deepEqual(config.redirects, [
-  { source: '/', destination: '/runtime', permanent: false },
-  { source: '/demo', destination: '/runtime', permanent: false },
-  { source: '/full-vision', destination: '/runtime', permanent: false },
+  { source: '/', destination: '/full-vision/overview', permanent: false },
+  { source: '/demo', destination: '/demo/today', permanent: false },
+  { source: '/full-vision', destination: '/full-vision/overview', permanent: false },
 ]);
 assert.deepEqual(config.rewrites, [
   { source: '/runtime', destination: '/runtime/index.html' },
   { source: '/runtime/:path*', destination: '/runtime/:path*' },
-  { source: '/demo/:path*', destination: '/runtime/index.html' },
-  { source: '/full-vision/:path*', destination: '/runtime/index.html' },
+  { source: '/demo/:path*', destination: '/demo-frontend/index.html' },
+  { source: '/full-vision/:path*', destination: '/full-vision-demo/index.html' },
 ]);
-assert.equal(Object.prototype.hasOwnProperty.call(config, 'functions'), false);
-assert.equal(Object.prototype.hasOwnProperty.call(config, 'builds'), false);
-assert.equal(config.rewrites.some((rule) => rule.source.includes('/api')), false);
-assert.equal(JSON.stringify(config).includes('demo-frontend/index.html'), false);
-assert.equal(JSON.stringify(config).includes('full-vision-demo/index.html'), false);
+assert.equal(config.rewrites.some((rule) => rule.source.includes('/api')), false, 'API must be served by Vercel api/ functions, not a static rewrite');
+assert.equal(fs.existsSync(path.join(repositoryRoot, 'api/v1/index.ts')), true, 'Vercel API index function is required');
+assert.equal(fs.existsSync(path.join(repositoryRoot, 'api/v1/[...path].ts')), true, 'Vercel API catch-all function is required');
 
-const runtimeHeaderRules = config.headers.filter((rule) => (
-  rule.source === '/runtime'
-  || rule.source.startsWith('/runtime/')
-  || rule.source.startsWith('/demo/')
-  || rule.source.startsWith('/full-vision/')
-));
-assert.equal(runtimeHeaderRules.length, 4);
+const runtimeHeaderRules = config.headers.filter((rule) => rule.source === '/runtime' || rule.source.startsWith('/runtime/'));
+assert.equal(runtimeHeaderRules.length, 2);
 for (const rule of runtimeHeaderRules) {
   const headers = Object.fromEntries(rule.headers.map((header) => [header.key, header.value]));
   assert.equal(headers['Content-Security-Policy'], runtimeHeaders['Content-Security-Policy']);
@@ -63,10 +59,22 @@ for (const rule of runtimeHeaderRules) {
   assert.equal(headers['X-Content-Type-Options'], runtimeHeaders['X-Content-Type-Options']);
   assert.equal(headers['X-Robots-Tag'], runtimeHeaders['X-Robots-Tag']);
   assert.equal(headers['Permissions-Policy'], runtimeHeaders['Permissions-Policy']);
-  assert.equal(Object.prototype.hasOwnProperty.call(headers, 'X-Demo-Application'), false);
 }
 
-execFileSync(process.execPath, [path.join(__dirname, 'build-hosted-runtime-static.js')], { cwd: repositoryRoot, stdio: 'inherit' });
+const fullVisionHeaderRules = config.headers.filter((rule) => rule.source.startsWith('/full-vision'));
+assert.equal(fullVisionHeaderRules.length, 2);
+for (const rule of fullVisionHeaderRules) {
+  const headers = Object.fromEntries(rule.headers.map((header) => [header.key, header.value]));
+  assert.match(headers['Content-Security-Policy'], /connect-src 'none'/);
+  assert.match(headers['Content-Security-Policy'], /form-action 'none'/);
+  assert.equal(headers['Referrer-Policy'], 'no-referrer');
+  assert.equal(headers['X-Content-Type-Options'], 'nosniff');
+  assert.equal(headers['X-Robots-Tag'], 'noindex, nofollow');
+  assert.equal(headers['Permissions-Policy'], 'camera=(), microphone=(), geolocation=()');
+  assert.equal(headers['X-Demo-Application'], 'full-vision-synthetic-static-prototype');
+}
+
+execFileSync(process.execPath, [path.join(__dirname, 'build-hosted-demos-static.js')], { cwd: repositoryRoot, stdio: 'inherit' });
 
 function request(port, pathname, method = 'GET') {
   return new Promise((resolve, reject) => {
@@ -89,62 +97,72 @@ async function run() {
   const port = server.address().port;
 
   try {
-    for (const pathname of ['/', '/demo', '/full-vision']) {
-      const redirect = await request(port, pathname);
-      assert.equal(redirect.status, 307, `Redirect failed: ${pathname}`);
-      assert.equal(redirect.headers.location, '/runtime');
-    }
+    const rootRedirect = await request(port, '/');
+    assert.equal(rootRedirect.status, 307);
+    assert.equal(rootRedirect.headers.location, '/full-vision/overview');
+    const legacyRedirect = await request(port, '/demo');
+    assert.equal(legacyRedirect.status, 307);
+    assert.equal(legacyRedirect.headers.location, '/demo/today');
+    const fullVisionRedirect = await request(port, '/full-vision');
+    assert.equal(fullVisionRedirect.status, 307);
+    assert.equal(fullVisionRedirect.headers.location, '/full-vision/overview');
 
     const runtimeResponse = await request(port, '/runtime');
     assert.equal(runtimeResponse.status, 200);
     assert.match(runtimeResponse.headers['content-type'], /^text\/html/);
     assert.match(runtimeResponse.body, /id="runtime-main"/);
-    assert.doesNotMatch(runtimeResponse.body, /id="demoApp"/);
-    assert.doesNotMatch(runtimeResponse.body, /id="app"/);
     assert.equal(runtimeResponse.headers['content-security-policy'], runtimeHeaders['Content-Security-Policy']);
     assert.equal(runtimeResponse.headers['x-robots-tag'], runtimeHeaders['X-Robots-Tag']);
-    assert.equal(runtimeResponse.headers['x-demo-application'], undefined);
 
-    for (const pathname of [...legacyRoutes, ...fullVisionRoutes]) {
+    for (const pathname of legacyRoutes) {
       const response = await request(port, pathname);
-      assert.equal(response.status, 200, `Runtime route failed: ${pathname}`);
+      assert.equal(response.status, 200, `Legacy route failed: ${pathname}`);
       assert.match(response.headers['content-type'], /^text\/html/);
-      assert.match(response.body, /id="runtime-main"/);
-      assert.doesNotMatch(response.body, /id="demoApp"/);
+      assert.match(response.body, /id="demoApp"/);
       assert.doesNotMatch(response.body, /id="app"/);
-      assert.equal(response.headers['x-demo-application'], undefined);
     }
 
-    for (const relativePath of runtimeFiles) {
+    for (const route of routes) {
+      const response = await request(port, route.samplePath);
+      assert.equal(response.status, 200, `Full-Vision route failed: ${route.samplePath}`);
+      assert.match(response.headers['content-type'], /^text\/html/);
+      assert.match(response.body, /id="app"/);
+      assert.equal(response.headers['x-demo-application'], fullVisionHeaders['X-Demo-Application']);
+      assert.match(response.headers['content-security-policy'], /connect-src 'none'/);
+      assert.equal(response.headers['x-robots-tag'], 'noindex, nofollow');
+    }
+
+    assert.equal(fullVisionAliases.length, legacyAliases.length);
+    for (const pathname of fullVisionAliases) {
+      const response = await request(port, pathname);
+      assert.equal(response.status, 200, `Full-Vision alias failed: ${pathname}`);
+      assert.match(response.body, /id="app"/);
+      assert.equal((await request(port, `${pathname}/`)).status, 200, `Trailing-slash alias failed: ${pathname}/`);
+    }
+
+    for (const relativePath of [...legacyFiles, ...fullVisionFiles, ...runtimeFiles]) {
       if (relativePath.endsWith('index.html')) continue;
       const response = await request(port, `/${relativePath}`);
       assert.equal(response.status, 200, `Asset failed: ${relativePath}`);
       assert.match(response.headers['content-type'], relativePath.endsWith('.css') ? /^text\/css/ : /^text\/javascript/);
     }
 
-    assert.equal((await request(port, '/demo-frontend/index.html')).status, 404);
-    assert.equal((await request(port, '/full-vision-demo/index.html')).status, 404);
-    assert.equal((await request(port, '/full-vision-demo/app.js')).status, 404);
-
     const runtimeHead = await request(port, '/runtime', 'HEAD');
     assert.equal(runtimeHead.status, 200);
     assert.match(runtimeHead.headers['content-type'], /^text\/html/);
     assert.equal(runtimeHead.body, '');
-
-    for (const pathname of ['/runtime', '/demo/today', '/full-vision/overview']) {
-      const post = await request(port, pathname, 'POST');
-      assert.equal(post.status, 405, `POST did not fail: ${pathname}`);
-      assert.equal(post.headers.allow, 'GET, HEAD');
-    }
+    assert.equal((await request(port, '/demo-frontend/not-present.js')).status, 404);
+    assert.equal((await request(port, '/full-vision-demo/not-present.js')).status, 404);
+    const runtimePost = await request(port, '/runtime', 'POST');
+    assert.equal(runtimePost.status, 405);
+    assert.equal(runtimePost.headers.allow, 'GET, HEAD');
   } finally {
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 
-  console.log(`Runtime files: ${runtimeFiles.size}/3 PASS`);
-  console.log(`Legacy demo routes now render runtime: ${legacyRoutes.length}/5 PASS`);
-  console.log(`Full-Vision routes now render runtime: ${fullVisionRoutes.length}/6 PASS`);
-  console.log('Hosted runtime output, redirects, rewrites, MIME, headers, 404 and 405: PASS');
-  console.log('Serverless functions: 0');
+  console.log(`Legacy routes: ${legacyRoutes.length}/5 PASS`);
+  console.log(`Full-Vision routes: ${routes.length}/25 canonical, ${fullVisionAliases.length}/5 aliases PASS`);
+  console.log('Combined static output, runtime headers and Vercel API function topology: PASS');
 }
 
 run().catch((error) => {

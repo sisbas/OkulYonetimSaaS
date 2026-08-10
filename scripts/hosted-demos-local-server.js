@@ -11,8 +11,8 @@ const contentTypes = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
 };
-const legacyFiles = new Set();
-const fullVisionFiles = new Set();
+const legacyFiles = new Set(runtimeManifest.legacyFiles);
+const fullVisionFiles = new Set(runtimeManifest.fullVisionFiles);
 const runtimeFiles = new Set(runtimeManifest.runtimeFiles);
 const fullVisionHeaders = {
   'Content-Security-Policy': "default-src 'self'; connect-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
@@ -42,11 +42,11 @@ function staticFile(pathname) {
   const decoded = decodePathname(pathname);
   if (!decoded) return null;
   const relativePath = decoded.replace(/^\//, '');
-  return runtimeFiles.has(relativePath) ? relativePath : null;
+  return legacyFiles.has(relativePath) || fullVisionFiles.has(relativePath) || runtimeFiles.has(relativePath) ? relativePath : null;
 }
 
 function createHostedDemosServer(options = {}) {
-  const root = options.root || path.resolve(__dirname, '..', 'hosted-runtime-static-dist');
+  const root = options.root || defaultRoot;
   return http.createServer((request, response) => {
     if (!['GET', 'HEAD'].includes(request.method)) {
       response.writeHead(405, { Allow: 'GET, HEAD', 'Content-Type': 'text/plain; charset=utf-8' });
@@ -56,25 +56,22 @@ function createHostedDemosServer(options = {}) {
 
     const url = new URL(request.url, 'http://127.0.0.1');
     if (url.pathname === '/') {
-      response.writeHead(307, { Location: '/runtime', 'Cache-Control': 'no-store' });
+      response.writeHead(307, { Location: '/full-vision/overview', 'Cache-Control': 'no-store' });
       response.end();
       return;
     }
     if (url.pathname === '/demo') {
-      response.writeHead(307, { Location: '/runtime', 'Cache-Control': 'no-store' });
+      response.writeHead(307, { Location: '/demo/today', 'Cache-Control': 'no-store' });
       response.end();
       return;
     }
     if (url.pathname === '/full-vision') {
-      response.writeHead(307, { Location: '/runtime', 'Cache-Control': 'no-store' });
+      response.writeHead(307, { Location: '/full-vision/overview', 'Cache-Control': 'no-store' });
       response.end();
       return;
     }
 
-    const runtime = url.pathname === '/runtime'
-      || url.pathname.startsWith('/runtime/')
-      || url.pathname.startsWith('/demo/')
-      || url.pathname.startsWith('/full-vision/');
+    const runtime = url.pathname === '/runtime' || url.pathname.startsWith('/runtime/');
     const fullVision = url.pathname.startsWith('/full-vision/') || url.pathname.startsWith('/full-vision-demo/');
     if (runtime) Object.entries(runtimeHeaders).forEach(([key, value]) => response.setHeader(key, value));
     else if (fullVision) Object.entries(fullVisionHeaders).forEach(([key, value]) => response.setHeader(key, value));
@@ -83,8 +80,8 @@ function createHostedDemosServer(options = {}) {
     const asset = staticFile(url.pathname);
     const relativePath = asset
       || (url.pathname === '/runtime' ? 'runtime/index.html' : null)
-      || (url.pathname.startsWith('/demo/') ? 'runtime/index.html' : null)
-      || (url.pathname.startsWith('/full-vision/') ? 'runtime/index.html' : null);
+      || (url.pathname.startsWith('/demo/') ? 'demo-frontend/index.html' : null)
+      || (url.pathname.startsWith('/full-vision/') ? 'full-vision-demo/index.html' : null);
     const filePath = relativePath ? path.join(root, relativePath) : null;
 
     if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
@@ -102,9 +99,9 @@ function createHostedDemosServer(options = {}) {
 if (require.main === module) {
   const port = Number(process.env.PORT || 4175);
   createHostedDemosServer().listen(port, '127.0.0.1', () => {
+    console.log(`Legacy demo: http://127.0.0.1:${port}/demo/today`);
+    console.log(`Full-Vision demo: http://127.0.0.1:${port}/full-vision/overview`);
     console.log(`Production runtime: http://127.0.0.1:${port}/runtime`);
-    console.log(`Legacy demo paths now render runtime: http://127.0.0.1:${port}/demo/today`);
-    console.log(`Full-Vision paths now render runtime: http://127.0.0.1:${port}/full-vision/overview`);
   });
 }
 
