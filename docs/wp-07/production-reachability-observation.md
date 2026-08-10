@@ -67,6 +67,7 @@ PRODUCTION_ALIAS="https://<production-alias>" \
 PRODUCTION_DEPLOYMENT_URL="https://<deployment-url>" \
 PRODUCTION_DEPLOYMENT_ID="<deployment-id>" \
 GITHUB_SHA="<commit-sha>" \
+EXPECTED_PR_HEAD_SHA="<intended-deployment-head-sha>" \
 GITHUB_REF_NAME="<branch-or-ref>" \
 npm run observe:production-runtime
 ```
