@@ -23,6 +23,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/v1/:path*",
+      "destination": "/api/v1?__vercelApiPath=:path*"
+    },
+    {
       "source": "/runtime",
       "destination": "/runtime/index.html"
     },

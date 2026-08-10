@@ -1,7 +1,36 @@
-import { AppDataSource } from '../../src/database/data-source';
+import { AppDataSource, getDatabaseUrl } from '../../src/database/data-source';
 
-const hasDatabaseConfig = Boolean(process.env.DATABASE_URL || process.env.DATABASE_HOST || process.env.TEST_DATABASE_URL);
+const hasDatabaseConfig = Boolean(process.env.DATABASE_URL || process.env.TEST_DATABASE_URL);
 const describeIfDb = hasDatabaseConfig ? describe : describe.skip;
+const originalEnv = {
+  databaseUrl: process.env.DATABASE_URL,
+  nodeEnv: process.env.NODE_ENV,
+  testDatabaseUrl: process.env.TEST_DATABASE_URL,
+};
+
+function restoreEnvValue(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+
+describe('database URL resolver', () => {
+  afterEach(() => {
+    restoreEnvValue('DATABASE_URL', originalEnv.databaseUrl);
+    restoreEnvValue('NODE_ENV', originalEnv.nodeEnv);
+    restoreEnvValue('TEST_DATABASE_URL', originalEnv.testDatabaseUrl);
+  });
+
+  it('uses TEST_DATABASE_URL only during test execution', () => {
+    process.env.DATABASE_URL = 'postgres://prod-db';
+    process.env.TEST_DATABASE_URL = 'postgres://test-db';
+
+    process.env.NODE_ENV = 'production';
+    expect(getDatabaseUrl()).toBe('postgres://prod-db');
+
+    process.env.NODE_ENV = 'test';
+    expect(getDatabaseUrl()).toBe('postgres://test-db');
+  });
+});
 
 describeIfDb('DataSource', () => {
   afterEach(async () => {

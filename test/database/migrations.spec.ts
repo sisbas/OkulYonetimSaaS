@@ -1,6 +1,6 @@
 import { AppDataSource } from '../../src/database/data-source';
 
-const hasDatabaseConfig = Boolean(process.env.DATABASE_URL || process.env.DATABASE_HOST || process.env.TEST_DATABASE_URL);
+const hasDatabaseConfig = Boolean(process.env.DATABASE_URL || process.env.TEST_DATABASE_URL);
 const describeIfDb = hasDatabaseConfig ? describe : describe.skip;
 
 const CORE_TABLES = [

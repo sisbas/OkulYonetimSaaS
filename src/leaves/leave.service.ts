@@ -99,7 +99,7 @@ export class LeaveService {
 
   async getOwn(ctx: RequestContext, id: string): Promise<LeaveResponse> {
     const identity = await this.identity.resolveTeacherIdentity(ctx);
-    const leave = await this.leaves.findOwn(ctx, id, identity.teacherId);
+    const leave = await this.leaves.findOwn(ctx, id, identity.teacherId, identity.branchId);
     if (!leave) throw new LeaveNotFoundException();
     return this.toResponse(leave);
   }
