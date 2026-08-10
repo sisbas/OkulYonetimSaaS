@@ -105,7 +105,7 @@ jobs:
 
       - name: Record uploaded artifact identity
         id: record-uploaded-artifact-identity
-        if: always()
+        if: always() && steps.upload-production-observation.outcome == 'success'
         env:
           UPLOADED_ARTIFACT_ID: ${{ steps.upload-production-observation.outputs.artifact-id }}
           UPLOADED_ARTIFACT_URL: ${{ steps.upload-production-observation.outputs.artifact-url }}
@@ -142,7 +142,7 @@ jobs:
 
       - name: Upload production observation artifact receipt
         id: upload-production-observation-receipt
-        if: always()
+        if: always() && steps.record-uploaded-artifact-identity.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: wp07f-production-observation-receipt-${{ github.sha }}
