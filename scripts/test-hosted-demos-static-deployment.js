@@ -41,14 +41,19 @@ assert.deepEqual(config.redirects, [
   { source: '/full-vision', destination: '/full-vision/overview', permanent: false },
 ]);
 assert.deepEqual(config.rewrites, [
+  { source: '/api/v1/:path*', destination: '/api/v1?__vercelApiPath=:path*' },
   { source: '/runtime', destination: '/runtime/index.html' },
   { source: '/runtime/:path*', destination: '/runtime/:path*' },
   { source: '/demo/:path*', destination: '/demo-frontend/index.html' },
   { source: '/full-vision/:path*', destination: '/full-vision-demo/index.html' },
 ]);
-assert.equal(config.rewrites.some((rule) => rule.source.includes('/api')), false, 'API must be served by Vercel api/ functions, not a static rewrite');
+const apiRewrite = config.rewrites.find((rule) => rule.source === '/api/v1/:path*');
+assert.deepEqual(apiRewrite, {
+  source: '/api/v1/:path*',
+  destination: '/api/v1?__vercelApiPath=:path*',
+});
 assert.equal(fs.existsSync(path.join(repositoryRoot, 'api/v1/index.ts')), true, 'Vercel API index function is required');
-assert.equal(fs.existsSync(path.join(repositoryRoot, 'api/v1/[...path].ts')), true, 'Vercel API catch-all function is required');
+assert.equal(fs.existsSync(path.join(repositoryRoot, 'api/v1/[...path].ts')), true, 'Vercel API catch-all compatibility function is required');
 
 const runtimeHeaderRules = config.headers.filter((rule) => rule.source === '/runtime' || rule.source.startsWith('/runtime/'));
 assert.equal(runtimeHeaderRules.length, 2);
@@ -162,7 +167,7 @@ async function run() {
 
   console.log(`Legacy routes: ${legacyRoutes.length}/5 PASS`);
   console.log(`Full-Vision routes: ${routes.length}/25 canonical, ${fullVisionAliases.length}/5 aliases PASS`);
-  console.log('Combined static output, runtime headers and Vercel API function topology: PASS');
+  console.log('Combined static output, runtime headers and explicit Vercel API rewrite topology: PASS');
 }
 
 run().catch((error) => {
