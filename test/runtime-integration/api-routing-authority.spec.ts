@@ -31,7 +31,7 @@ const authenticatedUser: RequestUser = {
   userId: randomUUID(),
   tenantId: randomUUID(),
   roleIds: ['operations'],
-  permissions: ['leave:read', 'leave:own:read'],
+  permissions: ['leave:read', 'leave:own:read', 'leave:create'],
   sessionId: randomUUID(),
   authorizationVersion: 1,
 };
@@ -114,7 +114,12 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
     });
 
     server = createServer((request, response) => {
-      void handler(request as unknown as Request, response as unknown as Response);
+      Promise.resolve(handler(request as unknown as Request, response as unknown as Response)).catch(() => {
+        if (!response.writableEnded) {
+          response.statusCode = 500;
+          response.end();
+        }
+      });
     });
     server.listen(0, '127.0.0.1');
     await new Promise<void>((resolve, reject) => {
@@ -130,8 +135,11 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
   afterAll(async () => {
     __resetCreateNestHandlerForTest();
     await bootedApp?.close();
-    await new Promise<void>((resolve) => server?.close(() => resolve()));
-    server?.closeAllConnections();
+    if (server) {
+      const runningServer = server;
+      await new Promise<void>((resolve) => runningServer.close(() => resolve()));
+      runningServer.closeAllConnections();
+    }
   });
 
   it('serves /api/v1/health as application-controlled Nest JSON', async () => {
@@ -186,19 +194,43 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
     expect(JSON.stringify(body.message)).toContain('uuid is expected');
   });
 
-  it('preserves POST method, JSON body and tenant header through the rewritten routing shape', async () => {
-    const tenantId = randomUUID();
+  it('preserves POST method and JSON body through the rewritten routing shape into Nest validation', async () => {
+    expect(accessToken).toBeDefined();
     const body = assertNestJson(
       await requestJson('/api/v1?__vercelApiPath=leaves/me', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-tenant-id': tenantId },
-        body: JSON.stringify({ reason: 'routing-propagation-probe' }),
+        headers: {
+          authorization: `Bearer ${accessToken as string}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ branchId: 'not-a-uuid', durationType: 'weekly', reasonCode: 'administrative' }),
       }),
-      401,
+      400,
     );
 
-    expect(body.message).toBe('Unauthorized');
-    expect(body.statusCode).toBe(401);
+    expect(body.statusCode).toBe(400);
+    const messages = Array.isArray(body.message) ? (body.message as string[]) : [];
+    expect(messages.some((message) => message.includes('branchId must be a UUID'))).toBe(true);
+    expect(messages.some((message) => message.includes('durationType must be one of the following values'))).toBe(true);
+  });
+
+  it('preserves the x-tenant-id header through the rewritten routing shape into tenant context', async () => {
+    expect(accessToken).toBeDefined();
+    const body = assertNestJson(
+      await requestJson('/api/v1?__vercelApiPath=leaves/me', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken as string}`,
+          'content-type': 'application/json',
+          'x-tenant-id': randomUUID(),
+        },
+        body: JSON.stringify({ reason: 'routing-propagation-probe' }),
+      }),
+      403,
+    );
+
+    expect(body.statusCode).toBe(403);
+    expect(body.message).toBe('Forbidden resource');
   });
 
   it('proves the request body reaches Nest by surfacing a Nest body-parser error as controlled 400 JSON', async () => {
