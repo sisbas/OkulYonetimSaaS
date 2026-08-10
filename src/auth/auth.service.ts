@@ -54,6 +54,8 @@ type AuthenticationDeniedReasonCode =
   | 'invalid_session'
   | 'stale_authorization_version';
 
+type AuthenticationDeniedAction = 'login' | 'refresh';
+
 function isUuid(value: string | undefined): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -91,20 +93,17 @@ export class AuthService {
       }
 
       const tenantId = await this.resolveTenantMembership(manager, user.userId, command.tenantId, command.requestId);
-      const authority = await this.resolveAuthority(manager, user.userId, tenantId);
       return this.issueTokenPair(manager, {
         userId: user.userId,
         tenantId,
         authorizationVersion: Number(user.authorizationVersion),
-        roleIds: authority.roleIds,
-        permissions: authority.permissions,
       });
     });
   }
 
   private async issueTokenPair(
     manager: EntityManager,
-    subject: Omit<AuthenticatedRequestUser, 'sessionId'>,
+    subject: Pick<AuthenticatedRequestUser, 'userId' | 'tenantId' | 'authorizationVersion'>,
   ) {
     const sessionId = randomUUID();
     const accessToken = await this.jwt.signAsync(
@@ -213,6 +212,61 @@ export class AuthService {
     };
   }
 
+  async rotateRefreshToken(refreshToken: string, requestId?: string) {
+    let payload: Pick<AccessTokenPayload, 'sub' | 'tenant_id' | 'session_id'>;
+    try {
+      payload = await this.jwt.verifyAsync(refreshToken, {
+        secret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret',
+        issuer: AUTH_TOKEN_ISSUER,
+        audience: AUTH_REFRESH_TOKEN_AUDIENCE,
+      });
+    } catch {
+      this.emitAuthenticationDenied('invalid_session', { action: 'refresh', requestId });
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    if (!isUuid(payload.sub) || !isUuid(payload.tenant_id) || !isUuid(payload.session_id)) {
+      this.emitAuthenticationDenied('invalid_session', { action: 'refresh', requestId, tenantId: payload.tenant_id, userId: payload.sub });
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const rows = await manager.query(
+        `
+          SELECT s.refresh_secret_hash AS "refreshSecretHash",
+                 u.token_version AS "authorizationVersion"
+          FROM user_sessions s
+          JOIN users u
+            ON u.id = s.user_id
+          WHERE s.id = $1::uuid
+            AND s.tenant_id = $2::uuid
+            AND s.user_id = $3::uuid
+            AND s.status = 'active'
+            AND s.revoked_at IS NULL
+            AND s.expires_at > now()
+            AND u.status = 'active'
+            AND u.deleted_at IS NULL
+          LIMIT 1
+          FOR UPDATE OF s
+        `,
+        [payload.session_id, payload.tenant_id, payload.sub],
+      );
+      const row = rows[0] as { refreshSecretHash: string; authorizationVersion: number } | undefined;
+      if (!row || !(await bcrypt.compare(refreshToken, row.refreshSecretHash))) {
+        this.emitAuthenticationDenied('invalid_session', { action: 'refresh', requestId, tenantId: payload.tenant_id, userId: payload.sub });
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+      await manager.query(
+        `UPDATE user_sessions SET status = 'revoked', revoked_at = now() WHERE id = $1::uuid`,
+        [payload.session_id],
+      );
+      return this.issueTokenPair(manager, {
+        userId: payload.sub,
+        tenantId: payload.tenant_id,
+        authorizationVersion: Number(row.authorizationVersion),
+      });
+    });
+  }
+
   async assertRefreshToken(refreshToken: string, storedHash: string) {
     const ok = await bcrypt.compare(refreshToken, storedHash);
     if (!ok) throw new UnauthorizedException('Invalid refresh token');
@@ -307,10 +361,12 @@ export class AuthService {
 
   private emitAuthenticationDenied(
     reasonCode: AuthenticationDeniedReasonCode,
-    input: { requestId?: string; tenantId?: string; userId?: string },
+    input: { action?: AuthenticationDeniedAction; requestId?: string; tenantId?: string; userId?: string },
   ): void {
+    const action = input.action ?? 'login';
     this.logger.warn(JSON.stringify({
-      eventName: 'auth.login.denied',
+      eventName: `auth.${action}.denied`,
+      action,
       requestId: input.requestId ?? 'unknown',
       tenantId: input.tenantId,
       actorId: input.userId,

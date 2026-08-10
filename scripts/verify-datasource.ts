@@ -1,4 +1,4 @@
-import { AppDataSource } from '../src/database/data-source';
+import { AppDataSource, assertDatabaseUrlConfigured } from '../src/database/data-source';
 
 const CORE_TABLES = [
   'tenants',
@@ -15,6 +15,7 @@ const CORE_TABLES = [
 ];
 
 export async function verifyDataSource(): Promise<void> {
+  assertDatabaseUrlConfigured();
   const ds = AppDataSource.isInitialized ? AppDataSource : await AppDataSource.initialize();
   try {
     console.log('DataSource initialized');
