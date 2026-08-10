@@ -9,6 +9,8 @@ import { assertDatabaseUrlConfigured } from '../../src/database/data-source';
 type ExpressHandler = (request: Request, response: Response) => void;
 type CreateNestHandler = () => Promise<ExpressHandler>;
 
+const VERCEL_API_PATH_PARAM = '__vercelApiPath';
+
 let cachedHandler: Promise<ExpressHandler> | undefined;
 let createNestHandlerFactory: CreateNestHandler = createNestHandler;
 
@@ -41,6 +43,17 @@ export function getCachedNestHandler(): Promise<ExpressHandler> {
   return cachedHandler ?? bootstrapWithRecovery();
 }
 
+export function restoreRewrittenApiRequestUrl(request: Pick<Request, 'url'>): void {
+  const rewrittenUrl = new URL(request.url, 'http://vercel.internal');
+  const nestedPath = rewrittenUrl.searchParams.get(VERCEL_API_PATH_PARAM);
+  if (!nestedPath) return;
+
+  rewrittenUrl.searchParams.delete(VERCEL_API_PATH_PARAM);
+  const normalizedPath = nestedPath.replace(/^\/+/, '');
+  rewrittenUrl.pathname = normalizedPath ? `/api/v1/${normalizedPath}` : '/api/v1';
+  request.url = `${rewrittenUrl.pathname}${rewrittenUrl.search}`;
+}
+
 export function __setCreateNestHandlerForTest(factory: CreateNestHandler): void {
   createNestHandlerFactory = factory;
   cachedHandler = undefined;
@@ -52,6 +65,7 @@ export function __resetCreateNestHandlerForTest(): void {
 }
 
 export default async function handler(request: Request, response: Response) {
+  restoreRewrittenApiRequestUrl(request);
   const nestHandler = await getCachedNestHandler();
   return nestHandler(request, response);
 }
