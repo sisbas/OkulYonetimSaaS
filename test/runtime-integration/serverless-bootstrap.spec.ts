@@ -52,6 +52,11 @@ describe('Vercel serverless Nest bootstrap cache', () => {
   it('restores the original nested API path while preserving request semantics', () => {
     const request = {
       url: '/api/v1?__vercelApiPath=daily-operations/today&branchId=branch-1&date=2026-08-10',
+      query: {
+        __vercelApiPath: 'daily-operations/today',
+        branchId: 'branch-1',
+        date: '2026-08-10',
+      },
       method: 'POST',
       headers: { authorization: 'synthetic-auth-header', 'x-tenant-id': 'tenant-1' },
       body: { marker: 'preserved' },
@@ -63,16 +68,21 @@ describe('Vercel serverless Nest bootstrap cache', () => {
     restoreRewrittenApiRequestUrl(request);
 
     expect(request.url).toBe('/api/v1/daily-operations/today?branchId=branch-1&date=2026-08-10');
+    expect(request.query).toEqual({ branchId: 'branch-1', date: '2026-08-10' });
     expect(request.method).toBe(originalMethod);
     expect(request.headers).toBe(originalHeaders);
     expect(request.body).toBe(originalBody);
   });
 
   it('leaves direct API function requests unchanged when no rewrite marker exists', () => {
-    const request = { url: '/api/v1?branchId=branch-1' };
+    const request = {
+      url: '/api/v1?branchId=branch-1',
+      query: { branchId: 'branch-1' },
+    };
 
     restoreRewrittenApiRequestUrl(request);
 
     expect(request.url).toBe('/api/v1?branchId=branch-1');
+    expect(request.query).toEqual({ branchId: 'branch-1' });
   });
 });
