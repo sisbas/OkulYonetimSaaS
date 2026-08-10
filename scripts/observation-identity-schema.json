@@ -26,10 +26,28 @@
     "targetBaseUrl"
   ],
   "requiredKeys": [
-    "deploymentMetadataLookup",
-    "deploymentTargetHost",
+    "apiReachabilityStatus",
+    "artifactName",
+    "branchRef",
+    "checks",
+    "commitSha",
     "deploymentAuthorizedHosts",
+    "deploymentCommitSha",
+    "deploymentCommitSource",
+    "deploymentMetadataLookup",
+    "deploymentMetadataStatus",
+    "deploymentTargetHost",
+    "expectedHeadSha",
     "failureReasons",
-    "identityChecks"
+    "identityChecks",
+    "issue",
+    "observationTimestamp",
+    "overallStatus",
+    "productionAlias",
+    "productionDeploymentId",
+    "productionDeploymentUrl",
+    "purpose",
+    "reportContentDigest",
+    "targetBaseUrl"
   ]
 }

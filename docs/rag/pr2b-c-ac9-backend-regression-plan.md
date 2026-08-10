@@ -209,10 +209,18 @@ authority sayılmaz (tenant-local-business-date-decision.md guardrail'leri).
 - Artifact/log allowlist fields: `occurrenceDate`, opaque `tenantId`,
   `teacherId`, `branchId`, `statusCode`, canonical error code, and
   `notFoundShapeDigest` for normalized 404 fields.
+- Opaque identifiers must be stable keyed-HMAC pseudonyms, not raw database
+  IDs. Format: `hmac-sha256:v1:<base64url-digest>`, where the digest is an
+  HMAC-SHA-256 over the raw identifier using an environment-specific evidence
+  pseudonymization key. Raw UUID/database identifiers are forbidden in
+  artifacts and logs.
 - `notFoundShapeDigest` contract: SHA-256 over UTF-8 JSON with deterministic
-  lexicographic key ordering for `{statusCode, errorCode, resource}`, where
-  `statusCode=404`, `errorCode` is the canonical application code, and
-  `resource` is a non-PII enum such as `leave_request` or `daily_operations_queue`.
+  lexicographic key ordering for the complete canonical 404 body:
+  `{error, errorCode, message, resource, statusCode}`. `statusCode=404`,
+  `errorCode` is the canonical application code, `message` is the public
+  non-enumerating response message, `error` is the public HTTP error label, and
+  `resource` is a non-PII enum such as `leave_request` or
+  `daily_operations_queue`.
 - Raw request/response bodies and request IDs remain excluded. Stack trace,
   secret/token/cookie/Authorization header, production PII, contact data,
   notification payload and free-text PII remain forbidden.

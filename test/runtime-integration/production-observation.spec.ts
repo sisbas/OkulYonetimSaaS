@@ -44,6 +44,8 @@ const vercelMetadata = (sha = baseEnv.EXPECTED_PR_HEAD_SHA) => ({
 const successObservationIdentityKeys = observationIdentitySchema.allowedKeys
   .filter((key: string) => key !== 'error');
 
+const requiredObservationIdentityKeys = observationIdentitySchema.requiredKeys;
+
 function withDeploymentMetadata(
   handler: (url: string, init?: RequestInit) => Promise<Response>,
   sha = baseEnv.EXPECTED_PR_HEAD_SHA,
@@ -287,6 +289,7 @@ describe('production runtime observation', () => {
       : htmlResponse('<html></html>', 200)));
 
     expect(Object.keys(report).sort()).toEqual([...successObservationIdentityKeys].sort());
+    expect([...requiredObservationIdentityKeys].sort()).toEqual([...successObservationIdentityKeys].sort());
     expect(report.deploymentMetadataLookup).toBe(baseEnv.PRODUCTION_DEPLOYMENT_ID);
     expect(report.deploymentTargetHost).toBe('preview.example.test');
     expect(report.deploymentAuthorizedHosts).toEqual(expect.arrayContaining(['preview.example.test']));

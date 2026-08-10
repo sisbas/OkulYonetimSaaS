@@ -26,6 +26,7 @@ artifacts/wp07f-production-observation/observation-identity.json
 The identity file must include:
 
 - `commitSha`
+- `expectedHeadSha`
 - `branchRef`
 - `productionDeploymentId`
 - `productionDeploymentUrl`
@@ -36,10 +37,17 @@ The identity file must include:
 - `reportContentDigest`
 - `deploymentCommitSha`
 - `deploymentCommitSource`
+- `deploymentMetadataLookup`
 - `deploymentMetadataStatus`
+- `deploymentTargetHost`
+- `deploymentAuthorizedHosts`
 - `apiReachabilityStatus`
 - `overallStatus`
+- `failureReasons`
+- `identityChecks`
 - `checks[]`
+
+These keys are unconditional in the report object. Failure-only `error` is optional and must be sanitized when present.
 
 `reportContentDigest` is a self-excluding canonical digest, not a digest of the final file bytes. To verify it, parse `observation-identity.json`, set `reportContentDigest` to `null`, serialize with `JSON.stringify(report, null, 2)`, and calculate the SHA-256 hex digest. This avoids a circular self-hash. It is not the GitHub uploaded artifact archive digest. The GitHub artifact `id`, `name`, and `digest` remain the Actions artifact API or `actions/upload-artifact` output source of truth and must be recorded separately during evidence reconciliation.
 
