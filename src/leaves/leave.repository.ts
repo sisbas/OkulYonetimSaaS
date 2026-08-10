@@ -82,9 +82,9 @@ export class LeaveRepository {
     return this.repository.findOne({ where: { id, tenantId: ctx.tenantId } });
   }
 
-  async findOwn(ctx: RequestContext, id: string, teacherId: string): Promise<LeaveRequest | null> {
+  async findOwn(ctx: RequestContext, id: string, teacherId: string, branchId: string): Promise<LeaveRequest | null> {
     assertTenantScope(ctx, 'leave_requests');
-    return this.repository.findOne({ where: { id, tenantId: ctx.tenantId, teacherId } });
+    return this.repository.findOne({ where: { id, tenantId: ctx.tenantId, teacherId, branchId } });
   }
 
   async decide(ctx: RequestContext, id: string, values: LeaveDecisionValues): Promise<LeaveRequest | null> {

@@ -27,9 +27,30 @@ jobs:
   backend-ci:
     name: Backend CI
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: ataakademi_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ataakademi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
       CI: true
       NODE_ENV: test
+      REQUIRE_MIGRATIONS: true
+      MIGRATIONS_DIR: src/database/migrations
+      TYPEORM_LOGGING: "false"
+      JWT_ACCESS_SECRET: backend-ci-access-secret
+      JWT_REFRESH_SECRET: backend-ci-refresh-secret
+      SEED_TENANT_SLUG: system-seed
+      SEED_TENANT_NAME: System Seed Tenant
 
     steps:
       - name: Checkout repository
@@ -52,6 +73,32 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: PostgreSQL preflight
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+          TEST_DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+        run: |
+          node - <<'NODE'
+          const { Client } = require('pg');
+          const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+          client.connect()
+            .then(() => client.query('select 1 as ok'))
+            .then((result) => {
+              if (result.rows[0].ok !== 1) throw new Error('unexpected PostgreSQL preflight result');
+            })
+            .finally(() => client.end())
+            .catch((error) => {
+              console.error(error);
+              process.exit(1);
+            });
+          NODE
+
+      - name: Database-backed suites
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+          TEST_DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+        run: npm run qa:db
 
       - name: Build backend
         run: npm run build
