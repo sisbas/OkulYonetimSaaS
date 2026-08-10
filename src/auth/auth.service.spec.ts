@@ -125,6 +125,95 @@ describe('AuthService login', () => {
   });
 });
 
+describe('AuthService refresh-token rotation', () => {
+  const refreshPayload = {
+    sub: USER_ID,
+    tenant_id: TENANT_ID,
+    session_id: SESSION_ID,
+    jti: SESSION_ID,
+  };
+
+  it('rotates the pair, stores only the new hash and keeps the session id', async () => {
+    const storedHash = await bcrypt.hash('refresh-token-1', 4);
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ userId: USER_ID, authorizationVersion: 3, refreshSecretHash: storedHash }])
+      .mockResolvedValueOnce([
+        { roleId: 'teacher', permission: 'leave:create' },
+        { roleId: 'teacher', permission: 'leave:own:read' },
+      ])
+      .mockResolvedValueOnce([]);
+    const { service, jwt } = authService(query);
+    jwt.verifyAsync.mockResolvedValue(refreshPayload);
+
+    const result = await service.rotateRefreshToken({ refreshToken: 'refresh-token-1', requestId: 'req-refresh-1' });
+
+    expect(result.refreshTokenId).toBe(SESSION_ID);
+    expect(result).not.toHaveProperty('refreshTokenHash');
+    expect(jwt.signAsync).toHaveBeenCalledTimes(2);
+    expect(jwt.signAsync).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      sub: USER_ID,
+      tenant_id: TENANT_ID,
+      session_id: SESSION_ID,
+      jti: SESSION_ID,
+    }), expect.objectContaining({
+      issuer: AUTH_TOKEN_ISSUER,
+      audience: AUTH_REFRESH_TOKEN_AUDIENCE,
+      expiresIn: '30d',
+    }));
+    expect(query).toHaveBeenLastCalledWith(expect.stringContaining('UPDATE user_sessions'), expect.arrayContaining([
+      SESSION_ID,
+      expect.any(String),
+      expect.any(Date),
+    ]));
+    expect(query.mock.calls[2][1][1]).not.toBe(storedHash);
+  });
+
+  it('rejects a refresh token that fails signature verification without touching the database', async () => {
+    const query = jest.fn();
+    const { service, jwt } = authService(query);
+    jwt.verifyAsync.mockRejectedValue(new Error('jwt expired'));
+
+    await expect(service.rotateRefreshToken({ refreshToken: 'tampered' })).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(query).not.toHaveBeenCalled();
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects a rotated-out refresh token whose stored hash no longer matches', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ userId: USER_ID, authorizationVersion: 3, refreshSecretHash: await bcrypt.hash('newer-token', 4) }]);
+    const { service, jwt } = authService(query);
+    jwt.verifyAsync.mockResolvedValue(refreshPayload);
+
+    await expect(service.rotateRefreshToken({ refreshToken: 'older-token' })).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the session is missing, revoked or expired', async () => {
+    const query = jest.fn().mockResolvedValueOnce([]);
+    const { service, jwt } = authService(query);
+    jwt.verifyAsync.mockResolvedValue(refreshPayload);
+
+    await expect(service.rotateRefreshToken({ refreshToken: 'refresh-token-1' })).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing refresh token without verifying or touching the database', async () => {
+    const query = jest.fn();
+    const { service, jwt } = authService(query);
+
+    await expect(service.rotateRefreshToken({ refreshToken: '' })).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(jwt.verifyAsync).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+});
+
 describe('AuthService access-token validation', () => {
   it('returns current database roles and permissions for an active session', async () => {
     const query = jest

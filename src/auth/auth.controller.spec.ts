@@ -41,4 +41,25 @@ describe('AuthController', () => {
       requestId: 'req-auth-1',
     });
   });
+
+  it('routes the refresh token to rotation and returns the rotated credentials', async () => {
+    const rotateRefreshToken = jest.fn().mockResolvedValue({
+      accessToken: 'rotated-access',
+      refreshToken: 'rotated-refresh',
+      refreshTokenId: '30000000-0000-4000-8000-000000000001',
+    });
+    const auth = { rotateRefreshToken } as unknown as AuthService;
+    const controller = new AuthController(auth);
+
+    await expect(controller.refresh(
+      { refreshToken: 'refresh-token-1' },
+      { context: { requestId: 'req-refresh-1' } } as never,
+    )).resolves.toEqual({
+      accessToken: 'rotated-access',
+      refreshToken: 'rotated-refresh',
+      refreshTokenId: '30000000-0000-4000-8000-000000000001',
+    });
+
+    expect(rotateRefreshToken).toHaveBeenCalledWith({ refreshToken: 'refresh-token-1', requestId: 'req-refresh-1' });
+  });
 });
