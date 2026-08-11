@@ -289,8 +289,6 @@ jobs:
             ];
             const failures = [];
 
-            if (pr.draft) failures.push("PR hâlâ Draft durumunda.");
-
             const comparison = await github.rest.repos.compareCommits({
               owner,
               repo,

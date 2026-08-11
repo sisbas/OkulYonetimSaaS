@@ -9,6 +9,8 @@ on:
       - '.github/rulesets/main-merge-governance.json'
       - 'scripts/governance-matrix-contract.js'
       - 'docs/operations/wp07-governance-recovery.md'
+      - 'docs/devops/pr-body-validation-policy.md'
+      - 'docs/devops/validation-scenarios.md'
 
 permissions:
   checks: read
@@ -44,8 +46,13 @@ jobs:
           grep -Fq 'filter: "all"' "$audit"
           ! grep -Fq 'filter: "latest"' "$audit"
           grep -Fq 'latestCreatedByMerge' "$audit"
+          [[ "$(grep -Fc 'if (pr.draft) {' "$workflow")" == '5' ]]
+          [[ "$(grep -Fc 'ready_for_review olayında' "$workflow")" == '5' ]]
+          ! grep -Fq 'if (pr.draft) failures.push' "$workflow"
+          grep -Fq "GitHub draft metadata'sı \`true\`" 'docs/devops/pr-body-validation-policy.md'
+          grep -Fq "Draft PR'da eksik PR body" 'docs/devops/validation-scenarios.md'
 
-          echo 'PASS: exact-name, terminal-run and suite-created newest-pre-merge check contract.'
+          echo 'PASS: exact-name, draft-deferral, terminal-run and suite-created newest-pre-merge check contract.'
       - name: Regress PR 133 merge-time snapshot
         uses: actions/github-script@v8
         with:
