@@ -17,7 +17,17 @@ Aşağıdaki heading adları exact kullanılmalıdır. Büyük/küçük harf, sl
 ## CI run referansı
 ```
 
-## Kural
+## Draft erteleme kuralı
+
+GitHub draft metadata'sı `true` olan PR'larda body, issue reference, rollback,
+acceptance criteria ve merge-enforcement doğrulamaları başarılı bir terminal sonuçla
+ertelenir. Bu erteleme merge yetkisi vermez; draft PR branch ruleset nedeniyle merge
+edilemez.
+
+PR `ready_for_review` durumuna geçirildiğinde doğrulamalar güncel head ve güncel PR
+gövdesi için yeniden çalışır. Aşağıdaki fail-closed kurallar ready PR için geçerlidir.
+
+## Ready PR kuralı
 
 Bu alanlardan biri eksik, boş, placeholder veya belirsiz ise PR Governance workflow'u fail olmalıdır.
 
