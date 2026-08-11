@@ -16,18 +16,21 @@ Bu senaryolar merge governance değişikliğinin gerçekten fail-closed çalış
 
 ## Scenario 3 — Issue referansı yok
 
+- Ön koşul: GitHub draft metadata'sı `false` veya PR `ready_for_review` olayıyla Ready durumuna geçirilmiştir.
 - PR body'de `Fixes #...` veya `Refs #...` bulunmaz.
 - Beklenen sonuç: `PR Governance / Issue Reference` fail.
 - Merge butonu: kapalı.
 
 ## Scenario 4 — Rollback zayıf
 
+- Ön koşul: GitHub draft metadata'sı `false` veya PR `ready_for_review` olayıyla Ready durumuna geçirilmiştir.
 - Rollback alanına yalnız `yok`, `N/A` veya `sonra` yazılır.
 - Beklenen sonuç: `PR Governance / Rollback Plan` fail.
 - Merge butonu: kapalı.
 
 ## Scenario 5 — Acceptance criteria zayıf
 
+- Ön koşul: GitHub draft metadata'sı `false` veya PR `ready_for_review` olayıyla Ready durumuna geçirilmiştir.
 - Acceptance criteria checklist formatında değildir.
 - Beklenen sonuç: `PR Governance / Acceptance Criteria` fail.
 - Merge butonu: kapalı.

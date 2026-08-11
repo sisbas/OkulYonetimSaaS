@@ -49,6 +49,25 @@ jobs:
           [[ "$(grep -Fc 'if (pr.draft) {' "$workflow")" == '5' ]]
           [[ "$(grep -Fc 'ready_for_review olayında' "$workflow")" == '5' ]]
           ! grep -Fq 'if (pr.draft) failures.push' "$workflow"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const source = fs
+            .readFileSync(".github/workflows/pr-governance.yml", "utf8")
+            .replace(/\r\n/g, "\n");
+          const triggerBlock = source.match(/^on:\n([\s\S]*?)^permissions:/m)?.[1] || "";
+          const deferralPaths = source.match(
+            /if \(pr\.draft\) \{\s+core\.notice\("Draft PR: [^"]*ready_for_review olayında[^"]*"\);\s+return;\s+\}/g
+          ) || [];
+
+          if (!/^      - ready_for_review$/m.test(triggerBlock)) {
+            throw new Error("PR Governance workflow must run on ready_for_review.");
+          }
+          if (deferralPaths.length !== 5) {
+            throw new Error(
+              `Expected 5 draft guards to notice and return before validation, found ${deferralPaths.length}.`
+            );
+          }
+          NODE
           grep -Fq "GitHub draft metadata'sı \`true\`" 'docs/devops/pr-body-validation-policy.md'
           grep -Fq "Draft PR'da eksik PR body" 'docs/devops/validation-scenarios.md'
 
