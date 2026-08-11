@@ -4,6 +4,18 @@
 
 **GATE 2 PASS.** PR #127 üzerinde exact-head statik kontrat, 4/4 viewport Chromium matrisi, 28/28 ekran kanıtı ve güvenlik taramaları tamamlandı. Hosted Vercel release ayrı bir kapıdır; `/full-vision/*` mount'u için exact-head CI ve immutable preview kanıtı tamamlanana kadar hosted karar HOLD kalır.
 
+## 11 Ağustos 2026 — CMO loop eki: release konumu korunur
+
+Routing authority integration evidence'nin merge edilmesi (PR #197/#198, wp07f-195: production `/api/v1` route'larının Nest'e ulaşması, Vercel rewrite taşıma, kontrollü JSON hata shape'i) **GATE 2 kararını değiştirmez ve commercial release readinessi ispatlamaz**:
+
+- Kanıt yalnız network yolunun açık olduğunu ve hata shape'inin Nest kontrolünde olduğunu gösterir; auth korumalı route'lar kontrollü `401` döner.
+- Faz 1 MVP modül tamamlama, security/KVKK/audit kapanışı, imzalı veri sözleşmeleri ve hosted release onayı ayrı kapılardır ve açık değildir.
+- "Routing kanıtı merge edildi" ifadesi hiçbir kanıt zincirinde "commercial release ready" iddiasına çevrilemez.
+
+Demo anlatısı güncellendi: **Ders Programı → İzin → Günlük Operasyon**. Anlatı yalnız mesajlama düzeyinde taşınır; deterministik P0 durum akışı (günlük görünüm → izin → program → yoklama → bilgilendirme → reset) ve sıralama bağımlılıkları (program kabulü olmadan yoklama kilitlenmez, yoklama kilidi olmadan bildirim simüle edilmez) değişmedi.
+
+**Yoklama ve Veli Bilgilendirme planning-only sınır mesajları korunur:** yoklama yalnız kodlu sentetik öğrenciler üzerinde iş akışı gösterir ve öğrenci/kurum kaydı işlemez; bildirim gerçek mesaj göndermez, yalnız gönderim simülasyonu tamamlar.
+
 ## PASS koşulları
 
 - 25/25 canonical route ve 5/5 legacy alias doğrulanır.
