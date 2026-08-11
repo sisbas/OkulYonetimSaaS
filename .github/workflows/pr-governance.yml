@@ -41,6 +41,10 @@ jobs:
               return;
             }
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            if (pr.draft) {
+              core.notice("Draft PR: body completeness ready_for_review olayında doğrulanacak.");
+              return;
+            }
             const body = pr.body || "";
             const requiredSections = [
               "Amaç",
@@ -132,6 +136,10 @@ jobs:
               return;
             }
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            if (pr.draft) {
+              core.notice("Draft PR: issue reference ready_for_review olayında doğrulanacak.");
+              return;
+            }
             const text = `${pr.title || ""}\n${pr.body || ""}`;
             if (!/\b(fixes|fix|closes|close|resolves|resolve|refs|references)\s+#\d+\b/i.test(text)) {
               core.setFailed("PR title/body içinde geçerli issue referansı yok. Örnek: Fixes #123 veya Refs #123");
@@ -152,6 +160,10 @@ jobs:
               return;
             }
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            if (pr.draft) {
+              core.notice("Draft PR: rollback planı ready_for_review olayında doğrulanacak.");
+              return;
+            }
             const body = pr.body || "";
             const rollback = body.match(/(?:^|\n)#{2,3}\s*Rollback\s*\n([\s\S]*?)(?=\n#{2,3}\s|\s*$)/i)?.[1]?.trim() || "";
             const normalized = rollback.replace(/<!--[\s\S]*?-->/g, "").trim();
@@ -176,6 +188,10 @@ jobs:
               return;
             }
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            if (pr.draft) {
+              core.notice("Draft PR: acceptance criteria ready_for_review olayında doğrulanacak.");
+              return;
+            }
             const body = pr.body || "";
             const ac = body.match(/(?:^|\n)#{2,3}\s*Acceptance criteria\s*\n([\s\S]*?)(?=\n#{2,3}\s|\s*$)/i)?.[1]?.trim() || "";
             const allChecklistItems = ac.match(/^\s*[-*]\s*\[[ xX]\]\s+\S.*$/gim) || [];
@@ -255,6 +271,10 @@ jobs:
               return;
             }
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            if (pr.draft) {
+              core.notice("Draft PR: merge enforcement ready_for_review olayında çalışacak.");
+              return;
+            }
             const requiredChecks = [
               "Sprint 1 Quality Gate",
               "Backend CI",
