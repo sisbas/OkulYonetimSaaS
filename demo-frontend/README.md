@@ -2,13 +2,23 @@
 
 Bu klasör, gerçek API, auth veya permission binding kullanmayan bağımsız ve tıklanabilir bir sunum prototipidir.
 
+## Demo anlatısı
+
+Demo anlatısı: **Ders Programı → İzin → Günlük Operasyon**.
+
+- `/demo/schedule` — Ders programı: taslak/yayınlanmış program, conflict ve event modalı.
+- `/demo/leave/LV-204` — İzin: etki analizi ve yedek öğretmen seçimi.
+- `/demo/today` — Günlük operasyon: izin etkisinin gün görünümüne yansıması.
+
+**Yoklama ve Veli Bilgilendirme planning-only sınır olarak korunur:** yalnız sentetik ekran etkileşimidir; ürün derinliği veya production iddiası taşımaz.
+
 ## Demo route'ları
 
-- `/demo/today`
 - `/demo/schedule`
 - `/demo/leave/LV-204`
-- `/demo/attendance/session/AT-1204`
-- `/demo/notifications`
+- `/demo/today`
+- `/demo/attendance/session/AT-1204` (planning-only sınır)
+- `/demo/notifications` (planning-only sınır)
 
 Dinamik segmentler herhangi bir sentetik kimlikle açılabilir; ekran içeriği deterministik fixture setinden gelir.
 

@@ -16,6 +16,30 @@ CI quality gate PASS
 
 Runtime için canlı PostgreSQL bağlantısı gerekir. `DATABASE_URL` tanımlı değilse veya PostgreSQL erişilebilir değilse API süreci başlatılamaz; bu backend-only yapı için beklenen bir environment failure'dır, frontend preview failure'ı değildir.
 
+## Katman ayrımı: demo / Full Vision / production MVP
+
+| Katman | Konum | Kapsam | Konumlandırma |
+|---|---|---|---|
+| Demo (tarihsel) | `demo-frontend/` | Beş ekranlık statik, sentetik sunum prototifi (`/demo/*`) | Satış/demo artefaktı; production değil |
+| Full Vision | `full-vision-demo/` | 25 canonical route, 21 ekran ailesi, sentetik satış prototipi (`/full-vision/*`) | GATE 2 kabul artefaktı; hosted release kapısı HOLD |
+| Production MVP (bu repo) | `src/`, `api/v1` | Backend-only NestJS API | Faz 1 MVP çekirdeği; commercial release kapısı AÇIK DEĞİL |
+
+Demo katmanları hiçbir koşulda production runtime, auth, tenant izolasyonu veya gerçek kişi verisi iddiası taşımaz; production MVP'yi pazarlanan ürün hâline getirmez.
+
+## Routing authority kanıtı — commercial release değildir
+
+Production `/api/v1` routing authority kanıtının merge edilmesi (nested route'ların Nest uygulamasına ulaşması, Vercel rewrite şeklinin taşınması, kontrollü Nest JSON hata shape'i, `test/runtime-integration/api-routing-authority.spec.ts`) yalnız **yönlendirme katmanının** ispatıdır. Şu anlama gelir:
+
+- Network yolu açıktır ve `404 NOT_FOUND`/platform HTML yerine Nest kontrollü yanıtlar döner.
+- Auth korumalı route'lar önce hizmete ulaşır; yetkisiz istek kontrollü `401` alır.
+
+Bu kanıt aşağıdakilerin hiçbirini ispatlamaz ve **ürünün commercial release için hazır olduğu anlamına gelmez**:
+
+- Faz 1 MVP modüllerinin (courses, schedule, leaves, daily-operations, ...) tamamlanması,
+- Security / KVKK / audit kapanışları ve imzalı veri sözleşmeleri,
+- Production veri doğruluğu veya canlı PostgreSQL üzerinde kabul kanıtı,
+- Hosted release / canlı URL onayı.
+
 ## Üretilen dosya ağacı
 
 ```text

@@ -8,7 +8,7 @@
   const scenarios = {
     operations: {
       id: 'operations',
-      title: 'Operasyon günü: izinden veli bilgilendirmeye',
+      title: 'Bir okul günü: ders programı → izin → günlük operasyon anlatısı',
       persona: 'operations',
       status: 'P0 dikey dilim',
       steps: [
