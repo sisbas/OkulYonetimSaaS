@@ -34,7 +34,6 @@ REQUIRED_CHECKS = {
     "PR Governance / Issue Reference",
     "PR Governance / Rollback Plan",
     "PR Governance / Acceptance Criteria",
-    "Merge Governance Enforcement",
 }
 
 

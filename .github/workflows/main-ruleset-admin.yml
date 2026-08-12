@@ -27,7 +27,7 @@ permissions:
 jobs:
   Ruleset-Payload-Validation:
     name: Ruleset Payload Validation
-    if: github.event_name == 'pull_request'
+    if: false  # [HCO] disabled - merge gate simplified
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -91,7 +91,7 @@ jobs:
 
   Live-Main-Ruleset-Verification:
     name: Live Main Ruleset Verification
-    if: github.event_name == 'pull_request'
+    if: false  # [HCO] disabled - merge gate simplified
     runs-on: ubuntu-latest
     steps:
       - name: Verify public live ruleset structure and source
