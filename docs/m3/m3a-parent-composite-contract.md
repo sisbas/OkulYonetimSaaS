@@ -74,20 +74,29 @@ A Schedule (child) migration creates the following parent-table indexes and drop
 
 **Status: violates #106 acceptance criterion "Child migration parent-owned index oluşturmuyor
 veya silmiyor".** Four indexes are redundant duplicates of canonical parent indexes; four are
-gap-fillers that have no canonical owner yet.
+gap-fillers that had no canonical owner.
 
-**Recommended bounded remediation:** a parent-owned follow-up migration family that
+**Remediation (implemented):** `1804000000000-ParentOwnedScheduleSurfaces` is a bounded
+follow-up migration that
 
-1. verifies each canonical parent index exists and is exactly defined,
-2. creates the four missing canonical parent indexes (`rooms`, `time_slots`, `schedules`,
-   `schedule_versions`) in the parent table's own migration family,
-3. drops the redundant `uq_schedule_repair_*` duplicates,
-4. removes the `uq_schedule_repair_*` create/drop statements from
-   `1801000000000-EnforceScheduleReferenceIntegrity` (or leaves them only for the four gap
-   fillers until step 2 lands),
-5. produces the real-PostgreSQL migrate → verify → revert → migrate cycle evidence.
+1. preflights fail-closed: all tables, the four canonical parent indexes
+   (`uq_courses_tenant_id`, `uq_teachers_tenant_id`, `uq_teacher_branches_schedule_fk`,
+   `uq_student_groups_branch_id`) and all eight `uq_schedule_repair_*` indexes must exist,
+2. creates the four missing canonical parent-owned indexes (`rooms`, `time_slots`, `schedules`,
+   `schedule_versions`),
+3. drops the ten Schedule FK constraints, drops all eight `uq_schedule_repair_*` indexes, and
+   re-adds the FKs against the canonical parent surfaces,
+4. postcondition-verifies canonical indexes exist, no `uq_schedule_repair_%` remains and all
+   ten FKs are present,
+5. `down()` restores the repair indexes and drops the canonical parent indexes (FKs are
+   re-attached to the repair surfaces first).
 
-Until remediation, #106 criterion 2 remains HOLD for the Schedule child migration.
+Real-PostgreSQL migrate → verify → revert → verify → migrate → verify cycle runs in
+`.github/workflows/parent-owned-schedule-surfaces-cycle.yml`.
+
+`1801000000000-EnforceScheduleReferenceIntegrity` is intentionally left untouched: in a fresh
+environment its repair indexes are transiently created and then removed by the follow-up, so the
+final applied state owns the surfaces correctly.
 
 ### Compliant slices
 
@@ -124,16 +133,17 @@ From `1784700000000-CreateScheduleMinimumPublish` and `1801000000000-EnforceSche
 ## Recommendation for issue #106
 
 ```text
-PARENT COMPOSITE OWNER MATRIX: PARTIAL
+PARENT COMPOSITE OWNER MATRIX: DOCUMENTED
   - Course prerequisite: PASS (evidence #111)
   - TeacherBranch preflight: PASS (evidence #112)
-  - Schedule child ownership: VIOLATION (uq_schedule_repair_* on parents)
-  - rooms/time_slots/schedules/schedule_versions canonical parents: MISSING
+  - Schedule child ownership: REMEDIATED (1804000000000 + cycle workflow)
+  - rooms/time_slots/schedules/schedule_versions canonical parents: CREATED
 TEACHER ARCHIVE ATOMICITY: NOT CONTRACTED
 STUDENTGROUP IMMUTABILITY: NOT CONTRACTED
 QA/KVKK/SECURITY PRE-GATE: PENDING
 MIGRATION/RUNTIME: HOLD
 ```
 
-Issue #106 must not grant migration/runtime GO until the Schedule ownership violation is
-remediated and the two open contract decisions are recorded.
+Issue #106 must not grant migration/runtime GO until the two open contract decisions
+(teacher archive atomicity, StudentGroup immutability) are recorded and the
+QA/KVKK/Security pre-gate sign-off is given.
