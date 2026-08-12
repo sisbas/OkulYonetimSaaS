@@ -1,60 +1,70 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-const REQUIRED_PARENT_INDEXES: ReadonlyArray<readonly [string, string]> = [
-  ['uq_courses_tenant_id', 'courses'],
-  ['uq_teachers_tenant_id', 'teachers'],
-  ['uq_teacher_branches_schedule_fk', 'teacher_branches'],
-  ['uq_student_groups_branch_id', 'student_groups'],
+interface IndexSurface {
+  name: string;
+  table: string;
+  columns: readonly string[];
+}
+
+const REQUIRED_PARENT_INDEXES: ReadonlyArray<IndexSurface> = [
+  { name: 'uq_courses_tenant_id', table: 'courses', columns: ['tenant_id', 'id'] },
+  { name: 'uq_teachers_tenant_id', table: 'teachers', columns: ['tenant_id', 'id'] },
+  {
+    name: 'uq_teacher_branches_schedule_fk',
+    table: 'teacher_branches',
+    columns: ['tenant_id', 'branch_id', 'teacher_id', 'id'],
+  },
+  {
+    name: 'uq_student_groups_branch_id',
+    table: 'student_groups',
+    columns: ['tenant_id', 'branch_id', 'id'],
+  },
 ];
 
-const REPAIR_INDEX_DEFINITIONS: ReadonlyArray<readonly [string, string, string]> = [
-  [
-    'uq_schedule_repair_schedules_owner',
-    'schedules',
-    'ON schedules (tenant_id, branch_id, id)',
-  ],
-  [
-    'uq_schedule_repair_versions_owner',
-    'schedule_versions',
-    'ON schedule_versions (tenant_id, branch_id, schedule_id, id)',
-  ],
-  ['uq_schedule_repair_courses_tenant_id', 'courses', 'ON courses (tenant_id, id)'],
-  [
-    'uq_schedule_repair_time_slots_branch_id',
-    'time_slots',
-    'ON time_slots (tenant_id, branch_id, id)',
-  ],
-  ['uq_schedule_repair_teachers_tenant_id', 'teachers', 'ON teachers (tenant_id, id)'],
-  [
-    'uq_schedule_repair_teacher_branches_owner',
-    'teacher_branches',
-    'ON teacher_branches (tenant_id, branch_id, teacher_id, id)',
-  ],
-  [
-    'uq_schedule_repair_student_groups_branch_id',
-    'student_groups',
-    'ON student_groups (tenant_id, branch_id, id)',
-  ],
-  ['uq_schedule_repair_rooms_branch_id', 'rooms', 'ON rooms (tenant_id, branch_id, id)'],
+const REPAIR_INDEX_DEFINITIONS: ReadonlyArray<IndexSurface> = [
+  {
+    name: 'uq_schedule_repair_schedules_owner',
+    table: 'schedules',
+    columns: ['tenant_id', 'branch_id', 'id'],
+  },
+  {
+    name: 'uq_schedule_repair_versions_owner',
+    table: 'schedule_versions',
+    columns: ['tenant_id', 'branch_id', 'schedule_id', 'id'],
+  },
+  { name: 'uq_schedule_repair_courses_tenant_id', table: 'courses', columns: ['tenant_id', 'id'] },
+  {
+    name: 'uq_schedule_repair_time_slots_branch_id',
+    table: 'time_slots',
+    columns: ['tenant_id', 'branch_id', 'id'],
+  },
+  { name: 'uq_schedule_repair_teachers_tenant_id', table: 'teachers', columns: ['tenant_id', 'id'] },
+  {
+    name: 'uq_schedule_repair_teacher_branches_owner',
+    table: 'teacher_branches',
+    columns: ['tenant_id', 'branch_id', 'teacher_id', 'id'],
+  },
+  {
+    name: 'uq_schedule_repair_student_groups_branch_id',
+    table: 'student_groups',
+    columns: ['tenant_id', 'branch_id', 'id'],
+  },
+  { name: 'uq_schedule_repair_rooms_branch_id', table: 'rooms', columns: ['tenant_id', 'branch_id', 'id'] },
 ];
 
-const CANONICAL_PARENT_INDEXES: ReadonlyArray<readonly [string, string, string]> = [
-  ['uq_rooms_tenant_branch_id', 'rooms', 'ON rooms (tenant_id, branch_id, id)'],
-  [
-    'uq_time_slots_tenant_branch_id',
-    'time_slots',
-    'ON time_slots (tenant_id, branch_id, id)',
-  ],
-  [
-    'uq_schedules_tenant_branch_id',
-    'schedules',
-    'ON schedules (tenant_id, branch_id, id)',
-  ],
-  [
-    'uq_schedule_versions_tenant_branch_schedule_id',
-    'schedule_versions',
-    'ON schedule_versions (tenant_id, branch_id, schedule_id, id)',
-  ],
+const CANONICAL_PARENT_INDEXES: ReadonlyArray<IndexSurface> = [
+  { name: 'uq_rooms_tenant_branch_id', table: 'rooms', columns: ['tenant_id', 'branch_id', 'id'] },
+  {
+    name: 'uq_time_slots_tenant_branch_id',
+    table: 'time_slots',
+    columns: ['tenant_id', 'branch_id', 'id'],
+  },
+  { name: 'uq_schedules_tenant_branch_id', table: 'schedules', columns: ['tenant_id', 'branch_id', 'id'] },
+  {
+    name: 'uq_schedule_versions_tenant_branch_schedule_id',
+    table: 'schedule_versions',
+    columns: ['tenant_id', 'branch_id', 'schedule_id', 'id'],
+  },
 ];
 
 const SCHEDULE_FKS: ReadonlyArray<{
@@ -125,7 +135,7 @@ const SCHEDULE_FKS: ReadonlyArray<{
   },
 ];
 
-function indexExistsClause(indexName: string, tableName: string): string {
+function indexNameClause(surface: IndexSurface): string {
   return `
     EXISTS (
       SELECT 1
@@ -134,8 +144,31 @@ function indexExistsClause(indexName: string, tableName: string): string {
       JOIN pg_class table_relation ON table_relation.oid = index_metadata.indrelid
       JOIN pg_namespace namespace_relation ON namespace_relation.oid = table_relation.relnamespace
       WHERE namespace_relation.nspname = current_schema()
-        AND table_relation.relname = '${tableName}'
-        AND index_relation.relname = '${indexName}'
+        AND table_relation.relname = '${surface.table}'
+        AND index_relation.relname = '${surface.name}'
+    )`;
+}
+
+function validIndexClause(surface: IndexSurface): string {
+  const columns = surface.columns.map((column) => `'${column}'`).join(', ');
+  return `
+    EXISTS (
+      SELECT 1
+      FROM pg_class index_relation
+      JOIN pg_index index_metadata ON index_metadata.indexrelid = index_relation.oid
+      JOIN pg_class table_relation ON table_relation.oid = index_metadata.indrelid
+      JOIN pg_namespace namespace_relation ON namespace_relation.oid = table_relation.relnamespace
+      JOIN unnest(index_metadata.indkey) WITH ORDINALITY AS key_columns(attnum, ordinality) ON true
+      JOIN pg_attribute column_metadata
+        ON column_metadata.attrelid = table_relation.oid
+       AND column_metadata.attnum = key_columns.attnum
+      WHERE namespace_relation.nspname = current_schema()
+        AND table_relation.relname = '${surface.table}'
+        AND index_relation.relname = '${surface.name}'
+        AND index_metadata.indisunique
+      GROUP BY index_relation.relname, table_relation.relname, index_metadata.indisunique
+      HAVING array_agg(column_metadata.attname ORDER BY key_columns.ordinality)
+             = ARRAY[${columns}]::name[]
     )`;
 }
 
@@ -152,14 +185,73 @@ function repairIndexLikeClause(): string {
     )`;
 }
 
+function indexDefinition(surface: IndexSurface): string {
+  return `ON ${surface.table} (${surface.columns.join(', ')})`;
+}
+
+function fkContractClause(): string {
+  const expected = SCHEDULE_FKS.map(
+    (fk) => `('${fk.name}', '${fk.table}', '${fk.references.split(' ')[0]}')`,
+  ).join(', ');
+  return `
+    SELECT count(*) = ${SCHEDULE_FKS.length} AND bool_and(
+      actual_row.conname IS NOT NULL
+      AND actual_row.source_rel = expected_row.source_rel
+      AND actual_row.target_rel = expected_row.target_rel
+      AND actual_row.confdeltype = 'r'
+    )
+    INTO fk_contract_ok
+    FROM (VALUES ${expected})
+      AS expected_row(conname, source_rel, target_rel)
+    LEFT JOIN (
+      SELECT constraint_row.conname,
+             source_relation.relname AS source_rel,
+             target_relation.relname AS target_rel,
+             constraint_row.confdeltype
+      FROM pg_constraint constraint_row
+      JOIN pg_class source_relation ON source_relation.oid = constraint_row.conrelid
+      JOIN pg_namespace source_namespace ON source_namespace.oid = source_relation.relnamespace
+      JOIN pg_class target_relation ON target_relation.oid = constraint_row.confrelid
+      JOIN pg_namespace target_namespace ON target_namespace.oid = target_relation.relnamespace
+      WHERE source_namespace.nspname = current_schema()
+        AND target_namespace.nspname = current_schema()
+        AND constraint_row.contype = 'f'
+    ) actual_row ON actual_row.conname = expected_row.conname`;
+}
+
 export class ParentOwnedScheduleSurfaces1804000000000 implements MigrationInterface {
   name = 'ParentOwnedScheduleSurfaces1804000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    const requiredStatements = REQUIRED_PARENT_INDEXES.map(
+      (surface) => `
+        IF NOT ${indexNameClause(surface)} THEN
+          RAISE EXCEPTION 'Parent surface preflight failed: a required canonical parent index is missing';
+        END IF;
+        IF NOT ${validIndexClause(surface)} THEN
+          RAISE EXCEPTION 'Parent surface preflight failed: ${surface.name} exists with an invalid definition';
+        END IF;`,
+    ).join('\n');
+
+    const repairStatements = REPAIR_INDEX_DEFINITIONS.map(
+      (surface) => `
+        IF NOT ${indexNameClause(surface)} THEN
+          RAISE EXCEPTION 'Parent surface preflight failed: expected Schedule-owned repair index is missing';
+        END IF;
+        IF NOT ${validIndexClause(surface)} THEN
+          RAISE EXCEPTION 'Parent surface preflight failed: ${surface.name} exists with an invalid definition';
+        END IF;`,
+    ).join('\n');
+
+    const canonicalPreexistenceStatements = CANONICAL_PARENT_INDEXES.map(
+      (surface) => `
+        IF ${indexNameClause(surface)} THEN
+          RAISE EXCEPTION 'Parent surface preflight failed: ${surface.name} already exists; canonical ownership cannot be claimed (rollback would drop a pre-existing surface)';
+        END IF;`,
+    ).join('\n');
+
     await queryRunner.query(`
       DO $$
-      DECLARE
-        missing_surface boolean;
       BEGIN
         IF to_regclass(current_schema() || '.rooms') IS NULL
            OR to_regclass(current_schema() || '.time_slots') IS NULL
@@ -172,24 +264,16 @@ export class ParentOwnedScheduleSurfaces1804000000000 implements MigrationInterf
           RAISE EXCEPTION 'Parent surface preflight failed: required table is missing';
         END IF;
 
-        SELECT NOT (
-          ${REQUIRED_PARENT_INDEXES.map(([name, table]) => indexExistsClause(name, table)).join(' AND ')}
-        ) INTO missing_surface;
-        IF missing_surface THEN
-          RAISE EXCEPTION 'Parent surface preflight failed: a required canonical parent index is missing';
-        END IF;
+        ${requiredStatements}
 
-        SELECT NOT (
-          ${REPAIR_INDEX_DEFINITIONS.map(([name, table]) => indexExistsClause(name, table)).join(' AND ')}
-        ) INTO missing_surface;
-        IF missing_surface THEN
-          RAISE EXCEPTION 'Parent surface preflight failed: expected Schedule-owned repair index is missing';
-        END IF;
+        ${repairStatements}
+
+        ${canonicalPreexistenceStatements}
       END $$
     `);
 
-    for (const [name, , definition] of CANONICAL_PARENT_INDEXES) {
-      await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS ${name} ${definition}`);
+    for (const surface of CANONICAL_PARENT_INDEXES) {
+      await queryRunner.query(`CREATE UNIQUE INDEX ${surface.name} ${indexDefinition(surface)}`);
     }
 
     for (const fk of SCHEDULE_FKS) {
@@ -198,8 +282,8 @@ export class ParentOwnedScheduleSurfaces1804000000000 implements MigrationInterf
       );
     }
 
-    for (const [name] of REPAIR_INDEX_DEFINITIONS) {
-      await queryRunner.query(`DROP INDEX IF EXISTS ${name}`);
+    for (const surface of REPAIR_INDEX_DEFINITIONS) {
+      await queryRunner.query(`DROP INDEX IF EXISTS ${surface.name}`);
     }
 
     for (const fk of SCHEDULE_FKS) {
@@ -215,15 +299,15 @@ export class ParentOwnedScheduleSurfaces1804000000000 implements MigrationInterf
     await queryRunner.query(`
       DO $$
       DECLARE
-        missing_surface boolean;
+        surface_ok boolean;
         repair_left boolean;
-        fk_count integer;
+        fk_contract_ok boolean;
       BEGIN
         SELECT NOT (
-          ${CANONICAL_PARENT_INDEXES.map(([name, table]) => indexExistsClause(name, table)).join(' AND ')}
-        ) INTO missing_surface;
-        IF missing_surface THEN
-          RAISE EXCEPTION 'Parent surface postcondition failed: canonical parent index is missing';
+          ${CANONICAL_PARENT_INDEXES.map((surface) => validIndexClause(surface)).join(' AND ')}
+        ) INTO surface_ok;
+        IF surface_ok THEN
+          RAISE EXCEPTION 'Parent surface postcondition failed: canonical parent index is missing or invalid';
         END IF;
 
         SELECT ${repairIndexLikeClause()} INTO repair_left;
@@ -231,15 +315,9 @@ export class ParentOwnedScheduleSurfaces1804000000000 implements MigrationInterf
           RAISE EXCEPTION 'Parent surface postcondition failed: Schedule-owned repair index remains';
         END IF;
 
-        SELECT COUNT(*)
-        INTO fk_count
-        FROM pg_constraint constraint_row
-        JOIN pg_class table_relation ON table_relation.oid = constraint_row.conrelid
-        JOIN pg_namespace namespace_relation ON namespace_relation.oid = table_relation.relnamespace
-        WHERE namespace_relation.nspname = current_schema()
-          AND constraint_row.conname IN (${SCHEDULE_FKS.map((fk) => `'${fk.name}'`).join(', ')});
-        IF fk_count <> ${SCHEDULE_FKS.length} THEN
-          RAISE EXCEPTION 'Parent surface postcondition failed: FK constraint count mismatch';
+        ${fkContractClause()}
+        IF NOT fk_contract_ok THEN
+          RAISE EXCEPTION 'Parent surface postcondition failed: FK contract mismatch';
         END IF;
       END $$
     `);
@@ -252,13 +330,29 @@ export class ParentOwnedScheduleSurfaces1804000000000 implements MigrationInterf
       );
     }
 
-    for (const [name, , definition] of REPAIR_INDEX_DEFINITIONS) {
-      await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS ${name} ${definition}`);
+    for (const surface of REPAIR_INDEX_DEFINITIONS) {
+      await queryRunner.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS ${surface.name} ${indexDefinition(surface)}`,
+      );
     }
 
-    for (const [name] of CANONICAL_PARENT_INDEXES) {
-      await queryRunner.query(`DROP INDEX IF EXISTS ${name}`);
+    for (const surface of CANONICAL_PARENT_INDEXES) {
+      await queryRunner.query(`DROP INDEX IF EXISTS ${surface.name}`);
     }
+
+    await queryRunner.query(`
+      DO $$
+      DECLARE
+        surface_ok boolean;
+      BEGIN
+        SELECT NOT (
+          ${REPAIR_INDEX_DEFINITIONS.map((surface) => validIndexClause(surface)).join(' AND ')}
+        ) INTO surface_ok;
+        IF surface_ok THEN
+          RAISE EXCEPTION 'Parent surface rollback failed: repair index missing or invalid';
+        END IF;
+      END $$
+    `);
 
     for (const fk of SCHEDULE_FKS) {
       await queryRunner.query(`
