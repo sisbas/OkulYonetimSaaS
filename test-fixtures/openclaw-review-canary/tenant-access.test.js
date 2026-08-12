@@ -7,6 +7,6 @@ test("allows access inside the same tenant", () => {
   assert.equal(canAccessTenantResource("tenant-a", "tenant-a"), true);
 });
 
-test.skip("rejects access across tenant boundaries after remediation", () => {
+test("rejects access across tenant boundaries after remediation", () => {
   assert.equal(canAccessTenantResource("tenant-a", "tenant-b"), false);
 });
