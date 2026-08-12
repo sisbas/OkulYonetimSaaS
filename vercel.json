@@ -43,6 +43,11 @@
       "destination": "/full-vision-demo/index.html"
     }
   ],
+  "functions": {
+    "api/v1/index.ts": {
+      "maxDuration": 30
+    }
+  },
   "headers": [
     {
       "source": "/runtime",
