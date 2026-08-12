@@ -1,6 +1,10 @@
 name: Full-Vision Demo Smoke
 
+# [HCO 2026-08-13] Demo tamamen kaldırıldı (kullanıcı kararı: demo sürümler nedeniyle hata).
+# Bu workflow disable edildi. Gerçek app vercel.json -> dist (NestJS).
 on:
+  workflow_dispatch:
+    # sadece manuel tetikleme (normalde hiç çalışmaz)
   pull_request:
     paths:
       - 'full-vision-demo/**'
@@ -32,6 +36,7 @@ permissions:
 
 jobs:
   gate2-static-contract:
+    if: false  # [HCO] disabled - demo removed
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -43,6 +48,7 @@ jobs:
         run: npm run verify:hosted-demos
 
   gate2-browser-matrix:
+    if: false  # [HCO] disabled - demo removed
     runs-on: ubuntu-latest
     needs: gate2-static-contract
     timeout-minutes: 10

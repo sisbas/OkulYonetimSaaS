@@ -25,11 +25,6 @@
       "destination": "/runtime/:path*"
     }
   ],
-  "functions": {
-    "api/v1/index.ts": {
-      "maxDuration": 30
-    }
-  },
   "headers": [
     {
       "source": "/runtime",

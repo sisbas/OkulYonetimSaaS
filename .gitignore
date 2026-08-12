@@ -436,3 +436,4 @@ hosted-demos-static-dist/
 hosted-runtime-static-dist/
 full-vision-demo/evidence/browser/
 .worktrees/
+.vercel
