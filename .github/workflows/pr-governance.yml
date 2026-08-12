@@ -295,8 +295,10 @@ jobs:
               base: pr.head.sha,
               head: pr.base.sha
             });
-            if ((comparison.data.ahead_by || 0) > 0) {
-              failures.push("PR branch'i güncel main ile eşleşmiyor; branch update/rebase gerekli.");
+            // [HCO 2026-08-13] Düzeltme: ahead_by (PR main'in ilerisinde) normal PR davranışıdır,
+            // her PR'da fail ederdi. Sadece behind_by > 0 (PR main'in GERİSİNDE/stale) uyar.
+            if ((comparison.data.behind_by || 0) > 0) {
+              failures.push("PR branch'i main'in gerisinde; branch update/rebase gerekli.");
             }
 
             const reviews = await github.paginate(github.rest.pulls.listReviews, {
