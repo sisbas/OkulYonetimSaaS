@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { QueryRunner } from 'typeorm';
 
 import { ParentOwnedScheduleSurfaces1804000000000 } from '../database/migrations/1804000000000-ParentOwnedScheduleSurfaces';
@@ -54,9 +56,23 @@ function assertAllFkConstraints(sql: string): void {
 }
 
 function assertFkDrops(sql: string): void {
+  const normalized = sql.replace(/\s+/g, ' ').trim();
   for (const [table, name] of EXPECTED_FKS) {
-    expect(sql).toContain(`ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS ${name}`);
+    expect(normalized).toContain(`ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS ${name}`);
   }
+}
+
+function columnArrayLiteral(columnList: string): string {
+  return `ARRAY[${columnList
+    .slice(1, -1)
+    .split(', ')
+    .map((column) => `'${column}'`)
+    .join(', ')}]::text[]`;
+}
+
+function splitReference(reference: string): readonly [string, string] {
+  const separator = reference.indexOf(' ');
+  return [reference.slice(0, separator), reference.slice(separator + 1)];
 }
 
 describe('ParentOwnedScheduleSurfaces migration', () => {
@@ -90,6 +106,17 @@ describe('ParentOwnedScheduleSurfaces migration', () => {
     expect(sql).toContain('Parent surface postcondition failed: Schedule-owned repair index remains');
     expect(sql).toContain('Parent surface postcondition failed: FK contract mismatch');
 
+    const normalized = sql.replace(/\s+/g, ' ').trim();
+    expect(normalized).toMatch(
+      /actual_row ON actual_row\.conname = expected_row\.conname; IF NOT fk_contract_ok THEN/,
+    );
+    for (const [table, name, columns, references] of EXPECTED_FKS) {
+      const [targetTable, targetColumns] = splitReference(references);
+      expect(normalized).toContain(
+        `('${name}', '${table}', ${columnArrayLiteral(columns)}, '${targetTable}', ${columnArrayLiteral(targetColumns)})`,
+      );
+    }
+
     expect(sql).not.toContain('DROP TABLE');
     expect(sql).not.toContain('CASCADE');
   });
@@ -112,5 +139,40 @@ describe('ParentOwnedScheduleSurfaces migration', () => {
 
     expect(sql).not.toContain('DROP TABLE');
     expect(sql).not.toContain('CASCADE');
+  });
+
+  it('uses one exact lifecycle verifier after upgrade, rollback, and remigration', () => {
+    const verifierPath = join(
+      process.cwd(),
+      'scripts',
+      'verify-parent-owned-schedule-surfaces.sql',
+    );
+    const workflowPath = join(
+      process.cwd(),
+      '.github',
+      'workflows',
+      'parent-owned-schedule-surfaces-cycle.yml',
+    );
+    const verifier = readFileSync(verifierPath, 'utf8').replace(/\s+/g, ' ').trim();
+    const workflow = readFileSync(workflowPath, 'utf8');
+
+    for (const [table, name, columns, references] of EXPECTED_FKS) {
+      const [targetTable, targetColumns] = splitReference(references);
+      expect(verifier).toContain(
+        `('${name}', '${table}', ${columnArrayLiteral(columns)}, '${targetTable}', ${columnArrayLiteral(targetColumns)})`,
+      );
+    }
+    for (const [name, table, columns] of EXPECTED_CANONICAL_INDEXES) {
+      expect(verifier).toContain(`('${name}', '${table}', ${columnArrayLiteral(columns)})`);
+    }
+
+    expect(verifier).toContain('actual_fk.source_columns = expected_fk.source_columns');
+    expect(verifier).toContain('actual_fk.target_columns = expected_fk.target_columns');
+    expect(verifier).toContain("actual_fk.delete_action = 'r'");
+    expect(
+      workflow.match(/-f scripts\/verify-parent-owned-schedule-surfaces\.sql/g),
+    ).toHaveLength(3);
+    expect(workflow.match(/expected_state=applied/g)).toHaveLength(2);
+    expect(workflow.match(/expected_state=reverted/g)).toHaveLength(1);
   });
 });
