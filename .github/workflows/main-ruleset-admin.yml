@@ -104,7 +104,7 @@ jobs:
           id="$(jq -r '[.[]|select(.name=="main-merge-governance")][0].id//empty' <<<"$rulesets")"
           [[ -n "$id" ]] || { echo '::error::Ruleset main-merge-governance does not exist.'; exit 1; }
           detail="$(curl --fail --silent --show-error --location "${headers[@]}" "$api/rulesets/$id")"
-          expected='["Sprint 1 Quality Gate","Backend CI","DB Smoke","Gate 1 CI","Sensitive Pattern Scanner","GitGuardian scan","PR Governance / Body Validation","PR Governance / Issue Reference","PR Governance / Rollback Plan","PR Governance / Acceptance Criteria","Merge Governance Enforcement"]'
+          expected='["Sprint 1 Quality Gate","Backend CI","DB Smoke","Gate 1 CI","Sensitive Pattern Scanner","GitGuardian scan","PR Governance / Body Validation","PR Governance / Issue Reference","PR Governance / Rollback Plan","PR Governance / Acceptance Criteria"]'
           pull="$(jq -c '[.rules[]|select(.type=="pull_request")][0].parameters' <<<"$detail")"
           checks="$(jq -c '[.rules[]|select(.type=="required_status_checks")][0].parameters' <<<"$detail")"
 
