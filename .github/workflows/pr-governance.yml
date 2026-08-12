@@ -311,6 +311,9 @@ jobs:
               const login = review.user?.login;
               if (login) latestReviewByUser.set(login, review);
             }
+            // [HCO 2026-08-13] İnsan APPROVED şartı KALDIRILDI (kullanıcı kararı).
+            // Sadece CI PASS + insan-authored unresolved thread kontrolü kalır.
+            // Bot-authored thread'ler (örn. CodeRabbit) merge'i engellemez.
             const validApprovals = [...latestReviewByUser.values()].filter((review) => {
               const login = review.user?.login || "";
               const isBot = review.user?.type === "Bot" || /\[bot\]$/i.test(login);
@@ -319,19 +322,26 @@ jobs:
                 login !== pr.user.login &&
                 !isBot;
             });
-            if (validApprovals.length < 1) {
-              failures.push("Güncel head SHA için en az bir bağımsız APPROVED review yok veya approval stale.");
+            // Bilgi amaçlı: approval varsa summary'ye yazarız, ancak ZORUNLU DEĞİL.
+            if (validApprovals.length >= 1) {
+              core.notice("Bağımsız APPROVED review mevcut (opsiyonel, zorunlu değil).");
             }
 
             let cursor = null;
-            let unresolvedThreadCount = 0;
+            let unresolvedHumanThreadCount = 0;
+            let unresolvedBotThreadCount = 0;
             do {
               const result = await github.graphql(
                 `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
                   repository(owner: $owner, name: $repo) {
                     pullRequest(number: $number) {
                       reviewThreads(first: 100, after: $cursor) {
-                        nodes { isResolved }
+                        nodes {
+                          isResolved
+                          comments(first: 1) {
+                            nodes { author { login, __typename } }
+                          }
+                        }
                         pageInfo { hasNextPage endCursor }
                       }
                     }
@@ -340,10 +350,18 @@ jobs:
                 { owner, repo, number: pr.number, cursor }
               );
               const threads = result.repository.pullRequest.reviewThreads;
-              unresolvedThreadCount += threads.nodes.filter((thread) => !thread.isResolved).length;
+              for (const t of threads.nodes) {
+                if (t.isResolved) continue;
+                const author = t.comments?.nodes?.[0]?.author;
+                const login = author?.login || "";
+                const isBot = (author?.__typename === "Bot") || /\[bot\]$/i.test(login);
+                if (isBot) unresolvedBotThreadCount += 1;
+                else unresolvedHumanThreadCount += 1;
+              }
               cursor = threads.pageInfo.hasNextPage ? threads.pageInfo.endCursor : null;
             } while (cursor);
-            if (unresolvedThreadCount > 0) failures.push(`${unresolvedThreadCount} çözülmemiş review thread'i var.`);
+            if (unresolvedHumanThreadCount > 0) failures.push(`${unresolvedHumanThreadCount} çözülmemiş İNSAN review thread'i var.`);
+            if (unresolvedBotThreadCount > 0) core.notice(`${unresolvedBotThreadCount} çözülmemiş bot thread'i (örn. CodeRabbit) merge engelleyici değil.`);
 
             let lastState = { missing: requiredChecks, pending: [], failed: [] };
             for (let attempt = 1; attempt <= 45; attempt += 1) {
