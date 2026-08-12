@@ -126,8 +126,8 @@ def validate_ruleset(ruleset: dict[str, Any]) -> None:
         pull = pull_rule.get("parameters", {})
         expected_pull = {
             "dismiss_stale_reviews_on_push": True,
-            "require_last_push_approval": True,
-            "required_approving_review_count": 1,
+            "require_last_push_approval": False,
+            "required_approving_review_count": 0,
             "required_review_thread_resolution": True,
         }
         for key, expected in expected_pull.items():
