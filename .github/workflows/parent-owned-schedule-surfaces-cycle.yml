@@ -8,6 +8,7 @@ on:
       - 'src/database/migrations/*ParentOwnedScheduleSurfaces*.ts'
       - 'src/database/migrations/1801000000000-EnforceScheduleReferenceIntegrity.ts'
       - 'src/schedules/parent-owned-schedule-surfaces.migration.spec.ts'
+      - 'scripts/verify-parent-owned-schedule-surfaces.sql'
       - '.github/workflows/parent-owned-schedule-surfaces-cycle.yml'
       - 'docs/m3/m3a-parent-composite-contract.md'
   workflow_dispatch:
@@ -65,210 +66,24 @@ jobs:
           echo 'PARENT_SURFACE_STEP=initial_migrate'
           npm run db:migrate
           npm run db:verify
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          DO $$
-          DECLARE
-            canonical_exists boolean;
-            repair_left boolean;
-            fk_contract_ok boolean;
-          BEGIN
-            SELECT count(*) = 4
-            INTO canonical_exists
-            FROM pg_class i
-            JOIN pg_namespace n ON n.oid = i.relnamespace
-            WHERE n.nspname = current_schema()
-              AND i.relname IN (
-                'uq_rooms_tenant_branch_id',
-                'uq_time_slots_tenant_branch_id',
-                'uq_schedules_tenant_branch_id',
-                'uq_schedule_versions_tenant_branch_schedule_id'
-              );
-            IF NOT canonical_exists THEN
-              RAISE EXCEPTION 'Parent surface verification failed: canonical parent indexes missing after migrate';
-            END IF;
-            SELECT EXISTS (
-              SELECT 1 FROM pg_class i
-              JOIN pg_namespace n ON n.oid = i.relnamespace
-              WHERE n.nspname = current_schema()
-                AND i.relname LIKE 'uq_schedule_repair_%'
-            ) INTO repair_left;
-            IF repair_left THEN
-              RAISE EXCEPTION 'Parent surface verification failed: repair index remains after migrate';
-            END IF;
-            SELECT count(*) = 10 AND bool_and(
-              actual.conname IS NOT NULL
-              AND actual.source_rel = expected.source_rel
-              AND actual.target_rel = expected.target_rel
-              AND actual.confdeltype = 'r'
-            )
-            INTO fk_contract_ok
-            FROM (VALUES
-              ('fk_schedule_versions_schedule_owner','schedule_versions','schedules'),
-              ('fk_schedule_events_schedule_owner','schedule_events','schedules'),
-              ('fk_schedules_active_version_owner','schedules','schedule_versions'),
-              ('fk_schedule_events_version_owner','schedule_events','schedule_versions'),
-              ('fk_schedule_events_course_tenant','schedule_events','courses'),
-              ('fk_schedule_events_time_slot_branch','schedule_events','time_slots'),
-              ('fk_schedule_events_teacher_tenant','schedule_events','teachers'),
-              ('fk_schedule_events_teacher_branch_owner','schedule_events','teacher_branches'),
-              ('fk_schedule_events_student_group_branch','schedule_events','student_groups'),
-              ('fk_schedule_events_room_branch','schedule_events','rooms')
-            ) AS expected(conname, source_rel, target_rel)
-            LEFT JOIN (
-              SELECT c.conname,
-                     src.relname AS source_rel,
-                     tgt.relname AS target_rel,
-                     c.confdeltype
-              FROM pg_constraint c
-              JOIN pg_class src ON src.oid = c.conrelid
-              JOIN pg_namespace sn ON sn.oid = src.relnamespace
-              JOIN pg_class tgt ON tgt.oid = c.confrelid
-              JOIN pg_namespace tn ON tn.oid = tgt.relnamespace
-              WHERE sn.nspname = current_schema()
-                AND tn.nspname = current_schema()
-                AND c.contype = 'f'
-            ) actual ON actual.conname = expected.conname;
-            IF NOT fk_contract_ok THEN
-              RAISE EXCEPTION 'Parent surface verification failed: FK contract mismatch after migrate';
-            END IF;
-          END $$;
-          SQL
+          psql "$DATABASE_URL" -v expected_state=applied -v phase=initial_migrate \
+            -f scripts/verify-parent-owned-schedule-surfaces.sql
       - name: Revert and verify
         run: |
           set -euo pipefail
           echo 'PARENT_SURFACE_STEP=revert'
           npm run db:migrate:revert
           npm run db:verify
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          DO $$
-          DECLARE
-            repair_exists boolean;
-            canonical_left boolean;
-            fk_contract_ok boolean;
-          BEGIN
-            SELECT count(*) = 8
-            INTO repair_exists
-            FROM pg_class i
-            JOIN pg_namespace n ON n.oid = i.relnamespace
-            WHERE n.nspname = current_schema()
-              AND i.relname LIKE 'uq_schedule_repair_%';
-            IF NOT repair_exists THEN
-              RAISE EXCEPTION 'Parent surface verification failed: repair indexes not restored after revert';
-            END IF;
-            SELECT EXISTS (
-              SELECT 1 FROM pg_class i
-              JOIN pg_namespace n ON n.oid = i.relnamespace
-              WHERE n.nspname = current_schema()
-                AND i.relname IN (
-                  'uq_rooms_tenant_branch_id',
-                  'uq_time_slots_tenant_branch_id',
-                  'uq_schedules_tenant_branch_id',
-                  'uq_schedule_versions_tenant_branch_schedule_id'
-                )
-            ) INTO canonical_left;
-            IF canonical_left THEN
-              RAISE EXCEPTION 'Parent surface verification failed: canonical parent index remains after revert';
-            END IF;
-            SELECT count(*) = 10 AND bool_and(
-              actual.conname IS NOT NULL
-              AND actual.source_rel = expected.source_rel
-              AND actual.target_rel = expected.target_rel
-              AND actual.confdeltype = 'r'
-            )
-            INTO fk_contract_ok
-            FROM (VALUES
-              ('fk_schedule_versions_schedule_owner','schedule_versions','schedules'),
-              ('fk_schedule_events_schedule_owner','schedule_events','schedules'),
-              ('fk_schedules_active_version_owner','schedules','schedule_versions'),
-              ('fk_schedule_events_version_owner','schedule_events','schedule_versions'),
-              ('fk_schedule_events_course_tenant','schedule_events','courses'),
-              ('fk_schedule_events_time_slot_branch','schedule_events','time_slots'),
-              ('fk_schedule_events_teacher_tenant','schedule_events','teachers'),
-              ('fk_schedule_events_teacher_branch_owner','schedule_events','teacher_branches'),
-              ('fk_schedule_events_student_group_branch','schedule_events','student_groups'),
-              ('fk_schedule_events_room_branch','schedule_events','rooms')
-            ) AS expected(conname, source_rel, target_rel)
-            LEFT JOIN (
-              SELECT c.conname,
-                     src.relname AS source_rel,
-                     tgt.relname AS target_rel,
-                     c.confdeltype
-              FROM pg_constraint c
-              JOIN pg_class src ON src.oid = c.conrelid
-              JOIN pg_namespace sn ON sn.oid = src.relnamespace
-              JOIN pg_class tgt ON tgt.oid = c.confrelid
-              JOIN pg_namespace tn ON tn.oid = tgt.relnamespace
-              WHERE sn.nspname = current_schema()
-                AND tn.nspname = current_schema()
-                AND c.contype = 'f'
-            ) actual ON actual.conname = expected.conname;
-            IF NOT fk_contract_ok THEN
-              RAISE EXCEPTION 'Parent surface verification failed: FK contract mismatch after revert';
-            END IF;
-          END $$;
-          SQL
+          psql "$DATABASE_URL" -v expected_state=reverted -v phase=revert \
+            -f scripts/verify-parent-owned-schedule-surfaces.sql
       - name: Final migrate and verify
         run: |
           set -euo pipefail
           echo 'PARENT_SURFACE_STEP=remigrate'
           npm run db:migrate
           npm run db:verify
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          DO $$
-          DECLARE
-            repair_left boolean;
-            fk_contract_ok boolean;
-          BEGIN
-            IF to_regclass(current_schema() || '.uq_rooms_tenant_branch_id') IS NULL THEN
-              RAISE EXCEPTION 'Parent surface verification failed: uq_rooms_tenant_branch_id missing after remigrate';
-            END IF;
-            SELECT EXISTS (
-              SELECT 1 FROM pg_class i
-              JOIN pg_namespace n ON n.oid = i.relnamespace
-              WHERE n.nspname = current_schema()
-                AND i.relname LIKE 'uq_schedule_repair_%'
-            ) INTO repair_left;
-            IF repair_left THEN
-              RAISE EXCEPTION 'Parent surface verification failed: repair index remains after remigrate';
-            END IF;
-            SELECT count(*) = 10 AND bool_and(
-              actual.conname IS NOT NULL
-              AND actual.source_rel = expected.source_rel
-              AND actual.target_rel = expected.target_rel
-              AND actual.confdeltype = 'r'
-            )
-            INTO fk_contract_ok
-            FROM (VALUES
-              ('fk_schedule_versions_schedule_owner','schedule_versions','schedules'),
-              ('fk_schedule_events_schedule_owner','schedule_events','schedules'),
-              ('fk_schedules_active_version_owner','schedules','schedule_versions'),
-              ('fk_schedule_events_version_owner','schedule_events','schedule_versions'),
-              ('fk_schedule_events_course_tenant','schedule_events','courses'),
-              ('fk_schedule_events_time_slot_branch','schedule_events','time_slots'),
-              ('fk_schedule_events_teacher_tenant','schedule_events','teachers'),
-              ('fk_schedule_events_teacher_branch_owner','schedule_events','teacher_branches'),
-              ('fk_schedule_events_student_group_branch','schedule_events','student_groups'),
-              ('fk_schedule_events_room_branch','schedule_events','rooms')
-            ) AS expected(conname, source_rel, target_rel)
-            LEFT JOIN (
-              SELECT c.conname,
-                     src.relname AS source_rel,
-                     tgt.relname AS target_rel,
-                     c.confdeltype
-              FROM pg_constraint c
-              JOIN pg_class src ON src.oid = c.conrelid
-              JOIN pg_namespace sn ON sn.oid = src.relnamespace
-              JOIN pg_class tgt ON tgt.oid = c.confrelid
-              JOIN pg_namespace tn ON tn.oid = tgt.relnamespace
-              WHERE sn.nspname = current_schema()
-                AND tn.nspname = current_schema()
-                AND c.contype = 'f'
-            ) actual ON actual.conname = expected.conname;
-            IF NOT fk_contract_ok THEN
-              RAISE EXCEPTION 'Parent surface verification failed: FK contract mismatch after remigrate';
-            END IF;
-          END $$;
-          SQL
+          psql "$DATABASE_URL" -v expected_state=applied -v phase=remigrate \
+            -f scripts/verify-parent-owned-schedule-surfaces.sql
           npm run db:migrate:show
       - name: Schedule regression
         run: npx jest --runInBand src/schedules --passWithNoTests

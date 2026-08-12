@@ -191,22 +191,58 @@ function indexDefinition(surface: IndexSurface): string {
 
 function fkContractClause(): string {
   const expected = SCHEDULE_FKS.map(
-    (fk) => `('${fk.name}', '${fk.table}', '${fk.references.split(' ')[0]}')`,
+    (fk) => {
+      const sourceColumns = fk.columns
+        .slice(1, -1)
+        .split(', ')
+        .map((column) => `'${column}'`)
+        .join(', ');
+      const referenceSeparator = fk.references.indexOf(' ');
+      const targetTable = fk.references.slice(0, referenceSeparator);
+      const targetColumnList = fk.references.slice(referenceSeparator + 1);
+      const targetColumns = targetColumnList
+        .slice(1, -1)
+        .split(', ')
+        .map((column) => `'${column}'`)
+        .join(', ');
+
+      return `('${fk.name}', '${fk.table}', ARRAY[${sourceColumns}]::text[], '${targetTable}', ARRAY[${targetColumns}]::text[])`;
+    },
   ).join(', ');
   return `
     SELECT count(*) = ${SCHEDULE_FKS.length} AND bool_and(
       actual_row.conname IS NOT NULL
       AND actual_row.source_rel = expected_row.source_rel
+      AND actual_row.source_columns = expected_row.source_columns
       AND actual_row.target_rel = expected_row.target_rel
+      AND actual_row.target_columns = expected_row.target_columns
       AND actual_row.confdeltype = 'r'
     )
     INTO fk_contract_ok
     FROM (VALUES ${expected})
-      AS expected_row(conname, source_rel, target_rel)
+      AS expected_row(conname, source_rel, source_columns, target_rel, target_columns)
     LEFT JOIN (
       SELECT constraint_row.conname,
              source_relation.relname AS source_rel,
+             ARRAY(
+               SELECT source_column.attname::text
+               FROM unnest(constraint_row.conkey) WITH ORDINALITY
+                 AS source_key(attnum, ordinality)
+               JOIN pg_attribute source_column
+                 ON source_column.attrelid = constraint_row.conrelid
+                AND source_column.attnum = source_key.attnum
+               ORDER BY source_key.ordinality
+             ) AS source_columns,
              target_relation.relname AS target_rel,
+             ARRAY(
+               SELECT target_column.attname::text
+               FROM unnest(constraint_row.confkey) WITH ORDINALITY
+                 AS target_key(attnum, ordinality)
+               JOIN pg_attribute target_column
+                 ON target_column.attrelid = constraint_row.confrelid
+                AND target_column.attnum = target_key.attnum
+               ORDER BY target_key.ordinality
+             ) AS target_columns,
              constraint_row.confdeltype
       FROM pg_constraint constraint_row
       JOIN pg_class source_relation ON source_relation.oid = constraint_row.conrelid
@@ -216,7 +252,8 @@ function fkContractClause(): string {
       WHERE source_namespace.nspname = current_schema()
         AND target_namespace.nspname = current_schema()
         AND constraint_row.contype = 'f'
-    ) actual_row ON actual_row.conname = expected_row.conname`;
+    ) actual_row ON actual_row.conname = expected_row.conname;
+  `;
 }
 
 export class ParentOwnedScheduleSurfaces1804000000000 implements MigrationInterface {
