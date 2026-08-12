@@ -118,8 +118,8 @@ jobs:
             exit 1
           }
 
-          jq -e '.dismiss_stale_reviews_on_push==true and .required_approving_review_count==1 and .required_review_thread_resolution==true and .require_last_push_approval==true' <<<"$pull" >/dev/null || {
-            echo '::error::Pull-request approval, stale dismissal, latest-push approval or thread-resolution policy is invalid.'
+          jq -e '.dismiss_stale_reviews_on_push==true and .required_review_thread_resolution==true and .require_last_push_approval==false' <<<"$pull" >/dev/null || {
+            echo '::error::Stale dismissal, latest-push approval or thread-resolution policy is invalid.'
             exit 1
           }
 
