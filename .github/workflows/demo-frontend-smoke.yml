@@ -1,6 +1,10 @@
 name: Demo Frontend Smoke
 
+# [HCO 2026-08-13] Demo tamamen kaldırıldı (kullanıcı kararı: demo sürümler nedeniyle hata).
+# Bu workflow disable edildi. Gerçek app vercel.json -> dist (NestJS).
 on:
+  workflow_dispatch:
+    # sadece manuel tetikleme (normalde hiç çalışmaz)
   pull_request:
     paths:
       - 'demo-frontend/**'
@@ -23,6 +27,7 @@ permissions:
 jobs:
   demo-frontend-smoke:
     name: Demo Frontend Smoke
+    if: false  # [HCO] disabled - demo removed
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
