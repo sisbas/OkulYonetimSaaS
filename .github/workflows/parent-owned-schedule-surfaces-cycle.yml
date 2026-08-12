@@ -1,0 +1,97 @@
+name: Parent Owned Schedule Surfaces Cycle
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    paths:
+      - 'src/database/migrations/*ParentOwnedScheduleSurfaces*.ts'
+      - 'src/database/migrations/1801000000000-EnforceScheduleReferenceIntegrity.ts'
+      - 'src/schedules/parent-owned-schedule-surfaces.migration.spec.ts'
+      - 'scripts/verify-parent-owned-schedule-surfaces.sql'
+      - '.github/workflows/parent-owned-schedule-surfaces-cycle.yml'
+      - 'docs/m3/m3a-parent-composite-contract.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parent-owned-schedule-surfaces-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cycle:
+    name: migrate -> verify -> revert -> verify -> migrate -> verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: ataakademi_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ataakademi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: true
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+      TEST_DATABASE_URL: postgres://postgres@localhost:5432/ataakademi_test
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_NAME: ataakademi_test
+      TYPEORM_LOGGING: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Parent surface migration contract test
+        run: npx jest --runInBand src/schedules/parent-owned-schedule-surfaces.migration.spec.ts
+      - name: Initial migrate and verify
+        run: |
+          set -euo pipefail
+          echo 'PARENT_SURFACE_STEP=initial_migrate'
+          npm run db:migrate
+          npm run db:verify
+          psql "$DATABASE_URL" -v expected_state=applied -v phase=initial_migrate \
+            -f scripts/verify-parent-owned-schedule-surfaces.sql
+      - name: Revert and verify
+        run: |
+          set -euo pipefail
+          echo 'PARENT_SURFACE_STEP=revert'
+          npm run db:migrate:revert
+          npm run db:verify
+          psql "$DATABASE_URL" -v expected_state=reverted -v phase=revert \
+            -f scripts/verify-parent-owned-schedule-surfaces.sql
+      - name: Final migrate and verify
+        run: |
+          set -euo pipefail
+          echo 'PARENT_SURFACE_STEP=remigrate'
+          npm run db:migrate
+          npm run db:verify
+          psql "$DATABASE_URL" -v expected_state=applied -v phase=remigrate \
+            -f scripts/verify-parent-owned-schedule-surfaces.sql
+          npm run db:migrate:show
+      - name: Schedule regression
+        run: npx jest --runInBand src/schedules --passWithNoTests
+      - name: Database, RBAC, KVKK and audit-redaction regression
+        run: |
+          npm run test:database
+          npm run test:rbac
+          npm run test:kvkk
+          npm run test:audit-redaction
+      - name: Build
+        run: npm run build
