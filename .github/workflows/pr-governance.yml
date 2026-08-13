@@ -248,3 +248,37 @@ jobs:
             }
 
             if (failures.length) core.setFailed(failures.join("\n"));
+
+  thread-resolution:
+    name: PR Governance / Review Thread Resolution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate all review threads resolved
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pullNumber = context.payload.pull_request?.number;
+            if (!pullNumber) {
+              core.setFailed("Pull request event payload bulunamadı.");
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            if (pr.draft) {
+              core.notice("Draft PR: thread resolution ready_for_review olayında doğrulanacak.");
+              return;
+            }
+            const { data: threads } = await github.rest.pulls.listReviewThreads({
+              owner, repo, pull_number: pullNumber,
+            });
+            const openThreads = threads.filter((t) => {
+              if (t.isResolved === true) return false;
+              const first = t.comments && t.comments[0];
+              if (first && first.isResolved === false) return true;
+              if (first && first.isResolved === undefined && t.isResolved === undefined) return true;
+              return t.isResolved === false;
+            });
+            if (openThreads.length > 0) {
+              const ids = openThreads.map((t) => t.id || t.node_id).join(", ");
+              core.setFailed(`PR'da ${openThreads.length} çözülmemiş review thread var (${ids}). Merge öncesi tüm thread'ler resolve edilmeli.`);
+            }
