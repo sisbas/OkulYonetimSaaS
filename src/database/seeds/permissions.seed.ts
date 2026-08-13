@@ -248,6 +248,7 @@ export const ROLE_PERMISSION_SEED = {
     'attendance:report:read',
     'student:attendance:read',
     'student:enrollment:read',
+    'student:parent_contact:read',
     'student:kvkk:read',
   ],
   teacher_assistant: [
