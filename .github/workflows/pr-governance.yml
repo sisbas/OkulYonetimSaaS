@@ -268,17 +268,23 @@ jobs:
               core.notice("Draft PR: thread resolution ready_for_review olayında doğrulanacak.");
               return;
             }
-            const { data: threads } = await github.rest.pulls.listReviewThreads({
-              owner, repo, pull_number: pullNumber,
-            });
-            const openThreads = threads.filter((t) => {
-              if (t.isResolved === true) return false;
-              const first = t.comments && t.comments[0];
-              if (first && first.isResolved === false) return true;
-              if (first && first.isResolved === undefined && t.isResolved === undefined) return true;
-              return t.isResolved === false;
-            });
+            // Review thread'leri GraphQL ile çek (REST listReviewThreads bu Octokit
+            // sürümünde mevcut değil; GraphQL reviewThreads bağlantısı çalışır).
+            const result = await github.graphql(
+              `query($owner: String!, $repo: String!, $num: Int!) {
+                 repository(owner: $owner, name: $repo) {
+                   pullRequest(number: $num) {
+                     reviewThreads(first: 50) {
+                       nodes { id isResolved }
+                     }
+                   }
+                 }
+               }`,
+              { owner, repo, num: pullNumber }
+            );
+            const threads = result?.repository?.pullRequest?.reviewThreads?.nodes || [];
+            const openThreads = threads.filter((t) => t.isResolved !== true);
             if (openThreads.length > 0) {
-              const ids = openThreads.map((t) => t.id || t.node_id).join(", ");
+              const ids = openThreads.map((t) => t.id).join(", ");
               core.setFailed(`PR'da ${openThreads.length} çözülmemiş review thread var (${ids}). Merge öncesi tüm thread'ler resolve edilmeli.`);
             }
