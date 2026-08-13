@@ -41,11 +41,10 @@ import { UsersModule } from './users/users.module';
   ],
   providers: [
     SecurityAuditService,
-    // TenantScopeGuard APP_GUARD olarak kayıtlı: tüm route'lar için kiracı
-    // çözümlemesini (UUID formatı, header/token çakışması, eksik kiracı) zorunlu kılar.
-    // PermissionAuthenticationGuard ve PermissionGuard'tan ÖNCE çalışır; böylece
-    // yetkilendirme boş bir tenant bağlamı üzerinde asla değerlendirilmez.
-    { provide: APP_GUARD, useClass: TenantScopeGuard },
+    // TenantScopeGuard global APP_GUARD DEĞİL — yalnızca ilgili controller'larda
+    // @UseGuards(TenantScopeGuard) ile uygulanır (AuthGuard'tan SONRA çalışır).
+    // Global APP_GUARD yapmak, AuthGuard sıralamasını bozup unauthenticated
+    // isteklerin "Tenant resolution failed" yerine "Unauthorized" dönmesini engellerdi.
     { provide: APP_GUARD, useClass: PermissionAuthenticationGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
