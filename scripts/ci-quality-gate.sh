@@ -124,7 +124,10 @@ scan_sensitive_log_patterns() {
   local bearer_token_regex='bearer[[:space:]]+[A-Za-z0-9._~+/=-]{12,}'
   local email_value_regex='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
   local phone_value_regex='(\+90|0090|0)?[[:space:].-]?5[0-9]{2}[[:space:].-]?[0-9]{3}[[:space:].-]?[0-9]{2}[[:space:].-]?[0-9]{2}'
-  local field_key_regex='((parent|guardian)[_-]?(phone|email|name|contact)|message_body|guidance_note|rehberlik[_-]?notu)[^[:alnum:]_-]*[:=]'
+  # KVKK PII field key'leri. NOT: `parent_contact`/`student.parent_contact` RBAC
+  # permission/resource ADLARIDIR (PII field DEĞİL) -> false positive önlemek için
+  # `contact` tek başına eşleşmeden çıkarıldı; yalnızca gerçek PII field'ları taranır.
+  local field_key_regex='((parent|guardian)[_-]?(phone|email|name)|message_body|guidance_note|rehberlik[_-]?notu)[^[:alnum:]_-]*[:=]'
 
   : > "$report_file"
   printf 'file\tline\tcategory\n' >> "$report_file"
