@@ -11,9 +11,11 @@ import {
   Query,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { RequestContext, RequestWithContext } from '../common/context/request-context';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { LeaveDecisionStatus } from './leave-request.entity';
@@ -25,6 +27,8 @@ function getRequestContext(request: RequestWithContext): RequestContext {
   return request.context;
 }
 
+// Kiracı kapsamı zorunlu: isteğin sınırında kiracı izolasyonunu doğrular.
+@UseGuards(TenantScopeGuard)
 @Controller('leaves')
 export class LeaveController {
   constructor(private readonly leaves: LeaveService) {}

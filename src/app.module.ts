@@ -5,6 +5,9 @@ import { AppDataSource } from './database/data-source';
 import { AuthModule } from './auth/auth.module';
 import { SecurityAuditService } from './common/audit/security-audit.service';
 import { TenantContextMiddleware } from './common/context/tenant-context.middleware';
+// TenantScopeGuard: isteğin sınırında kiracı izolasyonunu zorunlu kılar.
+// Sadece global middleware (izin verici) değil, gerçek strict resolver devrede.
+import { TenantScopeGuard } from './common/tenant/tenant-scope.guard';
 import { PermissionAuthenticationGuard } from './common/guards/permission-authentication.guard';
 import { PermissionGuard } from './common/guards/permission.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
@@ -38,6 +41,11 @@ import { UsersModule } from './users/users.module';
   ],
   providers: [
     SecurityAuditService,
+    // TenantScopeGuard APP_GUARD olarak kayıtlı: tüm route'lar için kiracı
+    // çözümlemesini (UUID formatı, header/token çakışması, eksik kiracı) zorunlu kılar.
+    // PermissionAuthenticationGuard ve PermissionGuard'tan ÖNCE çalışır; böylece
+    // yetkilendirme boş bir tenant bağlamı üzerinde asla değerlendirilmez.
+    { provide: APP_GUARD, useClass: TenantScopeGuard },
     { provide: APP_GUARD, useClass: PermissionAuthenticationGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },

@@ -10,6 +10,42 @@ export function isTenantKey(key: string): boolean {
   return TENANT_KEYS.includes(key);
 }
 
+/**
+ * Tüm kiracı anahtarı alias'larını (tenantId, tenant_id, ...) bir kayıttan/gövdeden
+ * toplar. Çift alias ({tenantId, tenant_id}) çakışması gibi durumları yakalamak için
+ * kullanılır. Yalnızca TANIMLI (undefined/null olmayan) değerler döndürülür.
+ *
+ * `headerTenantId` ve `jwtTenantId` isteğe bağlıdır; istek çözümlemesinde başlık ve
+ * token alias'larını da aynı kontrol kümesine katmak için kullanılır.
+ */
+export function collectTenantKeyValues(input: {
+  body?: Record<string, unknown> | null;
+  headerTenantId?: string | undefined;
+  jwtTenantId?: string | undefined;
+}): string[] {
+  const values: string[] = [];
+  const pushIfDefined = (v: unknown) => {
+    if (v !== undefined && v !== null) values.push(String(v));
+  };
+  if (input.body) {
+    for (const key of TENANT_KEYS) pushIfDefined(input.body[key]);
+  }
+  pushIfDefined(input.headerTenantId);
+  pushIfDefined(input.jwtTenantId);
+  return values;
+}
+
+/**
+ * Verilen kiracı değerleri arasında çakışma (farklı kiracı id'leri aynı istekte
+ * bulunması) var mı kontrol eder. Tüm değerler aynıysa çakışma yoktur.
+ * Boş tek-elemanlı liste güvenlidir (çakışma yok).
+ */
+export function hasTenantKeyConflict(values: string[]): boolean {
+  if (values.length <= 1) return false;
+  const first = values[0];
+  return values.some((v) => v !== first);
+}
+
 /** Normalize a tenant column name (tenantId, tenant_id, etc.) to the requested column name. */
 export function normalizeTenantKey(key: string, target: TenantColumnName): TenantColumnName {
   if (key !== 'tenantId' && key !== 'tenant_id') {
@@ -56,9 +92,18 @@ export function assertNoCrossTenantTenantKey(
   resourceName = 'tenant-scoped-resource',
 ): void {
   if (!input) return;
-  const supplied = TENANT_KEYS.map((key) => input[key]).find((value) => value !== undefined);
-  if (supplied === undefined) return;
-  if (ctx.tenantId && supplied !== ctx.tenantId) {
+
+  // Yalnızca ilk tanımlı alias'ı kontrol etmek YETERSİZ. Tüm kiracı alias
+  // değerleri toplanır; aralarında çakışma (farklı kiracı id) varsa VEYA
+  // herhangi biri istek kiracısından farklıysa 403 reddedilir.
+  const values = collectTenantKeyValues({ body: input });
+  if (values.length === 0) return;
+
+  if (hasTenantKeyConflict(values)) {
+    throw new CrossTenantAccessError({ resourceName, expectedTenantId: ctx.tenantId });
+  }
+
+  if (ctx.tenantId && values[0] !== ctx.tenantId) {
     throw new CrossTenantAccessError({ resourceName, expectedTenantId: ctx.tenantId });
   }
 }

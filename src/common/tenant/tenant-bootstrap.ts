@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { NextFunction, Response } from 'express';
 import { RequestWithContext } from '../context/request-context';
 import { TenantResolutionError } from './tenant-scope.error';
+import { collectTenantKeyValues, hasTenantKeyConflict } from './tenant-query.helper';
 
 /**
  * Tenant identifier shape. Rejects obviously-malformed ids so a malformed or
@@ -64,25 +65,37 @@ export function resolveTenantContext(
 ): ResolvedTenantContext {
   const requireTenant = options.requireTenant ?? true;
   const validateFormat = options.validateFormat ?? true;
-  const headerTenantId = asStringHeader(req.header?.('x-tenant-id')) ?? undefined;
+
+  // Tüm kiracı alias'larını topla: 'x-tenant-id', 'tenant-id', 'tenantId'
+  // başlıkları (herhangi biri gönderilmiş olabilir) + JWT içindeki tenant.
+  // Sadece ilk değeri kontrol etmek yetersiz; çift alias
+  // ({tenantId: A, tenant_id: B}) sahtekarlığına karşı HEPSİ tek tek incelenir.
+  const headerCandidates: string[] = ['x-tenant-id', 'tenant-id', 'tenantId']
+    .map((name) => asStringHeader(req.header?.(name)) ?? undefined)
+    .filter((v): v is string => typeof v === 'string');
   const jwtTenantId = req.user?.tenantId;
 
+  // Format doğrulaması: tanımlı olan her alias geçerli bir UUID olmalı.
   if (validateFormat) {
-    if (headerTenantId && !isValidTenantId(headerTenantId)) {
-      throw new TenantResolutionError(`malformed x-tenant-id header`);
+    for (const v of headerCandidates) {
+      if (!isValidTenantId(v)) {
+        throw new TenantResolutionError(`malformed tenant id in request header`);
+      }
     }
     if (jwtTenantId && !isValidTenantId(jwtTenantId)) {
       throw new TenantResolutionError(`malformed token tenant_id`);
     }
   }
 
-  if (headerTenantId && jwtTenantId && headerTenantId !== jwtTenantId) {
-    throw new TenantResolutionError(
-      `x-tenant-id (${headerTenantId}) does not match token tenant_id (${jwtTenantId})`,
-      true,
-    );
+  // Çakışma tespiti: tanımlı tüm alias değerleri birbiriyle AYNI olmalı.
+  // Farklı değerler varsa (ör. başlık JWT ile çakışıyor) → 403 (mismatch).
+  const allValues = [...headerCandidates];
+  if (jwtTenantId) allValues.push(jwtTenantId);
+  if (hasTenantKeyConflict(allValues)) {
+    throw new TenantResolutionError(`conflicting tenant identifiers in request`, true);
   }
 
+  const headerTenantId = headerCandidates[0];
   const tenantId = jwtTenantId ?? headerTenantId;
   const source: ResolvedTenantContext['source'] = jwtTenantId ? 'jwt' : headerTenantId ? 'header' : 'bootstrap';
 

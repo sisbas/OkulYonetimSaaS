@@ -1,6 +1,6 @@
 import { RequestContext } from '../context/request-context';
 import { CrossTenantAccessError } from './tenant-scope.error';
-import { TENANT_KEYS } from './tenant-query.helper';
+import { collectTenantKeyValues, hasTenantKeyConflict } from './tenant-query.helper';
 
 /**
  * Centralized cross-tenant access detection. Any code path that reads or writes
@@ -38,9 +38,17 @@ export function isSameTenant(ctx: RequestContext, recordTenantId: string | undef
 }
 
 /**
- * Scan an arbitrary entity-like object for any tenant identifier key and assert
- * it equals the request tenant. Useful for defence-in-depth where the exact
- * tenant column name is unknown at compile time (e.g. generic row processors).
+ * Scan an arbitrary entity-like object for ALL tenant identifier keys
+ * (tenantId, tenant_id, ...) and assert every one of them equals the request
+ * tenant. This is defence-in-depth for generic row processors where the exact
+ * tenant column name is unknown at compile time.
+ *
+ * ÖNEMLİ: Yalnızca ilk tanımlı alias'ı kontrol etmek YETERSİZ. Örnek:
+ *   { tenantId: ctx.tenantId, tenant_id: foreignTenant }
+ * Burada `tenantId` eşleşir ama `tenant_id` yabancı kiracıya işaret eder.
+ * Tüm alias'lar toplanır; aralarında çakışma (farklı değer) varsa VEYA
+ * herhangi biri istek kiracısından farklıysa 403 (CrossTenantAccessError)
+ * fırlatılır.
  */
 export function assertNoForeignTenantInRecord(
   ctx: RequestContext,
@@ -48,7 +56,18 @@ export function assertNoForeignTenantInRecord(
   resourceName = 'tenant-scoped-resource',
 ): void {
   if (!record) return;
-  const found = TENANT_KEYS.map((key) => record[key]).find((value) => value !== undefined);
-  if (found === undefined) return;
-  assertSameTenant(ctx, String(found), resourceName);
+
+  // Tüm tanımlı kiracı alias değerlerini topla (tenantId, tenant_id, ...).
+  const values = collectTenantKeyValues({ body: record });
+
+  // Çift alias çakışması: {tenantId: A, tenant_id: B} → reddet.
+  if (hasTenantKeyConflict(values)) {
+    throw new CrossTenantAccessError({ resourceName, expectedTenantId: ctx.tenantId });
+  }
+
+  if (values.length === 0) return;
+
+  // Tek değer varsa (ya da hepsi aynıysa) istek kiracısıyla eşit mi kontrol et.
+  assertSameTenant(ctx, values[0], resourceName);
 }
+

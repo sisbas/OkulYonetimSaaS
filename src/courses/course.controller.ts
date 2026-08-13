@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 
 import { RequestContext, RequestWithContext } from '../common/context/request-context';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 import { CourseService } from './course.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { ListCoursesQueryDto } from './dto/list-courses-query.dto';
@@ -14,7 +15,8 @@ function getRequestContext(request: RequestWithContext): RequestContext {
   return request.context;
 }
 
-@UseGuards(AuthGuard('jwt'))
+// Kiracı kapsamı zorunlu: isteğin sınırında kiracı izolasyonunu doğrular.
+@UseGuards(AuthGuard('jwt'), TenantScopeGuard)
 @Controller('courses')
 export class CourseController {
   constructor(private readonly courses: CourseService) {}

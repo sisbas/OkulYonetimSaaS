@@ -257,4 +257,43 @@ describe('Tenant isolation hardening — penetration-style suite', () => {
       await expect(repo.findById(ctxB, 's1')).resolves.toMatchObject({ id: 's1', name: 'Victim' });
     });
   });
+
+  describe('Tenant-key alias conflict validation (P2 — double alias)', () => {
+    it('[PEN-29] resolveTenantContext: çift header alias çakışması (x-tenant-id=A, tenant-id=B) → 403', () => {
+      const req: any = {
+        header: (name: string) => (name === 'x-tenant-id' ? A : name === 'tenant-id' ? B : undefined),
+        user: undefined,
+      };
+      let thrown: any;
+      try {
+        resolveTenantContext(req);
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeInstanceOf(TenantResolutionError);
+      expect(thrown.mismatch).toBe(true);
+    });
+
+    it('[PEN-30] assertNoForeignTenantInRecord: {tenantId:A, tenant_id:B} çift alias → 403', () => {
+      expect(() => assertNoForeignTenantInRecord(ctxA, { tenantId: A, tenant_id: B }, 'branches')).toThrow(
+        CrossTenantAccessError,
+      );
+      // Aynı değerler (çakışma yok) → izin verilir.
+      expect(() => assertNoForeignTenantInRecord(ctxA, { tenantId: A, tenant_id: A }, 'branches')).not.toThrow();
+    });
+
+    it('[PEN-31] assertNoCrossTenantTenantKey: çift alias çakışması → 403', () => {
+      expect(() => assertNoCrossTenantTenantKey(ctxA, { tenantId: A, tenant_id: B }, 'branches')).toThrow(
+        CrossTenantAccessError,
+      );
+      // Sadece matching tek alias → izin verilir.
+      expect(() => assertNoCrossTenantTenantKey(ctxA, { tenant_id: A })).not.toThrow();
+      expect(() => assertNoCrossTenantTenantKey(ctxA, { tenantId: A })).not.toThrow();
+    });
+
+    it('[PEN-32] malformed header alias tekil olsa bile reddedilir', () => {
+      const req: any = { header: (name: string) => (name === 'tenant-id' ? MALFORMED : undefined) };
+      expect(() => resolveTenantContext(req)).toThrow(TenantResolutionError);
+    });
+  });
 });
