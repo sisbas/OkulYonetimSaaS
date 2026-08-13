@@ -145,6 +145,47 @@ describe('okul-03-audit-scope: genişletilmiş action tipleri politikası', () =
     ).toThrow(/result must be one of/);
   });
 
+  // P2 (PR #227): event adı bir sonucu kodluyorsa (ör. '.success' / '.failure'),
+  // result ile çelişemez. auth.login.success + result:'failure' gibi tutarsız
+  // metadata KVKK kayıt tutarlılığı gereği reddedilir.
+  function metadataWithResult(eventName: string, result: 'success' | 'failure') {
+    const common = {
+      schemaVersion: 1 as const,
+      tenantId: TENANT_ID,
+      actorUserId: null,
+      actorSessionId: SESSION_ID,
+      requestId: 'req-unit',
+      entityId: ENTITY_ID,
+    };
+    // Event ailesinin beklediği entityType + changedFields ile tutarlı metadata üret
+    // (aksi halde entityType/changedFields kontrolü result kontrolünden önce fırlatır).
+    switch (eventName) {
+      case 'notification.sent':
+        return { ...common, entityType: 'notification', changedFields: ['channel'], result };
+      case 'leave.approved.v1':
+        return { ...common, entityType: 'leave_request', changedFields: ['status'], result };
+      default:
+        return { ...common, entityType: 'auth', changedFields: ['failureReason'], result };
+    }
+  }
+
+  it.each([
+    ['auth.login.success', 'failure'],
+    ['auth.login.failure', 'success'],
+    ['auth.account_locked', 'success'],
+    ['notification.sent', 'failure'],
+  ] as const)('event ailesi ile çelişen result değerini reddeder: %s + %s', (eventName, badResult) => {
+    expect(() =>
+      validateTransactionalAuditMetadata(eventName, metadataWithResult(eventName, badResult as 'success' | 'failure')),
+    ).toThrow(/inconsistent audit metadata/);
+  });
+
+  it('event ailesi ile tutarlı result değerini kabul eder (auth.login.success + success)', () => {
+    expect(
+      validateTransactionalAuditMetadata('auth.login.success', metadataWithResult('auth.login.success', 'success')).action,
+    ).toBe('auth.login.success');
+  });
+
   it('KVKK dataprotection eventini redactionReceipt kanıtıyla kabul eder', () => {
     expect(validateTransactionalAuditMetadata('dataprotection.export.redacted', dataProtectionMetadata())).toEqual({
       tenantId: TENANT_ID,

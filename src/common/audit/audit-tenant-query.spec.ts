@@ -149,4 +149,25 @@ describe('okul-03-audit-scope: KVKK PII maskesi (okuma/ihraç anında)', () => {
     expect((results[0].row.metadataJson as Record<string, unknown>).parentPhone).toBe('[REDACTED]');
     expect((results[1].row.metadataJson as Record<string, unknown>).email).toBe('[REDACTED]');
   });
+
+  // P1 (PR #227): ihraç maskesine yeni eklenen yasaklı anahtarlar ham kalmamalı.
+  it.each([
+    'credential',
+    'setCookie',
+    'requestBody',
+    'healthDetail',
+    'healthInfo',
+    'leaveDetail',
+    'freeTextReason',
+  ])('redactAuditRowForExport yasaklı ihraç anahtarını maskeler: %s', (forbiddenKey) => {
+    // AUDIT_PII_KEYS kapsamına girdiğinden emin ol (regresyon koruması).
+    expect(AUDIT_PII_KEYS.has(forbiddenKey)).toBe(true);
+
+    const { row: redacted, receipt } = redactAuditRowForExport(
+      row({ action: 'dataprotection.export.redacted', metadataJson: { [forbiddenKey]: 'RAW-SENSITIVE-DATA' } }),
+    );
+    expect((redacted.metadataJson as Record<string, unknown>)[forbiddenKey]).toBe('[REDACTED]');
+    expect(receipt.redactedFieldCount).toBeGreaterThanOrEqual(1);
+    expect(receipt.strategy).toBe('full-redact');
+  });
 });

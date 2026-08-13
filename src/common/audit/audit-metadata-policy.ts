@@ -331,6 +331,24 @@ const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> 
   'notification.preferences.updated': NOTIFICATION_POLICY,
 };
 
+// Event adı, sonucun ne olması gerektiğini açıkça kodlayabilir (ör. '.success' /
+// '.failure' sonekleri ya da anlamsal olarak başarı/başarısızlık taşıyan
+// event'ler). Bu eşleştirme, event ailesi ile `result` arasında çelişkiyi
+// reddeder (ör. auth.login.success + result:'failure'). resultAllowlist yalnızca
+// izin verilen değer kümesini sınırlar; burada ise event'in anlamıyla tutarlı
+// olmayan result değerleri (KVKK — kayıt tutarlılığı) geri çevrilir.
+const EXPECTED_RESULT_BY_EVENT: Partial<Record<TransactionalAuditEventName, AuditResultValue>> = {
+  'auth.login.success': 'success',
+  'auth.login.failure': 'failure',
+  'auth.logout': 'success',
+  'auth.token_refreshed': 'success',
+  'auth.account_locked': 'failure',
+  'notification.sent': 'success',
+  'notification.failed': 'failure',
+  'leave.approved.v1': 'success',
+  'leave.rejected.v1': 'failure',
+};
+
 function assertKnownEventName(eventName: string): asserts eventName is TransactionalAuditEventName {
   if (!Object.prototype.hasOwnProperty.call(POLICY_BY_EVENT, eventName)) {
     throw new TypeError(`Unsupported transactional audit event: ${eventName}`);
@@ -457,6 +475,16 @@ export function validateTransactionalAuditMetadata<E extends TransactionalAuditE
   if (metadata.entityType !== policy.entityType) throw new TypeError(`entityType must be ${policy.entityType}`);
   if (typeof metadata.result !== 'string' || !policy.resultAllowlist.includes(metadata.result as AuditResultValue)) {
     throw new TypeError(`result must be one of: ${policy.resultAllowlist.join(', ')}`);
+  }
+
+  // P2 (PR #227): event adı bir sonucu açıkça kodluyorsa (ör. '.success' /
+  // '.failure' soneki), `result` ile çelişemez. Çelişkili metadata
+  // (auth.login.success + result:'failure') KVKK kayıt tutarlılığı gereği reddedilir.
+  const expectedResult = EXPECTED_RESULT_BY_EVENT[eventName];
+  if (expectedResult !== undefined && metadata.result !== expectedResult) {
+    throw new TypeError(
+      `inconsistent audit metadata: event '${eventName}' requires result '${expectedResult}' but received '${metadata.result}'`,
+    );
   }
 
   for (const forbidden of FORBIDDEN_AUDIT_METADATA_KEYS) {

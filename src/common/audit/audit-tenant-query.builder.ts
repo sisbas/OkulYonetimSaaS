@@ -47,6 +47,17 @@ export const AUDIT_PII_KEYS: ReadonlySet<string> = new Set([
   'healthNote',
   'medicalNote',
   'diagnosis',
+  // --- İhraç (export) sızıntı bulgusu (PR #227 P1): aşağıdaki yasaklı anahtarlar
+  // FORBIDDEN_AUDIT_METADATA_KEYS'te yer alıyordu ancak ihraç maskesine dahil
+  // değildi; bu nedenle export'ta ham (maskesiz) kalıyorlardı. KVKK kapsamında
+  // PII/hassas veri sızıntısını önlemek için ihraç maskesine ekleniyorlar.
+  'credential', // kimlik bilgisi / parola benzeri hassas değer
+  'setCookie', // oturum çerezi (session fixation / hijack riski)
+  'requestBody', // ham istek gövdesi (gövdede PII taşınabilir)
+  'healthDetail', // sağlık özel nitelikli kişisel veri
+  'healthInfo', // sağlık özel nitelikli kişisel veri
+  'leaveDetail', // izin/rapor detayı (sağlık/özel hayat)
+  'freeTextReason', // serbest metin gerekçe (özel hayatın gizliliği)
 ]);
 
 const MAX_LIMIT = 500;
