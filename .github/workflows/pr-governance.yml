@@ -283,7 +283,10 @@ jobs:
               { owner, repo, num: pullNumber }
             );
             const threads = result?.repository?.pullRequest?.reviewThreads?.nodes || [];
-            const openThreads = threads.filter((t) => t.isResolved !== true);
+            // Yalnızca GÜNCEL (outdated OLMAYAN) ve çözülmemiş thread'ler merge'i
+            // engeller — GitHub'ın required_review_thread_resolution kuralıyla uyumlu.
+            // Outdated thread'ler eski commit'lerden kalır, merge engeli oluşturmaz.
+            const openThreads = threads.filter((t) => t.isOutdated !== true && t.isResolved !== true);
             if (openThreads.length > 0) {
               const ids = openThreads.map((t) => t.id).join(", ");
               core.setFailed(`PR'da ${openThreads.length} çözülmemiş review thread var (${ids}). Merge öncesi tüm thread'ler resolve edilmeli.`);
