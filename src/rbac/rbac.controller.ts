@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { AuditAction } from '../common/decorators/audit-action.decorator';
 import { RequestWithContext } from '../common/context/request-context';
 import { RbacPolicyQueryDto } from './dto/rbac-policy-query.dto';
 import { RbacService } from './rbac.service';
@@ -40,6 +41,7 @@ export class RbacController {
   /** OKUL-01 ile eklenen yeni rolleri ve versiyonu döndürür. */
   @Get('okul-01/roles')
   @Permissions('role:read')
+  @AuditAction({ action: 'rbac.okul01_roles.list', resource: 'rbac.roles' })
   okul01Roles() {
     return {
       version: OKUL01_EXTENSION_VERSION,
@@ -50,6 +52,7 @@ export class RbacController {
   /** Tenant'a ait belirli bir rolü döndürür. */
   @Get('okul-01/roles/:roleId')
   @Permissions('role:read')
+  @AuditAction({ action: 'rbac.okul01_role.read', resource: 'rbac.roles' })
   async okul01Role(@Req() req: RequestWithContext, @Param('roleId') roleId: string) {
     return this.rbac.getTenantRole(req.user!, roleId);
   }
@@ -57,6 +60,7 @@ export class RbacController {
   /** Policy engine değerlendirme uç noktası (tenant izolasyonu dahil). */
   @Post('okul-01/evaluate')
   @Permissions('role:permission:read')
+  @AuditAction({ action: 'rbac.policy.evaluate', resource: 'rbac.policy' })
   evaluate(@Req() req: RequestWithContext, @Body() body: RbacPolicyQueryDto) {
     // linkedStudentIds güvenilir kaynaktan (req.user / JWT claim) gelir;
     // service katmanında aktörden okunur, gövdeden OKUNMAZ (cross-student leak

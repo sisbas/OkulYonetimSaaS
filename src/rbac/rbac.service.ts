@@ -31,7 +31,12 @@ export class RbacService {
     private readonly policy: RbacPolicyService,
   ) {}
 
-  /** Aktörün tenant'ına ait tüm rolleri (soft-delete hariç) döndürür. */
+  /**
+   * Aktörün tenant'ına ait tüm rolleri döndürür.
+   * Soft-delete (RbacRoleEntity.deletedAt) kayıtları TypeORM tarafından
+   * otomatik olarak (deleted_at IS NULL) filtrelenir; silinmiş roller asla
+   * dönmez.
+   */
   async listTenantRoles(actor: RequestUser): Promise<RbacRoleEntity[]> {
     this.assertTenantScope(actor);
     return this.roleRepository.find({

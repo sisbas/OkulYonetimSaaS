@@ -222,6 +222,53 @@ export const ROLE_PERMISSION_SEED = {
     'room:read',
     'time_slot:read',
   ],
+  // --- OKUL-01 yeni rolleri (permission matrix'inden türetildi) ---
+  // Rol -> izin eşlemesi, src/rbac/roles.extended.ts OKUL01_PERMISSION_MATRIX
+  // kaynağıyla tutarlı tutulur. Yalnızca `allow` (ve kvkkProtected olmayan)
+  // izinler eklenir; tüm permission code'ları PERMISSION_SEED içinde mevcuttur.
+  student: [
+    'dashboard:teacher_own_summary:read',
+    'schedule:own:read',
+    'attendance:own:read',
+    'leave:own:read',
+    'student:read',
+    'student:detail:read',
+    'student:enrollment:read',
+    'student:attendance:read',
+    'course:read',
+    'room:read',
+    'time_slot:read',
+    'student:kvkk:read',
+  ],
+  // Veli: kvkkProtected olmayan allow izinleri (parent_contact sahiplik ile,
+  // yalnızca bağlı öğrenci için). report.* izinleri tenant_admin'e aittir.
+  parent: [
+    'dashboard:read',
+    'schedule:read',
+    'attendance:report:read',
+    'student:attendance:read',
+    'student:enrollment:read',
+    'student:kvkk:read',
+  ],
+  teacher_assistant: [
+    'dashboard:teacher_own_summary:read',
+    'schedule:own:read',
+    'schedule:read',
+    'attendance:own:read',
+    'attendance:own:submit',
+    'attendance:record:update',
+    'attendance:read',
+    'leave:own:read',
+    'leave:create',
+    'student:group_students:read',
+    'student:read',
+    'student:detail:read',
+    'teacher:own:read',
+    'teacher:availability:read',
+    'course:read',
+    'room:read',
+    'time_slot:read',
+  ],
 } as const;
 
 export async function seedPermissions(): Promise<void> {
