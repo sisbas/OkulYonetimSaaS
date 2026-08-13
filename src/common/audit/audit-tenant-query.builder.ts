@@ -124,8 +124,13 @@ export function buildTenantScopedAuditQuery(query: TenantScopedAuditQuery): Buil
     const actionConditions: string[] = [];
     for (const filter of actions) {
       if (filter.endsWith('.*')) {
-        actionConditions.push(`action LIKE $${p}`);
-        params.push(`${filter.slice(0, -1)}%`);
+        // Aile ön eki içindeki PostgreSQL LIKE metakarakterlerini (% ve _)
+        // kaçışla: aksi halde 'auth%.*' -> 'auth%%' yanlış eşleşmelere,
+        // 'daily_operations.*' ise 'dailyXoperations.*' gibi adlarla eşleşir.
+        const family = filter.slice(0, -1);
+        const escaped = family.replace(/([%_\\])/g, '\\$1');
+        actionConditions.push(`action LIKE $${p} ESCAPE '\\'`);
+        params.push(`${escaped}%`);
         p += 1;
       } else if (filter !== '*') {
         actionConditions.push(`action = $${p}`);

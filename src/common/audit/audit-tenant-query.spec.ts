@@ -58,6 +58,20 @@ describe('okul-03-audit-scope: tenant-scoped audit filtreleme', () => {
     expect(params[1]).toBe('auth.%');
   });
 
+  // P2 (PR #227): aile ön eki içindeki PostgreSQL LIKE metakarakterleri (% ve _)
+  // kaçışlı + ESCAPE klauzlu olmalı; aksi halde yanlış eşleşmelere yol açar.
+  it("LIKE metakarakterlerini kaçışlar (auth%.* -> 'auth\\%%' ESCAPE)", () => {
+    const { sql, params } = buildTenantScopedAuditQuery({ tenantId: TENANT_A, actions: ['auth%.*'] });
+    expect(sql).toContain("action LIKE $2 ESCAPE '\\'");
+    expect(params[1]).toBe('auth\\%.%');
+  });
+
+  it("alt çizgi (_) LIKE metakarakterini kaçışlar (daily_operations.*)", () => {
+    const { sql, params } = buildTenantScopedAuditQuery({ tenantId: TENANT_A, actions: ['daily_operations.*'] });
+    expect(sql).toContain("action LIKE $2 ESCAPE '\\'");
+    expect(params[1]).toBe('daily\\_operations.%');
+  });
+
   it("'*' action filtresi ek bir action koşulu üretmez", () => {
     const { sql } = buildTenantScopedAuditQuery({ tenantId: TENANT_A, actions: ['*'] });
     expect(sql).not.toContain('action =');
