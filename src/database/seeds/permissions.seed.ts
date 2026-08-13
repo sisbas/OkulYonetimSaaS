@@ -291,6 +291,13 @@ export async function seedPermissions(): Promise<void> {
         );
       }
       for (const roleCode of Object.keys(ROLE_PERMISSION_SEED)) {
+        // Soft-delete edilmiş aynı isimli rolü geri getir (unique (tenant_id,name)
+        // constraint soft-delete'lı satırla çakışmasın diye). Böylece @DeleteDateColumn
+        // eklediğimizde seed idempotent kalır.
+        await manager.query(
+          `UPDATE roles SET deleted_at = NULL, description = $3, is_system_role = true, updated_at = now() WHERE tenant_id = $1 AND name = $2 AND deleted_at IS NOT NULL`,
+          [tenantId, roleCode, `${roleCode} default role`],
+        );
         await manager.query(
           `INSERT INTO roles (tenant_id, name, description, is_system_role) VALUES ($1, $2, $3, true) ON CONFLICT (tenant_id, name) DO UPDATE SET description = EXCLUDED.description, is_system_role = true, updated_at = now()`,
           [tenantId, roleCode, `${roleCode} default role`],
@@ -310,7 +317,7 @@ export async function seedPermissions(): Promise<void> {
       }
     });
     console.log(`Permissions upserted: ${PERMISSION_SEED.length}`);
-    console.log('Roles ensured: 3');
+    console.log(`Roles ensured: ${Object.keys(ROLE_PERMISSION_SEED).length}`);
     console.log(`tenant_admin permissions assigned: ${ROLE_PERMISSION_SEED.tenant_admin.length}`);
     console.log(`operations_manager permissions assigned: ${ROLE_PERMISSION_SEED.operations_manager.length}`);
     console.log(`teacher permissions assigned: ${ROLE_PERMISSION_SEED.teacher.length}`);
