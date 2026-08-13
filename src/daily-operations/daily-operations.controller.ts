@@ -11,10 +11,12 @@ import {
   Query,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 
 import { RequestContext, RequestWithContext } from '../common/context/request-context';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 import { DailyOperationsService } from './daily-operations.service';
 import { CreateSubstitutionAssignmentDto } from './dto/create-substitution-assignment.dto';
 
@@ -24,6 +26,8 @@ function getRequestContext(request: RequestWithContext): RequestContext {
   return request.context;
 }
 
+// Kiracı kapsamı zorunlu: isteğin sınırında kiracı izolasyonunu doğrular.
+@UseGuards(TenantScopeGuard)
 @Controller('daily-operations')
 export class DailyOperationsQueueController {
   constructor(private readonly dailyOperations: DailyOperationsService) {}
@@ -39,6 +43,8 @@ export class DailyOperationsQueueController {
   }
 }
 
+// Kiracı kapsamı zorunlu: isteğin sınırında kiracı izolasyonunu doğrular.
+@UseGuards(TenantScopeGuard)
 @Controller('daily-operations/leaves')
 export class DailyOperationsController {
   constructor(private readonly dailyOperations: DailyOperationsService) {}

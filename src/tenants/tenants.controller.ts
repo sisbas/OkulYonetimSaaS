@@ -2,8 +2,10 @@ import { Controller, Get, UseGuards, NotFoundException, Param, Req } from '@nest
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { AuthGuard } from '@nestjs/passport';
 import { RequestWithContext } from '../common/context/request-context';
+import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 
-@UseGuards(AuthGuard('jwt'))
+// Kiracı kapsamı zorunlu: isteğin sınırında kiracı izolasyonunu doğrular.
+@UseGuards(AuthGuard('jwt'), TenantScopeGuard)
 @Controller('tenants')
 export class TenantsController {
   @Get(':tenantId')

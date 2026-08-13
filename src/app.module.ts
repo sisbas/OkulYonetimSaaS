@@ -5,6 +5,9 @@ import { AppDataSource } from './database/data-source';
 import { AuthModule } from './auth/auth.module';
 import { SecurityAuditService } from './common/audit/security-audit.service';
 import { TenantContextMiddleware } from './common/context/tenant-context.middleware';
+// TenantScopeGuard: isteğin sınırında kiracı izolasyonunu zorunlu kılar.
+// Sadece global middleware (izin verici) değil, gerçek strict resolver devrede.
+import { TenantScopeGuard } from './common/tenant/tenant-scope.guard';
 import { PermissionAuthenticationGuard } from './common/guards/permission-authentication.guard';
 import { PermissionGuard } from './common/guards/permission.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
@@ -38,6 +41,10 @@ import { UsersModule } from './users/users.module';
   ],
   providers: [
     SecurityAuditService,
+    // TenantScopeGuard global APP_GUARD DEĞİL — yalnızca ilgili controller'larda
+    // @UseGuards(TenantScopeGuard) ile uygulanır (AuthGuard'tan SONRA çalışır).
+    // Global APP_GUARD yapmak, AuthGuard sıralamasını bozup unauthenticated
+    // isteklerin "Tenant resolution failed" yerine "Unauthorized" dönmesini engellerdi.
     { provide: APP_GUARD, useClass: PermissionAuthenticationGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
