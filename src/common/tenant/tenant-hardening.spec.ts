@@ -258,6 +258,36 @@ describe('Tenant isolation hardening — penetration-style suite', () => {
     });
   });
 
+  describe('CodeRabbit PR#225 — fail-closed hardening', () => {
+    it('[CR-1] ctx.tenantId yoksa assertNoCrossTenantTenantKey 403 fırlatır (fail-closed)', () => {
+      const noScope: RequestContext = { requestId: 'x' };
+      expect(() =>
+        assertNoCrossTenantTenantKey(noScope, { tenant_id: B }, 'branches'),
+      ).toThrow(CrossTenantAccessError);
+      // Foreign bir gövde olsa bile tenantId olmadan fail-open olmamalı.
+      expect(() => assertNoCrossTenantTenantKey(noScope, { tenant_id: A }, 'branches')).toThrow(
+        CrossTenantAccessError,
+      );
+    });
+
+    it('[CR-2] null/undefined tenant damgası "geçersiz/foreign" sayılır → 403', () => {
+      // null damga: {tenant_id: null} → sentinel → foreign → denial.
+      expect(() => assertNoCrossTenantTenantKey(ctxA, { tenant_id: null }, 'branches')).toThrow(
+        CrossTenantAccessError,
+      );
+      // çift alias: tenantId eşleşse bile tenant_id null → yine reddedilir.
+      expect(() =>
+        assertNoCrossTenantTenantKey(ctxA, { tenantId: A, tenant_id: null }, 'branches'),
+      ).toThrow(CrossTenantAccessError);
+      // Aynı koruma assertNoForeignTenantInRecord için de geçerli.
+      expect(() => assertNoForeignTenantInRecord(ctxA, { tenant_id: null }, 'branches')).toThrow(
+        CrossTenantAccessError,
+      );
+      // Mevcut olmayan (absent) anahtar null sayılmaz: yalnız tenantId gelirse izin verilir.
+      expect(() => assertNoCrossTenantTenantKey(ctxA, { tenantId: A })).not.toThrow();
+    });
+  });
+
   describe('Tenant-key alias conflict validation (P2 — double alias)', () => {
     it('[PEN-29] resolveTenantContext: çift header alias çakışması (x-tenant-id=A, tenant-id=B) → 403', () => {
       const req: any = {

@@ -6,6 +6,14 @@ export type TenantColumnName = 'tenantId' | 'tenant_id';
 
 export const TENANT_KEYS: ReadonlyArray<string> = ['tenantId', 'tenant_id'];
 
+/**
+ * Geçersiz/tanımsız (null veya undefined) kiracı damgasını temsil eden sentinel.
+ * Gerçek kiracı id'leri UUID formatında olduğundan bu değer hiçbir gerçek id
+ * ile eşleşmez; dolayısıyla çağrı noktasında "yabancı/geçersiz tenant" olarak
+ * reddedilmesini sağlar (fail-closed).
+ */
+export const FOREIGN_TENANT_SENTINEL = '__tenant_unstamped__';
+
 export function isTenantKey(key: string): boolean {
   return TENANT_KEYS.includes(key);
 }
@@ -13,10 +21,18 @@ export function isTenantKey(key: string): boolean {
 /**
  * Tüm kiracı anahtarı alias'larını (tenantId, tenant_id, ...) bir kayıttan/gövdeden
  * toplar. Çift alias ({tenantId, tenant_id}) çakışması gibi durumları yakalamak için
- * kullanılır. Yalnızca TANIMLI (undefined/null olmayan) değerler döndürülür.
+ * kullanılır.
+ *
+ * ÖNEMLİ (KVKK / fail-closed): Gövdedeki bir kiracı anahtarı null veya undefined
+ * ise bu "geçersiz/tanımsız damga" kabul edilir ve FOREIGN_TENANT_SENTINEL ile
+ * işaretlenir. Böylece çağrı noktası (assertNoCrossTenantTenantKey /
+ * assertNoForeignTenantInRecord) bu durumu yabancı/geçersiz tenant sayıp 403
+ * üretir; boş liste döndürüp sessizce geçmek (fail-open) engellenir.
  *
  * `headerTenantId` ve `jwtTenantId` isteğe bağlıdır; istek çözümlemesinde başlık ve
- * token alias'larını da aynı kontrol kümesine katmak için kullanılır.
+ * token alias'larını da aynı kontrol kümesine katmak için kullanılır. Bunlar
+ * çözümleme katmanında (tenant-bootstrap) zaten doğrulandığından yalnızca
+ * tanımlı değerler eklenir.
  */
 export function collectTenantKeyValues(input: {
   body?: Record<string, unknown> | null;
@@ -24,12 +40,26 @@ export function collectTenantKeyValues(input: {
   jwtTenantId?: string | undefined;
 }): string[] {
   const values: string[] = [];
+  // Gövde içindeki null/undefined kiracı damgasını sentinel ile işaretle.
+  // Yalnızca GÖVDEDE MEVCUT olan anahtarlar dikkate alınır; hiç gönderilmemiş
+  // (absent) anahtarlar atlanır (ör. yalnızca tenant_id geldiğinde tenantId
+  // yok sayılır). Mevcut ama null/undefined olan damga ise "geçersiz/foreign"
+  // kabul edilir ve FOREIGN_TENANT_SENTINEL ile işaretlenir.
+  if (input.body) {
+    for (const key of TENANT_KEYS) {
+      if (key in input.body) {
+        const v = input.body[key];
+        if (v === undefined || v === null) {
+          values.push(FOREIGN_TENANT_SENTINEL);
+        } else {
+          values.push(String(v));
+        }
+      }
+    }
+  }
   const pushIfDefined = (v: unknown) => {
     if (v !== undefined && v !== null) values.push(String(v));
   };
-  if (input.body) {
-    for (const key of TENANT_KEYS) pushIfDefined(input.body[key]);
-  }
   pushIfDefined(input.headerTenantId);
   pushIfDefined(input.jwtTenantId);
   return values;
@@ -93,9 +123,17 @@ export function assertNoCrossTenantTenantKey(
 ): void {
   if (!input) return;
 
+  // Kapsam (tenantId) yoksa isteğin hangi kiracıya ait olduğu belirsizdir.
+  // Fail-open yerine fail-closed: kapsam çözümlenemediği için 403 (cross-tenant)
+  // üretilir (KVKK: PII sızıntısını önlemek için varsayılan olarak reddet).
+  if (!ctx.tenantId) {
+    throw new CrossTenantAccessError({ resourceName, expectedTenantId: ctx.tenantId });
+  }
+
   // Yalnızca ilk tanımlı alias'ı kontrol etmek YETERSİZ. Tüm kiracı alias
   // değerleri toplanır; aralarında çakışma (farklı kiracı id) varsa VEYA
-  // herhangi biri istek kiracısından farklıysa 403 reddedilir.
+  // herhangi biri istek kiracısından farklıysa (ya da null/undefined damga
+  // FOREIGN_TENANT_SENTINEL ile işaretlendiyse) 403 reddedilir.
   const values = collectTenantKeyValues({ body: input });
   if (values.length === 0) return;
 
@@ -103,7 +141,10 @@ export function assertNoCrossTenantTenantKey(
     throw new CrossTenantAccessError({ resourceName, expectedTenantId: ctx.tenantId });
   }
 
-  if (ctx.tenantId && values[0] !== ctx.tenantId) {
+  // Tek değer (veya hepsi aynı) olsa bile istek kiracısıyla eşleşmeli.
+  // FOREIGN_TENANT_SENTINEL (null/undefined damga) hiçbir gerçek id ile
+  // eşleşmeyeceğinden burada otomatik olarak reddedilir.
+  if (values[0] !== ctx.tenantId) {
     throw new CrossTenantAccessError({ resourceName, expectedTenantId: ctx.tenantId });
   }
 }
