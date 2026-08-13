@@ -291,3 +291,5 @@ jobs:
               const ids = openThreads.map((t) => t.id).join(", ");
               core.setFailed(`PR'da ${openThreads.length} çözülmemiş review thread var (${ids}). Merge öncesi tüm thread'ler resolve edilmeli.`);
             }
+
+# OKUL-03 (#227): thread-resolution job isOutdated ile eski thread'leri merge engeli saymaz.
