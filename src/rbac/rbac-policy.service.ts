@@ -45,7 +45,13 @@ export class RbacPolicyService {
    *   5) aksi halde -> 200 (allow)
    */
   decide(input: RbacPolicyInput): RbacPolicyDecision {
-    const { roleIds, permissions, actorTenantId, targetTenantId, permission, resource } = input;
+    const { actorTenantId, targetTenantId, permission, resource } = input;
+
+    // Savunma: güvenilmeyen/eksik input (undefined/null roleIds ya da
+    // permissions) normalize edilir. Çökme (TypeError) yerine fail-closed
+    // 403 üretilir (T8 — Major coderabbit).
+    const roleIds = Array.isArray(input.roleIds) ? (input.roleIds as SystemRole[]) : [];
+    const permissions = Array.isArray(input.permissions) ? (input.permissions as string[]) : [];
 
     // 1) Tenant izolasyonu — aktör başka tenant'ın kaynağına erişemez.
     if (targetTenantId != null && targetTenantId !== actorTenantId) {

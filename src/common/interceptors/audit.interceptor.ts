@@ -22,6 +22,10 @@ const SENSITIVE_KEY_PATTERNS = [
   'counselingnote',
   'guidancenote',
   'sensitivecounselingnote',
+  // Öğrenciye bağlı doğrudan tanımlayıcılar — RBAC policy evaluate gövdesinde
+  // (targetStudentId) taşınabilir; audit log'unda maskelenmeli (OKUL-01 #228).
+  'studentid',
+  'targetstudentid',
 ] as const;
 
 function normalizeKey(key: string): string {

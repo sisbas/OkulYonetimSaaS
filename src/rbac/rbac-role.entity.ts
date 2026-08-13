@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   Index,
   PrimaryGeneratedColumn,
@@ -39,4 +40,10 @@ export class RbacRoleEntity {
 
   @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
   updatedAt: Date;
+
+  // Soft-delete: silinmiş roller TypeORM tarafından find/findOne sorgularında
+  // otomatik olarak (deleted_at IS NULL) filtrelenir; listTenantRoles ve
+  // getTenantRole soft-deleted kayıtları asla döndürmez.
+  @DeleteDateColumn({ type: 'timestamptz', name: 'deleted_at', nullable: true })
+  deletedAt: Date | null;
 }

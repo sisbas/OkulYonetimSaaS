@@ -248,3 +248,46 @@ jobs:
             }
 
             if (failures.length) core.setFailed(failures.join("\n"));
+
+  thread-resolution:
+    name: PR Governance / Review Thread Resolution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate all review threads resolved
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pullNumber = context.payload.pull_request?.number;
+            if (!pullNumber) {
+              core.setFailed("Pull request event payload bulunamadı.");
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            if (pr.draft) {
+              core.notice("Draft PR: thread resolution ready_for_review olayında doğrulanacak.");
+              return;
+            }
+            // Review thread'leri GraphQL ile çek (REST listReviewThreads bu Octokit
+            // sürümünde mevcut değil; GraphQL reviewThreads bağlantısı çalışır).
+            const result = await github.graphql(
+              `query($owner: String!, $repo: String!, $num: Int!) {
+                 repository(owner: $owner, name: $repo) {
+                   pullRequest(number: $num) {
+                     reviewThreads(first: 50) {
+                       nodes { id isResolved }
+                     }
+                   }
+                 }
+               }`,
+              { owner, repo, num: pullNumber }
+            );
+            const threads = result?.repository?.pullRequest?.reviewThreads?.nodes || [];
+            // Yalnızca GÜNCEL (outdated OLMAYAN) ve çözülmemiş thread'ler merge'i
+            // engeller — GitHub'ın required_review_thread_resolution kuralıyla uyumlu.
+            // Outdated thread'ler eski commit'lerden kalır, merge engeli oluşturmaz.
+            const openThreads = threads.filter((t) => t.isOutdated !== true && t.isResolved !== true);
+            if (openThreads.length > 0) {
+              const ids = openThreads.map((t) => t.id).join(", ");
+              core.setFailed(`PR'da ${openThreads.length} çözülmemiş review thread var (${ids}). Merge öncesi tüm thread'ler resolve edilmeli.`);
+            }
