@@ -31,6 +31,19 @@ export const ALL_SYSTEM_ROLES: readonly SystemRole[] = [...PHASE_1_ROLES, ...OKU
 
 export const OKUL01_EXTENSION_VERSION = 'okul-01-v1';
 
+/**
+ * Veli (parent) rolünün öğrenci kaydına eriştiği, ancak yalnızca kendi
+ * çocuğuna (linked student) ait olması gereken izinler. Başka öğrencinin
+ * kaydına erişim denemesi cross-student leak olarak 403 ile engellenir.
+ * KVKK: bu izinler öğrenci PII'sine dokunur; sahiplik zorunludur.
+ */
+export const PARENT_STUDENT_OWNERSHIP_PERMISSIONS: readonly string[] = [
+  'student:parent_contact:read',
+  'student:attendance:read',
+  'student:enrollment:read',
+];
+
+
 /** Hangi rollerin KVKK kapsamında PII (kişisel veri) taşıyabileceği. */
 export const KVKK_SUBJECT_ROLES: readonly SystemRole[] = ['student', 'parent'];
 

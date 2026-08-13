@@ -22,7 +22,9 @@ describe('OKUL-01 RbacService — tenant izolasyonu ve policy sarmalama', () => 
   };
 
   const policy = new RbacPolicyService();
-  const actor = (over: Partial<RequestUser> = {}): RequestUser => ({
+  const actor = (
+    over: Partial<RequestUser> & { linkedStudentIds?: readonly string[] | null } = {},
+  ): RequestUser => ({
     userId: 'u-1',
     tenantId: 'tenant-a',
     roleIds: ['student'],
@@ -83,5 +85,106 @@ describe('OKUL-01 RbacService — tenant izolasyonu ve policy sarmalama', () => 
     });
     expect(crossTenant.allowed).toBe(false);
     expect(crossTenant.reasonCode).toBe('tenant_isolation_breach');
+  });
+
+  // --- SECURITY (KRİTİK) regression: malformed actor (permissions undefined) ---
+  it('resolveEffectivePermissions: permissions undefined iken çökmez', () => {
+    const service = new RbacService(makeRepo(), policy);
+    // Güvenilmeyen aktör verisi normalize edilir; tanımsız permissions [] olur.
+    expect(() =>
+      service.resolveEffectivePermissions(actor({ roleIds: ['student'] as SystemRole[], permissions: undefined as unknown as string[] })),
+    ).not.toThrow();
+  });
+
+  it('evaluate: malformed actor (permissions undefined) 403 döndürür, çökmez', async () => {
+    const repo = makeRepo();
+    const service = new RbacService(repo, policy);
+    const decision = await service.evaluate(
+      actor({ roleIds: ['student'] as SystemRole[], permissions: undefined as unknown as string[] }),
+      { permission: 'student:read', resource: 'student', targetTenantId: 'tenant-a' },
+    );
+    // Crash yerine fail-closed 403.
+    expect(decision.allowed).toBe(false);
+    expect(decision.statusCode).toBe(403);
+  });
+
+  it('evaluate: geçersiz roleId (isSystemRole dışı) filtrelenir', async () => {
+    const repo = makeRepo();
+    const service = new RbacService(repo, policy);
+    // Bilinmeyen rol, isSystemRole ile elenir; student:read izni permissions'ta yok -> 403.
+    const decision = await service.evaluate(
+      actor({ roleIds: ['not_a_real_role'] as unknown as SystemRole[], permissions: [] }),
+      { permission: 'student:read', resource: 'student', targetTenantId: 'tenant-a' },
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.statusCode).toBe(403);
+  });
+
+  // --- SECURITY (KRİTİK): Veli -> öğrenci sahiplik (cross-student leak) ---
+  describe('Veli sahiplik (parent-to-student ownership)', () => {
+    const parentActor = (linkedStudentIds: readonly string[] = ['s-1']) =>
+      actor({
+        roleIds: ['parent'] as SystemRole[],
+        permissions: [
+          'student:parent_contact:read',
+          'student:attendance:read',
+          'student:enrollment:read',
+        ],
+        linkedStudentIds,
+      });
+
+    it('veli kendi çocuğunun parent_contact kaydını görebilir', async () => {
+      const service = new RbacService(makeRepo(), policy);
+      const decision = await service.evaluate(parentActor(['s-1']), {
+        permission: 'student:parent_contact:read',
+        resource: 'student.parent_contact',
+        targetStudentId: 's-1',
+      });
+      expect(decision.allowed).toBe(true);
+    });
+
+    it('veli BAŞKA öğrencinin parent_contact kaydını GÖREMEZ (cross_student_leak)', async () => {
+      const service = new RbacService(makeRepo(), policy);
+      const decision = await service.evaluate(parentActor(['s-1']), {
+        permission: 'student:parent_contact:read',
+        resource: 'student.parent_contact',
+        targetStudentId: 's-2',
+      });
+      expect(decision.allowed).toBe(false);
+      expect(decision.statusCode).toBe(403);
+      expect(decision.reasonCode).toBe('cross_student_leak');
+    });
+
+    it('veli linkedStudentIds boşken erişemez (cross_student_leak)', async () => {
+      const service = new RbacService(makeRepo(), policy);
+      const decision = await service.evaluate(parentActor([]), {
+        permission: 'student:attendance:read',
+        resource: 'student.attendance',
+        targetStudentId: 's-9',
+      });
+      expect(decision.allowed).toBe(false);
+      expect(decision.statusCode).toBe(403);
+      expect(decision.reasonCode).toBe('cross_student_leak');
+    });
+
+    it('veli kendi çocuğunun attendance kaydını görebilir', async () => {
+      const service = new RbacService(makeRepo(), policy);
+      const decision = await service.evaluate(parentActor(['s-1']), {
+        permission: 'student:attendance:read',
+        resource: 'student.attendance',
+        targetStudentId: 's-1',
+      });
+      expect(decision.allowed).toBe(true);
+    });
+
+    it('veli kendi çocuğunun enrollment kaydını görebilir', async () => {
+      const service = new RbacService(makeRepo(), policy);
+      const decision = await service.evaluate(parentActor(['s-1']), {
+        permission: 'student:enrollment:read',
+        resource: 'student.enrollment',
+        targetStudentId: 's-1',
+      });
+      expect(decision.allowed).toBe(true);
+    });
   });
 });

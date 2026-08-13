@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { RequestWithContext } from '../common/context/request-context';
@@ -13,7 +13,13 @@ import { PERMISSION_SEED } from '../database/seeds/permissions.seed';
  * Mevcut `/rbac/permissions` ve `/rbac/roles` uç noktaları korunur; yeni
  * uç noktalar OKUL-01 rolleri ve policy engine sorgusu için eklenir.
  * Tüm uç noktalarda tenant izolasyonu RbacService katmanında zorlanır.
+ *
+ * Güvenlik: targetTenantId YALNIZCA istek gövdesinden (body) alınır; query
+ * parametresi ile çakışma olmaz (tek kaynak). Veli sahiplik kontrolü için
+ * linkedStudentIds GÜVENİLİR kaynaktan (JWT claim / req.user) gelir, asla
+ * istek gövdesinden okunmaz (başka öğrenciye erişim sahteciliği engellenir).
  */
+
 @UseGuards(AuthGuard('jwt'))
 @Controller('rbac')
 export class RbacController {
@@ -51,12 +57,17 @@ export class RbacController {
   /** Policy engine değerlendirme uç noktası (tenant izolasyonu dahil). */
   @Post('okul-01/evaluate')
   @Permissions('role:permission:read')
-  evaluate(@Req() req: RequestWithContext, @Body() body: RbacPolicyQueryDto, @Query('targetTenantId') targetTenantId?: string) {
+  evaluate(@Req() req: RequestWithContext, @Body() body: RbacPolicyQueryDto) {
+    // linkedStudentIds güvenilir kaynaktan (req.user / JWT claim) gelir;
+    // service katmanında aktörden okunur, gövdeden OKUNMAZ (cross-student leak
+    // sahteciliği riski).
     return this.rbac.evaluate(req.user!, {
       permission: body.permission,
       resource: body.resource,
       action: body.action,
-      targetTenantId: targetTenantId ?? body.targetTenantId,
+      // targetTenantId tek kaynak: istek gövdesi (query parametresi yok).
+      targetTenantId: body.targetTenantId,
+      targetStudentId: body.targetStudentId,
     });
   }
 }

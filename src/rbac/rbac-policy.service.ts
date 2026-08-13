@@ -3,7 +3,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   isKvkkSubjectRole,
   kvkkFieldCategoryForResource,
+  OKUL01_EXTENDED_ROLES,
   OKUL01_PERMISSION_MATRIX,
+  PARENT_STUDENT_OWNERSHIP_PERMISSIONS,
   RolePermissionMapping,
   SystemRole,
 } from './roles.extended';
@@ -47,7 +49,7 @@ export class RbacPolicyService {
 
     // 1) Tenant izolasyonu — aktör başka tenant'ın kaynağına erişemez.
     if (targetTenantId != null && targetTenantId !== actorTenantId) {
-      return this.deny({
+      return this.denyWithLog({
         permission,
         resource,
         auditRequired: true,
@@ -60,12 +62,39 @@ export class RbacPolicyService {
 
     const matrix = this.matrixForRoles(roleIds);
 
+    // 1b) Veli (parent) sahiplik kontrolü — cross-student leak engeli.
+    //     Veli yalnızca kendi çocuğunun kaydına (linkedStudentIds) erişebilir.
+    //     Bu, tenant izolasyonundan BAĞIMSIZDIR; aynı tenant içinde dahi başka
+    //     öğrenci kaydına erişim 403 ile engellenir.
+    if (this.requiresOwnershipCheck(roleIds, permission, targetTenantId, input.targetStudentId)) {
+      const linkedStudentIds = input.linkedStudentIds ?? [];
+      const targetStudentId = input.targetStudentId ?? null;
+      // Sahiplik kontrolü yapılması gereken bir izin ama aktörün bağlı
+      // öğrencisi yoksa veya hedef öğrenci bağlı listeye dahil değilse -> 403.
+      if (
+        linkedStudentIds.length === 0 ||
+        targetStudentId == null ||
+        !linkedStudentIds.includes(targetStudentId)
+      ) {
+        return this.denyWithLog({
+          permission,
+          resource,
+          auditRequired: true,
+          denyState: 'forbidden_403',
+          reasonCode: 'cross_student_leak',
+          tenantId: actorTenantId,
+          // KVKK: matchedRole PII değildir (rol adı); güvenle loglanır.
+          matchedRole: roleIds.find((role) => role === 'parent') ?? null,
+        });
+      }
+    }
+
     // 2) Açık red (explicit deny) — matrix'teki deny kaydı her şeyi bastırır.
     const explicitDeny = matrix.find(
       (mapping) => mapping.permission === permission && mapping.effect === 'deny',
     );
     if (explicitDeny) {
-      return this.deny({
+      return this.denyWithLog({
         permission,
         resource,
         auditRequired: explicitDeny.auditRequired,
@@ -89,7 +118,7 @@ export class RbacPolicyService {
       // KVKK öznesi rol, açık ve KVKK-korumasız bir allow kaydı olmadan
       // hassas PII alanına erişemez.
       if (kvkkSubject && !hasExplicitAllow) {
-        return this.deny({
+        return this.denyWithLog({
           permission,
           resource,
           auditRequired: true,
@@ -104,7 +133,7 @@ export class RbacPolicyService {
     // 4) Efektif izin kontrolü (DB'den çözülen izin kümesi).
     const hasPermission = (permissions as string[]).includes(permission);
     if (!hasPermission) {
-      return this.deny({
+      return this.denyWithLog({
         permission,
         resource,
         auditRequired: false,
@@ -146,8 +175,54 @@ export class RbacPolicyService {
 
   /** Matrix'te tanımlı yeni rollerin tümünü döndürür (katalog sözleşmesi). */
   listExtendedRoles(): SystemRole[] {
-    return OKUL01_PERMISSION_MATRIX.map((m) => m.role)
-      .filter((role, index, all) => all.indexOf(role) === index) as SystemRole[];
+    // OKUL-01 katalog sözleşmesi: tanımlı extended rol sabitini döndürür.
+    // (Matrix'ten türetmeye gerek yok; sabit kaynak doğrultu tutarlıdır.)
+    return [...OKUL01_EXTENDED_ROLES];
+  }
+
+  /**
+   * Bir izin için veli sahiplik (cross-student) kontrolü gerekip gerekmediği.
+   * Yalnızca veli (parent) rolü, sahiplik kapsamlı izin ve BİR HEDEF ÖĞRENCİ
+   * (targetStudentId) belirtildiğinde tetiklenir. targetStudentId yoksa genel
+   * yetenek (capability) kontrolüdür; matrix'teki allow geçerlidir, sahiplik
+   * aranmaz. tenant seviyesi erişimde (targetTenantId) de atlanır.
+   */
+  private requiresOwnershipCheck(
+    roleIds: SystemRole[],
+    permission: string,
+    targetTenantId?: string | null,
+    targetStudentId?: string | null,
+  ): boolean {
+    if (targetTenantId != null) return false; // tenant seviyesi erişim; sahiplik ayrı ele alınır
+    if (targetStudentId == null) return false; // hedef öğrenci yok -> genel yetenek kontrolü
+    const isParent = (roleIds as string[]).includes('parent');
+    if (!isParent) return false;
+    return (PARENT_STUDENT_OWNERSHIP_PERMISSIONS as readonly string[]).includes(permission);
+  }
+
+  private denyWithLog(input: {
+    permission: string;
+    resource: string;
+    auditRequired: boolean;
+    denyState: RbacPolicyDecision['denyState'];
+    reasonCode: RbacDenyReasonCode;
+    tenantId: string | null;
+    matchedRole: SystemRole | null;
+  }): RbacPolicyDecision {
+    if (input.auditRequired) {
+      // KVKK: log yalnızca tenant ID + rol/izin/neden kodu taşır; hiçbir PII
+      // (öğrenci adı, veli kimliği, iletişim) yazılmaz.
+      this.logger.warn({
+        event: 'rbac_deny',
+        reasonCode: input.reasonCode,
+        denyState: input.denyState,
+        tenantId: input.tenantId,
+        role: input.matchedRole,
+        permission: input.permission,
+        resource: input.resource,
+      });
+    }
+    return this.deny(input);
   }
 
   private deny(input: {

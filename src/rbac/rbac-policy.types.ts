@@ -20,7 +20,8 @@ export type RbacDenyReasonCode =
   | 'tenant_isolation_breach'
   | 'explicit_deny'
   | 'kvkk_pii_protected'
-  | 'tenant_header_mismatch';
+  | 'tenant_header_mismatch'
+  | 'cross_student_leak';
 
 /** Bir policy kararının çıktı sözleşmesi (rbac-api.contract.ts ile uyumlu). */
 export interface RbacPolicyDecision {
@@ -47,6 +48,18 @@ export interface RbacPolicyInput {
   actorTenantId: string;
   /** Erişilmek istenen kaynağın tenant kimliği (opsiyonel). */
   targetTenantId?: string | null;
+  /**
+   * Erişilmek istenen öğrenci kaydının kimliği (opsiyonel).
+   * Veli (parent) rolü için sahiplik (cross-student leak) kontrolünde kullanılır.
+   * KVKK: bu alan yalnızca kimlik (ID) taşır, PII içermez.
+   */
+  targetStudentId?: string | null;
+  /**
+   * Aktörün (veli) bağlı olduğu öğrenci kayıtlarının kimlik listesi (opsiyonel).
+   * Güvenilir kaynaktan (JWT claim) gelmelidir; isteğin gövdesinden ALINMAZ.
+   * KVKK: yalnızca ID listesi, PII yok.
+   */
+  linkedStudentIds?: readonly string[] | null;
   /** Gerekli izin kodu (örn. 'student:parent_contact:read'). */
   permission: string;
   /** Kaynak anahtarı (örn. 'student.parent_contact'). */
