@@ -310,7 +310,10 @@ export class ParentOwnedScheduleSurfaces1804000000000 implements MigrationInterf
     `);
 
     for (const surface of CANONICAL_PARENT_INDEXES) {
-      await queryRunner.query(`CREATE UNIQUE INDEX ${surface.name} ${indexDefinition(surface)}`);
+      // OKUL-10: idempotency — migration yeniden çalıştığında index zaten varsa hata vermemeli
+      await queryRunner.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS ${surface.name} ${indexDefinition(surface)}`,
+      );
     }
 
     for (const fk of SCHEDULE_FKS) {

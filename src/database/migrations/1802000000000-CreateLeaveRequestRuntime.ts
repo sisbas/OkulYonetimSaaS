@@ -20,7 +20,7 @@ export class CreateLeaveRequestRuntime1802000000000 implements MigrationInterfac
       END $$
     `);
     await queryRunner.query(`
-      CREATE TABLE leave_requests (
+      CREATE TABLE IF NOT EXISTS leave_requests (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id uuid NOT NULL,
         branch_id uuid NOT NULL,
@@ -60,10 +60,10 @@ export class CreateLeaveRequestRuntime1802000000000 implements MigrationInterfac
         CONSTRAINT chk_leave_requests_range CHECK (starts_at < ends_at)
       )
     `);
-    await queryRunner.query(`CREATE INDEX idx_leave_requests_tenant_branch_status_start ON leave_requests (tenant_id, branch_id, decision_status, starts_at)`);
-    await queryRunner.query(`CREATE INDEX idx_leave_requests_tenant_teacher_status ON leave_requests (tenant_id, teacher_id, decision_status)`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_leave_requests_tenant_branch_status_start ON leave_requests (tenant_id, branch_id, decision_status, starts_at)`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_leave_requests_tenant_teacher_status ON leave_requests (tenant_id, teacher_id, decision_status)`);
     await queryRunner.query(`
-      CREATE TABLE leave_outbox_events (
+      CREATE TABLE IF NOT EXISTS leave_outbox_events (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         event_key varchar(160) NOT NULL UNIQUE,
         tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
@@ -74,7 +74,7 @@ export class CreateLeaveRequestRuntime1802000000000 implements MigrationInterfac
         created_at timestamptz NOT NULL DEFAULT now()
       )
     `);
-    await queryRunner.query(`CREATE INDEX idx_leave_outbox_events_status_created ON leave_outbox_events (status, created_at)`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_leave_outbox_events_status_created ON leave_outbox_events (status, created_at)`);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
