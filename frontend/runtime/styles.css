@@ -76,6 +76,15 @@ h1, h2, h3, p { margin-top: 0; }
   box-shadow: 0 12px 30px rgba(23, 32, 51, 0.05);
   padding: 1rem;
 }
+/* runtime-panel: tab içerik panelleri (.panel ile aynı temel stil) */
+.runtime-panel {
+  background: #fff;
+  border: 1px solid #d9e0ee;
+  border-radius: 18px;
+  box-shadow: 0 12px 30px rgba(23, 32, 51, 0.05);
+  padding: 1rem;
+}
+.runtime-panel.hidden { display: none; }
 .stack { display: grid; gap: 0.8rem; }
 label { display: grid; gap: 0.35rem; font-weight: 700; }
 input, textarea {
