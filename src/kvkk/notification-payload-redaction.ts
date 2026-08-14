@@ -1,23 +1,20 @@
-const REDACTED = '[REDACTED]';
+import { isSensitiveKey, REDACTED, redactObject } from './redaction-registry';
 
-const SENSITIVE_NOTIFICATION_KEYS = [
-  'phone',
-  'email',
+// OKUL-04: SENSITIVE_NOTIFICATION_KEYS artık merkezi registry'den türetilir.
+// Sadece bildirim katmanına özgü ek alanlar burada tanımlı (notification
+// payload'larında sıkça geçen channel-specific key'ler).
+const NOTIFICATION_EXTRA_KEYS = [
   'parentphone',
   'parentemail',
   'guardianphone',
   'guardianemail',
   'parentcontact',
   'guardiancontact',
-  'messagebody',
-  'message',
-  'payload',
-  'providerrawresponse',
-  'rawresponse',
-  'token',
-  'credential',
-  'secret',
 ] as const;
+
+const NOTIFICATION_SENSITIVE_KEYS: ReadonlySet<string> = new Set<string>([
+  ...NOTIFICATION_EXTRA_KEYS,
+]);
 
 function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -25,7 +22,7 @@ function normalizeKey(key: string): string {
 
 function isSensitiveNotificationKey(key: string): boolean {
   const normalized = normalizeKey(key);
-  return SENSITIVE_NOTIFICATION_KEYS.some((pattern) => normalized.includes(pattern));
+  return isSensitiveKey(key) || NOTIFICATION_SENSITIVE_KEYS.has(normalized);
 }
 
 export function redactNotificationPayload(value: unknown): unknown {
@@ -51,3 +48,6 @@ export function minimizeNotificationAuditPayload(value: Record<string, unknown>)
     reason: redacted.reason,
   };
 }
+
+// Geriye dönük uyumluluk: eski direkt kullanımlar redactObject'a yönlenir.
+export { redactObject };
