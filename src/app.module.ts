@@ -18,6 +18,7 @@ import { HealthModule } from './health/health.module';
 import { RbacModule } from './rbac/rbac.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { TeacherCoursesModule } from './teacher-courses/teacher-courses.module';
+import { EokulSyncModule } from './eokul-sync/eokul-sync.module';
 import { TeachersModule } from './teachers/teachers.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { TimeSlotsModule } from './time-slots/time-slots.module';
@@ -38,6 +39,7 @@ import { UsersModule } from './users/users.module';
     DailyOperationsModule,
     TeachersModule,
     TeacherCoursesModule,
+    EokulSyncModule,
   ],
   providers: [
     SecurityAuditService,
