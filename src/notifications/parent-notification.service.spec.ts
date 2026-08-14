@@ -74,7 +74,7 @@ describe('ParentNotificationService (OKUL-08)', () => {
       notificationId: 'n-002',
       subjectId: 's-11111111-1111-1111-111111111111',
       channel: 'email',
-      status: 'draft',
+      status: 'approved',
       messageBody: 'Veli bilgilendirme metni',
       eligibility: {
         consent: { status: 'pending' },
@@ -90,6 +90,28 @@ describe('ParentNotificationService (OKUL-08)', () => {
     expect(queue.enqueued).toHaveLength(0);
     const saved = repo.upsert.mock.calls[0][0];
     expect(saved.status).toBe('blocked_consent');
+  });
+
+  it('draft durumundaki bildirim erkenden döner, enqueue EDİLMEZ (KVKK onay guard)', async () => {
+    const input: SendToParentInput = {
+      tenantId: 't-11111111-1111-1111-1111-111111111111',
+      notificationId: 'n-003',
+      subjectId: 's-11111111-1111-1111-111111111111',
+      channel: 'email',
+      status: 'draft',
+      messageBody: 'Veli bilgilendirme metni',
+      eligibility: {
+        consent: { status: 'approved' },
+        phone: { exists: true, verified: true },
+        channel: { allowed: true, channel: 'email' },
+        messageBody: 'Veli bilgilendirme metni',
+      },
+      queue,
+    };
+
+    const status = await service.sendToParent(input);
+    expect(status).toBe('draft');
+    expect(queue.enqueued).toHaveLength(0);
   });
 
   it('doğrulanmamış telefon bildirimi ENGELLENİR (blocked_phone_unverified)', async () => {

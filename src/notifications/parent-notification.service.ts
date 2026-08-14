@@ -56,6 +56,23 @@ export class ParentNotificationService {
   async sendToParent(input: SendToParentInput): Promise<NotificationStatus> {
     const { tenantId, subjectId, channel, notificationId } = input;
 
+    // 0) KVKK onay akışı: yalnızca 'approved' durumundaki bildirim gönderilir.
+    // Draft veya diğer durumlar enqueue EDİLMEZ (NotificationEligibilityService.send
+    // onay guard'ını bypass etmemek için).
+    if (input.status !== 'approved') {
+      await this.persistLog({
+        tenantId,
+        subjectId,
+        channel,
+        notificationId,
+        status: input.status,
+        maskedBody: null,
+        reason: 'not_approved',
+      });
+      this.audit(tenantId, subjectId, input.status, 'status_not_approved');
+      return input.status;
+    }
+
     // 1) Uygunluk değerlendirmesi (consent + phone + channel).
     const result = this.eligibilityService.evaluate({
       consent: input.eligibility.consent,
