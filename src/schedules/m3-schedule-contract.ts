@@ -73,6 +73,19 @@ export type ScheduleValidationReason = {
   conflictingEventId?: string;
 };
 
+// OKUL-07: Çakışma çözümü önerisi. Tespit edilen bir time-overlap için
+// alternatif zaman aralığı öneren hafif bir yapı.
+export type ScheduleConflictSuggestion = {
+  eventId: string;
+  conflictingEventId: string;
+  code: CanonicalScheduleReasonCode;
+  // Önerilen yeni başlangıç/süre (发生冲突事件之后).
+  suggestedStart?: string;
+  suggestedEnd?: string;
+  // İnsan-okunur açıklama.
+  message: string;
+};
+
 export type ScheduleValidationEvidence = {
   contractId: typeof M3_SCHEDULE_CONTRACT_ID;
   contractVersion: typeof M3_SCHEDULE_CONTRACT_VERSION;
@@ -82,6 +95,8 @@ export type ScheduleValidationEvidence = {
   canPublish: boolean;
   hardConflictCount: number;
   reasons: ScheduleValidationReason[];
+  // OKUL-07: çakışma çözümü önerileri.
+  suggestions: ScheduleConflictSuggestion[];
   scheduleRevision: number;
   inputFingerprint: string;
 };
