@@ -26,19 +26,33 @@ export interface EokulAdapter {
   }): Promise<{ records: EokulRecord[]; nextCursor: string | null }>;
 }
 
-// Basit in-process rate limiter (token bucket benzeri).
+// Basit in-process rate limiter (token bucket benzeri, zaman tabanlı refill).
 class RateLimiter {
   private tokens: number;
+  private lastRefill: number;
   constructor(
     private readonly capacity: number,
     private readonly refillMs: number,
   ) {
     this.tokens = capacity;
+    this.lastRefill = Date.now();
+  }
+
+  private refill(): void {
+    const now = Date.now();
+    const elapsed = now - this.lastRefill;
+    if (elapsed >= this.refillMs) {
+      const added = Math.floor(elapsed / this.refillMs);
+      this.tokens = Math.min(this.capacity, this.tokens + added);
+      this.lastRefill = now;
+    }
   }
 
   async acquire(): Promise<void> {
+    this.refill();
     while (this.tokens <= 0) {
       await new Promise((r) => setTimeout(r, this.refillMs));
+      this.refill();
     }
     this.tokens -= 1;
   }

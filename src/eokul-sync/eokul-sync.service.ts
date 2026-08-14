@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EokulSyncRun, EokulSyncStatus, EokulEntityType } from './eokul-sync.entity';
+import { EokulRecordEntity } from './eokul-record.entity';
 import { EokulAdapter, EokulRecord, MockEokulAdapter } from './eokul-adapter';
 import { redactObject } from '../kvkk/redaction-registry';
 
@@ -29,6 +30,8 @@ export class EokulSyncService {
   constructor(
     @InjectRepository(EokulSyncRun)
     private readonly runRepo: Repository<EokulSyncRun>,
+    @InjectRepository(EokulRecordEntity)
+    private readonly recordRepo: Repository<EokulRecordEntity>,
   ) {}
 
   async syncEntity(tenantId: string, entityType: EokulEntityType): Promise<SyncResult> {
@@ -94,17 +97,34 @@ export class EokulSyncService {
     }
   }
 
-  // Idempotent: externalId ile mevcut kayıt güncellenir veya yeni oluşturulur.
+  // Idempotent upsert: externalId (tenant-scoped) ile mevcut kayıt bulunur,
+  // varsa maskedPayload güncellenir, yoksa yeni oluşturulur. KVKK: yalnızca
+  // maskelenmiş payload yazılır (ham PII tabloya işlenmez).
   private async upsertRecord(
-    _tenantId: string,
-    _rec: EokulRecord,
-    _masked: Record<string, unknown>,
+    tenantId: string,
+    rec: EokulRecord,
+    masked: Record<string, unknown>,
   ): Promise<void> {
-    // Gerçek upsert burada TypeORM repository ile yapılır.
-    // OKUL-05 kapsamında mock: externalId unique kabul edilir, idempotent.
-    if (!_rec.externalId) {
+    if (!rec.externalId) {
       throw new Error('externalId required for idempotent upsert');
     }
+    const existing = await this.recordRepo.findOne({
+      where: { tenantId, externalId: rec.externalId },
+    });
+    if (existing) {
+      existing.maskedPayload = masked;
+      existing.syncedAt = new Date();
+      await this.recordRepo.save(existing);
+      return;
+    }
+    await this.recordRepo.save(
+      this.recordRepo.create({
+        tenantId,
+        externalId: rec.externalId,
+        entityType: rec.entityType,
+        maskedPayload: masked,
+      }),
+    );
   }
 
   async listRuns(tenantId: string): Promise<EokulSyncRun[]> {

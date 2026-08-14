@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { EokulSyncService } from './eokul-sync.service';
 import { EokulSyncRun, EokulSyncStatus, EokulEntityType } from './eokul-sync.entity';
+import { EokulRecordEntity } from './eokul-record.entity';
 import { MockEokulAdapter, EokulAdapter, EokulRecord } from './eokul-adapter';
 
 // Rate-limit'siz, deterministik mock adapter (test için).
@@ -40,12 +41,21 @@ describe('EokulSyncService (OKUL-05)', () => {
       save: jest.fn(async (entity) => entity),
       find: jest.fn(async () => []),
     };
+    const mockRecordRepo = {
+      findOne: jest.fn(async () => null),
+      create: jest.fn((entityLike) => ({ ...entityLike })),
+      save: jest.fn(async (entity) => entity),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         EokulSyncService,
         {
           provide: getRepositoryToken(EokulSyncRun),
           useValue: mockRepo,
+        },
+        {
+          provide: getRepositoryToken(EokulRecordEntity),
+          useValue: mockRecordRepo,
         },
       ],
     }).compile();
