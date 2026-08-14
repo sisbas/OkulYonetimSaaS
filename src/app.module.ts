@@ -20,6 +20,7 @@ import { RoomsModule } from './rooms/rooms.module';
 import { TeacherCoursesModule } from './teacher-courses/teacher-courses.module';
 import { EokulSyncModule } from './eokul-sync/eokul-sync.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { ReportsModule } from './reports/reports.module';
 import { TeachersModule } from './teachers/teachers.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { TimeSlotsModule } from './time-slots/time-slots.module';
@@ -43,6 +44,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     TeacherCoursesModule,
     EokulSyncModule,
     AttendanceModule,
+    ReportsModule,
     NotificationsModule,
   ],
   providers: [
