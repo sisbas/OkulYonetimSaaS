@@ -65,6 +65,8 @@ const HEALTH_KEYS = [
 ] as const;
 
 // İletişim / mesaj gövdesi (notification + audit ortak).
+// Compound key'ler (recipientPhone, destinationEmail, providerAuthToken vb.)
+// açıkça tanımlı — exact-membership lookup ile de yakalansınlar.
 const MESSAGE_KEYS = [
   'email',
   'phone',
@@ -77,6 +79,15 @@ const MESSAGE_KEYS = [
   'notificationPayload',
   'guidanceNote',
   'counselingNote',
+  // Compound notification/provider alan adları (KVKK PII sızıntısı kök nedeni).
+  'recipientPhone',
+  'recipientEmail',
+  'destinationPhone',
+  'destinationEmail',
+  'providerAuthToken',
+  'providerApiKey',
+  'senderPhone',
+  'senderEmail',
 ] as const;
 
 export const REDACTION_FIELDS: ReadonlySet<string> = new Set<string>([
