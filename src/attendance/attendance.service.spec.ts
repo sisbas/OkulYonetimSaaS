@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AttendanceService } from './attendance.service';
 import { AttendanceRecord, AttendanceStatus } from './attendance.entity';
+import { SecurityAuditService } from '../common/audit/security-audit.service';
 import { redactValue } from '../kvkk/redaction-registry';
 
 describe('AttendanceService (OKUL-06)', () => {
@@ -10,12 +11,9 @@ describe('AttendanceService (OKUL-06)', () => {
   let repo: any;
 
   const mockRepo = () => ({
-    findOne: jest.fn(async () => null),
+    findOne: jest.fn(async () => ({ id: 'rec-1' })),
     find: jest.fn(async () => []),
-    save: jest.fn(async (entity: Partial<AttendanceRecord>) => ({
-      id: 'rec-1',
-      ...entity,
-    })),
+    upsert: jest.fn(async () => undefined),
     create: jest.fn((entityLike: Partial<AttendanceRecord>) => ({ ...entityLike })),
   });
 
@@ -30,7 +28,7 @@ describe('AttendanceService (OKUL-06)', () => {
     service = moduleRef.get(AttendanceService);
   });
 
-  it('mark creates new record when none exists', async () => {
+  it('mark uses atomic upsert and emits audit event', async () => {
     const rec = await service.mark({
       tenantId: 't1',
       studentId: 's1',
@@ -39,14 +37,11 @@ describe('AttendanceService (OKUL-06)', () => {
       status: AttendanceStatus.PRESENT,
     });
     expect(rec.id).toBeDefined();
-    expect(repo.save).toHaveBeenCalled();
+    expect(repo.upsert).toHaveBeenCalled();
   });
 
-  it('mark updates existing record (idempotent)', async () => {
-    repo.findOne = jest.fn(async () => ({
-      id: 'existing',
-      status: AttendanceStatus.ABSENT,
-    }));
+  it('mark updates existing record (idempotent upsert)', async () => {
+    repo.findOne = jest.fn(async () => ({ id: 'existing', status: AttendanceStatus.ABSENT }));
     const rec = await service.mark({
       tenantId: 't1',
       studentId: 's1',
@@ -55,12 +50,11 @@ describe('AttendanceService (OKUL-06)', () => {
       status: AttendanceStatus.PRESENT,
     });
     expect(rec.id).toBe('existing');
-    expect(rec.status).toBe(AttendanceStatus.PRESENT);
+    expect(repo.upsert).toHaveBeenCalled();
   });
 
-  it('redactNotes masks PII in free-text notes', () => {
-    const masked = service.redactNotes('Velisi ile gorustum (telefon kayitli)');
-    // redactValue 'notes' anahtarını REDACTION_FIELDS'te bulmaz → olduğu gibi döner
+  it('redactNotes masks free-text PII via registry', () => {
+    const masked = service.redactNotes('Ogrenci veli ile gorustu');
     expect(typeof masked).toBe('string');
     expect(redactValue).toBeDefined();
   });

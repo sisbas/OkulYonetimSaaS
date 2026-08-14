@@ -62,6 +62,10 @@ const HEALTH_KEYS = [
   'diagnosis',
   'leaveDetail',
   'freeTextReason',
+  // Serbest metin not alanları (KVKK: PII içerebilir, maskeleme kaynağı).
+  'notes',
+  'attendanceNotes',
+  'counselingNote',
 ] as const;
 
 // İletişim / mesaj gövdesi (notification + audit ortak).
