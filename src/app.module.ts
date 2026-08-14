@@ -24,6 +24,7 @@ import { TeachersModule } from './teachers/teachers.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { UsersModule } from './users/users.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { UsersModule } from './users/users.module';
     TeacherCoursesModule,
     EokulSyncModule,
     AttendanceModule,
+    NotificationsModule,
   ],
   providers: [
     SecurityAuditService,
