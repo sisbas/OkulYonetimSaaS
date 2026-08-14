@@ -157,6 +157,16 @@ const LEAVE_EVENT_POLICY: AuditMetadataPolicy = {
   resultAllowlist: ['success'],
 };
 
+// İzin reddedildiğinde sonuç 'failure' olabilir; bu nedenle ayrı policy.
+const LEAVE_REJECTED_POLICY: AuditMetadataPolicy = {
+  entityType: 'leave_request',
+  allowedKeys: COMMON_KEYS,
+  allowedChangedFields: LEAVE_CHANGED_FIELDS,
+  branchScoped: false,
+  actorRequired: true,
+  resultAllowlist: ['success', 'failure'],
+};
+
 // Kimlik doğrulama politikası: başarısız giriş/hesap kilidi `failure` sonucuna izin verir.
 const AUTH_POLICY: AuditMetadataPolicy = {
   entityType: 'auth',
@@ -301,7 +311,7 @@ const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> 
   },
   'leave.requested.v1': LEAVE_EVENT_POLICY,
   'leave.approved.v1': LEAVE_EVENT_POLICY,
-  'leave.rejected.v1': LEAVE_EVENT_POLICY,
+  'leave.rejected.v1': LEAVE_REJECTED_POLICY,
   'leave.substitution_assigned.v1': LEAVE_EVENT_POLICY,
   'leave.substitution_cleared.v1': LEAVE_EVENT_POLICY,
   'daily_operations.projected.v1': LEAVE_EVENT_POLICY,
@@ -451,6 +461,10 @@ function assertRedactionReceipt(value: unknown): RedactionReceipt {
   }
   if (typeof appliedAt !== 'string' || appliedAt.length === 0) {
     throw new TypeError('redactionReceipt.appliedAt must be a non-empty string');
+  }
+  // KVKK kanıtı olarak persist edilen timestamp parse edilebilir bir tarih olmalı.
+  if (Number.isNaN(Date.parse(appliedAt))) {
+    throw new TypeError('redactionReceipt.appliedAt must be a parseable ISO-8601 timestamp');
   }
 
   return {

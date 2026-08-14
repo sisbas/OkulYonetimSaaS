@@ -113,8 +113,22 @@ export type DataProtectionAuditEvent =
 // Omit'un union üzerinde dağılması için yardımcı (TS'in varsayılan Omit'u union'ı daraltır).
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
-function actorIdFrom(ctx: RequestContext | undefined): string | undefined {
-  return ctx?.user?.userId ?? ctx?.userId;
+function actorIdFrom(ctx: RequestContext | undefined): string {
+  const id = ctx?.user?.userId ?? ctx?.userId;
+  if (!id) {
+    throw new TypeError('SecurityAuditService: actorId (ctx.user.userId) is required for KVKK audit trail');
+  }
+  return id;
+}
+
+// KVKK denetim izi: tenantId ve actorId UUID olmalı; context eksikse kayıt
+// reconcile edilemez, bu yüzden fail-fast (undefined/'unknown' fallback YOK).
+function requireTenantId(ctx: RequestContext | undefined): string {
+  const tenantId = ctx?.tenantId ?? ctx?.user?.tenantId;
+  if (!tenantId) {
+    throw new TypeError('SecurityAuditService: tenantId is required for KVKK audit trail');
+  }
+  return tenantId;
 }
 
 export function resourceFromPermission(permission: string | undefined): string {
@@ -135,7 +149,7 @@ export class SecurityAuditService {
   ): AuthorizationDeniedAuditEvent {
     const event: AuthorizationDeniedAuditEvent = {
       eventName: 'authorization.denied',
-      tenantId: ctx?.tenantId ?? ctx?.user?.tenantId,
+      tenantId: requireTenantId(ctx),
       actorId: actorIdFrom(ctx),
       requestId: ctx?.requestId ?? 'unknown',
       resource: input.resource ?? resourceFromPermission(input.requiredPermission[0]),
@@ -158,7 +172,7 @@ export class SecurityAuditService {
   ): AuthFailureAuditEvent {
     const event: AuthFailureAuditEvent = {
       eventName: 'auth.login.failure',
-      tenantId: ctx?.tenantId ?? ctx?.user?.tenantId,
+      tenantId: requireTenantId(ctx),
       actorId: actorIdFrom(ctx),
       requestId: ctx?.requestId ?? 'unknown',
       outcome: 'failure',
@@ -175,7 +189,7 @@ export class SecurityAuditService {
   ): AuthSuccessAuditEvent {
     const event: AuthSuccessAuditEvent = {
       eventName: input.eventName,
-      tenantId: ctx?.tenantId ?? ctx?.user?.tenantId,
+      tenantId: requireTenantId(ctx),
       actorId: actorIdFrom(ctx),
       requestId: ctx?.requestId ?? 'unknown',
       outcome: 'success',
@@ -188,7 +202,7 @@ export class SecurityAuditService {
   emitAuthLogout(ctx: RequestContext | undefined): AuthLogoutAuditEvent {
     const event: AuthLogoutAuditEvent = {
       eventName: 'auth.logout',
-      tenantId: ctx?.tenantId ?? ctx?.user?.tenantId,
+      tenantId: requireTenantId(ctx),
       actorId: actorIdFrom(ctx),
       requestId: ctx?.requestId ?? 'unknown',
       outcome: 'success',
@@ -203,7 +217,7 @@ export class SecurityAuditService {
   ): AccountLockedAuditEvent {
     const event: AccountLockedAuditEvent = {
       eventName: 'auth.account_locked',
-      tenantId: ctx?.tenantId ?? ctx?.user?.tenantId,
+      tenantId: requireTenantId(ctx),
       actorId: actorIdFrom(ctx),
       requestId: ctx?.requestId ?? 'unknown',
       outcome: 'failure',
@@ -222,8 +236,8 @@ export class SecurityAuditService {
   ): DataProtectionAuditEvent {
     const event = {
       ...input,
-      tenantId: ctx?.tenantId ?? ctx?.user?.tenantId ?? 'unknown',
-      actorId: actorIdFrom(ctx) ?? 'system',
+      tenantId: requireTenantId(ctx),
+      actorId: actorIdFrom(ctx),
       requestId: ctx?.requestId ?? 'unknown',
     } as DataProtectionAuditEvent;
     this.logger.log(JSON.stringify(event));

@@ -63,6 +63,16 @@ export const AUDIT_PII_KEYS: ReadonlySet<string> = new Set([
 const MAX_LIMIT = 500;
 const DEFAULT_LIMIT = 100;
 
+// metadata_json üreticisinin serbest JSON olduğu durumlarda PII anahtar adı
+// varyantlarını (Email, ParentEmail, parent_email) yakalamak için normalize.
+function normalizePiiKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const AUDIT_PII_KEYS_NORMALIZED: ReadonlySet<string> = new Set(
+  [...AUDIT_PII_KEYS].map(normalizePiiKey),
+);
+
 export type BuiltAuditQuery = Readonly<{
   sql: string;
   params: unknown[];
@@ -154,8 +164,13 @@ export function buildTenantScopedAuditQuery(query: TenantScopedAuditQuery): Buil
     p += 1;
   }
 
-  const limit = Math.min(Math.max(Math.floor(query.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT);
-  const offset = Math.max(Math.floor(query.offset ?? 0), 0);
+  const rawLimit = query.limit ?? DEFAULT_LIMIT;
+  const limit =
+    typeof rawLimit === 'number' && Number.isFinite(rawLimit)
+      ? Math.min(Math.max(Math.floor(rawLimit), 1), MAX_LIMIT)
+      : DEFAULT_LIMIT;
+  const rawOffset = query.offset ?? 0;
+  const offset = typeof rawOffset === 'number' && Number.isFinite(rawOffset) ? Math.max(Math.floor(rawOffset), 0) : 0;
 
   const sql = `
     SELECT id, tenant_id, actor_user_id, actor_session_id, action, entity_type,
@@ -183,7 +198,7 @@ export function maskPiiRecursive(value: unknown, counters: MaskCounters = { reda
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      if (AUDIT_PII_KEYS.has(key)) {
+      if (AUDIT_PII_KEYS_NORMALIZED.has(normalizePiiKey(key))) {
         counters.redacted += 1;
         out[key] = '[REDACTED]';
       } else {
