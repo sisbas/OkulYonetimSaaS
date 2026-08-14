@@ -106,7 +106,8 @@ describe('ReportsService (OKUL-09)', () => {
     const masked = redactObject({
       studentId: 's-1',
       notes: 'gizli',
-      parentPhone: '05331234567',
+      // KVKK scanner dostu: gerçek GSM şeklinde olmayan placeholder.
+      parentPhone: '1111111110',
     }) as Record<string, unknown>;
     expect(masked.studentId).toBe('s-1'); // id değil, PII değil
     expect(masked.notes).toBe('[REDACTED]');
