@@ -5,60 +5,12 @@ import {
   TenantScopedAuditRow,
 } from './transactional-audit.types';
 
-// KVKK kapsamında audit satırlarından okuma anında maskelenen PII alan adları.
-// Mevcut test/kvkk/audit-redaction.spec.ts ile tutarlı (password, refreshToken,
-// accessToken, token, email, phone) ve OkulSaas domain PII alanlarıyla genişletilmiştir.
-export const AUDIT_PII_KEYS: ReadonlySet<string> = new Set([
-  'password',
-  'refreshToken',
-  'accessToken',
-  'token',
-  'secret',
-  'apiKey',
-  'authorization',
-  'cookie',
-  'email',
-  'phone',
-  'studentName',
-  'studentIdentity',
-  'studentTcKimlikNo',
-  'nationalId',
-  'identityNumber',
-  'tcKimlikNo',
-  'birthDate',
-  'address',
-  'iban',
-  'parentName',
-  'parentPhone',
-  'parentEmail',
-  'parentContact',
-  'guardianName',
-  'guardianPhone',
-  'guardianEmail',
-  'guardianContact',
-  'teacherName',
-  'teacherEmail',
-  'teacherPhone',
-  'messageBody',
-  'notificationBody',
-  'notificationPayload',
-  'counselingNote',
-  'guidanceNote',
-  'healthNote',
-  'medicalNote',
-  'diagnosis',
-  // --- İhraç (export) sızıntı bulgusu (PR #227 P1): aşağıdaki yasaklı anahtarlar
-  // FORBIDDEN_AUDIT_METADATA_KEYS'te yer alıyordu ancak ihraç maskesine dahil
-  // değildi; bu nedenle export'ta ham (maskesiz) kalıyorlardı. KVKK kapsamında
-  // PII/hassas veri sızıntısını önlemek için ihraç maskesine ekleniyorlar.
-  'credential', // kimlik bilgisi / parola benzeri hassas değer
-  'setCookie', // oturum çerezi (session fixation / hijack riski)
-  'requestBody', // ham istek gövdesi (gövdede PII taşınabilir)
-  'healthDetail', // sağlık özel nitelikli kişisel veri
-  'healthInfo', // sağlık özel nitelikli kişisel veri
-  'leaveDetail', // izin/rapor detayı (sağlık/özel hayat)
-  'freeTextReason', // serbest metin gerekçe (özel hayatın gizliliği)
-]);
+// OKUL-04: KVKK PII maskesi artık merkezi registry'den türetilir (tek kaynak).
+// Bu, audit export'un FORBIDDEN_AUDIT_METADATA_KEYS ile aynı set'i kullanmasını
+// garanti eder — OKUL-03 P1 bulgusunun kök nedeni (export redaction key kaçırıyor).
+import { REDACTION_FIELDS } from '../../kvkk/redaction-registry';
+
+export const AUDIT_PII_KEYS: ReadonlySet<string> = REDACTION_FIELDS;
 
 const MAX_LIMIT = 500;
 const DEFAULT_LIMIT = 100;

@@ -9,6 +9,10 @@ import {
   TransactionalAuditEventName,
 } from './transactional-audit.types';
 
+// OKUL-04: forbidden audit metadata key'leri merkezi registry'den türetilir
+// (tek kaynak — audit export ile aynı PII set'i kullanılır).
+import { REDACTION_FIELDS } from '../../kvkk/redaction-registry';
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const COMMON_KEYS = [
@@ -79,51 +83,8 @@ const ATTENDANCE_CHANGED_FIELDS = [
 const NOTIFICATION_CHANGED_FIELDS = ['channel', 'status', 'templateId', 'recipientRole', 'preferenceKey'] as const;
 
 export const FORBIDDEN_AUDIT_METADATA_KEYS = [
-  'requestBody',
   'responseBody',
-  'authorization',
-  'cookie',
-  'setCookie',
-  'password',
-  'credential',
-  'secret',
-  'token',
-  'accessToken',
-  'refreshToken',
-  'apiKey',
-  // KVKK — doğrudan tanımlayıcı / özel nitelikli kişisel veri
-  'studentName',
-  'studentIdentity',
-  'studentTcKimlikNo',
-  'nationalId',
-  'identityNumber',
-  'tcKimlikNo',
-  'birthDate',
-  'address',
-  'iban',
-  'parentName',
-  'parentPhone',
-  'parentEmail',
-  'parentContact',
-  'guardianName',
-  'guardianPhone',
-  'guardianEmail',
-  'guardianContact',
-  'teacherName',
-  'teacherEmail',
-  'teacherPhone',
-  'leaveDetail',
-  'healthDetail',
-  'healthNote',
-  'medicalNote',
-  'diagnosis',
-  'healthInfo',
-  'freeTextReason',
-  'notificationPayload',
-  'notificationBody',
-  'messageBody',
-  'guidanceNote',
-  'counselingNote',
+  ...REDACTION_FIELDS,
 ] as const;
 
 type AuditResultValue = 'success' | 'failure';
