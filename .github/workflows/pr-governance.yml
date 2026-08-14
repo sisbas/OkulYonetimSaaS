@@ -275,7 +275,7 @@ jobs:
                  repository(owner: $owner, name: $repo) {
                    pullRequest(number: $num) {
                      reviewThreads(first: 50) {
-                       nodes { id isResolved }
+                       nodes { id isResolved isOutdated }
                      }
                    }
                  }
