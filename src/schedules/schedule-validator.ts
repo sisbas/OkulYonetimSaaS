@@ -5,6 +5,7 @@ import {
   ScheduleValidationEvidence,
   ScheduleValidationInput,
   ScheduleValidationReason,
+  ScheduleConflictSuggestion,
   teacherCourseKey,
 } from './m3-schedule-contract';
 
@@ -40,6 +41,7 @@ function intersects(left: IndexedEvent, right: IndexedEvent): boolean {
 
 function indexConflict(
   reasons: ScheduleValidationReason[],
+  suggestions: ScheduleConflictSuggestion[],
   index: Map<string, IndexedEvent[]>,
   resourceId: string | null,
   event: ScheduleEventDraft,
@@ -54,7 +56,22 @@ function indexConflict(
   };
   const bucket = index.get(resourceId) ?? [];
   const conflict = bucket.find((candidate) => intersects(candidate, current));
-  if (conflict) add(reasons, code, event.eventId, conflict.eventId);
+  if (conflict) {
+    add(reasons, code, event.eventId, conflict.eventId);
+    // OKUL-07: çakışma çözümü önerisi — çakışan event'in bitişinden sonra başlat.
+    const suggestedStart = `${String(Math.floor(conflict.end / 60)).padStart(2, '0')}:${String(conflict.end % 60).padStart(2, '0')}`;
+    const duration = current.end - current.start;
+    const suggestedEndMin = conflict.end + duration;
+    const suggestedEnd = `${String(Math.floor(suggestedEndMin / 60)).padStart(2, '0')}:${String(suggestedEndMin % 60).padStart(2, '0')}`;
+    suggestions.push({
+      eventId: event.eventId,
+      conflictingEventId: conflict.eventId,
+      code,
+      suggestedStart,
+      suggestedEnd,
+      message: `Kaynak '${resourceId}' için ${event.eventId} ile ${conflict.eventId} çakışıyor. Öneri: ${suggestedStart}-${suggestedEnd} aralığına taşıyın.`,
+    });
+  }
   bucket.push(current);
   index.set(resourceId, bucket);
 }
@@ -72,7 +89,7 @@ export function validateSchedule(input: ScheduleValidationInput): ScheduleValida
   const teacherIntervals = new Map<string, IndexedEvent[]>();
   const groupIntervals = new Map<string, IndexedEvent[]>();
   const roomIntervals = new Map<string, IndexedEvent[]>();
-
+  const suggestions: ScheduleConflictSuggestion[] = [];
   for (const event of input.events) {
     requireReference(reasons, event, event.teacherId, input.references.activeTeacherIds, 'TEACHER_INACTIVE');
     requireReference(reasons, event, event.studentGroupId, input.references.activeStudentGroupIds, 'STUDENT_GROUP_INACTIVE');
@@ -87,9 +104,9 @@ export function validateSchedule(input: ScheduleValidationInput): ScheduleValida
       add(reasons, 'TEACHER_COURSE_MISMATCH', event.eventId);
     }
 
-    indexConflict(reasons, teacherIntervals, event.teacherId, event, 'TEACHER_TIME_OVERLAP');
-    indexConflict(reasons, groupIntervals, event.studentGroupId, event, 'STUDENT_GROUP_TIME_OVERLAP');
-    indexConflict(reasons, roomIntervals, event.roomId, event, 'ROOM_TIME_OVERLAP');
+    indexConflict(reasons, suggestions, teacherIntervals, event.teacherId, event, 'TEACHER_TIME_OVERLAP');
+    indexConflict(reasons, suggestions, groupIntervals, event.studentGroupId, event, 'STUDENT_GROUP_TIME_OVERLAP');
+    indexConflict(reasons, suggestions, roomIntervals, event.roomId, event, 'ROOM_TIME_OVERLAP');
   }
 
   const hardConflictCount = reasons.filter((reason) => ![
@@ -108,6 +125,7 @@ export function validateSchedule(input: ScheduleValidationInput): ScheduleValida
     canPublish: full && reasons.length === 0,
     hardConflictCount,
     reasons,
+    suggestions,
     scheduleRevision: input.currentScheduleRevision,
     inputFingerprint: input.inputFingerprint,
   };
