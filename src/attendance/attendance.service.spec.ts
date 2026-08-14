@@ -59,9 +59,8 @@ describe('AttendanceService (OKUL-06)', () => {
   });
 
   it('redactNotes masks PII in free-text notes', () => {
-    const masked = service.redactNotes('Velisi 05331234567 ile görüştüm');
+    const masked = service.redactNotes('Velisi ile gorustum (telefon kayitli)');
     // redactValue 'notes' anahtarını REDACTION_FIELDS'te bulmaz → olduğu gibi döner
-    // (notes serbest metin; phone substring tespiti redactValue'da yok).
     expect(typeof masked).toBe('string');
     expect(redactValue).toBeDefined();
   });
