@@ -13,6 +13,8 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "test": "jest --passWithNoTests",
+    "test:coverage": "jest --runInBand --coverage",
+    "check:migrations": "ts-node scripts/check-migrations-idempotent.ts",
     "test:openclaw-canary": "node --test test-fixtures/openclaw-review-canary/*.test.js",
     "test:unit": "jest --runInBand src --passWithNoTests",
     "test:e2e": "jest --config ./test/jest-e2e.json",

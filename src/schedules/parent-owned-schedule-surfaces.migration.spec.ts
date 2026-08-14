@@ -91,7 +91,8 @@ describe('ParentOwnedScheduleSurfaces migration', () => {
     );
 
     for (const [name, table, columns] of EXPECTED_CANONICAL_INDEXES) {
-      expect(sql).toContain(`CREATE UNIQUE INDEX ${name} ON ${table} ${columns}`);
+      // OKUL-10: canonical parent index'leri idempotent (IF NOT EXISTS) oluşturulur
+      expect(sql).toContain(`CREATE UNIQUE INDEX IF NOT EXISTS ${name} ON ${table} ${columns}`);
     }
 
     for (const [name, table, columns] of EXPECTED_REPAIR_INDEXES) {

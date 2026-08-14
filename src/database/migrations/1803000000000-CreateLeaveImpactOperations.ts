@@ -23,7 +23,7 @@ export class CreateLeaveImpactOperations1803000000000 implements MigrationInterf
       END $$
     `);
     await queryRunner.query(`
-      CREATE TABLE leave_substitution_assignments (
+      CREATE TABLE IF NOT EXISTS leave_substitution_assignments (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id uuid NOT NULL,
         branch_id uuid NOT NULL,
@@ -66,16 +66,16 @@ export class CreateLeaveImpactOperations1803000000000 implements MigrationInterf
       )
     `);
     await queryRunner.query(`
-      CREATE UNIQUE INDEX uq_leave_substitution_one_active
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_leave_substitution_one_active
       ON leave_substitution_assignments(tenant_id, leave_request_id, schedule_event_id)
       WHERE state = 'assigned'
     `);
     await queryRunner.query(`
-      CREATE INDEX idx_leave_substitution_leave_state
+      CREATE INDEX IF NOT EXISTS idx_leave_substitution_leave_state
       ON leave_substitution_assignments(tenant_id, leave_request_id, state)
     `);
     await queryRunner.query(`
-      CREATE TABLE daily_operation_lessons (
+      CREATE TABLE IF NOT EXISTS daily_operation_lessons (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         projection_key varchar(220) NOT NULL UNIQUE,
         tenant_id uuid NOT NULL,
@@ -113,11 +113,11 @@ export class CreateLeaveImpactOperations1803000000000 implements MigrationInterf
       )
     `);
     await queryRunner.query(`
-      CREATE INDEX idx_daily_operation_lessons_queue
+      CREATE INDEX IF NOT EXISTS idx_daily_operation_lessons_queue
       ON daily_operation_lessons(tenant_id, branch_id, state, occurrence_date, updated_at)
     `);
     await queryRunner.query(`
-      CREATE INDEX idx_daily_operation_lessons_leave
+      CREATE INDEX IF NOT EXISTS idx_daily_operation_lessons_leave
       ON daily_operation_lessons(tenant_id, leave_request_id)
     `);
   }
