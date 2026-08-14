@@ -52,8 +52,8 @@ export class ReportsService {
       );
     }
 
-    // 2) Tanım türüne göre aggregate hesapla.
-    const rawResult = await this.computeAggregate(tenantId, definition.type);
+    // 2) Tanım türüne göre aggregate hesapla (querySpec filtreleriyle).
+    const rawResult = await this.computeAggregate(tenantId, definition.type, definition.querySpec);
 
     // 3) KVKK: sonuçtaki PII maskelenir (redactObject özyinelemeli uygular).
     const maskedResult = redactObject(rawResult) as Record<string, unknown>;
@@ -91,10 +91,11 @@ export class ReportsService {
   private async computeAggregate(
     tenantId: string,
     type: string,
+    querySpec: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     switch (type) {
       case 'attendance_summary':
-        return this.computeAttendanceSummary(tenantId);
+        return this.computeAttendanceSummary(tenantId, querySpec);
       // Gelecekte: 'student_summary', 'teacher_summary' ...
       default:
         // Bilinmeyen türde boş ama tenant-scoped bir çerçeve döner.
@@ -105,11 +106,21 @@ export class ReportsService {
   /**
    * attendance_records (OKUL-06) üzerinden devamsızlık özeti.
    * Tenant dışı kayıt ASLA dahil edilmez (where:{tenantId}).
+   * querySpec filtreleri (courseId, sessionDate) uygulanır.
    */
   private async computeAttendanceSummary(
     tenantId: string,
+    querySpec: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const records = await this.attendanceRepo.find({ where: { tenantId } });
+    const where: Record<string, unknown> = { tenantId };
+    // querySpec'ten gelen filtreleri uygula (Codex P1: discard edilmemeli).
+    if (querySpec && typeof querySpec === 'object') {
+      if (querySpec.courseId) where.courseId = querySpec.courseId;
+      if (querySpec.sessionDate) where.sessionDate = querySpec.sessionDate;
+      if (querySpec.studentId) where.studentId = querySpec.studentId;
+    }
+
+    const records = await this.attendanceRepo.find({ where });
 
     const total = records.length;
     const counts: Record<AttendanceStatus, number> = {
@@ -133,15 +144,7 @@ export class ReportsService {
       totalRecords: total,
       counts,
       absentStudentCount: absentStudentIds.size,
-      // Ham kayıtlar (öğrenci id + not içerir) — KVKK maskesi servis
-      // katmanında redactObject ile uygulanır.
-      records: records.map((r) => ({
-        studentId: r.studentId,
-        courseId: r.courseId,
-        sessionDate: r.sessionDate,
-        status: r.status,
-        notes: r.notes,
-      })),
+      appliedFilters: where,
     };
   }
 }

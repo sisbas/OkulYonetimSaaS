@@ -83,9 +83,9 @@ describe('ReportsService (OKUL-09)', () => {
     expect(savedArg.resultJson).toBeDefined();
     expect(savedArg.resultJson.tenantId).toBe('t1');
     expect(savedArg.resultJson.absentStudentCount).toBe(1);
-    // KVKK: notes alanı maskelendi.
-    const firstRecord = savedArg.resultJson.records[0];
-    expect(firstRecord.notes).toBe('[REDACTED]');
+    // querySpec filtresi uygulandı (tenant dışı kayıt dahil edilmedi).
+    expect(savedArg.resultJson.appliedFilters).toBeDefined();
+    expect(savedArg.resultJson.appliedFilters.tenantId).toBe('t1');
   });
 
   it('generateReport: attendance kaydı yoksa sıfır-özet döner', async () => {
