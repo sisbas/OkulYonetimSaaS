@@ -1,8 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
+  "outputDirectory": "dist/runtime",
   "git": {
     "deploymentEnabled": {
       "preview": false,
@@ -23,11 +24,11 @@
     },
     {
       "source": "/runtime",
-      "destination": "/runtime/index.html"
+      "destination": "/index.html"
     },
     {
       "source": "/runtime/:path*",
-      "destination": "/runtime/:path*"
+      "destination": "/:path*"
     }
   ],
   "headers": [
