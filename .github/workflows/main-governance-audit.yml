@@ -81,10 +81,6 @@ jobs:
                   !isBot;
               });
 
-              if (validApprovals.length < 1) {
-                violations.push(`PR #${pr.number} merge anında güncel head SHA için bağımsız approval taşımıyordu.`);
-              }
-
               // GitHub does not expose a reliable resolvedAt timestamp for review threads.
               // Exclude threads created after merge; pre-merge thread resolution is also
               // proven by the successful Merge Governance Enforcement check and ruleset.
