@@ -1,5 +1,9 @@
 # Main Ruleset Bootstrap
 
+> Canonical required-status manifest (reconciled 2026-08-19, PR #270, E3/A):
+> 10 real checks, no phantom `Merge Governance Enforcement`. Ruleset 19052349 must
+> list exactly these 10 via Owner apply (GitHub UI or `Main Ruleset Administration`).
+
 ## Purpose
 
 Activate and verify the `main-merge-governance` repository ruleset required by Issue #87 without weakening the existing fail-closed workflows.
