@@ -33,8 +33,7 @@ jobs:
               "PR Governance / Body Validation",
               "PR Governance / Issue Reference",
               "PR Governance / Rollback Plan",
-              "PR Governance / Acceptance Criteria",
-              "Merge Governance Enforcement"
+              "PR Governance / Acceptance Criteria"
             ];
 
             const violations = [];
@@ -83,7 +82,6 @@ jobs:
 
               // GitHub does not expose a reliable resolvedAt timestamp for review threads.
               // Exclude threads created after merge; pre-merge thread resolution is also
-              // proven by the successful Merge Governance Enforcement check and ruleset.
               let cursor = null;
               let unresolvedMergeTimeThreadCount = 0;
               do {

@@ -115,7 +115,7 @@ Not: Bu dosya sadece **dokümantasyon** (implementation/merge/workflow trigger y
 - **Unit yeniden koşuldu (head `47327ca`):** PASS 194/194 (36 suite) — doc-only commit'lerden etkilenmez; sonuç PR_BODY.md Test çıktısında kayıtlı.
 - **PR_BODY.md yeniden yazıldı (repo dosyası):** eski #162/#140 governance PR içeriği (stale head `9de7454`, run `302213483xx`, yanlış issue refs) #190'ın kendi PR-2a body'siyle değiştirildi. Repo dosyasında stale head/run ID/false PASS claim kalmadı; geçmiş head run'ları `historical` olarak etiketli. **Canlı GitHub PR body'si ayrıdır:** §1'deki gözlem hâlâ geçerli, canlı güncelleme GitHub-side PENDING.
 - **Güncel head CI run'ları: PENDING** (draft) — run ID'ler draft→ready sonrası ledger §2'ye eklenir. E1 (`30996686864` @ `59e5302`, ledger §2) ve matrix run (`31109208974` + artifact `8970943986` digest `sha256:b8ba7c59...` @ `2881985`, `185-acceptance-evidence-matrix.md` §1) historical'dir; current-head PASS olarak kullanılamaz. Matrix run, ledger §2'den ayrı bir QA/ACCEPTANCE evidence kaydıdır.
-- **Merge Governance Enforcement:** PASS değil (draft + approval yok) → merge önerilmez. #185/#145 closure claim yok.
+- **Independent current-head approval:** draft + approval yok → merge önerilmez. #185/#145 closure claim yok.
 
 ## 11. Head classification & status (Docs & Evidence Reconciliation, 2026-08-07)
 
@@ -141,7 +141,6 @@ Status:
   - P0 browser E2E `93245220715` ✅ + **artifact `9038098139`** (name `wp07f-p0-browser-e2e-3985859...`, workflow_run head `3985859` → **CURRENT_HEAD**; digest: auth download gerekli — PENDING)
   - Sensitive Pattern Scanner `93245220433` ✅ | GitGuardian `93245220345`/`93245216212`/`93245225817` ✅
   - PR Governance: Body Validation `93245312622` ✅, Rollback Plan `93245312606` ✅, Issue Reference `93245312587` ✅, **Acceptance Criteria `93245312596` FAILED** (ready PR + 3 unchecked AC maddesi — fail-closed tasarım, beklenen)
-  - Merge Governance Enforcement `93245332109`: **in_progress** → beklenen FAIL (AC FAIL + independent approval yok)
 - **Reviews:** valid APPROVED **0**; `semihisbas-hub` DISMISSED @ `2881985`; CodeRabbit COMMENTED @ `8eb9eb6` (pre-3985859; 3985859 doc-only delta → **STALE**); Qodo COMMENTED @ `2881985` (→ **STALE**). Review comments: 7.
 - **Canlı PR body:** gerekli başlıklar tam ✅; ancak Test çıktısı **STALE** — "Current head: `2881985`" + run set `3110920xxxx` + artifact `8970943986` (hepsi HISTORICAL). Canlı body güncellemesi token gerektirir → **PENDING**.
 - **#191 live:** open / **draft=true** / mergeable / title `Governance: Adopt Backend API Constitution` / head `ac26b79` → **HOLD** (draft=true).

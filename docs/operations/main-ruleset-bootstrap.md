@@ -62,7 +62,6 @@ PR Governance / Body Validation
 PR Governance / Issue Reference
 PR Governance / Rollback Plan
 PR Governance / Acceptance Criteria
-Merge Governance Enforcement
 ```
 
 ## Issue #87 closure evidence

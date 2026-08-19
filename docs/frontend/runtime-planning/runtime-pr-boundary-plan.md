@@ -100,7 +100,6 @@ A future runtime PR must remain Draft until it has exact-head evidence for:
 - KVKK note confirming no production-like PII fixtures.
 - Independent current-head approval.
 - Zero unresolved review threads.
-- Merge Governance Enforcement SUCCESS.
 
 ## Acceptance coverage
 

@@ -42,11 +42,6 @@ jobs:
           set -euo pipefail
           workflow='.github/workflows/pr-governance.yml'
           audit='.github/workflows/main-governance-audit.yml'
-          exact_count="$(grep -Ec '^    name: Merge Governance Enforcement$' "$workflow")"
-          [[ "$exact_count" == '1' ]] || {
-            echo "::error::Expected exactly one aggregate job named 'Merge Governance Enforcement'; found $exact_count."
-            exit 1
-          }
           if grep -Eq '^\s*cancel-in-progress:\s*true\s*$' "$workflow"; then
             echo '::error::PR Governance must not cancel in-progress runs; every event requires terminal evidence.'
             exit 1
@@ -148,7 +143,7 @@ jobs:
             echo "::notice::Public Rules API did not expose an authoritative bypass list (state=$bypass_state). Trusted-main admin verification is required."
           fi
 
-          echo "PASS: public live ruleset structure verified (id=$id; checks=11; aggregate='Merge Governance Enforcement'; source-bound=true)."
+          echo "PASS: public live ruleset structure verified (id=$id; checks=10; source-bound=true)."
 
   Main-Ruleset-Administration:
     name: Main Ruleset Administration

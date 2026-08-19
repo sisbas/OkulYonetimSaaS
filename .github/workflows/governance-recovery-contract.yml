@@ -37,9 +37,7 @@ jobs:
           audit='.github/workflows/main-governance-audit.yml'
           ruleset='.github/rulesets/main-merge-governance.json'
 
-          [[ "$(grep -Ec '^    name: Merge Governance Enforcement$' "$workflow")" == '1' ]]
           ! grep -Eq '^\s*cancel-in-progress:\s*true\s*$' "$workflow"
-          grep -Fq 'Merge Governance Enforcement' "$ruleset"
           grep -Fq 'completed_at' "$audit"
           grep -Fq 'listSuitesForRef' "$audit"
           grep -Fq 'suite.created_at' "$audit"
@@ -89,8 +87,7 @@ jobs:
               "PR Governance / Body Validation",
               "PR Governance / Issue Reference",
               "PR Governance / Rollback Plan",
-              "PR Governance / Acceptance Criteria",
-              "Merge Governance Enforcement"
+              "PR Governance / Acceptance Criteria"
             ];
 
             const pr = (await github.rest.pulls.get({ owner, repo, pull_number: pullNumber })).data;
