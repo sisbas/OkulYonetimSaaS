@@ -91,3 +91,4 @@ After Issue #87 is verified:
 ```
 
 The governance incidents are process-control incidents. Close them after recording root cause, impact, and the active preventive ruleset. Product-runtime rollback is not required unless an independent technical regression is found.
+
