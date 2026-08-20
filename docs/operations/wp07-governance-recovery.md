@@ -10,7 +10,7 @@ This record joins incident #109, superseded PR #115, incident #136 and recovery 
 - PR merged: 2026-07-24 07:52:36 UTC.
 - Codex review and new unresolved thread created: 2026-07-24 07:52:37 UTC.
 - Main Governance Audit started reading repository state: 2026-07-24 07:52:45 UTC.
-- The PR Governance run protecting merge contained successful Body Validation, Issue Reference, Rollback Plan, Acceptance Criteria and Merge Governance Enforcement jobs.
+- The PR Governance run protecting merge contained successful Body Validation, Issue Reference, Rollback Plan and Acceptance Criteria jobs.
 
 ## #136 root cause
 

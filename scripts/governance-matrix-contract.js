@@ -105,7 +105,6 @@ function successChecks() {
 
 const validBody = `## Acceptance criteria
 - [x] Backend CI PASS
-- [x] Merge Governance Enforcement SUCCESS
 
 ## Karar
 MERGE: GO

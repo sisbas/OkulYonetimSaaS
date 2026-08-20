@@ -68,7 +68,6 @@ Canonical Backend & Data karar kaydı: **`docs/rag/pr2b-a-backend-data-authority
 | E17 | API Authority Matrix karar kaydı (Karar: GO; controlled JSON contract, forbidden response/failure mapping, tenant/branch regression, fixture policy, rollback yüzeyi) | `docs/rag/pr2b-a-backend-data-authority-matrix.md` | PASS (planning) — known route katalog cross-validation execution öncesi |
 | CI-01…08 | Backend CI · DB Smoke · Gate 1 CI · Sprint 1 QGate · P0 E2E (+artifact) · Sensitive Pattern Scanner · GitGuardian | PR-2b head CI run seti | PENDING (PR-2b branch head'inde koşulur) |
 | CI-09…12 | PR Gov: Body Validation · Issue Reference · Rollback Plan · Acceptance Criteria | `pr-governance.yml` | PENDING (PR-2b head'inde; AC-1..7 unchecked → beklenen FAIL, fail-closed) |
-| CI-13 | Merge Governance Enforcement | ruleset | PENDING (AC + approval + checks sonrası) |
 | REV-01 | CodeRabbit current-head review | PR #190'da STALE (`8eb9eb6` → `3985859`); PR-2b'de **current-head** olmalı | PENDING |
 | REV-02 | ≥1 independent APPROVED review (current head) | PR #190'da 0 valid | PENDING |
 | ART-01 | Observation artifact reconciliation (identity JSON + upload artifact id/name/digest/url + auth download sonrası digest kaydı) | named `actions/upload-artifact` step outputs + closure evidence summary | PENDING |
@@ -195,7 +194,6 @@ matrix, PR-2a review konvansiyonuyla aynı; hiçbir review/check tetiklenmedi
 | Sensitive Pattern Scanner | PLANLAMA — tetiklenmedi |
 | GitGuardian | PLANLAMA — tetiklenmedi |
 | Independent current-head APPROVED review | PLANLAMA — tetiklenmedi |
-| Merge Governance Enforcement | PLANLAMA — tetiklenmedi |
 
 ### Required before Ready
 
@@ -208,7 +206,6 @@ matrix, PR-2a review konvansiyonuyla aynı; hiçbir review/check tetiklenmedi
 - CodeRabbit + Qodo current-head disposition PASS
 - Scanner + GitGuardian PASS (ek kanıt; tek başına Security/KVKK PASS değil)
 - En az bir bağımsız current-head APPROVED review
-- Merge Governance Enforcement PASS
 - CEO authority checkpoint kaydı (production observation kapsamında)
 
 ### CEO authority checkpoint
