@@ -25,11 +25,14 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *      + tenant predicates (named).
  *   6. Removes `status DEFAULT 'absent'` (Decision Record §M5: default-absent model
  *      removed from domain lifecycle).
+ *
+ * NOTE: timestamp 1825000000000 chosen to avoid collision with existing
+ * 1820000000000-CreateNotificationLogs (duplicate-timestamp risk per #261).
  */
-export class ReconcileAttendanceRecordsToSessionSchema1820000000000
+export class ReconcileAttendanceRecordsToSessionSchema1825000000000
   implements MigrationInterface
 {
-  name = 'ReconcileAttendanceRecordsToSessionSchema1820000000000';
+  name = 'ReconcileAttendanceRecordsToSessionSchema1825000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. drop legacy course_id unique/index if they exist
