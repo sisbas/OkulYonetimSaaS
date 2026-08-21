@@ -21,8 +21,8 @@ export const AppDataSource = new DataSource({
   migrationsTableName: 'migrations',
   synchronize: false,
   logging: process.env.TYPEORM_LOGGING === 'true',
-  entities: ['src/**/*.entity.ts'],
-  migrations: ['src/database/migrations/*.ts'],
+  entities: ['src/**/*.entity.ts', 'dist/**/*.entity.js'],
+  migrations: ['src/database/migrations/*.ts', 'dist/database/migrations/*.js'],
 });
 
 const initializeAppDataSource = AppDataSource.initialize.bind(AppDataSource);
