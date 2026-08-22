@@ -31,10 +31,12 @@ export class CreateEokulSyncImportsTable1805000000000 implements MigrationInterf
       );
     `);
 
+    // NOTE: PostgreSQL does not support `ALTER TABLE ... ADD CONSTRAINT IF NOT
+    // EXISTS` (syntax error). Use a named UNIQUE INDEX for idempotent
+    // enforcement of the (tenant_id, kind, source_id) idempotency key.
     await queryRunner.query(`
-      ALTER TABLE eokul_sync_imports
-        ADD CONSTRAINT IF NOT EXISTS uq_eokul_sync_imports_tenant_source
-        UNIQUE (tenant_id, kind, source_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_eokul_sync_imports_tenant_source
+        ON eokul_sync_imports (tenant_id, kind, source_id);
     `);
 
     await queryRunner.query(`
