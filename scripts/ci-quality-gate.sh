@@ -123,7 +123,14 @@ scan_sensitive_log_patterns() {
   local credential_key_regex='(credential|password|passwd|pwd|secret|api[_-]?key|token|access[_-]?token|refresh[_-]?token|id[_-]?token|authorization)[^[:alnum:]_-]*[:=][[:space:]]*[^[:space:],;}]+'
   local bearer_token_regex='bearer[[:space:]]+[A-Za-z0-9._~+/=-]{12,}'
   local email_value_regex='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+  # Turkish mobile numbers ALWAYS start with 0 (or +90 / 0090 internationally).
   local phone_value_regex='(\+90|0090|0)?[[:space:].-]?5[0-9]{2}[[:space:].-]?[0-9]{3}[[:space:].-]?[0-9]{2}[[:space:].-]?[0-9]{2}'
+  # Migration timestamps (e.g. 1805000000000 / 1825000000000) are 13+ digit
+  # runs that contain substrings like 5000000000 and get falsely flagged as
+  # phone PII. Real Turkish phone numbers are <= 11 digits, so any line carrying
+  # a 13+ digit numeric run is treated as a migration/ID line and skipped from
+  # the phone scan.
+  local long_numeric_id_regex='[0-9]{13,}'
   # KVKK PII field key'leri. NOT: `parent_contact`/`student.parent_contact` RBAC
   # permission/resource ADLARIDIR (PII field DEĞİL) -> false positive önlemek için
   # `contact` tek başına eşleşmeden çıkarıldı; yalnızca gerçek PII field'ları taranır.
@@ -143,7 +150,7 @@ scan_sensitive_log_patterns() {
         finding_count=$((finding_count + 1))
       fi
 
-      if [[ "$line" =~ $phone_value_regex ]]; then
+      if [[ "$line" =~ $phone_value_regex ]] && ! [[ "$line" =~ $long_numeric_id_regex ]]; then
         printf '%s\t%s\t%s\n' "$log_file" "$line_number" "phone" >> "$report_file"
         finding_count=$((finding_count + 1))
       fi
