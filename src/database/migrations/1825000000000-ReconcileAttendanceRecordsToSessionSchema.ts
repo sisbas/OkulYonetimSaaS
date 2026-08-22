@@ -35,6 +35,19 @@ export class ReconcileAttendanceRecordsToSessionSchema1825000000000
   name = 'ReconcileAttendanceRecordsToSessionSchema1825000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    const hasSessionId = await queryRunner.hasColumn(
+      'attendance_records',
+      'session_id',
+    );
+    const hasCourseId = await queryRunner.hasColumn(
+      'attendance_records',
+      'course_id',
+    );
+    const hasSessionDate = await queryRunner.hasColumn(
+      'attendance_records',
+      'session_date',
+    );
+
     // 1. drop legacy course_id unique/index if they exist
     await queryRunner.query(
       `DROP INDEX IF EXISTS "uq_attendance_tenant_student_course_date"`,
@@ -42,8 +55,13 @@ export class ReconcileAttendanceRecordsToSessionSchema1825000000000
     await queryRunner.query(`DROP INDEX IF EXISTS "idx_attendance_tenant_course_date"`);
 
     // 2. add session_id + FK to attendance_sessions
+    if (!hasSessionId) {
+      await queryRunner.query(
+        `ALTER TABLE "attendance_records" ADD COLUMN "session_id" uuid`,
+      );
+    }
     await queryRunner.query(
-      `ALTER TABLE "attendance_records" ADD COLUMN IF NOT EXISTS "session_id" uuid`,
+      `ALTER TABLE "attendance_records" DROP CONSTRAINT IF EXISTS "fk_attendance_records_session"`,
     );
     await queryRunner.query(
       `ALTER TABLE "attendance_records" ADD CONSTRAINT "fk_attendance_records_session"
@@ -54,28 +72,37 @@ export class ReconcileAttendanceRecordsToSessionSchema1825000000000
     // 3. backfill session_id from course_id + session_date (best-match session).
     //    PostgreSQL does not allow LIMIT in UPDATE ... FROM, so use a correlated
     //    scalar subquery (LIMIT is valid inside the SELECT).
-    await queryRunner.query(`
-      UPDATE "attendance_records" ar
-      SET "session_id" = (
-        SELECT s."id"
-        FROM "attendance_sessions" s
-        WHERE s."tenant_id" = ar."tenant_id"
-          AND s."course_id" = ar."course_id"
-          AND s."session_date" = ar."session_date"
-        ORDER BY s."created_at" ASC
-        LIMIT 1
-      )
-      WHERE ar."session_id" IS NULL
-        AND ar."course_id" IS NOT NULL
-    `);
+    if (hasCourseId && hasSessionDate) {
+      await queryRunner.query(`
+        UPDATE "attendance_records" ar
+        SET "session_id" = (
+          SELECT s."id"
+          FROM "attendance_sessions" s
+          WHERE s."tenant_id" = ar."tenant_id"
+            AND s."course_id" = ar."course_id"
+            AND s."session_date" = ar."session_date"
+          ORDER BY s."created_at" ASC
+          LIMIT 1
+        )
+        WHERE ar."session_id" IS NULL
+          AND ar."course_id" IS NOT NULL
+      `);
+    }
 
     // 4. enforce NOT NULL on session_id, drop legacy course_id
     await queryRunner.query(
       `ALTER TABLE "attendance_records" ALTER COLUMN "session_id" SET NOT NULL`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "attendance_records" DROP COLUMN IF EXISTS "course_id"`,
-    );
+    if (hasCourseId) {
+      await queryRunner.query(
+        `ALTER TABLE "attendance_records" DROP COLUMN "course_id"`,
+      );
+    }
+    if (hasSessionDate) {
+      await queryRunner.query(
+        `ALTER TABLE "attendance_records" DROP COLUMN "session_date"`,
+      );
+    }
 
     // 5. canonical unique + check + tenant predicates
     await queryRunner.query(
@@ -97,12 +124,55 @@ export class ReconcileAttendanceRecordsToSessionSchema1825000000000
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // best-effort revert: restore course_id column (no historical value retained)
-    await queryRunner.query(
-      `ALTER TABLE "attendance_records" ADD COLUMN IF NOT EXISTS "course_id" uuid`,
+    const hasCourseId = await queryRunner.hasColumn(
+      'attendance_records',
+      'course_id',
     );
+    const hasSessionDate = await queryRunner.hasColumn(
+      'attendance_records',
+      'session_date',
+    );
+
+    if (!hasCourseId) {
+      await queryRunner.query(
+        `ALTER TABLE "attendance_records" ADD COLUMN "course_id" uuid`,
+      );
+    }
+    if (!hasSessionDate) {
+      await queryRunner.query(
+        `ALTER TABLE "attendance_records" ADD COLUMN "session_date" date`,
+      );
+    }
+
+    await queryRunner.query(`
+      UPDATE "attendance_records" ar
+      SET
+        "course_id" = s."course_id",
+        "session_date" = s."session_date"
+      FROM "attendance_sessions" s
+      WHERE s."tenant_id" = ar."tenant_id"
+        AND s."id" = ar."session_id"
+        AND (ar."course_id" IS NULL OR ar."session_date" IS NULL)
+    `);
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM "attendance_records"
+          WHERE "course_id" IS NULL OR "session_date" IS NULL
+        ) THEN
+          RAISE EXCEPTION
+            'Cannot revert attendance_records: session rows without legacy course_id/session_date values exist';
+        END IF;
+      END $$;
+    `);
+
     await queryRunner.query(
       `DROP INDEX IF EXISTS "uq_attendance_records_tenant_session_student"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "attendance_records" DROP CONSTRAINT IF EXISTS "chk_attendance_records_status"`,
     );
     await queryRunner.query(
       `ALTER TABLE "attendance_records" DROP CONSTRAINT IF EXISTS "fk_attendance_records_session"`,
@@ -111,7 +181,21 @@ export class ReconcileAttendanceRecordsToSessionSchema1825000000000
       `ALTER TABLE "attendance_records" DROP COLUMN IF EXISTS "session_id"`,
     );
     await queryRunner.query(
+      `ALTER TABLE "attendance_records" ALTER COLUMN "course_id" SET NOT NULL`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "attendance_records" ALTER COLUMN "session_date" SET NOT NULL`,
+    );
+    await queryRunner.query(
       `ALTER TABLE "attendance_records" ALTER COLUMN "status" SET DEFAULT 'absent'`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "idx_attendance_tenant_course_date"
+        ON "attendance_records" ("tenant_id", "course_id", "session_date")`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "uq_attendance_tenant_student_course_date"
+        ON "attendance_records" ("tenant_id", "student_id", "course_id", "session_date")`,
     );
   }
 }
