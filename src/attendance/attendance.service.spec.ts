@@ -32,8 +32,7 @@ describe('AttendanceService (OKUL-06)', () => {
     const rec = await service.mark({
       tenantId: 't1',
       studentId: 's1',
-      courseId: 'c1',
-      sessionDate: '2026-08-14',
+      sessionId: 'sess-1',
       status: AttendanceStatus.PRESENT,
     });
     expect(rec.id).toBeDefined();
@@ -45,8 +44,7 @@ describe('AttendanceService (OKUL-06)', () => {
     const rec = await service.mark({
       tenantId: 't1',
       studentId: 's1',
-      courseId: 'c1',
-      sessionDate: '2026-08-14',
+      sessionId: 'sess-1',
       status: AttendanceStatus.PRESENT,
     });
     expect(rec.id).toBe('existing');

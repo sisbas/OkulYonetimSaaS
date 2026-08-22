@@ -17,13 +17,15 @@ export enum AttendanceStatus {
 /**
  * Ders bazlı yoklama kaydı (OKUL-06).
  *
- * tenant-scoped; (tenant_id, student_id, course_id, session_date) unique —
- * idempotent: aynı ders için tekrar işaretleme son kaydı günceller.
- * student_id, e-okul senkronizasyonundan gelen öğrenci referansıdır.
+ * tenant-scoped; (tenant_id, session_id, student_id) unique —
+ * idempotent: aynı oturum için tekrar işaretleme son kaydı günceller.
+ * Canonical M5 authority chain: ScheduleEvent -> AttendanceSession ->
+ * AttendanceRecord (session_id). Aligned with migration
+ * 1820000000000-ReconcileAttendanceRecordsToSessionSchema.
  */
 @Entity({ name: 'attendance_records' })
 @Index('idx_attendance_tenant_student', ['tenantId', 'studentId'])
-@Index('idx_attendance_tenant_course_date', ['tenantId', 'courseId', 'sessionDate'])
+@Index('idx_attendance_tenant_session', ['tenantId', 'sessionId'])
 export class AttendanceRecord {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -31,16 +33,13 @@ export class AttendanceRecord {
   @Column({ name: 'tenant_id', type: 'uuid' })
   tenantId!: string;
 
+  @Column({ name: 'session_id', type: 'uuid' })
+  sessionId!: string;
+
   @Column({ name: 'student_id', type: 'uuid' })
   studentId!: string;
 
-  @Column({ name: 'course_id', type: 'uuid' })
-  courseId!: string;
-
-  @Column({ name: 'session_date', type: 'date' })
-  sessionDate!: string;
-
-  @Column({ name: 'status', type: 'varchar', length: 16, default: AttendanceStatus.ABSENT })
+  @Column({ name: 'status', type: 'varchar', length: 16 })
   status!: AttendanceStatus;
 
   @Column({ name: 'marked_by_id', type: 'uuid', nullable: true })
