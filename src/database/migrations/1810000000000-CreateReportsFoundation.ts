@@ -100,34 +100,15 @@ export class CreateReportsFoundation1810000000000 implements MigrationInterface 
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_attendance_sessions_tenant_branch_date ON attendance_sessions (tenant_id, branch_id, session_date)`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_attendance_sessions_tenant_course ON attendance_sessions (tenant_id, course_id)`);
 
-    await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS attendance_records (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id uuid NOT NULL,
-        session_id uuid NOT NULL,
-        student_id uuid NOT NULL,
-        status varchar(16) NOT NULL DEFAULT 'present',
-        note text NULL,
-        marked_at timestamptz NULL,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        updated_at timestamptz NOT NULL DEFAULT now(),
-        deleted_at timestamptz NULL,
-        CONSTRAINT fk_attendance_records_tenant
-          FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
-        CONSTRAINT fk_attendance_records_session_same_tenant
-          FOREIGN KEY (tenant_id, session_id)
-          REFERENCES attendance_sessions(tenant_id, id) ON DELETE RESTRICT,
-        CONSTRAINT fk_attendance_records_student_same_tenant
-          FOREIGN KEY (tenant_id, student_id)
-          REFERENCES students(tenant_id, id) ON DELETE RESTRICT,
-        CONSTRAINT chk_attendance_records_status
-          CHECK (status IN ('present', 'absent', 'late', 'excused'))
-      )
-    `);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_attendance_records_tenant_id ON attendance_records (tenant_id, id)`);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_attendance_records_session_student ON attendance_records (tenant_id, session_id, student_id) WHERE deleted_at IS NULL`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_attendance_records_tenant_session ON attendance_records (tenant_id, session_id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_attendance_records_tenant_student ON attendance_records (tenant_id, student_id)`);
+    // NOTE: attendance_records is intentionally NOT created here. Two merged
+    // migrations (1700000000101-CreateAttendanceRecords with course_id, and this
+    // one with session_id) both issued `CREATE TABLE IF NOT EXISTS
+    // attendance_records`; because 1700000000101 sorts first, its schema wins and
+    // this block is always a no-op on a fresh DB — yet its `WHERE deleted_at IS
+    // NULL` index then fails because that column is absent. The canonical
+    // attendance_records lifecycle is owned by 1700000000101 + reconcile
+    // 1825000000000 (course_id -> session_id, no deleted_at). attendance_sessions
+    // above is still owned by this migration. See #261.
 
     // Raporlama modülü tabloları (OKUL-09).
     await queryRunner.query(`
@@ -173,7 +154,6 @@ export class CreateReportsFoundation1810000000000 implements MigrationInterface 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TABLE IF EXISTS report_runs`);
     await queryRunner.query(`DROP TABLE IF EXISTS report_definitions`);
-    await queryRunner.query(`DROP TABLE IF EXISTS attendance_records`);
     await queryRunner.query(`DROP TABLE IF EXISTS attendance_sessions`);
     await queryRunner.query(`DROP TABLE IF EXISTS guardians`);
     await queryRunner.query(`DROP TABLE IF EXISTS students`);
