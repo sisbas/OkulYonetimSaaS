@@ -51,17 +51,22 @@ export class ReconcileAttendanceRecordsToSessionSchema1825000000000
         REFERENCES "attendance_sessions"("tenant_id", "id") ON DELETE RESTRICT`,
     );
 
-    // 3. backfill session_id from course_id + session_date (best-match session)
+    // 3. backfill session_id from course_id + session_date (best-match session).
+    //    PostgreSQL does not allow LIMIT in UPDATE ... FROM, so use a correlated
+    //    scalar subquery (LIMIT is valid inside the SELECT).
     await queryRunner.query(`
       UPDATE "attendance_records" ar
-      SET "session_id" = s."id"
-      FROM "attendance_sessions" s
+      SET "session_id" = (
+        SELECT s."id"
+        FROM "attendance_sessions" s
+        WHERE s."tenant_id" = ar."tenant_id"
+          AND s."course_id" = ar."course_id"
+          AND s."session_date" = ar."session_date"
+        ORDER BY s."created_at" ASC
+        LIMIT 1
+      )
       WHERE ar."session_id" IS NULL
         AND ar."course_id" IS NOT NULL
-        AND s."tenant_id" = ar."tenant_id"
-        AND s."course_id" = ar."course_id"
-        AND s."session_date" = ar."session_date"
-      LIMIT 1
     `);
 
     // 4. enforce NOT NULL on session_id, drop legacy course_id
