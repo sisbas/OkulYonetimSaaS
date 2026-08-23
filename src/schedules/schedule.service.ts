@@ -370,11 +370,20 @@ export class ScheduleService {
         `Schedule revision mismatch: persisted=${schedule.revision}, caller=${callerRevision}`,
       );
     }
+    const published = await this.versionRepo.findOne({
+      where: { tenantId, scheduleId, status: ScheduleVersionStatus.PUBLISHED },
+    });
+    if (!published) throw new NotFoundException('No published version to unpublish');
+
     const port: ScheduleTransactionPort = {
       insertPublishedVersion: async () => undefined,
       markSchedulePublished: async () => undefined,
       markScheduleUnpublished: async (sid, expectedRevision) => {
-        // Bulgu 5: aktif version pointer'ı temizle (yoksa eski versiyon 'active' sanılır).
+        // Bulgu 5: aktif version pointer'ı ve published version status'u birlikte kapat.
+        await this.versionRepo.update(published.id, {
+          status: ScheduleVersionStatus.UNPUBLISHED,
+          unpublishedAt: new Date(),
+        });
         await this.scheduleRepo.update(
           { tenantId, id: sid },
           {
@@ -388,9 +397,6 @@ export class ScheduleService {
         void event;
       },
     };
-    const published = await this.versionRepo.findOne({
-      where: { tenantId, scheduleId, status: ScheduleVersionStatus.PUBLISHED },
-    });
     await unpublishSchedule({
       tenantId,
       branchId,
@@ -398,9 +404,9 @@ export class ScheduleService {
       actorId,
       requestId,
       expectedRevision: callerRevision,
-      scheduleVersionId: published?.id ?? '00000000-0000-0000-0000-000000000000',
-      versionNo: published?.versionNo ?? 0,
-      publishedAt: (published?.publishedAt ?? new Date()).toISOString(),
+      scheduleVersionId: published.id,
+      versionNo: published.versionNo,
+      publishedAt: (published.publishedAt ?? new Date()).toISOString(),
       transaction: port,
     });
   }

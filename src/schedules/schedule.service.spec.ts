@@ -166,4 +166,51 @@ describe('ScheduleService (P1B-05 wiring)', () => {
       service.publish('t1', 'b1', 's1', 'actor', 'req', [makeEvent()], 1),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('unpublish marks the active version unpublished and clears schedule active version', async () => {
+    const { service, scheduleRepo, versionRepo } = makeService();
+    scheduleRepo.findOne = async () =>
+      ({
+        id: 's1',
+        tenantId: 't1',
+        branchId: 'b1',
+        status: 'published',
+        revision: 3,
+        activeVersionId: 'v1',
+      }) as Schedule;
+    versionRepo.findOne = async () =>
+      ({
+        id: 'v1',
+        tenantId: 't1',
+        branchId: 'b1',
+        scheduleId: 's1',
+        versionNo: 2,
+        status: ScheduleVersionStatus.PUBLISHED,
+        publishedAt: new Date('2026-09-01T09:00:00.000Z'),
+      }) as ScheduleVersion;
+
+    const versionUpdates: Array<[string, Partial<ScheduleVersion>]> = [];
+    versionRepo.update = async (id: string, update: Partial<ScheduleVersion>) => {
+      versionUpdates.push([id, update]);
+      return undefined;
+    };
+    const scheduleUpdates: Array<[unknown, Partial<Schedule>]> = [];
+    scheduleRepo.update = async (filter: unknown, update: Partial<Schedule>) => {
+      scheduleUpdates.push([filter, update]);
+      return undefined;
+    };
+
+    await service.unpublish('t1', 'b1', 's1', 'actor', 'req', 3);
+
+    expect(versionUpdates).toHaveLength(1);
+    expect(versionUpdates[0][0]).toBe('v1');
+    expect(versionUpdates[0][1].status).toBe(ScheduleVersionStatus.UNPUBLISHED);
+    expect(versionUpdates[0][1].unpublishedAt).toBeInstanceOf(Date);
+    expect(scheduleUpdates).toHaveLength(1);
+    expect(scheduleUpdates[0][1]).toMatchObject({
+      status: 'unpublished',
+      activeVersionId: null,
+      revision: 3,
+    });
+  });
 });
