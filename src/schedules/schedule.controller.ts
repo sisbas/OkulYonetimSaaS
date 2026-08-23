@@ -33,7 +33,7 @@ export class ScheduleController {
   constructor(private readonly service: ScheduleService) {}
 
   @Post()
-  @Permissions('schedule:create')
+  @Permissions('schedule:draft:create')
   async create(@Req() request: RequestWithContext, @Body() body: { branchId: string; effectiveFrom: string; effectiveTo?: string | null }) {
     const ctx = getRequestContext(request);
     return this.service.createSchedule({
@@ -45,7 +45,7 @@ export class ScheduleController {
   }
 
   @Post(':id/draft')
-  @Permissions('schedule:update')
+  @Permissions('schedule:draft:update')
   async saveDraft(
     @Req() request: RequestWithContext,
     @Param('id') id: string,
