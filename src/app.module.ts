@@ -26,6 +26,7 @@ import { TenantsModule } from './tenants/tenants.module';
 import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ScheduleModule } from './schedules/schedule.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     AttendanceModule,
     ReportsModule,
     NotificationsModule,
+    ScheduleModule,
   ],
   providers: [
     SecurityAuditService,
