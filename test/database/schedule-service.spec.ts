@@ -17,12 +17,14 @@ const BRANCH_A = 'a1000000-0000-4000-8000-0000000000a1';
 const BRANCH_B = 'b1000000-0000-4000-8000-0000000000b1';
 
 // Referans varlıkları (loadActiveReferences doğru çalışsın diye).
-const TEACHER_1 = 't1000000-0000-4000-8000-0000000000c1';
-const TEACHER_BRANCH_1 = 'tb000000-0000-4000-8000-0000000000c1';
-const GROUP_1 = 'g1000000-0000-4000-8000-0000000000c1';
-const COURSE_1 = 'c1000000-0000-4000-8000-0000000000c1';
-const ROOM_1 = 'r1000000-0000-4000-8000-0000000000c1';
-const SLOT_1 = 's1000000-0000-4000-8000-0000000000c1';
+// NOT: UUID yalnızca [0-9a-f] hex karakterleri içerir; t/g/r/s/u gibi
+// harfler GEÇERSİZDIR (Postgres "invalid input syntax for type uuid" verir).
+const TEACHER_1 = 'c1000000-0000-4000-8000-0000000000c1';
+const TEACHER_BRANCH_1 = 'cb000000-0000-4000-8000-0000000000c1';
+const GROUP_1 = 'd1000000-0000-4000-8000-0000000000c1';
+const COURSE_1 = 'e1000000-0000-4000-8000-0000000000c1';
+const ROOM_1 = 'f1000000-0000-4000-8000-0000000000c1';
+const SLOT_1 = 'a2000000-0000-4000-8000-0000000000c1';
 
 function makeEvent(over: Partial<ScheduleEventDraft> = {}): ScheduleEventDraft {
   return {
@@ -49,7 +51,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
     requestId: 'schedule-int-a',
     tenantId: TENANT_A,
     user: {
-      userId: 'u1000000-0000-4000-8000-0000000000c1',
+      userId: 'a3000000-0000-4000-8000-0000000000c1',
       tenantId: TENANT_A,
       roleIds: ['tenant-admin'],
       permissions: ['schedule:draft:create', 'schedule:draft:update', 'schedule:read', 'schedule:publish'],
@@ -279,7 +281,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       tenantId: TENANT_A,
       branchId: BRANCH_A,
       scheduleId: schedule.id,
-      events: [makeEvent({ teacherId: 'does-not-exist-0000-0000-0000-00000000zz' })],
+      events: [makeEvent({ teacherId: 'deadbeef-0000-4000-8000-0000000000ff' })],
     });
     // loadActiveReferences can't find the teacher -> validation fails -> publish denied.
     await expect(
@@ -289,7 +291,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
         schedule.id,
         ctxA.user!.userId,
         'req-badref',
-        [makeEvent({ teacherId: 'does-not-exist-0000-0000-0000-00000000zz' })],
+        [makeEvent({ teacherId: 'deadbeef-0000-4000-8000-0000000000ff' })],
         1,
       ),
     ).rejects.toThrow();
