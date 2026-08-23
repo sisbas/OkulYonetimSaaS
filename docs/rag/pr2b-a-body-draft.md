@@ -230,14 +230,13 @@ Blocked actions respected: YES. (Detay: `pr2b-a-draft-package.md` §6.)
 | Sensitive Pattern Scanner | PLANLAMA — tetiklenmedi |
 | GitGuardian | PLANLAMA — tetiklenmedi |
 | Independent current-head APPROVED review | PLANLAMA — tetiklenmedi |
-| Merge Governance Enforcement | PLANLAMA — tetiklenmedi |
 
 - **Required before Ready:** Body/AC/Rollback/Issue Reference PASS (draft→ready geçişi);
   execution sonrası evidence alanları dolu; CEO checkpoint kaydı var.
 - **Required before merge:** current-head CI set PASS (observation execution sonrası);
   CodeRabbit + Qodo current-head disposition PASS; Scanner + GitGuardian PASS (ek kanıt,
   tek başına Security/KVKK PASS değil); ≥1 bağımsız current-head APPROVED review;
-  Merge Governance Enforcement PASS; CEO authority checkpoint kaydı.
+  CEO authority checkpoint kaydı.
 - **CEO authority checkpoint:** draft/review matrisi NOT REQUIRED;
   production observation/deployment authority REQUIRED LATER.
 
