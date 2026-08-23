@@ -311,7 +311,22 @@ export class ScheduleService {
    */
   async solve(input: SolveScheduleInput): Promise<SolveResult> {
     const schedule = await this.getSchedule(input.tenantId, input.scheduleId);
-    const references = await this.loadActiveReferences(input.tenantId, input.branchId, []);
+    // bh0ii: build the reference lookup from the SOLVE DEMANDS (not an empty
+    // event list), otherwise loadActiveReferences returns empty sets and every
+    // demand becomes NO_VALID_SLOT even when all referenced records are active.
+    const demandEvents: ScheduleEventDraft[] = input.demands.map((d) => ({
+      eventId: `demand-${d.demandId}`,
+      teacherId: d.teacherId,
+      teacherBranchId: d.teacherBranchId,
+      studentGroupId: d.studentGroupId,
+      courseId: d.courseId,
+      roomId: d.roomIds?.[0] ?? null,
+      timeSlotId: d.timeSlots[0]?.id ?? null,
+      dayOfWeek: d.preferredDayOfWeek ?? 1,
+      startTime: '09:00',
+      endTime: '10:00',
+    }));
+    const references = await this.loadActiveReferences(input.tenantId, input.branchId, demandEvents);
 
     const DEFAULT_BOUNDS = { maxDepth: 5000, maxNodes: 200_000, maxDurationMs: 30_000 };
     const request: SolveRequest = {

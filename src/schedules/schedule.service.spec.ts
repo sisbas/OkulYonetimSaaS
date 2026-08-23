@@ -227,4 +227,40 @@ describe('ScheduleService (P1B-05 wiring)', () => {
       revision: 3,
     });
   });
+
+  it('solve() builds the active-reference lookup from demands, not an empty event list (bh0ii)', async () => {
+    const { service, scheduleRepo } = makeService();
+    scheduleRepo.findOne = async () => ({ id: 's1', revision: 2, status: 'draft', effectiveFrom: new Date('2026-09-01') }) as Schedule;
+    const spy = jest.spyOn(service as unknown as { loadActiveReferences: unknown }, 'loadActiveReferences' as never) as unknown as jest.SpyInstance;
+
+    const demands = [
+      {
+        demandId: 'd1',
+        studentGroupId: 'g1',
+        courseId: 'c1',
+        teacherId: 't1',
+        teacherBranchId: 'tb1',
+        timeSlots: [{ id: 's1', dayOfWeek: 1, startTime: '09:00', endTime: '10:00' }],
+        roomIds: ['r1'],
+      },
+    ];
+
+    try {
+      await service.solve({
+        tenantId: 't1',
+        branchId: 'b1',
+        scheduleId: 's1',
+        demands,
+        seed: 1,
+        correlationId: 'c1',
+      });
+    } catch {
+      // solver mock may not produce a full result; we only assert the reference build.
+    }
+
+    expect(spy).toHaveBeenCalled();
+    const passedEvents = spy.mock.calls[0][2] as Array<{ teacherId: string; studentGroupId: string; timeSlotId: string }>;
+    expect(passedEvents.some((e) => e.teacherId === 't1' && e.studentGroupId === 'g1' && e.timeSlotId === 's1')).toBe(true);
+    spy.mockRestore();
+  });
 });

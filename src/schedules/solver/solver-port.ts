@@ -21,6 +21,14 @@ import type {
   ScheduleReferenceSet,
 } from '../m3-schedule-contract';
 
+/** Allowed time-slot pool entry with its timing metadata. */
+export type TimeSlotRef = {
+  id: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+};
+
 /** A single demanded lecture to place. */
 export type ScheduleDemand = {
   demandId: string;
@@ -28,8 +36,8 @@ export type ScheduleDemand = {
   courseId: string;
   teacherId: string | null;
   teacherBranchId: string | null;
-  /** Allowed time-slot ids (the pool the heuristic may pick from). */
-  timeSlotIds: string[];
+  /** Allowed time-slot pool (with timing metadata). */
+  timeSlots: TimeSlotRef[];
   /** Allowed room ids (optional scoping). */
   roomIds?: string[];
   /** Preferred day-of-week hint (1-7); heuristic honours it softly. */

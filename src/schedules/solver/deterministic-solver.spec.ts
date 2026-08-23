@@ -23,15 +23,20 @@ function makeDemands(n: number): ScheduleDemand[] {
     const t = i % 2 === 0 ? 't1' : 't2';
     const g = i % 2 === 0 ? 'g1' : 'g2';
     const c = i % 2 === 0 ? 'c1' : 'c2';
+    const day = 1 + (i % 5);
     demands.push({
       demandId: `d${i}`,
       studentGroupId: g,
       courseId: c,
       teacherId: t,
       teacherBranchId: 'tb1',
-      timeSlotIds: ['s1', 's2', 's3'],
+      timeSlots: [
+        { id: 's1', dayOfWeek: day, startTime: '09:00', endTime: '10:00' },
+        { id: 's2', dayOfWeek: day, startTime: '10:00', endTime: '11:00' },
+        { id: 's3', dayOfWeek: day, startTime: '11:00', endTime: '12:00' },
+      ],
       roomIds: ['r1', 'r2'],
-      preferredDayOfWeek: 1 + (i % 5),
+      preferredDayOfWeek: day,
     });
   }
   return demands;

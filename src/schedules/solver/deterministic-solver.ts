@@ -15,6 +15,7 @@ import type {
   RelaxationTier,
   SolverDiagnostics,
   ScheduleDemand,
+  TimeSlotRef,
 } from './solver-port';
 
 /** Deterministic PRNG (mulberry32). Same seed -> same sequence. */
@@ -44,9 +45,9 @@ type Placed = {
  *
  * Strategy:
  *  1. Order demands deterministically (by demandId, then seeded shuffle).
- *  2. For each demand, enumerate candidate (timeSlot, room) pairs, order them
- *     by a seeded score (preferred day, balance), and greedily place the first
- *     that does not introduce a HARD conflict.
+ *  2. For each demand, enumerate candidate (timeSlot, room) pairs using the
+ *     demand's TimeSlotRef pool (with real day/start/end), order them by a
+ *     seeded score, and greedily place the first that introduces no HARD conflict.
  *  3. If a demand cannot be placed, record it as unplaced (no hard relaxation).
  *  4. Re-validate the full output with validateSchedule; if any hard conflict
  *     survived, drop the offending events (hard constraints NEVER relax).
@@ -54,16 +55,19 @@ type Placed = {
  *     tier (still draft-only — caller must not auto-publish).
  *
  * Bounds: maxDepth (demands processed), maxNodes (candidate evaluations),
- * maxDurationMs. Cancellation: request.aborted.value checked each demand.
+ * maxDurationMs. Cancellation: request.aborted.value checked each yield.
  */
 export class DeterministicSolver implements SolverPort {
   private static readonly EMERGENCY_THRESHOLD = 0.6;
+  private static readonly YIELD_EVERY = 256;
 
   async solve(request: SolveRequest): Promise<SolveResult> {
     const start = Date.now();
     const rng = mulberry32(request.seed);
     const bounds = request.bounds;
     let nodesVisited = 0;
+    let yieldCounter = 0;
+    let exhausted = false;
 
     const demands = this.orderDemands(request.demands, rng);
     const placed: Placed[] = [];
@@ -73,7 +77,13 @@ export class DeterministicSolver implements SolverPort {
     const teacherLoad: Record<string, number> = {};
     const roomLoad: Record<string, number> = {};
     const groupLoad: Record<string, number> = {};
-    const dayBalance: Record<number, number> = {};
+    const dayBalance: Record<string, number> = {};
+
+    const boundsExhausted = (): boolean => {
+      if (nodesVisited >= bounds.maxNodes) return true;
+      if (Date.now() - start >= bounds.maxDurationMs) return true;
+      return false;
+    };
 
     for (let depth = 0; depth < demands.length; depth++) {
       if (depth >= bounds.maxDepth) {
@@ -82,21 +92,30 @@ export class DeterministicSolver implements SolverPort {
         }
         break;
       }
-      if (request.aborted?.value) {
+      if (exhausted || (request.aborted?.value ?? false)) {
         for (let i = depth; i < demands.length; i++) {
-          unplaced.push({ demandId: demands[i].demandId, reasonCode: 'CANCELLED', message: 'solve aborted' });
+          unplaced.push({
+            demandId: demands[i].demandId,
+            reasonCode: 'CANCELLED',
+            message: exhausted ? 'bounds exhausted' : 'solve aborted',
+          });
         }
         break;
       }
       const demand = demands[depth];
       const candidate = this.pickCandidate(demand, request, placed, rng, () => {
         nodesVisited++;
-        if (nodesVisited >= bounds.maxNodes) return true;
-        if (Date.now() - start >= bounds.maxDurationMs) return true;
+        yieldCounter++;
+        if (yieldCounter % DeterministicSolver.YIELD_EVERY === 0) return true; // signal caller to yield
         return false;
-      });
+      }, boundsExhausted);
 
-      if (!candidate) {
+      if (candidate === 'EXHAUSTED') {
+        exhausted = true;
+        for (let i = depth; i < demands.length; i++) {
+          unplaced.push({ demandId: demands[i].demandId, reasonCode: 'BOUNDS_EXHAUSTED', message: 'search bounds exhausted' }); } break; }
+
+      if (candidate === null) {
         unplaced.push({
           demandId: demand.demandId,
           reasonCode: 'NO_VALID_SLOT',
@@ -110,6 +129,12 @@ export class DeterministicSolver implements SolverPort {
       this.bump(roomLoad, candidate.roomId);
       this.bump(groupLoad, candidate.studentGroupId);
       this.bump(dayBalance, String(candidate.dayOfWeek));
+
+      // Periodic yield so cancellation can be observed (P2 bh0im).
+      if (yieldCounter % DeterministicSolver.YIELD_EVERY === 0) {
+        await Promise.resolve();
+        if (request.aborted?.value) break;
+      }
     }
 
     // Hard-constraint re-check: never relax. Drop offending events.
@@ -125,7 +150,7 @@ export class DeterministicSolver implements SolverPort {
     const demandedCount = demands.length;
     const placedCount = pruned.length;
     const placementRatio = demandedCount === 0 ? 1 : placedCount / demandedCount;
-    const bestSoFar = nodesVisited < bounds.maxNodes && Date.now() - start < bounds.maxDurationMs;
+    const bestSoFar = !exhausted && nodesVisited < bounds.maxNodes && Date.now() - start < bounds.maxDurationMs;
 
     let status: SolveStatus = 'SOLVED';
     if (placementRatio < 1) status = 'PARTIAL';
@@ -164,7 +189,6 @@ export class DeterministicSolver implements SolverPort {
 
   private orderDemands(demands: ScheduleDemand[], rng: () => number): ScheduleDemand[] {
     const sorted = [...demands].sort((a, b) => a.demandId.localeCompare(b.demandId));
-    // Seeded Fisher-Yates for deterministic-but-non-trivial ordering.
     for (let i = sorted.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
       [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
@@ -172,37 +196,41 @@ export class DeterministicSolver implements SolverPort {
     return sorted;
   }
 
+  /** Returns placed event, null (no valid slot), or 'EXHAUSTED' (bounds hit). */
   private pickCandidate(
     demand: ScheduleDemand,
     request: SolveRequest,
     placed: Placed[],
     rng: () => number,
     tick: () => boolean,
-  ): ScheduleEventDraft | null {
+    boundsExhausted: () => boolean,
+  ): ScheduleEventDraft | null | 'EXHAUSTED' {
     const refs = request.referenceSet;
     if (demand.teacherId && !refs.activeTeacherIds.has(demand.teacherId)) return null;
     if (demand.teacherBranchId && !refs.activeTeacherBranchIds.has(demand.teacherBranchId)) return null;
     if (demand.teacherId && demand.courseId && !refs.activeTeacherCourseKeys.has(teacherCourseKey(demand.teacherId, demand.courseId))) return null;
 
     const rooms = (demand.roomIds ?? [...refs.activeRoomIds]).filter((r) => refs.activeRoomIds.has(r));
-    const slots = demand.timeSlotIds.filter((s) => refs.activeTimeSlotIds.has(s));
+    const slots = demand.timeSlots.filter((s) => refs.activeTimeSlotIds.has(s.id));
     if (rooms.length === 0 || slots.length === 0) return null;
 
     // Deterministically rank (timeSlot, room) pairs: prefer requested day,
     // prefer less-loaded room, then seeded tiebreak.
-    const pairs: Array<{ slot: string; room: string; score: number }> = [];
+    const pairs: Array<{ slot: TimeSlotRef; room: string; score: number }> = [];
     for (const slot of slots) {
       for (const room of rooms) {
-        if (tick()) return null;
-        const dayHint = demand.preferredDayOfWeek ?? 1;
-        const score = (dayHint * 7 + (rooms.length - rooms.indexOf(room))) + rng() * 0.5;
+        if (boundsExhausted()) return 'EXHAUSTED';
+        if (tick()) return 'EXHAUSTED';
+        const dayHint = demand.preferredDayOfWeek ?? slot.dayOfWeek;
+        const score = dayHint * 7 + (rooms.length - rooms.indexOf(room)) + rng() * 0.5;
         pairs.push({ slot, room, score });
       }
     }
     pairs.sort((a, b) => a.score - b.score);
 
     for (const pair of pairs) {
-      if (tick()) return null;
+      if (boundsExhausted()) return 'EXHAUSTED';
+      if (tick()) return 'EXHAUSTED';
       const event: ScheduleEventDraft = {
         eventId: `gen-${demand.demandId}`,
         teacherId: demand.teacherId,
@@ -210,10 +238,10 @@ export class DeterministicSolver implements SolverPort {
         studentGroupId: demand.studentGroupId,
         courseId: demand.courseId,
         roomId: pair.room,
-        timeSlotId: pair.slot,
-        dayOfWeek: demand.preferredDayOfWeek ?? 1,
-        startTime: '09:00',
-        endTime: '10:00',
+        timeSlotId: pair.slot.id,
+        dayOfWeek: pair.slot.dayOfWeek,
+        startTime: pair.slot.startTime,
+        endTime: pair.slot.endTime,
       };
       if (!this.hasHardConflict(event, placed)) return event;
     }
@@ -263,6 +291,5 @@ export class DeterministicSolver implements SolverPort {
   }
 }
 
-// Keep contract symbols referenced for tree-shaking clarity.
 void M3_SCHEDULE_CONTRACT_ID;
 void M3_SCHEDULE_CONTRACT_VERSION;
