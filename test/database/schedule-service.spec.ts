@@ -96,10 +96,10 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       [GROUP_1, TENANT_A, BRANCH_A],
     );
     await dataSource.query(
-      `INSERT INTO courses (id, tenant_id, branch_id, name, status, deleted_at)
-       VALUES ($1, $2, $3, 'Course', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
-      [COURSE_1, TENANT_A, BRANCH_A],
+      `INSERT INTO courses (id, tenant_id, name, status)
+       VALUES ($1, $2, 'Course', 'active')
+       ON CONFLICT (id) DO UPDATE SET status='active', deactivated_at=NULL`,
+      [COURSE_1, TENANT_A],
     );
     await dataSource.query(
       `INSERT INTO rooms (id, tenant_id, branch_id, name, status, deleted_at)
@@ -144,8 +144,8 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
     await dataSource.query('DELETE FROM schedule_events WHERE tenant_id IN ($1,$2)', [TENANT_A, TENANT_B]);
     await dataSource.query('DELETE FROM schedule_versions WHERE tenant_id IN ($1,$2)', [TENANT_A, TENANT_B]);
     await dataSource.query('DELETE FROM schedules WHERE tenant_id IN ($1,$2)', [TENANT_A, TENANT_B]);
-    await dataSource.query('DELETE FROM teachers WHERE id = $1', [TEACHER_1]);
     await dataSource.query('DELETE FROM teacher_branches WHERE id = $1', [TEACHER_BRANCH_1]);
+    await dataSource.query('DELETE FROM teachers WHERE id = $1', [TEACHER_1]);
     await dataSource.query('DELETE FROM student_groups WHERE id = $1', [GROUP_1]);
     await dataSource.query('DELETE FROM courses WHERE id = $1', [COURSE_1]);
     await dataSource.query('DELETE FROM rooms WHERE id = $1', [ROOM_1]);
