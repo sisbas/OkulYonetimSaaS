@@ -8,8 +8,7 @@ import { RequestContext } from '../common/context/request-context';
 export interface MarkAttendanceInput {
   tenantId: string;
   studentId: string;
-  courseId: string;
-  sessionDate: string;
+  sessionId: string;
   status: AttendanceStatus;
   markedById?: string | null;
   notes?: string | null;
@@ -19,8 +18,10 @@ export interface MarkAttendanceInput {
  * Yoklama servisi (OKUL-06). Bağımsız modül — schedules/leaves'e sıkı bağımlılık
  * yok, yalnızca kendi entity'sini yönetir.
  *
- * - Atomic upsert: repository.upsert ile (tenant, student, course, date) unique
+ * - Atomic upsert: repository.upsert ile (tenant, session, student) unique
  *   ihlali race condition'sız çözülür.
+ * - Canonical M5 authority chain: ScheduleEvent -> AttendanceSession ->
+ *   AttendanceRecord (session_id).
  * - KVKK: notes alanı redaction-registry ile maskelenebilir ('notes' artık
  *   registry'de tanımlı — OKUL-04 tek kaynak).
  * - Audit: mark işlemi SecurityAuditService ile KVKK veri koruma eventi olarak
@@ -40,8 +41,7 @@ export class AttendanceService {
     const entity = this.repo.create({
       tenantId: input.tenantId,
       studentId: input.studentId,
-      courseId: input.courseId,
-      sessionDate: input.sessionDate,
+      sessionId: input.sessionId,
       status: input.status,
       markedById: input.markedById ?? null,
       notes,
@@ -49,14 +49,13 @@ export class AttendanceService {
 
     // Atomic upsert: mevcut kayıt varsa günceller, yoksa oluşturur.
     await this.repo.upsert(entity, {
-      conflictPaths: ['tenantId', 'studentId', 'courseId', 'sessionDate'],
+      conflictPaths: ['tenantId', 'sessionId', 'studentId'],
     });
     const saved = await this.repo.findOne({
       where: {
         tenantId: input.tenantId,
         studentId: input.studentId,
-        courseId: input.courseId,
-        sessionDate: input.sessionDate,
+        sessionId: input.sessionId,
       },
     });
 
@@ -67,8 +66,7 @@ export class AttendanceService {
         event: 'attendance.marked',
         tenantId: input.tenantId,
         studentId: input.studentId,
-        courseId: input.courseId,
-        sessionDate: input.sessionDate,
+        sessionId: input.sessionId,
         status: input.status,
         actorId: ctx?.userId ?? input.markedById ?? 'system',
       }),
@@ -80,18 +78,17 @@ export class AttendanceService {
   async listByStudent(tenantId: string, studentId: string): Promise<AttendanceRecord[]> {
     return this.repo.find({
       where: { tenantId, studentId },
-      order: { sessionDate: 'DESC' },
+      order: { createdAt: 'DESC' },
       take: 100,
     });
   }
 
-  async listByCourse(
+  async listBySession(
     tenantId: string,
-    courseId: string,
-    sessionDate: string,
+    sessionId: string,
   ): Promise<AttendanceRecord[]> {
     return this.repo.find({
-      where: { tenantId, courseId, sessionDate },
+      where: { tenantId, sessionId },
       order: { studentId: 'ASC' },
     });
   }

@@ -27,6 +27,17 @@ import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
 
+// #261 quarantine: eokul-sync / reports are UNSUPPORTED paths until their
+// acceptance is real. Keep them OUT of the runtime graph unless explicitly
+// enabled via env (default OFF).
+const QUARANTINED_MODULES: any[] = [];
+if (process.env.ENABLE_EOKUL_SYNC === 'true') {
+  QUARANTINED_MODULES.push(EokulSyncModule);
+}
+if (process.env.ENABLE_REPORTS === 'true') {
+  QUARANTINED_MODULES.push(ReportsModule);
+}
+
 @Module({
   imports: [
     TypeOrmModule.forRoot({ ...AppDataSource.options, autoLoadEntities: true }),
@@ -42,10 +53,9 @@ import { NotificationsModule } from './notifications/notifications.module';
     DailyOperationsModule,
     TeachersModule,
     TeacherCoursesModule,
-    EokulSyncModule,
     AttendanceModule,
-    ReportsModule,
     NotificationsModule,
+    ...QUARANTINED_MODULES,
   ],
   providers: [
     SecurityAuditService,
