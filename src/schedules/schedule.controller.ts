@@ -6,8 +6,8 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
-import { PermissionGuard } from '../common/guards/permission.guard';
 import { ScheduleService } from './schedule.service';
 import {
   CreateScheduleInput,
@@ -19,7 +19,7 @@ import { ScheduleEventDraft } from './m3-schedule-contract';
 type ReqCtx = { tenantId: string; actorId: string };
 
 @Controller('schedules')
-@UseGuards(TenantScopeGuard, PermissionGuard)
+@UseGuards(AuthGuard('jwt'), TenantScopeGuard)
 export class ScheduleController {
   constructor(private readonly service: ScheduleService) {}
 
