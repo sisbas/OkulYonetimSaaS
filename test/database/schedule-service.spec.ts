@@ -11,20 +11,21 @@ import { ScheduleEventDraft } from '../../src/schedules/m3-schedule-contract';
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 const describeWithPostgres = DATABASE_URL ? describe : describe.skip;
 
+// UUID yalnızca [0-9a-f] hex karakterleri içerir (t/g/r/s/u gibi harfler GEÇERSİZ).
 const TENANT_A = 'a0000000-0000-4000-8000-0000000000a1';
 const TENANT_B = 'b0000000-0000-4000-8000-0000000000b1';
 const BRANCH_A = 'a1000000-0000-4000-8000-0000000000a1';
 const BRANCH_B = 'b1000000-0000-4000-8000-0000000000b1';
 
 // Referans varlıkları (loadActiveReferences doğru çalışsın diye).
-// NOT: UUID yalnızca [0-9a-f] hex karakterleri içerir; t/g/r/s/u gibi
-// harfler GEÇERSİZDIR (Postgres "invalid input syntax for type uuid" verir).
 const TEACHER_1 = 'c1000000-0000-4000-8000-0000000000c1';
 const TEACHER_BRANCH_1 = 'cb000000-0000-4000-8000-0000000000c1';
 const GROUP_1 = 'd1000000-0000-4000-8000-0000000000c1';
 const COURSE_1 = 'e1000000-0000-4000-8000-0000000000c1';
 const ROOM_1 = 'f1000000-0000-4000-8000-0000000000c1';
 const SLOT_1 = 'a2000000-0000-4000-8000-0000000000c1';
+// Var olmayan (ama geçerli formatlı) teacher — referans kontrolü reddetmeli.
+const MISSING_TEACHER = 'deadbeef-0000-4000-8000-0000000000ff';
 
 function makeEvent(over: Partial<ScheduleEventDraft> = {}): ScheduleEventDraft {
   return {
@@ -58,17 +59,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
     },
   };
 
-  beforeAll(async () => {
-    dataSource = new DataSource({
-      type: 'postgres',
-      url: DATABASE_URL as string,
-      entities: [Schedule, ScheduleVersion, ScheduleEvent],
-      synchronize: false,
-      logging: false,
-    });
-    await dataSource.initialize();
-
-    // Tenant + branch seed (her iki tenant).
+  async function seedReferences(): Promise<void> {
     for (const [tid, bid] of [
       [TENANT_A, BRANCH_A],
       [TENANT_B, BRANCH_B],
@@ -86,36 +77,33 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
         [bid, tid, `${bid}-branch`, `${bid}-code`],
       );
     }
-
-    // Referans varlıkları (tenant A).
     await dataSource.query(
       `INSERT INTO teachers (id, tenant_id, first_name, last_name, status, deleted_at)
        VALUES ($1, $2, 'Seed', 'Teacher', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE
-       SET first_name='Seed', last_name='Teacher', status='active', deleted_at=NULL`,
+       ON CONFLICT (id) DO UPDATE SET first_name='Seed', last_name='Teacher', status='active', deleted_at=NULL`,
       [TEACHER_1, TENANT_A],
     );
     await dataSource.query(
-      `INSERT INTO teacher_branches (id, tenant_id, teacher_id, branch_id, status, deleted_at)
-       VALUES ($1, $2, $3, $4, 'active', NULL)
+      `INSERT INTO teacher_branches (id, tenant_id, teacher_id, branch_id, status, effective_from, deleted_at)
+       VALUES ($1, $2, $3, $4, 'active', '2026-01-01', NULL)
        ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [TEACHER_BRANCH_1, TENANT_A, TEACHER_1, BRANCH_A],
     );
     await dataSource.query(
-      `INSERT INTO student_groups (id, tenant_id, branch_id, status, deleted_at)
-       VALUES ($1, $2, $3, 'active', NULL)
+      `INSERT INTO student_groups (id, tenant_id, branch_id, name, status, deleted_at)
+       VALUES ($1, $2, $3, 'Group', 'active', NULL)
        ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [GROUP_1, TENANT_A, BRANCH_A],
     );
     await dataSource.query(
-      `INSERT INTO courses (id, tenant_id, branch_id, status, deleted_at)
-       VALUES ($1, $2, $3, 'active', NULL)
+      `INSERT INTO courses (id, tenant_id, branch_id, name, status, deleted_at)
+       VALUES ($1, $2, $3, 'Course', 'active', NULL)
        ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [COURSE_1, TENANT_A, BRANCH_A],
     );
     await dataSource.query(
-      `INSERT INTO rooms (id, tenant_id, branch_id, status, deleted_at)
-       VALUES ($1, $2, $3, 'active', NULL)
+      `INSERT INTO rooms (id, tenant_id, branch_id, name, status, deleted_at)
+       VALUES ($1, $2, $3, 'Room', 'active', NULL)
        ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [ROOM_1, TENANT_A, BRANCH_A],
     );
@@ -125,6 +113,18 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
        ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [SLOT_1, TENANT_A, BRANCH_A],
     );
+  }
+
+  beforeAll(async () => {
+    dataSource = new DataSource({
+      type: 'postgres',
+      url: DATABASE_URL as string,
+      entities: [Schedule, ScheduleVersion, ScheduleEvent],
+      synchronize: false,
+      logging: false,
+    });
+    await dataSource.initialize();
+    await seedReferences();
 
     service = new ScheduleService(
       dataSource.getRepository(Schedule),
@@ -244,7 +244,6 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
     expect(Number(rows[0].revision)).toBeGreaterThanOrEqual(1);
     expect(rows[0].validation_mode).toBe('FULL');
 
-    // Events persisted under published version.
     const ev = await dataSource.query(
       'SELECT COUNT(*)::int AS n FROM schedule_events WHERE schedule_id = $1',
       [schedule.id],
@@ -265,7 +264,6 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       scheduleId: schedule.id,
       events: [makeEvent()],
     });
-    // Caller sends a stale revision (e.g. 99) while persisted revision is 1.
     await expect(
       service.publish(TENANT_A, BRANCH_A, schedule.id, ctxA.user!.userId, 'req-stale', [makeEvent()], 99),
     ).rejects.toBeInstanceOf(ConflictException);
@@ -282,9 +280,8 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       tenantId: TENANT_A,
       branchId: BRANCH_A,
       scheduleId: schedule.id,
-      events: [makeEvent({ teacherId: 'deadbeef-0000-4000-8000-0000000000ff' })],
+      events: [makeEvent({ teacherId: MISSING_TEACHER })],
     });
-    // loadActiveReferences can't find the teacher -> validation fails -> publish denied.
     await expect(
       service.publish(
         TENANT_A,
@@ -292,7 +289,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
         schedule.id,
         ctxA.user!.userId,
         'req-badref',
-        [makeEvent({ teacherId: 'deadbeef-0000-4000-8000-0000000000ff' })],
+        [makeEvent({ teacherId: MISSING_TEACHER })],
         1,
       ),
     ).rejects.toThrow();
@@ -313,7 +310,6 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
     });
     await service.publish(TENANT_A, BRANCH_A, schedule.id, ctxA.user!.userId, 'req-pub', [makeEvent()], 1);
 
-    // Persisted revision after publish.
     const persisted = await dataSource.query('SELECT revision FROM schedules WHERE id = $1', [schedule.id]);
     const rev = Number(persisted[0].revision);
     await service.unpublish(TENANT_A, BRANCH_A, schedule.id, ctxA.user!.userId, 'req-unpub', rev);
@@ -328,7 +324,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
 
   it('publish throws NotFound when schedule missing', async () => {
     await expect(
-      service.publish(TENANT_A, BRANCH_A, 'missing-0000-0000-0000-00000000zz', ctxA.user!.userId, 'req-miss', [makeEvent()], 1),
+      service.publish(TENANT_A, BRANCH_A, 'missing-0000-0000-0000-00001111aa', ctxA.user!.userId, 'req-miss', [makeEvent()], 1),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
