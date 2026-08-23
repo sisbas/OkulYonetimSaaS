@@ -95,22 +95,23 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
        ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [GROUP_1, TENANT_A, BRANCH_A],
     );
+    // courses has NO branch_id column — only tenant_id + name + status.
     await dataSource.query(
-      `INSERT INTO courses (id, tenant_id, name, status)
-       VALUES ($1, $2, 'Course', 'active')
-       ON CONFLICT (id) DO UPDATE SET status='active', deactivated_at=NULL`,
+      `INSERT INTO courses (id, tenant_id, name, status, deleted_at)
+       VALUES ($1, $2, 'Course', 'active', NULL)
+       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [COURSE_1, TENANT_A],
     );
     await dataSource.query(
-      `INSERT INTO rooms (id, tenant_id, branch_id, name, status)
-       VALUES ($1, $2, $3, 'Room', 'active')
-       ON CONFLICT (id) DO UPDATE SET status='active', deactivated_at=NULL`,
+      `INSERT INTO rooms (id, tenant_id, branch_id, name, status, deleted_at)
+       VALUES ($1, $2, $3, 'Room', 'active', NULL)
+       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [ROOM_1, TENANT_A, BRANCH_A],
     );
     await dataSource.query(
-      `INSERT INTO time_slots (id, tenant_id, branch_id, name, day_of_week, start_time, end_time, status)
-       VALUES ($1, $2, $3, 'Slot', 1, '09:00', '10:00', 'active')
-       ON CONFLICT (id) DO UPDATE SET status='active', archived_at=NULL`,
+      `INSERT INTO time_slots (id, tenant_id, branch_id, day_of_week, start_time, end_time, status, deleted_at)
+       VALUES ($1, $2, $3, 1, '09:00', '10:00', 'active', NULL)
+       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [SLOT_1, TENANT_A, BRANCH_A],
     );
   }
@@ -144,8 +145,8 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
     await dataSource.query('DELETE FROM schedule_events WHERE tenant_id IN ($1,$2)', [TENANT_A, TENANT_B]);
     await dataSource.query('DELETE FROM schedule_versions WHERE tenant_id IN ($1,$2)', [TENANT_A, TENANT_B]);
     await dataSource.query('DELETE FROM schedules WHERE tenant_id IN ($1,$2)', [TENANT_A, TENANT_B]);
-    await dataSource.query('DELETE FROM teacher_branches WHERE id = $1', [TEACHER_BRANCH_1]);
     await dataSource.query('DELETE FROM teachers WHERE id = $1', [TEACHER_1]);
+    await dataSource.query('DELETE FROM teacher_branches WHERE id = $1', [TEACHER_BRANCH_1]);
     await dataSource.query('DELETE FROM student_groups WHERE id = $1', [GROUP_1]);
     await dataSource.query('DELETE FROM courses WHERE id = $1', [COURSE_1]);
     await dataSource.query('DELETE FROM rooms WHERE id = $1', [ROOM_1]);
@@ -222,6 +223,8 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       scheduleId: schedule.id,
       events: [makeEvent()],
     });
+    const persisted = await dataSource.query('SELECT revision FROM schedules WHERE id = $1', [schedule.id]);
+    const rev = Number(persisted[0].revision);
     const published = await service.publish(
       TENANT_A,
       BRANCH_A,
@@ -229,7 +232,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       ctxA.user!.userId,
       'req-publish-1',
       [makeEvent()],
-      1,
+      rev,
     );
     expect(published.status).toBe('published');
 
@@ -280,8 +283,10 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       tenantId: TENANT_A,
       branchId: BRANCH_A,
       scheduleId: schedule.id,
-      events: [makeEvent({ teacherId: MISSING_TEACHER })],
+      events: [makeEvent()],
     });
+    const persisted = await dataSource.query('SELECT revision FROM schedules WHERE id = $1', [schedule.id]);
+    const rev = Number(persisted[0].revision);
     await expect(
       service.publish(
         TENANT_A,
@@ -290,7 +295,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
         ctxA.user!.userId,
         'req-badref',
         [makeEvent({ teacherId: MISSING_TEACHER })],
-        1,
+        rev,
       ),
     ).rejects.toThrow();
   });
@@ -308,11 +313,13 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       scheduleId: schedule.id,
       events: [makeEvent()],
     });
-    await service.publish(TENANT_A, BRANCH_A, schedule.id, ctxA.user!.userId, 'req-pub', [makeEvent()], 1);
-
     const persisted = await dataSource.query('SELECT revision FROM schedules WHERE id = $1', [schedule.id]);
     const rev = Number(persisted[0].revision);
-    await service.unpublish(TENANT_A, BRANCH_A, schedule.id, ctxA.user!.userId, 'req-unpub', rev);
+    await service.publish(TENANT_A, BRANCH_A, schedule.id, ctxA.user!.userId, 'req-pub', [makeEvent()], rev);
+
+    const publishedSchedule = await dataSource.query('SELECT revision FROM schedules WHERE id = $1', [schedule.id]);
+    const publishedRev = Number(publishedSchedule[0].revision);
+    await service.unpublish(TENANT_A, BRANCH_A, schedule.id, ctxA.user!.userId, 'req-unpub', publishedRev);
 
     const rows = await dataSource.query(
       'SELECT status, active_version_id FROM schedules WHERE id = $1',
@@ -324,7 +331,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
 
   it('publish throws NotFound when schedule missing', async () => {
     await expect(
-      service.publish(TENANT_A, BRANCH_A, 'missing-0000-0000-0000-00001111aa', ctxA.user!.userId, 'req-miss', [makeEvent()], 1),
+      service.publish(TENANT_A, BRANCH_A, '00000000-0000-4000-8000-000000001111', ctxA.user!.userId, 'req-miss', [makeEvent()], 1),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
