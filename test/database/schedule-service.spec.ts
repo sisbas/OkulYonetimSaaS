@@ -89,9 +89,10 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
 
     // Referans varlıkları (tenant A).
     await dataSource.query(
-      `INSERT INTO teachers (id, tenant_id, first_name, status, deleted_at)
-       VALUES ($1, $2, 'Seed', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
+      `INSERT INTO teachers (id, tenant_id, first_name, last_name, status, deleted_at)
+       VALUES ($1, $2, 'Seed', 'Teacher', 'active', NULL)
+       ON CONFLICT (id) DO UPDATE
+       SET first_name='Seed', last_name='Teacher', status='active', deleted_at=NULL`,
       [TEACHER_1, TENANT_A],
     );
     await dataSource.query(
