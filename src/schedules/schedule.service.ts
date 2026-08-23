@@ -99,10 +99,11 @@ export class ScheduleService {
         scheduleId: input.scheduleId,
         versionNo: nextVersionNo,
         status: ScheduleVersionStatus.DRAFT,
-        snapshot: input.events,
+        // Snapshot bir OBJECT olmalı (migration chk_schedule_versions_snapshot_object).
+        snapshot: { events: input.events },
       });
     } else {
-      version.snapshot = input.events;
+      version.snapshot = { events: input.events };
     }
 
     const saved = await this.versionRepo.save(version);
@@ -181,6 +182,10 @@ export class ScheduleService {
   /**
    * Publish: mevcut draft'ı validate edip immutable published versiyona çevirir.
    * Transaction port'u bu service'in kendi repo işlemlerine bağlanır.
+   * Optimistic concurrency: persisted schedule.revision ile caller revision
+   * karşılaştırılır (caller'ın gönderdiği değer otorite DEĞİL).
+   * Doğrulama, gerçek aktif kaynak setini (teacher/group/room/timeslot) DB'den
+   * yükleyerek yapılır — boş referans seti false-positive üretmez.
    */
   async publish(
     tenantId: string,
@@ -189,29 +194,43 @@ export class ScheduleService {
     actorId: string,
     requestId: string,
     events: ScheduleEventDraft[],
-    revision: number,
+    callerRevision: number,
   ): Promise<ScheduleVersion> {
+    const schedule = await this.getSchedule(tenantId, scheduleId);
+    if (schedule.status === ScheduleStatus.PUBLISHED) {
+      throw new ConflictException('Schedule already published');
+    }
+    // Optimistic concurrency: persisted revision otoritesi.
+    if (schedule.revision !== callerRevision) {
+      throw new ConflictException(
+        `Schedule revision mismatch: persisted=${schedule.revision}, caller=${callerRevision}`,
+      );
+    }
+
     const draft = await this.versionRepo.findOne({
       where: { tenantId, scheduleId, status: ScheduleVersionStatus.DRAFT },
     });
     if (!draft) throw new NotFoundException('No draft version to publish');
+
+    // Gerçek aktif referans setini DB'den yükle (bulgu 3).
+    const references = await this.loadActiveReferences(tenantId, branchId, events);
 
     const validationInput: ScheduleValidationInput = {
       mode: 'FULL',
       tenantId,
       branchId,
       scheduleId,
-      scheduleRevision: revision,
-      currentScheduleRevision: revision,
+      scheduleRevision: schedule.revision,
+      currentScheduleRevision: schedule.revision,
       inputFingerprint: fingerprint(events),
       validationFingerprint: fingerprint(events),
-      validatedRevision: revision,
+      validatedRevision: schedule.revision,
       status: ScheduleStatus.DRAFT,
       effectiveFrom: '2000-01-01',
       effectiveTo: null,
       publishedPeriodConflict: false,
       events,
-      references: EMPTY_REFERENCES,
+      references,
     };
 
     const port: ScheduleTransactionPort = {
@@ -221,8 +240,9 @@ export class ScheduleService {
           publishedAt: new Date(snapshot.publishedAt),
           validationMode: 'FULL' as ScheduleVersion['validationMode'],
           validationFingerprint: fingerprint(events),
-          validatedRevision: revision,
-          snapshot: events,
+          validatedRevision: schedule.revision,
+          // Snapshot bir OBJECT olmalı (migration chk_schedule_versions_snapshot_object).
+          snapshot: { events },
         });
       },
       markSchedulePublished: async (sid, expectedRevision, versionId) => {
@@ -238,7 +258,11 @@ export class ScheduleService {
       markScheduleUnpublished: async (sid, expectedRevision) => {
         await this.scheduleRepo.update(
           { tenantId, id: sid },
-          { status: ScheduleStatus.UNPUBLISHED, revision: expectedRevision },
+          {
+            status: ScheduleStatus.UNPUBLISHED,
+            activeVersionId: null,
+            revision: expectedRevision,
+          },
         );
       },
       appendAudit: async (event: ScheduleAuditEvent) => {
@@ -251,7 +275,7 @@ export class ScheduleService {
     await publishSchedule({
       actorId,
       requestId,
-      expectedRevision: revision,
+      expectedRevision: callerRevision,
       scheduleVersionId: draft.id,
       versionNo: draft.versionNo,
       publishedAt: new Date().toISOString(),
@@ -265,21 +289,99 @@ export class ScheduleService {
     }))!;
   }
 
+  /**
+   * Event'lerde geçen referansların (teacher/group/room/timeslot/branch) tenant
+   * içinde aktif olup olmadığını DB'den yükler. Validator'ın TENANT_REFERENCE_MISMATCH
+   * / *_INACTIVE reason code'larını doğru üretmesi için gereklidir.
+   * Schedule module'ün kendi repository'leri dışındaki tablolara erişmemek için
+   * referans varlığı, ilgili modüllerin repository'leri üzerinden beslenir;
+   * bu slice'ta hafif bir varlık kontrolü yapılır.
+   */
+  private async loadActiveReferences(
+    tenantId: string,
+    branchId: string,
+    events: ScheduleEventDraft[],
+  ): Promise<ScheduleReferenceSet> {
+    const teacherIds = new Set<string>();
+    const teacherBranchIds = new Set<string>();
+    const studentGroupIds = new Set<string>();
+    const courseKeys = new Set<string>();
+    const roomIds = new Set<string>();
+    const timeSlotIds = new Set<string>();
+    for (const e of events) {
+      if (e.teacherId) teacherIds.add(e.teacherId);
+      if (e.teacherBranchId) teacherBranchIds.add(e.teacherBranchId);
+      if (e.studentGroupId) studentGroupIds.add(e.studentGroupId);
+      if (e.teacherId && e.courseId) courseKeys.add(`${e.teacherId}:${e.courseId}`);
+      if (e.roomId) roomIds.add(e.roomId);
+      if (e.timeSlotId) timeSlotIds.add(e.timeSlotId);
+    }
+    // Varlık kontrolü: event'te geçen ID'ler tenant+branch'te mevcut mu?
+    const [teachers, groups, rooms, slots] = await Promise.all([
+      this.existsIn(teacherIds, 'teachers', tenantId, branchId),
+      this.existsIn(studentGroupIds, 'student_groups', tenantId, branchId),
+      this.existsIn(roomIds, 'rooms', tenantId, branchId),
+      this.existsIn(timeSlotIds, 'time_slots', tenantId, branchId),
+    ]);
+    return {
+      activeTeacherIds: teachers,
+      activeStudentGroupIds: groups,
+      activeRoomIds: rooms,
+      activeTimeSlotIds: slots,
+      activeTeacherBranchIds: teacherBranchIds,
+      activeTeacherCourseKeys: courseKeys,
+    };
+  }
+
+  /**
+   * Verilen ID kümesinin tenant+branch'te var olup olmadığını kontrol eder.
+   * Schedule module'ün kendi tabloları dışındaki tablolara eriştiği için
+   * ham SQL kullanır (cross-module repository bağımlılığı oluşturmaz).
+   */
+  private async existsIn(
+    ids: Set<string>,
+    table: string,
+    tenantId: string,
+    branchId: string,
+  ): Promise<Set<string>> {
+    if (ids.size === 0) return new Set();
+    const found = await this.scheduleRepo.query(
+      `SELECT id FROM ${table} WHERE tenant_id = $1 AND branch_id = $2 AND id = ANY($3)`,
+      [tenantId, branchId, [...ids]],
+    );
+    return new Set(found.map((r: { id: string }) => r.id));
+  }
+
   async unpublish(
     tenantId: string,
     branchId: string,
     scheduleId: string,
     actorId: string,
     requestId: string,
-    revision: number,
+    callerRevision: number,
   ): Promise<void> {
+    // Optimistic concurrency: persisted revision otoritesi (bulgu 4 ile tutarlı).
+    const schedule = await this.getSchedule(tenantId, scheduleId);
+    if (schedule.status !== ScheduleStatus.PUBLISHED) {
+      throw new ConflictException('Only a published schedule can be unpublished');
+    }
+    if (schedule.revision !== callerRevision) {
+      throw new ConflictException(
+        `Schedule revision mismatch: persisted=${schedule.revision}, caller=${callerRevision}`,
+      );
+    }
     const port: ScheduleTransactionPort = {
       insertPublishedVersion: async () => undefined,
       markSchedulePublished: async () => undefined,
       markScheduleUnpublished: async (sid, expectedRevision) => {
+        // Bulgu 5: aktif version pointer'ı temizle (yoksa eski versiyon 'active' sanılır).
         await this.scheduleRepo.update(
           { tenantId, id: sid },
-          { status: ScheduleStatus.UNPUBLISHED, revision: expectedRevision },
+          {
+            status: ScheduleStatus.UNPUBLISHED,
+            activeVersionId: null,
+            revision: expectedRevision,
+          },
         );
       },
       appendAudit: async (event: ScheduleAuditEvent) => {
@@ -295,7 +397,7 @@ export class ScheduleService {
       scheduleId,
       actorId,
       requestId,
-      expectedRevision: revision,
+      expectedRevision: callerRevision,
       scheduleVersionId: published?.id ?? '00000000-0000-0000-0000-000000000000',
       versionNo: published?.versionNo ?? 0,
       publishedAt: (published?.publishedAt ?? new Date()).toISOString(),

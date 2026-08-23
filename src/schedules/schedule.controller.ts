@@ -4,29 +4,40 @@ import {
   ForbiddenException,
   Param,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { RequestContext, RequestWithContext } from '../common/context/request-context';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 import { ScheduleService } from './schedule.service';
-import {
-  CreateScheduleInput,
-  SaveDraftInput,
-} from './schedule.service';
+import { CreateScheduleInput, SaveDraftInput } from './schedule.service';
 import { ScheduleEventDraft } from './m3-schedule-contract';
 
-// Basit request shape'leri (gerçek auth context'ten tenant/actor alınır).
-type ReqCtx = { tenantId: string; actorId: string };
+function getRequestContext(request: RequestWithContext): RequestContext {
+  if (!request.user && !request.context?.user) {
+    throw new ForbiddenException('Authentication required');
+  }
+  if (!request.context?.tenantId) {
+    throw new ForbiddenException('Tenant context required');
+  }
+  return request.context;
+}
 
+// Tenant isolation: tenantId + actorId are resolved from the verified JWT /
+// tenant context (TenantScopeGuard), NEVER from the request body.
 @Controller('schedules')
 @UseGuards(AuthGuard('jwt'), TenantScopeGuard)
 export class ScheduleController {
   constructor(private readonly service: ScheduleService) {}
 
   @Post()
-  async create(@Body() body: CreateScheduleInput & ReqCtx) {
+  @Permissions('schedule:create')
+  async create(@Req() request: RequestWithContext, @Body() body: { branchId: string; effectiveFrom: string; effectiveTo?: string | null }) {
+    const ctx = getRequestContext(request);
     return this.service.createSchedule({
-      tenantId: body.tenantId,
+      tenantId: ctx.tenantId!,
       branchId: body.branchId,
       effectiveFrom: body.effectiveFrom,
       effectiveTo: body.effectiveTo ?? null,
@@ -34,13 +45,15 @@ export class ScheduleController {
   }
 
   @Post(':id/draft')
+  @Permissions('schedule:update')
   async saveDraft(
+    @Req() request: RequestWithContext,
     @Param('id') id: string,
-    @Body() body: { events: ScheduleEventDraft[]; branchId: string } & ReqCtx,
+    @Body() body: { branchId: string; events: ScheduleEventDraft[] },
   ) {
-    if (!body.tenantId) throw new ForbiddenException('tenant resolution failed');
+    const ctx = getRequestContext(request);
     const input: SaveDraftInput = {
-      tenantId: body.tenantId,
+      tenantId: ctx.tenantId!,
       branchId: body.branchId,
       scheduleId: id,
       events: body.events,
@@ -49,40 +62,29 @@ export class ScheduleController {
   }
 
   @Post(':id/validate')
+  @Permissions('schedule:read')
   async validate(
+    @Req() request: RequestWithContext,
     @Param('id') id: string,
-    @Body()
-    body: {
-      events: ScheduleEventDraft[];
-      branchId: string;
-      revision: number;
-    } & ReqCtx,
+    @Body() body: { branchId: string; events: ScheduleEventDraft[]; revision: number },
   ) {
-    return this.service.validateDraft(
-      body.tenantId,
-      body.branchId,
-      id,
-      body.events,
-      body.revision,
-    );
+    const ctx = getRequestContext(request);
+    return this.service.validateDraft(ctx.tenantId!, body.branchId, id, body.events, body.revision);
   }
 
   @Post(':id/publish')
+  @Permissions('schedule:publish')
   async publish(
+    @Req() request: RequestWithContext,
     @Param('id') id: string,
-    @Body()
-    body: {
-      events: import('./m3-schedule-contract').ScheduleEventDraft[];
-      branchId: string;
-      revision: number;
-      requestId: string;
-    } & ReqCtx,
+    @Body() body: { branchId: string; events: ScheduleEventDraft[]; revision: number; requestId: string },
   ) {
+    const ctx = getRequestContext(request);
     return this.service.publish(
-      body.tenantId,
+      ctx.tenantId!,
       body.branchId,
       id,
-      body.actorId,
+      ctx.user!.userId,
       body.requestId,
       body.events,
       body.revision,
@@ -90,15 +92,18 @@ export class ScheduleController {
   }
 
   @Post(':id/unpublish')
+  @Permissions('schedule:publish')
   async unpublish(
+    @Req() request: RequestWithContext,
     @Param('id') id: string,
-    @Body() body: { branchId: string; revision: number; requestId: string } & ReqCtx,
+    @Body() body: { branchId: string; revision: number; requestId: string },
   ) {
+    const ctx = getRequestContext(request);
     return this.service.unpublish(
-      body.tenantId,
+      ctx.tenantId!,
       body.branchId,
       id,
-      body.actorId,
+      ctx.user!.userId,
       body.requestId,
       body.revision,
     );
