@@ -26,6 +26,7 @@ import { TenantsModule } from './tenants/tenants.module';
 import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ScheduleModule } from './schedules/schedule.module';
 
 // #261 quarantine: eokul-sync / reports are UNSUPPORTED paths until their
 // acceptance is real. Keep them OUT of the runtime graph unless explicitly
@@ -55,6 +56,8 @@ if (process.env.ENABLE_REPORTS === 'true') {
     TeacherCoursesModule,
     AttendanceModule,
     NotificationsModule,
+    ScheduleModule,
+
     ...QUARANTINED_MODULES,
   ],
   providers: [
