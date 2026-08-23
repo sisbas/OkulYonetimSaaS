@@ -95,23 +95,23 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
        ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
       [GROUP_1, TENANT_A, BRANCH_A],
     );
-    // courses has NO branch_id column — only tenant_id + name + status.
+    // Reference fixtures mirror their canonical schema columns used by FK validation.
     await dataSource.query(
-      `INSERT INTO courses (id, tenant_id, name, status, deleted_at)
+      `INSERT INTO courses (id, tenant_id, name, status, deactivated_at)
        VALUES ($1, $2, 'Course', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
+       ON CONFLICT (id) DO UPDATE SET status='active', deactivated_at=NULL`,
       [COURSE_1, TENANT_A],
     );
     await dataSource.query(
-      `INSERT INTO rooms (id, tenant_id, branch_id, name, status, deleted_at)
+      `INSERT INTO rooms (id, tenant_id, branch_id, name, status, deactivated_at)
        VALUES ($1, $2, $3, 'Room', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
+       ON CONFLICT (id) DO UPDATE SET status='active', deactivated_at=NULL`,
       [ROOM_1, TENANT_A, BRANCH_A],
     );
     await dataSource.query(
-      `INSERT INTO time_slots (id, tenant_id, branch_id, day_of_week, start_time, end_time, status, deleted_at)
-       VALUES ($1, $2, $3, 1, '09:00', '10:00', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
+      `INSERT INTO time_slots (id, tenant_id, branch_id, name, day_of_week, start_time, end_time, status, archived_at)
+       VALUES ($1, $2, $3, 'Period 1', 1, '09:00', '10:00', 'active', NULL)
+       ON CONFLICT (id) DO UPDATE SET status='active', archived_at=NULL`,
       [SLOT_1, TENANT_A, BRANCH_A],
     );
   }
@@ -145,8 +145,8 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
     await dataSource.query('DELETE FROM schedule_events WHERE tenant_id IN ($1,$2)', [TENANT_A, TENANT_B]);
     await dataSource.query('DELETE FROM schedule_versions WHERE tenant_id IN ($1,$2)', [TENANT_A, TENANT_B]);
     await dataSource.query('DELETE FROM schedules WHERE tenant_id IN ($1,$2)', [TENANT_A, TENANT_B]);
-    await dataSource.query('DELETE FROM teachers WHERE id = $1', [TEACHER_1]);
     await dataSource.query('DELETE FROM teacher_branches WHERE id = $1', [TEACHER_BRANCH_1]);
+    await dataSource.query('DELETE FROM teachers WHERE id = $1', [TEACHER_1]);
     await dataSource.query('DELETE FROM student_groups WHERE id = $1', [GROUP_1]);
     await dataSource.query('DELETE FROM courses WHERE id = $1', [COURSE_1]);
     await dataSource.query('DELETE FROM rooms WHERE id = $1', [ROOM_1]);
