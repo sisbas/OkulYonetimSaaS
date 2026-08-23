@@ -317,8 +317,9 @@ export class ScheduleService {
       if (e.timeSlotId) timeSlotIds.add(e.timeSlotId);
     }
     // Varlık kontrolü: event'te geçen ID'ler tenant+branch'te mevcut mu?
-    const [teachers, groups, rooms, slots] = await Promise.all([
-      this.existsIn(teacherIds, 'teachers', tenantId, branchId),
+    const [teachers, teacherBranches, groups, rooms, slots] = await Promise.all([
+      this.existsTeachersInBranch(teacherIds, tenantId, branchId),
+      this.existsIn(teacherBranchIds, 'teacher_branches', tenantId, branchId),
       this.existsIn(studentGroupIds, 'student_groups', tenantId, branchId),
       this.existsIn(roomIds, 'rooms', tenantId, branchId),
       this.existsIn(timeSlotIds, 'time_slots', tenantId, branchId),
@@ -328,7 +329,7 @@ export class ScheduleService {
       activeStudentGroupIds: groups,
       activeRoomIds: rooms,
       activeTimeSlotIds: slots,
-      activeTeacherBranchIds: teacherBranchIds,
+      activeTeacherBranchIds: teacherBranches,
       activeTeacherCourseKeys: courseKeys,
     };
   }
@@ -345,8 +346,44 @@ export class ScheduleService {
     branchId: string,
   ): Promise<Set<string>> {
     if (ids.size === 0) return new Set();
+    const activeFilterByTable: Record<string, string> = {
+      teacher_branches: "status = 'active' AND deleted_at IS NULL AND deactivated_at IS NULL",
+      student_groups: "status = 'active' AND deleted_at IS NULL AND deactivated_at IS NULL",
+      rooms: "status = 'active' AND deactivated_at IS NULL",
+      time_slots: "status = 'active' AND archived_at IS NULL",
+    };
+    const activeFilter = activeFilterByTable[table];
+    if (!activeFilter) {
+      throw new Error(`Unsupported schedule reference table: ${table}`);
+    }
     const found = await this.scheduleRepo.query(
-      `SELECT id FROM ${table} WHERE tenant_id = $1 AND branch_id = $2 AND id = ANY($3)`,
+      `SELECT id FROM ${table} WHERE tenant_id = $1 AND branch_id = $2 AND id = ANY($3) AND ${activeFilter}`,
+      [tenantId, branchId, [...ids]],
+    );
+    return new Set(found.map((r: { id: string }) => r.id));
+  }
+
+  private async existsTeachersInBranch(
+    ids: Set<string>,
+    tenantId: string,
+    branchId: string,
+  ): Promise<Set<string>> {
+    if (ids.size === 0) return new Set();
+    const found = await this.scheduleRepo.query(
+      `SELECT DISTINCT t.id
+       FROM teachers t
+       INNER JOIN teacher_branches tb
+         ON tb.tenant_id = t.tenant_id
+        AND tb.teacher_id = t.id
+        AND tb.branch_id = $2
+        AND tb.status = 'active'
+        AND tb.deleted_at IS NULL
+        AND tb.deactivated_at IS NULL
+       WHERE t.tenant_id = $1
+         AND t.status = 'active'
+         AND t.deleted_at IS NULL
+         AND t.deactivated_at IS NULL
+         AND t.id = ANY($3)`,
       [tenantId, branchId, [...ids]],
     );
     return new Set(found.map((r: { id: string }) => r.id));
