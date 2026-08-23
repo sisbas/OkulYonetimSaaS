@@ -131,6 +131,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       dataSource.getRepository(Schedule),
       dataSource.getRepository(ScheduleVersion),
       dataSource.getRepository(ScheduleEvent),
+      { solve: async () => ({}) as never } as never,
     );
   });
 

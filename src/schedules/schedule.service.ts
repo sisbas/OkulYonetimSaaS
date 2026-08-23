@@ -18,6 +18,7 @@ import {
   ScheduleTransactionPort,
   ScheduleAuditEvent,
 } from './schedule-publisher';
+import { SolverPort, SolveRequest, SolveResult } from './solver/solver-port';
 
 export type CreateScheduleInput = {
   tenantId: string;
@@ -34,6 +35,18 @@ export type SaveDraftInput = {
   references?: ScheduleReferenceSet;
 };
 
+export type SolveScheduleInput = {
+  tenantId: string;
+  branchId: string;
+  scheduleId: string;
+  demands: SolveRequest['demands'];
+  seed: number;
+  bounds?: Partial<SolveRequest['bounds']>;
+  correlationId: string;
+  allowEmergency?: boolean;
+  aborted?: { value: boolean };
+};
+
 @Injectable()
 export class ScheduleService {
   constructor(
@@ -43,6 +56,7 @@ export class ScheduleService {
     private readonly versionRepo: Repository<ScheduleVersion>,
     @InjectRepository(ScheduleEvent)
     private readonly eventRepo: Repository<ScheduleEvent>,
+    private readonly solver: SolverPort,
   ) {}
 
   async createSchedule(input: CreateScheduleInput): Promise<Schedule> {
@@ -287,6 +301,71 @@ export class ScheduleService {
     return (await this.versionRepo.findOne({
       where: { id: draft.id },
     }))!;
+  }
+
+  /**
+   * Deterministic schedule generation (P1B-06, #262).
+   * SolverPort impl'i çağrılır; çıktı ScheduleService katmanında yeniden
+   * validate edilir (hard constraint hiçbir zaman relax edilmez). Çıktı
+   * yalnızca DRAFT'tır — bu metot hiçbir zaman publish yapmaz.
+   */
+  async solve(input: SolveScheduleInput): Promise<SolveResult> {
+    const schedule = await this.getSchedule(input.tenantId, input.scheduleId);
+    // bh0ii: build the reference lookup from the SOLVE DEMANDS (not an empty
+    // event list), otherwise loadActiveReferences returns empty sets and every
+    // demand becomes NO_VALID_SLOT even when all referenced records are active.
+    const demandEvents: ScheduleEventDraft[] = input.demands.map((d) => ({
+      eventId: `demand-${d.demandId}`,
+      teacherId: d.teacherId,
+      teacherBranchId: d.teacherBranchId,
+      studentGroupId: d.studentGroupId,
+      courseId: d.courseId,
+      roomId: d.roomIds?.[0] ?? null,
+      timeSlotId: d.timeSlots[0]?.id ?? null,
+      dayOfWeek: d.preferredDayOfWeek ?? 1,
+      startTime: '09:00',
+      endTime: '10:00',
+    }));
+    const references = await this.loadActiveReferences(input.tenantId, input.branchId, demandEvents);
+
+    const DEFAULT_BOUNDS = { maxDepth: 5000, maxNodes: 200_000, maxDurationMs: 30_000 };
+    const request: SolveRequest = {
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      referenceSet: references,
+      demands: input.demands,
+      seed: input.seed,
+      bounds: { ...DEFAULT_BOUNDS, ...(input.bounds ?? {}) },
+      correlationId: input.correlationId,
+      allowEmergency: input.allowEmergency,
+      aborted: input.aborted,
+    };
+
+    const result = await this.solver.solve(request);
+
+    // Hard-constraint guarantee: re-validate the solver output here too.
+    // (Solver already prunes; this is defence-in-depth + contract binding.)
+    const evidence = validateSchedule({
+      mode: 'FULL',
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      scheduleId: input.scheduleId,
+      scheduleRevision: schedule.revision,
+      currentScheduleRevision: schedule.revision,
+      inputFingerprint: `solve-${input.correlationId}-${input.seed}`,
+      status: 'draft',
+      effectiveFrom: schedule.effectiveFrom.toISOString(),
+      events: result.events,
+      references,
+    });
+    if (evidence.hardConflictCount > 0) {
+      // Drop hard-conflicting events; never relax.
+      const bad = new Set(evidence.reasons.filter((r) => r.eventId).map((r) => r.eventId!));
+      result.events = result.events.filter((e) => !bad.has(e.eventId));
+      result.placementRatio = result.events.length / Math.max(1, input.demands.length);
+    }
+
+    return result;
   }
 
   /**
