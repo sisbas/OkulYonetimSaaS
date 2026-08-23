@@ -102,15 +102,15 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       [COURSE_1, TENANT_A],
     );
     await dataSource.query(
-      `INSERT INTO rooms (id, tenant_id, branch_id, name, status, deleted_at)
-       VALUES ($1, $2, $3, 'Room', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
+      `INSERT INTO rooms (id, tenant_id, branch_id, name, status)
+       VALUES ($1, $2, $3, 'Room', 'active')
+       ON CONFLICT (id) DO UPDATE SET status='active', deactivated_at=NULL`,
       [ROOM_1, TENANT_A, BRANCH_A],
     );
     await dataSource.query(
-      `INSERT INTO time_slots (id, tenant_id, branch_id, day_of_week, start_time, end_time, status, deleted_at)
-       VALUES ($1, $2, $3, 1, '09:00', '10:00', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
+      `INSERT INTO time_slots (id, tenant_id, branch_id, name, day_of_week, start_time, end_time, status)
+       VALUES ($1, $2, $3, 'Slot', 1, '09:00', '10:00', 'active')
+       ON CONFLICT (id) DO UPDATE SET status='active', archived_at=NULL`,
       [SLOT_1, TENANT_A, BRANCH_A],
     );
   }
