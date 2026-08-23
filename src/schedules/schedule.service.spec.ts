@@ -56,8 +56,22 @@ function makeService() {
     create: (e: any) => e,
     save: async (e: ScheduleEvent[]) => e,
   };
-  const service = new ScheduleService(scheduleRepo, versionRepo, eventRepo);
-  return { service, scheduleRepo, versionRepo, eventRepo };
+  const solver: any = {
+    solve: async () => ({
+      status: 'SOLVED',
+      events: [],
+      placementRatio: 1,
+      unplaced: [],
+      relaxations: [],
+      diagnostics: { placedCount: 0, demandedCount: 0, teacherLoad: {}, roomLoad: {}, groupLoad: {}, dayBalance: {} },
+      bestSoFar: true,
+      seed: 0,
+      nodesVisited: 0,
+      durationMs: 0,
+    }),
+  };
+  const service = new ScheduleService(scheduleRepo, versionRepo, eventRepo, solver);
+  return { service, scheduleRepo, versionRepo, eventRepo, solver };
 }
 
 describe('ScheduleService (P1B-05 wiring)', () => {
