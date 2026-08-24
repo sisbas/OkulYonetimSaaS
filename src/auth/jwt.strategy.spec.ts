@@ -54,4 +54,17 @@ describe('JwtStrategy', () => {
 
     expect(auth.validateAccessTokenSession).not.toHaveBeenCalled();
   });
+
+  describe('boot fail-closed (secret missing)', () => {
+    const ORIGINAL_ACCESS = process.env.JWT_ACCESS_SECRET;
+    afterEach(() => {
+      process.env.JWT_ACCESS_SECRET = ORIGINAL_ACCESS;
+    });
+
+    it('throws when JWT_ACCESS_SECRET is missing (no predictable dev fallback)', () => {
+      delete process.env.JWT_ACCESS_SECRET;
+      const auth = { validateAccessTokenSession: jest.fn() } as unknown as AuthService;
+      expect(() => new JwtStrategy(auth)).toThrow(/JWT_ACCESS_SECRET is required/);
+    });
+  });
 });
