@@ -7,6 +7,7 @@ import {
   AUTH_ACCESS_TOKEN_AUDIENCE,
   AUTH_TOKEN_ISSUER,
   AuthService,
+  loadJwtAccessSecret,
 } from './auth.service';
 
 @Injectable()
@@ -15,7 +16,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret',
+      secretOrKey: loadJwtAccessSecret(),
       issuer: AUTH_TOKEN_ISSUER,
       audience: AUTH_ACCESS_TOKEN_AUDIENCE,
     });

@@ -13,6 +13,41 @@ export const AUTH_TOKEN_ISSUER = process.env.JWT_ISSUER ?? 'okul-yonetim-saas';
 export const AUTH_ACCESS_TOKEN_AUDIENCE = process.env.JWT_ACCESS_AUDIENCE ?? 'okul-yonetim-saas-api';
 export const AUTH_REFRESH_TOKEN_AUDIENCE = process.env.JWT_REFRESH_AUDIENCE ?? 'okul-yonetim-saas-refresh';
 
+// Fail-closed JWT secret loader (#259 P1B-02). Predictable dev fallback values are
+// removed: in production the secret MUST be present and sufficiently strong, otherwise
+// the process refuses to boot. Local/test runs set explicit test secrets via env, so the
+// dev fallback is physically impossible in a production build.
+const MIN_SECRET_BYTES = 32; // 256-bit
+
+function validateSecretStrength(name: string, value: string): void {
+  if (value.length < MIN_SECRET_BYTES) {
+    throw new Error(
+      `FATAL: ${name} is too weak (${value.length} chars, need >= ${MIN_SECRET_BYTES}). ` +
+        `Set a strong ${name} before starting in production.`,
+    );
+  }
+}
+
+function loadJwtAccessSecret(): string {
+  const secret = process.env.JWT_ACCESS_SECRET;
+  if (!secret) {
+    throw new Error('FATAL: JWT_ACCESS_SECRET is required but missing from environment.');
+  }
+  validateSecretStrength('JWT_ACCESS_SECRET', secret);
+  return secret;
+}
+
+function loadJwtRefreshSecret(): string {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret) {
+    throw new Error('FATAL: JWT_REFRESH_SECRET is required but missing from environment.');
+  }
+  validateSecretStrength('JWT_REFRESH_SECRET', secret);
+  return secret;
+}
+
+export { loadJwtAccessSecret, loadJwtRefreshSecret };
+
 export type LoginCommand = Readonly<{
   email: string;
   password: string;
@@ -115,7 +150,7 @@ export class AuthService {
         authorization_version: subject.authorizationVersion,
       },
       {
-        secret: process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret',
+        secret: loadJwtAccessSecret(),
         issuer: AUTH_TOKEN_ISSUER,
         audience: AUTH_ACCESS_TOKEN_AUDIENCE,
         expiresIn: ACCESS_TOKEN_TTL,
@@ -129,7 +164,7 @@ export class AuthService {
         jti: sessionId,
       },
       {
-        secret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret',
+        secret: loadJwtRefreshSecret(),
         issuer: AUTH_TOKEN_ISSUER,
         audience: AUTH_REFRESH_TOKEN_AUDIENCE,
         expiresIn: REFRESH_TOKEN_TTL,
@@ -216,7 +251,7 @@ export class AuthService {
     let payload: Pick<AccessTokenPayload, 'sub' | 'tenant_id' | 'session_id'>;
     try {
       payload = await this.jwt.verifyAsync(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret',
+        secret: loadJwtRefreshSecret(),
         issuer: AUTH_TOKEN_ISSUER,
         audience: AUTH_REFRESH_TOKEN_AUDIENCE,
       });
@@ -271,7 +306,7 @@ export class AuthService {
     const ok = await bcrypt.compare(refreshToken, storedHash);
     if (!ok) throw new UnauthorizedException('Invalid refresh token');
     return this.jwt.verifyAsync(refreshToken, {
-      secret: process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret',
+      secret: loadJwtRefreshSecret(),
       issuer: AUTH_TOKEN_ISSUER,
       audience: AUTH_REFRESH_TOKEN_AUDIENCE,
     });

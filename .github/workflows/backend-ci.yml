@@ -47,8 +47,8 @@ jobs:
       REQUIRE_MIGRATIONS: true
       MIGRATIONS_DIR: src/database/migrations
       TYPEORM_LOGGING: "false"
-      JWT_ACCESS_SECRET: backend-ci-access-secret
-      JWT_REFRESH_SECRET: backend-ci-refresh-secret
+      JWT_ACCESS_SECRET: backend-ci-access-secret-32chars-minimum-required
+      JWT_REFRESH_SECRET: backend-ci-refresh-secret-32chars-minimum-required
       SEED_TENANT_SLUG: system-seed
       SEED_TENANT_NAME: System Seed Tenant
 
