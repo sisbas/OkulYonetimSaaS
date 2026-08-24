@@ -1,4 +1,5 @@
 import { RequestContext } from '../common/context/request-context';
+import { ForbiddenException } from '@nestjs/common';
 import { LeaveNotFoundException } from './leave-errors';
 import { LeaveSelfDecisionException } from './leave-errors';
 import { LeaveDecisionStatus, LeaveRequest } from './leave-request.entity';
@@ -90,23 +91,34 @@ describe('LeaveService', () => {
       ).rejects.toBeInstanceOf(LeaveSelfDecisionException);
     });
 
-    it('does NOT deny when actor is a distinct approver with resolved identity', async () => {
+    it('does NOT deny a non-teacher approver when identity resolves to Forbidden (no teacher affiliation)', async () => {
       const approverCtx: RequestContext = {
         ...ctx,
         user: {
           ...ctx.user!,
           userId: '99999999-0000-4000-8000-000000000001',
+          roleIds: ['operations_manager'],
         },
       };
-      const { service, leaves } = buildService({
-        resolveTeacherIdentity: jest.fn(async () => ({
-          actorUserId: '99999999-0000-4000-8000-000000000001',
-          teacherId: '88888888-0000-4000-8000-000000000001',
-          branchId: '30000000-0000-4000-8000-000000000001',
-        })),
+      const { service, leaves, identity } = buildService({
+        resolveTeacherIdentity: jest.fn(async () => {
+          throw new ForbiddenException('Teacher identity unavailable');
+        }),
       });
       await service.decide(approverCtx, pendingLeave.id, { decision: 'REJECTED' as any }, ifMatch);
+      expect(identity.resolveTeacherIdentity).toHaveBeenCalledTimes(1);
       expect(leaves.decide).toHaveBeenCalledTimes(1);
+    });
+
+    it('DENIES (fail-closed) when identity lookup fails with a non-Forbidden error', async () => {
+      const { service } = buildService({
+        resolveTeacherIdentity: jest.fn(async () => {
+          throw new Error('unexpected identity store failure');
+        }),
+      });
+      await expect(
+        service.decide(ctx, pendingLeave.id, { decision: 'REJECTED' as any }, ifMatch),
+      ).rejects.toBeInstanceOf(LeaveSelfDecisionException);
     });
   });
 });

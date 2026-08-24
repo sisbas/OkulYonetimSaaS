@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { RequestContext } from '../common/context/request-context';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
@@ -139,10 +139,16 @@ export class LeaveService {
   private async safeActorTeacherId(ctx: RequestContext): Promise<string | null> {
     try {
       return (await this.identity.resolveTeacherIdentity(ctx)).teacherId;
-    } catch {
-      // Identity lookup failure must DENY, not silently return null (which would skip
-      // the self-decision guard in decide()). Fail closed: treat unresolved identity as
-      // a definitive self-decision block to avoid an authorization bypass.
+    } catch (error) {
+      // Distinguish two cases to avoid an over-restrictive deny:
+      //  - An actor who is NOT a teacher (resolveForRequest throws ForbiddenException:
+      //    "Teacher identity unavailable") is a legitimate non-teacher approver and must
+      //    NOT be blocked by the teacher-self guard. Return null so the guard is skipped.
+      //  - Any other (unexpected / unresolved identity) failure is a fail-closed case:
+      //    deny the decision to prevent an authorization bypass.
+      if (error instanceof ForbiddenException) {
+        return null;
+      }
       throw new LeaveSelfDecisionException();
     }
   }
