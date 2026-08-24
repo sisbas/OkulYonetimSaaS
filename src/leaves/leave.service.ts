@@ -140,7 +140,10 @@ export class LeaveService {
     try {
       return (await this.identity.resolveTeacherIdentity(ctx)).teacherId;
     } catch {
-      return null;
+      // Identity lookup failure must DENY, not silently return null (which would skip
+      // the self-decision guard in decide()). Fail closed: treat unresolved identity as
+      // a definitive self-decision block to avoid an authorization bypass.
+      throw new LeaveSelfDecisionException();
     }
   }
 

@@ -27,6 +27,7 @@ module.exports = {
   transform: { '^.+\\.(t|j)s$': 'ts-jest' },
   collectCoverageFrom: ['src/**/*.(t|j)s'],
   testEnvironment: 'node',
+  setupFiles: ['<rootDir>/jest.setup.ts'],
   // OKUL-10: coverage regression koruması (global alt sınır)
   coverageThreshold: {
     global: {
