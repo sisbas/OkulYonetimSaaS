@@ -53,8 +53,8 @@ jobs:
       DATABASE_PASSWORD: ${{ github.run_id }}
       DATABASE_NAME: okul_yonetim_saas_p0_e2e
       TYPEORM_LOGGING: "false"
-      JWT_ACCESS_SECRET: wp07f-${{ format('{0:00000000000000000000}', github.run_id) }}-access
-      JWT_REFRESH_SECRET: wp07f-${{ format('{0:00000000000000000000}', github.run_id) }}-refresh
+      JWT_ACCESS_SECRET: wp07f-${{ format('{0:0000000000}', github.run_id) }}-access-00000000000000000000
+      JWT_REFRESH_SECRET: wp07f-${{ format('{0:0000000000}', github.run_id) }}-refresh-00000000000000000000
       SEED_TENANT_SLUG: system-seed
       SEED_TENANT_NAME: System Seed Tenant
       PUPPETEER_EXECUTABLE_STRATEGY: sparticuz
