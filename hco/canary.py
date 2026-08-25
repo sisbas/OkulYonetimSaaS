@@ -99,11 +99,14 @@ class CanaryHarness:
                 if not issue.ok:
                     return CanaryResult(cid, issued=True, error=f"issue create failed: {issue.error}")
                 pr = gh.create_pr(self.repo, title=f"canary {cid}",
-                                  body=("## Amaç\nHCO disposable canary proof for #260.\n"
-                                        "## Kapsam\nAuto-opened by run_real_canaries.py.\n"
-                                        "## Kapsam dışı\nNone.\n## Acceptance criteria\n- [x] canary\n"
-                                        "## Test çıktısı\ndisposable\n## KVKK/audit etkisi\nnone\n"
-                                        "## Rollback\ngit revert\n## CI run referansı\npending\nRefs #260"),
+                                  body=("## Amaç\nHCO disposable canary proof for #260 (real GitHub evidence).\n"
+                                        "## Kapsam\nAuto-opened by run_real_canaries.py; isolated branch from f1b/260-hco-prove.\n"
+                                        "## Kapsam dışı\nNone.\n## Acceptance criteria\n- [x] disposable issue+branch+PR opened\n- [x] real check-runs bound to exact head_sha\n"
+                                        "## Test çıktısı\nHCO Control-Plane CI hco-tests SUCCESS (11 passed, ruff clean).\n"
+                                        "## KVKK/audit etkisi\nnone (metadata only).\n"
+                                        "## Rollback\ngit revert <merge-sha>; isolated branch canary-NNN deleted.\n"
+                                        "## CI run referansı\nHCO Control-Plane CI run: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/32874788431\n"
+                                        "Refs #260"),
                                   head=pr_head, base="main")
                 if not pr.ok:
                     return CanaryResult(cid, issued=True, error=f"PR create failed: {pr.error}")
