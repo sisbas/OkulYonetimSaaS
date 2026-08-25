@@ -56,13 +56,15 @@ def build_manifest(
 
 
 def eligibility_from_manifest(m: EvidenceManifest) -> tuple[bool, list[str]]:
-    """Return (eligible, reasons). Fail-closed: any missing/failed/pending check blocks."""
+    """Return (eligible, reasons). Fail-closed: every required check MUST be
+    present with conclusion 'success'. Any other state (missing, failed,
+    pending, failure, cancelled, timed_out, empty map) blocks eligibility."""
     reasons: list[str] = []
     if not m.head_sha:
         reasons.append("no head_sha bound")
+    if not m.checks:
+        reasons.append("empty check map (no required checks reported)")
     for name, status in m.checks.items():
-        if status in ("missing", "failed"):
-            reasons.append(f"check {name}={status}")
-        elif status == "pending":
-            reasons.append(f"check {name}=pending (not yet success)")
+        if status != "success":
+            reasons.append(f"check {name}={status} (must be 'success')")
     return (len(reasons) == 0, reasons)

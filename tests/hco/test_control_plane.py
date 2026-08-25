@@ -73,6 +73,42 @@ def test_evidence_manifest_fail_closed():
     assert any("failed" in r for r in reasons)
 
 
+def test_evidence_manifest_rejects_non_success_and_empty():
+    # T2: any non-'success' conclusion or empty map must block.
+    for bad in [{"X": "failure"}, {"X": "cancelled"}, {"X": "timed_out"},
+                {"X": "pending"}, {"X": "missing"}, {}]:
+        m = build_manifest(head_sha="abc1234", base_sha="B", correlation_id="C", checks=bad)
+        eligible, _ = eligibility_from_manifest(m)
+        assert not eligible
+
+
+def test_lease_required_for_every_transition(cp):
+    # T1: omitting lease_id must fail-closed (not silently skip the guard).
+    with pytest.raises(ControlPlaneError):
+        cp.transition(correlation_id="C6", stage=Stage.IMPLEMENTING, head_sha=None, base_sha="BASE",
+                      issue_url="u", role="x", verdict="y", detail="d",
+                      idempotency_key="C6:p", lease_id=None, receipt_url="f",
+                      prompt_sha256="0" * 64)
+
+
+def test_replay_restores_state_after_restart(tmp_path):
+    # T0: a fresh ControlPlane over an existing receipt store must replay state
+    # and block duplicate idempotency keys (no duplicate autonomous dispatch).
+    store = str(tmp_path / "receipts.jsonl")
+    cp1 = ControlPlane(receipt_store_path=store, auto_merge_enabled=False)
+    cp1.acquire_lease("L7")
+    cp1.transition(correlation_id="C7", stage=Stage.IMPLEMENTING, head_sha=None, base_sha="BASE",
+                   issue_url="u", role="x", verdict="y", detail="d",
+                   idempotency_key="C7:p", lease_id="L7", receipt_url="f", prompt_sha256="0" * 64)
+    # Simulate process restart: new instance, same store.
+    cp2 = ControlPlane(receipt_store_path=store, auto_merge_enabled=False)
+    assert cp2.stage_of("C7") == Stage.IMPLEMENTING
+    with pytest.raises(ControlPlaneError):
+        cp2.transition(correlation_id="C7", stage=Stage.IMPLEMENTING, head_sha=None, base_sha="BASE",
+                       issue_url="u", role="x", verdict="y", detail="d",
+                       idempotency_key="C7:p", lease_id="L7", receipt_url="f", prompt_sha256="0" * 64)
+
+
 def test_three_canaries_no_duplicate_dispatch(cp, tmp_path):
     harness = CanaryHarness(cp, repo="sisbas/OkulYonetimSaaS", auto_merge=False)
     results = harness.run_three(start_issue=901, simulate=True)
@@ -86,3 +122,32 @@ def test_three_canaries_no_duplicate_dispatch(cp, tmp_path):
     # Re-run same first issue -> duplicate dispatch blocked (idempotency)
     dup = harness.run_one(issue_num=901, simulate=True)
     assert (not dup.issued) or "duplicate" in dup.error
+
+
+def test_canary_real_path_requires_gh(monkeypatch, tmp_path):
+    # T3: simulate=False must call the real connector (not fabricate evidence).
+    cp = ControlPlane(receipt_store_path=str(tmp_path / "r.jsonl"), auto_merge_enabled=False)
+    called = {}
+
+    def fake_create_pr(repo, title, body, head, base):
+        called["create_pr"] = True
+        return type("R", (), {"ok": True, "data": {"url": "https://example/pr/1"}})()
+
+    def fake_branch(repo, branch, base="main"):
+        called["branch"] = True
+        return type("R", (), {"ok": True, "data": {"branch_sha": "deadbeef", "base_sha": "base"}})()
+
+    def fake_checks(repo, sha):
+        called["checks"] = True
+        return type("R", (), {"ok": True, "data": {"runs": [
+            {"name": "Backend CI", "status": "completed", "conclusion": "success"}]}})()
+
+    monkeypatch.setattr("hco.canary.gh.create_pr", fake_create_pr)
+    monkeypatch.setattr("hco.canary.gh.branch_is_current", fake_branch)
+    monkeypatch.setattr("hco.canary.gh.check_runs_for_sha", fake_checks)
+
+    harness = CanaryHarness(cp, repo="sisbas/OkulYonetimSaaS", auto_merge=False)
+    r = harness.run_one(issue_num=911, simulate=False)
+    assert called.get("create_pr") and called.get("branch") and called.get("checks")
+    assert r.pr_created
+    assert r.head_sha == "deadbeef"  # real SHA, not fabricated HEAD_SHA

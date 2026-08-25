@@ -81,6 +81,30 @@ class ControlPlane:
         self._leases: dict[str, float] = {}        # lease_id -> expiry_epoch
         self._idempotency: dict[str, str] = {}    # idempotency_key -> event_id
         self._retry_budget: dict[str, int] = {}    # fingerprint -> attempts
+        self._replay()  # durable: restore state from append-only receipt store
+
+    def _replay(self) -> None:
+        """Reconstruct in-memory state from stored receipts so a process restart
+        preserves lifecycle position, idempotency and correlation bindings.
+        Fail-closed: a corrupt receipt line aborts replay rather than silently
+        resetting state (which would permit duplicate autonomous dispatch)."""
+        if not os.path.exists(self.receipt_store_path):
+            return
+        try:
+            with open(self.receipt_store_path, encoding="utf-8") as f:
+                for ln in f:
+                    ln = ln.strip()
+                    if not ln:
+                        continue
+                    ev = Receipt(**json.loads(ln))
+                    self._state[ev.correlation_id] = Stage(ev.stage)
+                    self._idempotency[ev.idempotency_key] = ev.event_id
+                    if ev.lease_id:
+                        # lease expiry is not persisted; unknown leases treated
+                        # as expired (fail-closed) until re-acquired by caller.
+                        self._leases.setdefault(ev.lease_id, 0.0)
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            raise ControlPlaneError(f"receipt store replay failed (corrupt): {e}") from e
 
     # ---- idempotency / lease ----
     def acquire_lease(self, lease_id: str, ttl_seconds: int = 900) -> bool:
@@ -120,8 +144,12 @@ class ControlPlane:
         if seen is not None:
             raise ControlPlaneError(f"duplicate dispatch blocked by idempotency key {idempotency_key} (event {seen})")
 
-        # Lease guard (fail-closed: expired/none lease blocks autonomous mutation).
-        if lease_id is not None and not self.lease_valid(lease_id):
+        # Lease guard (fail-closed: a valid, unexpired lease is REQUIRED for every
+        # autonomous transition. Omitting lease_id is not permitted — it would
+        # bypass the guard and allow duplicate/concurrent mutations).
+        if lease_id is None:
+            raise ControlPlaneError("lease_id is required for every transition (fail-closed)")
+        if not self.lease_valid(lease_id):
             raise ControlPlaneError(f"expired or missing lease {lease_id} -> fail-closed")
 
         prev = self._state.get(correlation_id, Stage.PLAN_CONSULTATION)
