@@ -141,3 +141,12 @@ def wait_for_pr_checks(repo: str, pr_number: int, timeout_seconds: int = 600,
                                           "all_completed": True})
         time.sleep(poll_seconds)
     return GHResult(ok=False, error="timeout waiting for checks to complete")
+
+
+def rerun_pr_body(repo: str, pr_number: int, body: str) -> GHResult:
+    """Re-set a PR body to force the governance workflow to re-evaluate
+    (used to clear transient Body Validation races)."""
+    r = _run(["pr", "edit", "--repo", repo, str(pr_number), "--body", body])
+    if not r.ok:
+        return r
+    return GHResult(ok=True, data={"url": r.data["raw"]})

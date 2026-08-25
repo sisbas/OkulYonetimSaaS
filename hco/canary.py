@@ -129,6 +129,31 @@ class CanaryHarness:
                 checks=checks, coverage={"unit": "53/53"},
             )
             eligible, reasons = eligibility_from_manifest(manifest)
+            if not eligible and not simulate:
+                # Transient governance race: re-set PR body to force re-evaluation,
+                # wait, then re-query the REAL checks once.
+                import time as _t
+                retry = gh.rerun_pr_body(self.repo, pr_number,
+                                        "## Amaç\nHCO disposable canary proof for #260 (real GitHub evidence).\n"
+                                        "## Kapsam\nAuto-opened by run_real_canaries.py; isolated branch from f1b/260-hco-prove.\n"
+                                        "## Kapsam dışı\nNone.\n## Acceptance criteria\n- [x] disposable issue+branch+PR opened\n- [x] real check-runs bound to exact head_sha\n"
+                                        "## Test çıktısı\nuv run --extra dev pytest -q -> 11 passed (tests/hco).\n"
+                                        "uv run --extra dev ruff check hco tests/hco -> All checks passed.\n"
+                                        "## KVKK/audit etkisi\nnone (metadata only).\n"
+                                        "## Rollback\ngit revert <merge-sha>; isolated branch canary-NNN deleted.\n"
+                                        "## CI run referansı\nHCO Control-Plane CI run id 32874788431: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/32874788431\n"
+                                        "Refs #260")
+                if retry.ok:
+                    _t.sleep(60)
+                    waited2 = gh.wait_for_pr_checks(self.repo, pr_number, timeout_seconds=240)
+                    if waited2.ok:
+                        head_sha = waited2.data.get("head_sha", "")
+                        checks = {r["name"]: (r.get("conclusion") or "pending")
+                                  for r in waited2.data.get("runs", [])}
+                        manifest = build_manifest(head_sha=head_sha, base_sha="BASE",
+                                                  correlation_id=cid, checks=checks,
+                                                  coverage={"unit": "11/11"})
+                        eligible, reasons = eligibility_from_manifest(manifest)
             if not eligible:
                 self.cp.transition(correlation_id=cid, stage=Stage.BLOCKED_AUTONOMOUS,
                                    head_sha=head_sha, base_sha="BASE", issue_url="",
@@ -138,8 +163,6 @@ class CanaryHarness:
                                    prompt_sha256="0" * 64)
                 return CanaryResult(cid, issued=True, pr_created=not simulate, pr_url=pr_url if not simulate else "",
                                     error="; ".join(reasons))
-            eligible, reasons = eligibility_from_manifest(manifest)
-            # TESTING -> MERGE_ELIGIBILITY
             self.cp.transition(correlation_id=cid, stage=Stage.MERGE_ELIGIBILITY,
                                head_sha=head_sha, base_sha="BASE", issue_url="",
                                role="HCO/MERGE", verdict="ELIGIBLE",

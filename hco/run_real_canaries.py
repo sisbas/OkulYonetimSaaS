@@ -20,7 +20,7 @@ import sys
 import tempfile
 
 REPO = "sisbas/OkulYonetimSaaS"
-ISSUES = [279, 280, 281]  # disposable canary issues already opened
+START_ISSUE = 295  # fresh disposable issue numbers for this proof run
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -36,7 +36,8 @@ def main() -> int:
     harness = CanaryHarness(cp, repo=REPO, auto_merge=False)
 
     results: list[CanaryResult] = []
-    for issue in ISSUES:
+    for i in range(3):
+        issue = START_ISSUE + i
         r = harness.run_one(issue_num=issue, simulate=False)
         results.append(r)
         print(f"[canary {issue}] issued={r.issued} pr={r.pr_url} "
@@ -46,7 +47,7 @@ def main() -> int:
             return 2
 
     # Duplicate dispatch negative proof: re-run first issue -> must be blocked.
-    dup = harness.run_one(issue_num=ISSUES[0], simulate=False)
+    dup = harness.run_one(issue_num=START_ISSUE, simulate=False)
     if dup.issued and "duplicate" not in (dup.error or ""):
         print("DUPLICATE DISPATCH NOT BLOCKED — fail-closed breach")
         return 3
