@@ -59,7 +59,14 @@ def check_runs_for_sha(repo: str, head_sha: str) -> GHResult:
         return r
     try:
         payload = json.loads(r.data["raw"])
-        return GHResult(ok=True, data={"runs": payload.get("runs", [])})
+        runs = payload.get("runs", [])
+        # Collapse to the LAST occurrence per check name (GitHub may list both a
+        # failed first run and a successful re-run; the latest reflects current
+        # state). Fail-closed: a missing/failed terminal conclusion still blocks.
+        last = {}
+        for run in runs:
+            last[run.get("name")] = run
+        return GHResult(ok=True, data={"runs": list(last.values())})
     except json.JSONDecodeError:
         # fail-closed: unparseable evidence is not success
         return GHResult(ok=False, error="check-runs payload unparseable")
