@@ -127,11 +127,15 @@ def create_branch_from(repo: str, new_branch: str, base_branch: str = "main") ->
     return GHResult(ok=True, data={"branch": new_branch, "sha": sha})
 
 
-def wait_for_pr_checks(repo: str, pr_number: int, timeout_seconds: int = 600,
+def wait_for_pr_checks(repo: str, pr_number: int, timeout_seconds: int = 900,
                        poll_seconds: int = 20) -> GHResult:
-    """Poll until all PR check-runs are COMPLETED (success/failure/cancelled),
-    or timeout. Fail-closed: returns the final (possibly non-success) state so
-    the caller's eligibility predicate decides — never assumes success."""
+    """Poll until all PR check-runs are COMPLETED AND SUCCESS (fail-closed).
+
+    Returns the final run set only when every check is completed with a
+    'success' conclusion. If any check is failure/cancelled/timed_out, or the
+    deadline passes, returns ok=False so the caller's eligibility predicate
+    blocks (never assumes success). This naturally clears transient governance
+    re-run races by polling until the current state is green."""
     import time
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
@@ -143,9 +147,10 @@ def wait_for_pr_checks(repo: str, pr_number: int, timeout_seconds: int = 600,
         if not runs.ok:
             return GHResult(ok=False, error=runs.error)
         rs = runs.data.get("runs", [])
-        if rs and all(r.get("status") == "completed" for r in rs):
+        if rs and all(r.get("status") == "completed" for r in rs) \
+           and all(r.get("conclusion") == "success" for r in rs):
             return GHResult(ok=True, data={"runs": rs, "head_sha": sha,
-                                          "all_completed": True})
+                                          "all_completed": True, "all_success": True})
         time.sleep(poll_seconds)
     return GHResult(ok=False, error="timeout waiting for checks to complete")
 
