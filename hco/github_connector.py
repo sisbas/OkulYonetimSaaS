@@ -82,3 +82,62 @@ def create_pr(repo: str, title: str, body: str, head: str, base: str = "main") -
     if not r.ok:
         return r
     return GHResult(ok=True, data={"url": r.data["raw"]})
+
+
+def create_issue(repo: str, title: str, body: str, labels: list[str] | None = None) -> GHResult:
+    """Open a disposable issue for canary proof. Human-gated."""
+    args = ["issue", "create", "--repo", repo, "--title", title, "--body", body]
+    if labels:
+        args += ["--label", ",".join(labels)]
+    r = _run(args)
+    if not r.ok:
+        return r
+    return GHResult(ok=True, data={"url": r.data["raw"]})
+
+
+def get_pr_head_sha(repo: str, pr_number: int) -> GHResult:
+    """Resolve the exact head SHA of an open PR (real evidence binding)."""
+    r = _run(["api", f"repos/{repo}/pulls/{pr_number}", "--jq", ".head.sha"])
+    if not r.ok:
+        return r
+    return GHResult(ok=True, data={"head_sha": r.data["raw"].strip()})
+
+
+def create_branch_from(repo: str, new_branch: str, base_branch: str = "main") -> GHResult:
+    """Create (or reset) a disposable branch from an existing branch for real
+    canary isolation. Idempotent: if the ref already exists it is force-reset
+    to the base SHA rather than failing."""
+    base_sha = _run(["api", f"repos/{repo}/git/ref/heads/{base_branch}", "--jq", ".object.sha"])
+    if not base_sha.ok:
+        return GHResult(ok=False, error=f"base ref resolve failed: {base_sha.error}")
+    sha = base_sha.data["raw"].strip()
+    # Idempotent: delete existing ref first (force reset) to avoid 422.
+    _run(["api", "-X", "DELETE", f"repos/{repo}/git/refs/heads/{new_branch}"])
+    r = _run(["api", f"repos/{repo}/git/refs", "-f", f"ref=refs/heads/{new_branch}",
+              "-f", f"sha={sha}"])
+    if not r.ok:
+        return r
+    return GHResult(ok=True, data={"branch": new_branch, "sha": sha})
+
+
+def wait_for_pr_checks(repo: str, pr_number: int, timeout_seconds: int = 600,
+                       poll_seconds: int = 20) -> GHResult:
+    """Poll until all PR check-runs are completed (success/failure/cancelled),
+    or timeout. Fail-closed: returns the final (possibly non-success) state so
+    the caller's eligibility predicate decides — never assumes success."""
+    import time
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        head_res = get_pr_head_sha(repo, pr_number)
+        if not head_res.ok:
+            return GHResult(ok=False, error=head_res.error)
+        sha = head_res.data.get("head_sha", "")
+        runs = check_runs_for_sha(repo, sha)
+        if not runs.ok:
+            return GHResult(ok=False, error=runs.error)
+        rs = runs.data.get("runs", [])
+        if rs and all(r.get("status") == "completed" for r in rs):
+            return GHResult(ok=True, data={"runs": rs, "head_sha": sha,
+                                          "all_completed": True})
+        time.sleep(poll_seconds)
+    return GHResult(ok=False, error="timeout waiting for checks to complete")

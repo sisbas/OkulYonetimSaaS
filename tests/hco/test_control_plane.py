@@ -129,25 +129,36 @@ def test_canary_real_path_requires_gh(monkeypatch, tmp_path):
     cp = ControlPlane(receipt_store_path=str(tmp_path / "r.jsonl"), auto_merge_enabled=False)
     called = {}
 
+    def fake_create_issue(repo, title, body, labels=None):
+        called["create_issue"] = True
+        return type("R", (), {"ok": True, "data": {"url": "https://example/issue/1"}})()
+
+    def fake_create_branch(repo, new_branch, base_branch="main"):
+        called["create_branch"] = True
+        return type("R", (), {"ok": True, "data": {"branch": new_branch, "sha": "abc"}})()
+
     def fake_create_pr(repo, title, body, head, base):
         called["create_pr"] = True
-        return type("R", (), {"ok": True, "data": {"url": "https://example/pr/1"}})()
+        return type("R", (), {"ok": True, "data": {"url": "https://github.com/sisbas/OkulYonetimSaaS/pull/1"}})()
 
-    def fake_branch(repo, branch, base="main"):
-        called["branch"] = True
-        return type("R", (), {"ok": True, "data": {"branch_sha": "deadbeef", "base_sha": "base"}})()
+    def fake_head(repo, pr_number):
+        called["head"] = True
+        return type("R", (), {"ok": True, "data": {"head_sha": "deadbeef"}})()
 
     def fake_checks(repo, sha):
         called["checks"] = True
         return type("R", (), {"ok": True, "data": {"runs": [
             {"name": "Backend CI", "status": "completed", "conclusion": "success"}]}})()
 
+    monkeypatch.setattr("hco.canary.gh.create_issue", fake_create_issue)
+    monkeypatch.setattr("hco.canary.gh.create_branch_from", fake_create_branch)
     monkeypatch.setattr("hco.canary.gh.create_pr", fake_create_pr)
-    monkeypatch.setattr("hco.canary.gh.branch_is_current", fake_branch)
+    monkeypatch.setattr("hco.canary.gh.get_pr_head_sha", fake_head)
     monkeypatch.setattr("hco.canary.gh.check_runs_for_sha", fake_checks)
 
     harness = CanaryHarness(cp, repo="sisbas/OkulYonetimSaaS", auto_merge=False)
     r = harness.run_one(issue_num=911, simulate=False)
-    assert called.get("create_pr") and called.get("branch") and called.get("checks")
+    assert (called.get("create_issue") and called.get("create_branch")
+            and called.get("create_pr") and called.get("head") and called.get("checks"))
     assert r.pr_created
     assert r.head_sha == "deadbeef"  # real SHA, not fabricated HEAD_SHA

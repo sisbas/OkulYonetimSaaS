@@ -11,6 +11,7 @@ Fail-closed by construction:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from . import github_connector as gh
@@ -39,7 +40,7 @@ class CanaryHarness:
         self.repo = repo
         self.auto_merge = auto_merge
 
-    def run_one(self, *, issue_num: int, simulate: bool = True) -> CanaryResult:
+    def run_one(self, *, issue_num: int, simulate: bool = True, head: str | None = None) -> CanaryResult:
         """Run a single disposable canary.
 
         simulate=True  => no real GitHub mutation; evidence is asserted inline
@@ -47,6 +48,7 @@ class CanaryHarness:
         simulate=False => real GitHub evidence: opens a PR via gh, queries the
                            actual check-runs for the head SHA, and only reaches
                            MERGE_ELIGIBILITY when every required check is 'success'.
+                           `head` is the REAL branch to open the PR from.
                            No merge is ever performed (HCO hard boundary).
         """
         cid = f"P1B-260-CANARY-{issue_num}"
@@ -84,21 +86,38 @@ class CanaryHarness:
                 checks = {"Backend CI": "success", "PR Governance": "success",
                           "Sensitive Pattern Scanner": "success"}
             else:
-                # REAL evidence path: open a PR and read actual check-runs.
-                pr = gh.create_pr(self.repo, title=f"canary {cid}", body="disposable canary",
-                                  head="f1b/260-hco-prove", base="main")
+                # REAL evidence path: open a disposable issue + branch + PR and
+                # read ACTUAL check-runs for the REAL head SHA.
+                pr_head = head or f"canary-{issue_num}"
+                if pr_head == f"canary-{issue_num}":
+                    br = gh.create_branch_from(self.repo, pr_head, base_branch="f1b/260-hco-prove")
+                    if not br.ok:
+                        return CanaryResult(cid, issued=True, error=f"branch create failed: {br.error}")
+                issue = gh.create_issue(
+                    self.repo, title=f"canary {cid}",
+                    body=f"disposable HCO canary issue (parent #260, issue {issue_num})")
+                if not issue.ok:
+                    return CanaryResult(cid, issued=True, error=f"issue create failed: {issue.error}")
+                pr = gh.create_pr(self.repo, title=f"canary {cid}",
+                                  body=("## Amaç\nHCO disposable canary proof for #260.\n"
+                                        "## Kapsam\nAuto-opened by run_real_canaries.py.\n"
+                                        "## Kapsam dışı\nNone.\n## Acceptance criteria\n- [x] canary\n"
+                                        "## Test çıktısı\ndisposable\n## KVKK/audit etkisi\nnone\n"
+                                        "## Rollback\ngit revert\n## CI run referansı\npending\nRefs #260"),
+                                  head=pr_head, base="main")
                 if not pr.ok:
                     return CanaryResult(cid, issued=True, error=f"PR create failed: {pr.error}")
                 pr_url = pr.data.get("url", "")
-                # Resolve the real head SHA of the branch tip.
-                head_res = gh.branch_is_current(self.repo, "f1b/260-hco-prove", "main")
-                head_sha = head_res.data.get("branch_sha", "") if head_res.ok else ""
-                runs = gh.check_runs_for_sha(self.repo, head_sha)
-                if not runs.ok:
+                m = re.search(r"/pulls?/(\d+)", pr_url)
+                pr_number = int(m.group(1)) if m else 0
+                # Wait for REAL checks to complete, then read them (fail-closed).
+                waited = gh.wait_for_pr_checks(self.repo, pr_number, timeout_seconds=300)
+                if not waited.ok:
                     return CanaryResult(cid, issued=True, pr_created=True, pr_url=pr_url,
-                                        error=f"check-runs query failed: {runs.error}")
+                                        error=f"check wait failed: {waited.error}")
+                head_sha = waited.data.get("head_sha", "")
                 checks = {r["name"]: (r.get("conclusion") or "pending")
-                          for r in runs.data.get("runs", [])}
+                          for r in waited.data.get("runs", [])}
 
             # Build evidence manifest bound to exact head_sha
             manifest = build_manifest(
