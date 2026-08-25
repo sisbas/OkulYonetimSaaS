@@ -20,7 +20,7 @@ import sys
 import tempfile
 
 REPO = "sisbas/OkulYonetimSaaS"
-START_ISSUE = 295  # fresh disposable issue numbers for this proof run
+START_ISSUE = 313  # fresh disposable issue numbers for this proof run
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -38,17 +38,12 @@ def main() -> int:
     results: list[CanaryResult] = []
     for i in range(3):
         issue = START_ISSUE + i
-        r = None
-        for attempt in range(2):
-            r = harness.run_one(issue_num=issue, simulate=False)
-            if r.issued and not r.error:
-                break
-            print(f"  canary {issue} attempt {attempt+1} failed: {r.error}; retrying")
+        r = harness.run_one(issue_num=issue, simulate=False)
         results.append(r)
         print(f"[canary {issue}] issued={r.issued} pr={r.pr_url} "
               f"head={r.head_sha[:10] if r.head_sha else '-'} error={r.error or '-'}")
         if not r.issued or r.error:
-            print(f"  CANARY {issue} FAILED after retries: {r.error}")
+            print(f"  CANARY {issue} FAILED: {r.error}")
             return 2
 
     # Duplicate dispatch negative proof: re-run first issue -> must be blocked.
