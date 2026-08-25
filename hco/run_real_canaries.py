@@ -20,7 +20,7 @@ import sys
 import tempfile
 
 REPO = "sisbas/OkulYonetimSaaS"
-START_ISSUE = 313  # fresh disposable issue numbers for this proof run
+START_ISSUE = 319  # fresh disposable issue numbers for this proof run
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
