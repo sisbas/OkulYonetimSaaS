@@ -1,0 +1,19 @@
+name: HCO Control-Plane CI
+
+on:
+  push:
+    branches: [f1b/260-hco-prove]
+    paths: ['hco/**', 'tests/hco/**', 'pyproject.toml']
+  pull_request:
+    paths: ['hco/**', 'tests/hco/**', 'pyproject.toml']
+
+jobs:
+  hco-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Run HCO control-plane tests
+        run: uv run --extra dev pytest -q
+      - name: Ruff lint
+        run: uv run --extra dev ruff check hco tests/hco
