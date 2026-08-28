@@ -26,6 +26,7 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain('function eventIdentity(event)');
     expect(app).toContain('data-action="candidates"');
     expect(app).toContain('data-event-id="${escapeHtml(eventIdentity(event))}"');
+    expect(app).toContain("pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')");
   });
 
   it('derives assignment clear state from returned impact events', () => {
@@ -125,6 +126,7 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain('const uiStateTitles');
     expect(app).toContain('const statusLabels');
     expect(app).toContain('function displayStatus');
+    expect(app).toContain('const knownReasonCode = Boolean(reasonUi[reasonCode])');
     expect(app).toContain("unresolved: 'Henüz karşılanmadı'");
     expect(app).toContain("resolved: 'Çözüldü'");
     expect(app).toContain("partially_covered: 'Kısmen karşılandı'");

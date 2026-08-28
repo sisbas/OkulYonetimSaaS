@@ -143,7 +143,8 @@ function normalizeApiError(response, body) {
   if (response.status === 412) reasonCode = 'LEAVE_VERSION_MISMATCH';
   if (response.status === 409 && !reasonUi[reasonCode]) reasonCode = 'SUBSTITUTE_TIME_CONFLICT';
   const mapped = reasonUi[reasonCode] || reasonUi.SERVER_ERROR;
-  const message = GENERIC_NEST_ERRORS.has(messageText) ? mapped[1] : messageText || mapped[1];
+  const knownReasonCode = Boolean(reasonUi[reasonCode]);
+  const message = knownReasonCode || GENERIC_NEST_ERRORS.has(messageText) ? mapped[1] : messageText || mapped[1];
   return { status: response.status, reasonCode, uiState: mapped[0], message };
 }
 
@@ -325,7 +326,7 @@ function renderImpact(body, events) {
   const rows = events.map((event) => `<li>
     <strong>${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}</strong>
     <span>${escapeHtml(pick(event, ['occurrenceDate'], ''))} ${escapeHtml(pick(event, ['timeRange'], ''))}</span>
-    <span>${escapeHtml(displayStatus(pick(event, ['assignmentStatus', 'coverageStatus'], 'open')))}</span>
+    <span>${escapeHtml(displayStatus(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}</span>
     <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}">Adayları getir</button>
   </li>`).join('');
   return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))}</div>
