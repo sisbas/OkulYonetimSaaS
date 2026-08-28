@@ -125,6 +125,10 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain('const uiStateTitles');
     expect(app).toContain('const statusLabels');
     expect(app).toContain('function displayStatus');
+    expect(app).toContain("unresolved: 'Henüz karşılanmadı'");
+    expect(app).toContain("resolved: 'Çözüldü'");
+    expect(app).toContain("partially_covered: 'Kısmen karşılandı'");
+    expect(app).toContain("not_required: 'Karşılık gerekmiyor'");
     expect(app).toContain('Güncel kayıt alındı');
     expect(app).toContain('Bu işlem için yetkiniz yok');
   });

@@ -58,9 +58,13 @@ const statusLabels = {
   approved: 'Onaylandı',
   rejected: 'Reddedildi',
   open: 'Açık',
+  unresolved: 'Henüz karşılanmadı',
   assigned: 'Görevlendirildi',
+  resolved: 'Çözüldü',
   covered: 'Karşılandı',
   uncovered: 'Karşılanmadı',
+  partially_covered: 'Kısmen karşılandı',
+  not_required: 'Karşılık gerekmiyor',
   cancelled: 'İptal edildi',
   unknown: 'Durum bekleniyor',
 };
