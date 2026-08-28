@@ -127,6 +127,8 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain('const statusLabels');
     expect(app).toContain('function displayStatus');
     expect(app).toContain('const knownReasonCode = Boolean(reasonUi[reasonCode])');
+    expect(app).toContain("const message = reasonUi[error.reasonCode]?.[1] || 'İşlem tamamlanamadı.'");
+    expect(app).toContain('return statusLabels[key] || statusLabels.unknown');
     expect(app).toContain("unresolved: 'Henüz karşılanmadı'");
     expect(app).toContain("resolved: 'Çözüldü'");
     expect(app).toContain("partially_covered: 'Kısmen karşılandı'");

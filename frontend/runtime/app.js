@@ -150,11 +150,12 @@ function normalizeApiError(response, body) {
 
 function renderError(target, error) {
   const title = uiStateTitles[error.uiState] || 'İşlem tamamlanamadı';
+  const message = reasonUi[error.reasonCode]?.[1] || 'İşlem tamamlanamadı.';
   target.innerHTML = `<div class="error-state" data-state="${escapeHtml(error.uiState || 'error_retryable')}">
     <strong>${escapeHtml(title)}</strong>
-    <p>${escapeHtml(error.message || 'İşlem tamamlanamadı.')}</p>
+    <p>${escapeHtml(message)}</p>
   </div>`;
-  announce(error.message || 'İşlem tamamlanamadı.', 'danger');
+  announce(message, 'danger');
 }
 
 function renderBlockingState(target, reasonCode) {
@@ -415,7 +416,7 @@ function renderLeaveCard(leave, title) {
 
 function displayStatus(value) {
   const key = String(value || 'unknown').toLowerCase();
-  return statusLabels[key] || String(value || statusLabels.unknown).replace(/_/g, ' ');
+  return statusLabels[key] || statusLabels.unknown;
 }
 
 const loading = (text) => `<div class="loading" role="status">${escapeHtml(text)}...</div>`;
