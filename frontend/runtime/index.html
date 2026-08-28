@@ -14,13 +14,13 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Faz 1 runtime</p>
-          <h1>İzin Yönetimi + Günlük Operasyon</h1>
+          <h1>Okul iş akışı</h1>
         </div>
         <div id="session-status" class="status-pill" aria-live="polite">Oturum bekleniyor</div>
       </header>
 
       <aside class="panel" aria-labelledby="auth-heading">
-        <h2 id="auth-heading">Auth / tenant / branch</h2>
+        <h2 id="auth-heading">Oturum ve okul seçimi</h2>
         <form id="login-form" class="stack">
           <label>E-posta
             <input id="email" name="email" type="email" autocomplete="username" required />
@@ -28,28 +28,28 @@
           <label>Şifre
             <input id="password" name="password" type="password" autocomplete="current-password" required />
           </label>
-          <label>Tenant ID
+          <label>Kurum
             <input id="tenant-id" name="tenantId" inputmode="latin" aria-describedby="tenant-help" />
           </label>
-          <p id="tenant-help" class="hint">Tenant seçimi login body alanıdır; role, permission veya teacher authority içermez.</p>
+          <p id="tenant-help" class="hint">Yetkileriniz ve kurum erişiminiz oturum açınca sistem tarafından doğrulanır.</p>
           <button type="submit">Oturum aç</button>
         </form>
 
         <form id="context-form" class="stack context-form">
-          <label>Branch ID
+          <label>Şube
             <input id="branch-id" name="branchId" inputmode="latin" aria-describedby="branch-help" required />
           </label>
           <label>Tarih
             <input id="operation-date" name="date" type="date" />
           </label>
-          <p id="branch-help" class="hint">Branch query parametresi ve izin talebi branch alanı server tarafından tenant scope ile doğrulanır.</p>
-          <button type="submit">Queue getir</button>
+          <p id="branch-help" class="hint">Yalnızca erişiminiz olan şubeler için işlem yapılabilir.</p>
+          <button type="submit">Günlük işleri getir</button>
         </form>
       </aside>
 
       <nav class="tabs" aria-label="Runtime akışları">
-        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">Teacher</button>
-        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">Operations Manager</button>
+        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">Öğretmen</button>
+        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">Operasyon yöneticisi</button>
       </nav>
 
       <main id="runtime-main" tabindex="-1">
@@ -58,7 +58,7 @@
         <section id="teacher-panel" class="panel runtime-panel" data-panel="teacher">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Teacher flow</p>
+              <p class="eyebrow">Öğretmen işlemleri</p>
               <h2>Kendi izin talebi</h2>
             </div>
             <button id="load-own-leave" type="button">Kendi talebimi getir</button>
@@ -81,23 +81,23 @@
             </label>
             <label>Başlangıç zamanı <input id="leave-starts-at" type="datetime-local" required /></label>
             <label>Bitiş zamanı <input id="leave-ends-at" type="datetime-local" required /></label>
-            <p class="hint wide">Payload yalnız CreateLeaveRequestDto alanlarını gönderir: branchId, durationType, reasonCode, startsAt, endsAt.</p>
+            <p class="hint wide">Talep bilgileri yalnızca izin oluşturmak için kullanılır; kurum ve şube yetkisi sistem tarafından kontrol edilir.</p>
             <button type="submit">İzin talebi oluştur</button>
           </form>
-          <div id="teacher-output" class="state-box" role="region" aria-label="Teacher izin sonucu"></div>
+          <div id="teacher-output" class="state-box" role="region" aria-label="Öğretmen izin sonucu"></div>
         </section>
 
         <section id="ops-panel" class="panel runtime-panel hidden" data-panel="ops">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Operations Manager flow</p>
-              <h2>Daily Operations queue</h2>
+              <p class="eyebrow">Operasyon yöneticisi işlemleri</p>
+              <h2>Günlük iş listesi</h2>
             </div>
-            <button id="refresh-queue" type="button">Queue yenile</button>
+            <button id="refresh-queue" type="button">Günlük işleri yenile</button>
           </div>
           <div id="queue-output" class="cards" role="region" aria-label="Günlük operasyon kuyruğu"></div>
           <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
-          <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve assignment durumu"></div>
+          <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve görevlendirme durumu"></div>
         </section>
       </main>
     </div>

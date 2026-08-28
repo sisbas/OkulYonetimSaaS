@@ -36,6 +36,34 @@ const reasonUi = {
 };
 
 const GENERIC_NEST_ERRORS = new Set(['Bad Request', 'Forbidden', 'Conflict', 'Precondition Failed', 'Not Found', 'Unauthorized']);
+const uiStateTitles = {
+  auth_required: 'Oturum yenilenmeli',
+  tenant_context_required: 'Kurum seçimi doğrulanamadı',
+  branch_context_required: 'Şube seçimi doğrulanamadı',
+  forbidden_non_enumerating: 'Bu işlem için yetkiniz yok',
+  empty_or_not_found_same_scope: 'Kayıt bulunamadı',
+  validation_error: 'Bilgileri kontrol edin',
+  version_required: 'Güncel kayıt bekleniyor',
+  stale_version: 'Kayıt güncellendi',
+  impact_analysis_not_ready: 'Etki analizi bekleniyor',
+  eligibility_not_ready: 'Uygunluk bekleniyor',
+  candidate_unavailable: 'Aday uygun değil',
+  conflict_blocking: 'Çakışma var',
+  locked_state: 'İşlem kilitli',
+  error_retryable: 'İşlem tamamlanamadı',
+  offline_or_unavailable: 'Bağlantı kurulamadı',
+};
+const statusLabels = {
+  pending: 'Beklemede',
+  approved: 'Onaylandı',
+  rejected: 'Reddedildi',
+  open: 'Açık',
+  assigned: 'Görevlendirildi',
+  covered: 'Karşılandı',
+  uncovered: 'Karşılanmadı',
+  cancelled: 'İptal edildi',
+  unknown: 'Durum bekleniyor',
+};
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -116,8 +144,9 @@ function normalizeApiError(response, body) {
 }
 
 function renderError(target, error) {
+  const title = uiStateTitles[error.uiState] || 'İşlem tamamlanamadı';
   target.innerHTML = `<div class="error-state" data-state="${escapeHtml(error.uiState || 'error_retryable')}">
-    <strong>${escapeHtml(error.reasonCode || 'SERVER_ERROR')}</strong>
+    <strong>${escapeHtml(title)}</strong>
     <p>${escapeHtml(error.message || 'İşlem tamamlanamadı.')}</p>
   </div>`;
   announce(error.message || 'İşlem tamamlanamadı.', 'danger');
@@ -125,8 +154,9 @@ function renderError(target, error) {
 
 function renderBlockingState(target, reasonCode) {
   const mapped = reasonUi[reasonCode] || reasonUi.SERVER_ERROR;
+  const title = uiStateTitles[mapped[0]] || 'İşlem bekliyor';
   target.innerHTML = `<div class="error-state" data-state="${escapeHtml(mapped[0])}">
-    <strong>${escapeHtml(reasonCode)}</strong>
+    <strong>${escapeHtml(title)}</strong>
     <p>${escapeHtml(mapped[1])}</p>
   </div>`;
   announce(mapped[1], 'warning');
@@ -163,7 +193,7 @@ async function login(event) {
     state.accessToken = result.accessToken || '';
     state.tenantId = tenantId;
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
-    announce('Oturum açıldı. Role ve permission server endpointleri tarafından uygulanır.', 'success');
+    announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
   } catch (error) {
     state.accessToken = '';
     setStatus('Oturum başarısız', 'danger');
@@ -191,7 +221,7 @@ async function createLeave(event) {
   event.preventDefault();
   if (!requireSession()) return;
   const branchId = getBranchId();
-  if (!branchId) return announce('İzin talebi için branchId gerekir.', 'warning');
+  if (!branchId) return announce('İzin talebi için şube seçin.', 'warning');
   const body = {
     branchId,
     durationType: $('#leave-duration-type').value,
@@ -205,7 +235,7 @@ async function createLeave(event) {
     const { body: leave, etag } = await apiRequest('/leaves/me', { method: 'POST', body });
     captureLeaveVersion(leave, etag);
     target.innerHTML = renderLeaveCard(leave, 'Kendi izin talebiniz oluşturuldu');
-    announce('İzin talebi server response ile oluşturuldu.', 'success');
+    announce('İzin talebi kaydedildi.', 'success');
   } catch (error) {
     renderError(target, error);
   }
@@ -213,7 +243,7 @@ async function createLeave(event) {
 
 async function loadOwnLeave() {
   if (!requireSession()) return;
-  if (!state.activeLeaveId) return announce('Önce oluşturulmuş veya seçilmiş leaveId gerekir.', 'warning');
+  if (!state.activeLeaveId) return announce('Önce bir izin talebi seçin veya oluşturun.', 'warning');
   const target = $('#teacher-output');
   target.innerHTML = loading('Kendi izin talebi getiriliyor');
   try {
@@ -229,16 +259,16 @@ async function loadQueue() {
   if (!requireSession()) return;
   const target = $('#queue-output');
   const branchId = getBranchId();
-  if (!branchId) return announce('Queue için branchId gerekir; authority server tarafından doğrulanır.', 'warning');
+  if (!branchId) return announce('Günlük işler için şube seçin.', 'warning');
   state.date = state.date || $('#operation-date').value;
   const query = new URLSearchParams({ branchId });
   if (state.date) query.set('date', state.date);
-  target.innerHTML = loading('Daily Operations queue getiriliyor');
+  target.innerHTML = loading('Günlük işler getiriliyor');
   try {
     const { body } = await apiRequest(`/daily-operations/today?${query.toString()}`);
     const items = asArray(body, ['items', 'lessons', 'queue']);
-    target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı scope içinde açık ders bulunmuyor.');
-    announce('Queue server projection üzerinden yenilendi.', 'success');
+    target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı kapsamda açık ders bulunmuyor.');
+    announce('Günlük işler yenilendi.', 'success');
   } catch (error) {
     renderError(target, error);
   }
@@ -247,7 +277,7 @@ async function loadQueue() {
 function renderQueueItem(item) {
   const leaveId = pick(item, ['leaveRequestId']);
   const eventId = pick(item, ['scheduleEventId', 'eventId']);
-  const stateLabel = pick(item, ['state', 'coverageStatus', 'assignmentStatus'], 'unknown');
+  const stateLabel = displayStatus(pick(item, ['state', 'coverageStatus', 'assignmentStatus'], 'unknown'));
   return `<article class="card">
     <h3>${escapeHtml(pick(item, ['courseLabel', 'title'], 'Ders'))}</h3>
     <p>${escapeHtml(pick(item, ['occurrenceDate', 'date'], ''))} ${escapeHtml(pick(item, ['timeRange', 'time'], ''))}</p>
@@ -262,7 +292,7 @@ async function loadImpact(leaveId, eventId) {
   state.activeLeaveId = leaveId || state.activeLeaveId;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
   const target = $('#impact-output');
-  if (!state.activeLeaveId) return announce('Etki analizi için leaveId gerekir.', 'warning');
+  if (!state.activeLeaveId) return announce('Etki analizi için izin talebi seçin.', 'warning');
   target.innerHTML = loading('İzin etkisi getiriliyor');
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/impact`);
@@ -291,10 +321,10 @@ function renderImpact(body, events) {
   const rows = events.map((event) => `<li>
     <strong>${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}</strong>
     <span>${escapeHtml(pick(event, ['occurrenceDate'], ''))} ${escapeHtml(pick(event, ['timeRange'], ''))}</span>
-    <span>${escapeHtml(pick(event, ['assignmentStatus', 'coverageStatus'], 'open'))}</span>
+    <span>${escapeHtml(displayStatus(pick(event, ['assignmentStatus', 'coverageStatus'], 'open')))}</span>
     <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}">Adayları getir</button>
   </li>`).join('');
-  return `<div class="summary"><b>Coverage:</b> ${escapeHtml(pick(body, ['coverageStatus'], 'unknown'))}</div>
+  return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))}</div>
     <ul class="impact-list">${rows || '<li>Etki satırı yok.</li>'}</ul>`;
 }
 
@@ -302,7 +332,7 @@ async function loadCandidates(eventId) {
   if (!requireSession()) return;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
   const target = $('#candidate-output');
-  if (!state.activeLeaveId || !state.activeScheduleEventId) return announce('Aday için leaveId ve scheduleEventId gerekir.', 'warning');
+  if (!state.activeLeaveId || !state.activeScheduleEventId) return announce('Aday listesi için etkilenen dersi seçin.', 'warning');
   target.innerHTML = loading('Adaylar getiriliyor');
   try {
     const { body } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/candidates`);
@@ -316,19 +346,19 @@ async function loadCandidates(eventId) {
 
 function renderCandidate(candidate) {
   const teacherId = pick(candidate, ['teacherId', 'candidateId']);
-  const available = pick(candidate, ['availabilityStatus'], 'unknown');
+  const available = displayStatus(pick(candidate, ['availabilityStatus'], 'unknown'));
   const eligible = Boolean(pick(candidate, ['courseEligible', 'eligible'], false));
   const disabled = !eligible || !state.activeLeaveEtag;
   return `<article class="card candidate">
     <h3>${escapeHtml(pick(candidate, ['displayName', 'name'], 'Aday öğretmen'))}</h3>
-    <p>Uygunluk: ${escapeHtml(String(eligible))} · Durum: ${escapeHtml(available)}</p>
+    <p>Uygunluk: ${eligible ? 'Uygun' : 'Uygun değil'} · Durum: ${escapeHtml(available)}</p>
     <button type="button" data-action="assign" data-teacher-id="${escapeHtml(teacherId)}" ${disabled ? 'disabled aria-describedby="etag-help"' : ''}>Görevlendir</button>
     <button type="button" data-action="clear" ${state.activeAssignmentId && state.activeLeaveEtag ? '' : 'disabled'}>Görevlendirmeyi temizle</button>
   </article>`;
 }
 
 async function createAssignment(teacherId) {
-  if (!state.activeLeaveEtag) return announce('Server-returned leaveEtag olmadan assignment yapılamaz.', 'warning');
+  if (!state.activeLeaveEtag) return announce('Güncel izin kaydı alınmadan görevlendirme yapılamaz.', 'warning');
   const target = $('#candidate-output');
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/substitution`, {
@@ -338,7 +368,7 @@ async function createAssignment(teacherId) {
     });
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
-    announce('Görevlendirme server response ile oluşturuldu; queue ve impact yenileniyor.', 'success');
+    announce('Görevlendirme kaydedildi; günlük işler ve etki listesi yenileniyor.', 'success');
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
   } catch (error) {
@@ -347,7 +377,7 @@ async function createAssignment(teacherId) {
 }
 
 async function clearAssignment() {
-  if (!state.activeLeaveEtag) return announce('Server-returned leaveEtag olmadan clear yapılamaz.', 'warning');
+  if (!state.activeLeaveEtag) return announce('Güncel izin kaydı alınmadan görevlendirme temizlenemez.', 'warning');
   const target = $('#candidate-output');
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/substitution`, {
@@ -356,7 +386,7 @@ async function clearAssignment() {
     });
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
-    announce('Görevlendirme server response ile temizlendi; queue ve impact yenileniyor.', 'success');
+    announce('Görevlendirme temizlendi; günlük işler ve etki listesi yenileniyor.', 'success');
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
   } catch (error) {
@@ -372,10 +402,15 @@ function captureLeaveVersion(body, etag) {
 function renderLeaveCard(leave, title) {
   return `<article class="card">
     <h3>${escapeHtml(title)}</h3>
-    <p>Durum: ${escapeHtml(pick(leave, ['status'], 'unknown'))}</p>
-    <p>Karar: ${escapeHtml(pick(leave, ['decisionStatus'], 'unknown'))} · Coverage: ${escapeHtml(pick(leave, ['coverageStatus'], 'unknown'))}</p>
-    <p>Version: ${escapeHtml(pick(leave, ['resourceVersion'], 'server'))} · ETag: ${escapeHtml(state.activeLeaveEtag || 'server response bekleniyor')}</p>
+    <p>Durum: ${escapeHtml(displayStatus(pick(leave, ['status'], 'unknown')))}</p>
+    <p>Karar: ${escapeHtml(displayStatus(pick(leave, ['decisionStatus'], 'unknown')))} · Ders karşılığı: ${escapeHtml(displayStatus(pick(leave, ['coverageStatus'], 'unknown')))}</p>
+    <p>Güncellik: ${state.activeLeaveEtag ? 'Güncel kayıt alındı' : 'Güncel kayıt bekleniyor'}</p>
   </article>`;
+}
+
+function displayStatus(value) {
+  const key = String(value || 'unknown').toLowerCase();
+  return statusLabels[key] || String(value || statusLabels.unknown).replace(/_/g, ' ');
 }
 
 const loading = (text) => `<div class="loading" role="status">${escapeHtml(text)}...</div>`;

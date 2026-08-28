@@ -7,9 +7,9 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
   const html = fs.readFileSync(path.join(runtimeDir, 'index.html'), 'utf8');
   const css = fs.readFileSync(path.join(runtimeDir, 'styles.css'), 'utf8');
 
-  it('defines Teacher and Operations Manager runtime panels', () => {
-    expect(html).toContain('Teacher flow');
-    expect(html).toContain('Operations Manager flow');
+  it('defines role-aware Turkish runtime panels', () => {
+    expect(html).toContain('Öğretmen işlemleri');
+    expect(html).toContain('Operasyon yöneticisi işlemleri');
     expect(html).toContain('leave-form');
     expect(html).toContain('queue-output');
     expect(html).toContain('impact-output');
@@ -74,8 +74,8 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain("method: 'DELETE'");
     expect(app.match(/await loadImpact/g)?.length).toBeGreaterThanOrEqual(2);
     expect(app.match(/await loadQueue/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(app).toContain('Server-returned leaveEtag olmadan assignment yapılamaz');
-    expect(app).toContain('Server-returned leaveEtag olmadan clear yapılamaz');
+    expect(app).toContain('Güncel izin kaydı alınmadan görevlendirme yapılamaz');
+    expect(app).toContain('Güncel izin kaydı alınmadan görevlendirme temizlenemez');
   });
 
   it('has keyboard and focus affordances', () => {
@@ -95,6 +95,38 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain('error-state');
     expect(html).toContain('role="region"');
     expect(html).toContain('aria-label="Günlük operasyon kuyruğu"');
+  });
+
+  it('does not expose internal labels, transport versions or backend jargon in visible runtime copy', () => {
+    for (const forbidden of [
+      'Tenant ID',
+      'Branch ID',
+      'ETag',
+      'Version:',
+      'Queue getir',
+      'Queue yenile',
+      'Teacher flow',
+      'Operations Manager flow',
+      'Daily Operations queue',
+      'server response',
+      'server projection',
+      'branchId gerekir',
+      'leaveId gerekir',
+      'scheduleEventId gerekir',
+      'assignment yapılamaz',
+      'Coverage:',
+    ]) {
+      expect(html).not.toContain(forbidden);
+      expect(app).not.toContain(forbidden);
+    }
+  });
+
+  it('maps raw status and reason codes to Turkish operational copy before display', () => {
+    expect(app).toContain('const uiStateTitles');
+    expect(app).toContain('const statusLabels');
+    expect(app).toContain('function displayStatus');
+    expect(app).toContain('Güncel kayıt alındı');
+    expect(app).toContain('Bu işlem için yetkiniz yok');
   });
 
   it('covers responsive layout breakpoints without a new dashboard', () => {
