@@ -460,7 +460,7 @@ function renderImpact(body, events) {
     <strong>${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}</strong>
     <span>${escapeHtml(pick(event, ['occurrenceDate'], ''))} ${escapeHtml(pick(event, ['timeRange'], ''))}</span>
     <span class="tag" data-tone="${escapeHtml(statusTone(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}">${escapeHtml(displayStatus(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}</span>
-    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}" data-course-label="${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}">Bu ders için aday bul</button>
+    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}" data-course-label="${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}">Adayları getir ve bu dersi planla</button>
   </li>`).join('');
   return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))} · ${events.length} ders etkileniyor</div>
     <ul class="impact-list">${rows || '<li>Etki satırı yok.</li>'}</ul>`;
