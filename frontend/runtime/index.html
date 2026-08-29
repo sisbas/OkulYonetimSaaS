@@ -55,6 +55,41 @@
       <main id="runtime-main" tabindex="-1">
         <section id="message-region" class="message-region" aria-live="polite"></section>
 
+        <section class="panel workflow-guide" aria-labelledby="workflow-heading">
+          <div>
+            <p class="eyebrow">Akış rehberi</p>
+            <h2 id="workflow-heading">Bugünkü işlemi adım adım tamamlayın</h2>
+            <p class="hint">Ekran, rol yetkinize göre aynı güvenli API sınırını kullanır; sıradaki adımı aşağıda gösterir.</p>
+          </div>
+          <ol id="workflow-steps" class="workflow-steps" aria-label="İşlem adımları">
+            <li data-step="session" data-state="current">
+              <span class="step-index">1</span>
+              <strong>Oturum aç</strong>
+              <small>Kimlik ve kurum doğrulansın</small>
+            </li>
+            <li data-step="context">
+              <span class="step-index">2</span>
+              <strong>Şube ve tarih seç</strong>
+              <small>Günlük iş kapsamını belirle</small>
+            </li>
+            <li data-step="leave">
+              <span class="step-index">3</span>
+              <strong>İzin talebini netleştir</strong>
+              <small>Öğretmen izni veya mevcut kayıt</small>
+            </li>
+            <li data-step="impact">
+              <span class="step-index">4</span>
+              <strong>Etkiyi incele</strong>
+              <small>Etkilenen dersi seç</small>
+            </li>
+            <li data-step="assignment">
+              <span class="step-index">5</span>
+              <strong>Karşılığı tamamla</strong>
+              <small>Aday seç veya görevi temizle</small>
+            </li>
+          </ol>
+        </section>
+
         <section id="teacher-panel" class="panel runtime-panel" data-panel="teacher">
           <div class="section-head">
             <div>

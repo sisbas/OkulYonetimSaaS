@@ -82,6 +82,29 @@ function announce(message, tone = 'neutral') {
   el.innerHTML = `<div class="notice" data-tone="${tone}">${escapeHtml(message)}</div>`;
 }
 
+function updateWorkflowProgress(blockedStep = '', blockedMessage = '') {
+  const steps = ['session', 'context', 'leave', 'impact', 'assignment'];
+  let current = 'session';
+  if (state.accessToken) current = 'context';
+  if (state.branchId || $('#branch-id')?.value.trim()) current = 'leave';
+  if (state.activeLeaveId) current = 'impact';
+  if (state.activeScheduleEventId) current = 'assignment';
+  if (state.activeAssignmentId) current = '';
+
+  document.querySelectorAll('#workflow-steps [data-step]').forEach((step) => {
+    const name = step.dataset.step;
+    const stepIndex = steps.indexOf(name);
+    const currentIndex = current ? steps.indexOf(current) : steps.length;
+    let stepState = stepIndex < currentIndex ? 'done' : '';
+    if (name === current) stepState = 'current';
+    if (name === blockedStep) stepState = 'blocked';
+    step.dataset.state = stepState;
+    step.setAttribute('aria-current', name === current ? 'step' : 'false');
+    const helper = step.querySelector('small');
+    if (helper && name === blockedStep && blockedMessage) helper.textContent = blockedMessage;
+  });
+}
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
 }
@@ -171,6 +194,7 @@ function renderBlockingState(target, reasonCode) {
 function requireSession() {
   if (!state.accessToken) {
     announce('Önce oturum açın.', 'warning');
+    updateWorkflowProgress('session', 'Oturum açmadan devam edilemez');
     return false;
   }
   return true;
@@ -200,9 +224,11 @@ async function login(event) {
     state.tenantId = tenantId;
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
     announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
+    updateWorkflowProgress();
   } catch (error) {
     state.accessToken = '';
     setStatus('Oturum başarısız', 'danger');
+    updateWorkflowProgress('session', 'Kimlik bilgilerini kontrol edin');
     renderError($('#teacher-output'), error);
   }
 }
@@ -211,6 +237,7 @@ async function updateContext(event) {
   event.preventDefault();
   state.branchId = $('#branch-id').value.trim();
   state.date = $('#operation-date').value;
+  updateWorkflowProgress(state.branchId ? '' : 'context', state.branchId ? '' : 'Şube seçimi gerekiyor');
   await loadQueue();
 }
 
@@ -227,7 +254,10 @@ async function createLeave(event) {
   event.preventDefault();
   if (!requireSession()) return;
   const branchId = getBranchId();
-  if (!branchId) return announce('İzin talebi için şube seçin.', 'warning');
+  if (!branchId) {
+    updateWorkflowProgress('context', 'İzin talebi için şube seçin');
+    return announce('İzin talebi için şube seçin.', 'warning');
+  }
   const body = {
     branchId,
     durationType: $('#leave-duration-type').value,
@@ -242,7 +272,9 @@ async function createLeave(event) {
     captureLeaveVersion(leave, etag);
     target.innerHTML = renderLeaveCard(leave, 'Kendi izin talebiniz oluşturuldu');
     announce('İzin talebi kaydedildi.', 'success');
+    updateWorkflowProgress();
   } catch (error) {
+    updateWorkflowProgress('leave', 'İzin talebi tamamlanamadı');
     renderError(target, error);
   }
 }
@@ -265,7 +297,10 @@ async function loadQueue() {
   if (!requireSession()) return;
   const target = $('#queue-output');
   const branchId = getBranchId();
-  if (!branchId) return announce('Günlük işler için şube seçin.', 'warning');
+  if (!branchId) {
+    updateWorkflowProgress('context', 'Günlük işler için şube seçin');
+    return announce('Günlük işler için şube seçin.', 'warning');
+  }
   state.date = state.date || $('#operation-date').value;
   const query = new URLSearchParams({ branchId });
   if (state.date) query.set('date', state.date);
@@ -275,7 +310,9 @@ async function loadQueue() {
     const items = asArray(body, ['items', 'lessons', 'queue']);
     target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı kapsamda açık ders bulunmuyor.');
     announce('Günlük işler yenilendi.', 'success');
+    updateWorkflowProgress();
   } catch (error) {
+    updateWorkflowProgress('context', 'Günlük işler alınamadı');
     renderError(target, error);
   }
 }
@@ -297,8 +334,12 @@ async function loadImpact(leaveId, eventId) {
   if (!requireSession()) return;
   state.activeLeaveId = leaveId || state.activeLeaveId;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
+  updateWorkflowProgress();
   const target = $('#impact-output');
-  if (!state.activeLeaveId) return announce('Etki analizi için izin talebi seçin.', 'warning');
+  if (!state.activeLeaveId) {
+    updateWorkflowProgress('leave', 'Önce izin talebi seçin');
+    return announce('Etki analizi için izin talebi seçin.', 'warning');
+  }
   target.innerHTML = loading('İzin etkisi getiriliyor');
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/impact`);
@@ -307,7 +348,9 @@ async function loadImpact(leaveId, eventId) {
     if (!state.activeScheduleEventId && events[0]) state.activeScheduleEventId = eventIdentity(events[0]);
     updateAssignmentStateFromEvents(events);
     target.innerHTML = renderImpact(body, events);
+    updateWorkflowProgress();
   } catch (error) {
+    updateWorkflowProgress('impact', 'Etki analizi alınamadı');
     renderError(target, error);
   }
 }
@@ -337,15 +380,24 @@ function renderImpact(body, events) {
 async function loadCandidates(eventId) {
   if (!requireSession()) return;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
+  updateWorkflowProgress();
   const target = $('#candidate-output');
-  if (!state.activeLeaveId || !state.activeScheduleEventId) return announce('Aday listesi için etkilenen dersi seçin.', 'warning');
+  if (!state.activeLeaveId || !state.activeScheduleEventId) {
+    updateWorkflowProgress('impact', 'Etkilenen dersi seçin');
+    return announce('Aday listesi için etkilenen dersi seçin.', 'warning');
+  }
   target.innerHTML = loading('Adaylar getiriliyor');
   try {
     const { body } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/candidates`);
-    if (body?.eligibilityFinalized === false) return renderBlockingState(target, 'TEACHER_COURSE_ELIGIBILITY_NOT_READY');
+    if (body?.eligibilityFinalized === false) {
+      updateWorkflowProgress('assignment', 'Uygunluk kaynağı bekleniyor');
+      return renderBlockingState(target, 'TEACHER_COURSE_ELIGIBILITY_NOT_READY');
+    }
     const candidates = asArray(body, ['candidates', 'items']);
     target.innerHTML = candidates.length ? candidates.map(renderCandidate).join('') : empty('Aynı scope içinde uygun aday yok.');
+    updateWorkflowProgress();
   } catch (error) {
+    updateWorkflowProgress('assignment', 'Aday listesi alınamadı');
     renderError(target, error);
   }
 }
@@ -375,6 +427,7 @@ async function createAssignment(teacherId) {
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
     announce('Görevlendirme kaydedildi; günlük işler ve etki listesi yenileniyor.', 'success');
+    updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
   } catch (error) {
@@ -393,6 +446,7 @@ async function clearAssignment() {
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
     announce('Görevlendirme temizlendi; günlük işler ve etki listesi yenileniyor.', 'success');
+    updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
   } catch (error) {
@@ -437,3 +491,4 @@ $('#context-form').addEventListener('submit', updateContext);
 $('#leave-form').addEventListener('submit', createLeave);
 $('#load-own-leave').addEventListener('click', loadOwnLeave);
 $('#refresh-queue').addEventListener('click', loadQueue);
+updateWorkflowProgress();

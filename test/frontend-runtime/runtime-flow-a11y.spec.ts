@@ -90,6 +90,21 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain("$('#runtime-main').focus()");
   });
 
+  it('guides users through the operational workflow without backend jargon', () => {
+    expect(html).toContain('Akış rehberi');
+    expect(html).toContain('Bugünkü işlemi adım adım tamamlayın');
+    expect(html).toContain('id="workflow-steps"');
+    for (const step of ['session', 'context', 'leave', 'impact', 'assignment']) {
+      expect(html).toContain(`data-step="${step}"`);
+    }
+    expect(app).toContain('function updateWorkflowProgress');
+    expect(app).toContain("const steps = ['session', 'context', 'leave', 'impact', 'assignment']");
+    expect(app).toContain("step.setAttribute('aria-current', name === current ? 'step' : 'false')");
+    expect(css).toContain('.workflow-guide');
+    expect(css).toContain('.workflow-steps li[data-state="current"]');
+    expect(css).toContain('.workflow-steps li[data-state="blocked"]');
+  });
+
   it('has accessible loading, empty and error regions', () => {
     expect(app).toContain('role="status"');
     expect(app).toContain('empty-state');
