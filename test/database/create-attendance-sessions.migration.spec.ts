@@ -1,11 +1,9 @@
-import { DataSource } from 'typeorm';
-import { CreateAttendanceSessions1826000000000 } from './1826000000000-CreateAttendanceSessions';
+import { CreateAttendanceSessions1826000000000 } from '../../src/database/migrations/1826000000000-CreateAttendanceSessions';
 
 /**
- * Migration smoke: attendance_sessions table create/down on a real in-memory
- * Postgres is not available in unit CI; this spec validates the migration
- * class shape and that up/down are idempotent-callable (SQL executed via
- * queryRunner mock). Schema-level checks run in DB Smoke / migration CI.
+ * Migration smoke: attendance_sessions table create/down shape validation.
+ * Kept OUT of src/database/migrations/ so TypeORM's migration runner does not
+ * try to load it as a migration (describe is jest-only).
  */
 describe('CreateAttendanceSessions1826000000000 (#265)', () => {
   const migration = new CreateAttendanceSessions1826000000000();
