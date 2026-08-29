@@ -19,11 +19,11 @@ binding; a closed tracker with unchecked/HOLD criteria is NOT reported complete.
 | Schedule publish (M1) | #40/#129/#142 | runtime | src/schedules (11 src/6 test); 1784700000000-CreateScheduleMinimumPublish | Architecture | P1 | — |
 | Teacher/room/time-slot reference (M1) | #142/#144 | runtime | src/teachers, src/rooms, src/time-slots (test'li) | Architecture | P1 | — |
 | Leave request + impact (M3) | #183/#203/#218 | runtime | src/leaves (12 src/4 test); 1802000000000/1803000000000 | Product | P1 | manager approval completeness (#263) |
-| Attendance session lifecycle (M5) | #265 PR #328 | internal | src/attendance (7 src/2 test); 1826000000000-CreateAttendanceSessions | Product | P0 | DB-Smoke #330 blocks merge |
-| Attendance record mark | #145/#249 | internal | src/attendance/attendance.entity.ts + service | Product | P1 | session lifecycle merge (#265) |
+| Attendance record mark (M5, main) | #145/#249 | runtime | src/attendance/attendance.entity.ts + service + spec (main'de mevcut) | Product | P1 | — |
+| Attendance session lifecycle (M5, NEW) | #265 PR #328 | internal | src/attendance/attendance-session.* + controller + guard (PR #328, HENÜZ MAIN'DE DEĞİL) | Product | P0 | DB-Smoke #330 blocks merge |
 | Parent notification (M6) | #250/#266 | planning-only | src/notifications (3 src/1 test) | Product | P0 | consent + outbox (#266) |
 | Reporting / eokul (M7) | #268 | planning-only | src/reports (4 src/1 test) | Product | P1 | quarantine runtime claims (#268) |
-| RBAC / BOLA guard | #144/#220 | internal | src/rbac (11 src / **0 test**) | Security | P0 | **no RBAC unit test → BOLA risk** |
+| RBAC / BOLA guard | #144/#220 | runtime | src/rbac (11 src) + **test/rbac/ (5 spec: okul-01-policy-engine, rbac.service, permission-catalog, permission-decorator-consistency, permission-seed)** | Security | P0 | — |
 | Auth fail-closed secrets | #259 | runtime | src/auth/auth.service.ts loadJwtAccessSecret FATAL | Security | P0 | durable audit (#259 remaining) |
 | KVKK redaction / audit | #259 | internal | src/common/audit (12 src); SecurityAuditService | Security/KVKK | P0 | durable transactional audit (#259) |
 | HCO autonomous loop | #260 PR #326 | runtime | hco/ + tests/hco (11 test) | CTO | P1 | — |
@@ -32,8 +32,9 @@ binding; a closed tracker with unchecked/HOLD criteria is NOT reported complete.
 
 ## Wrong-referral / gap notes
 - Notification lineage (#250) references reports/eokul runtime that is `planning-only` (#268 quarantine).
-- Attendance record mark (#249) depends on session lifecycle (#265) which is merge-blocked by #330.
-- RBAC has **zero** unit tests despite BOLA being a P0 security gate — must not be reported complete.
+- Attendance session lifecycle (#265) is on PR #328, **NOT yet on main** — do not attribute unmerged code to main. Main attendance = entity/module/service spec only.
+- RBAC: `src/rbac` has 11 src + `test/rbac/` has 5 spec files (policy-engine, rbac.service, permission-catalog, permission-decorator-consistency, permission-seed) → BOLA is tested, NOT a 0-test gap. (Corrected after review.)
+- UX (#264): `frontend/src` is ABSENT; only `frontend/runtime` (build artifact) exists. No role-aware Turkish shell source yet.
 - e2e count = 0 → P0 browser E2E and artifact evidence check cannot pass on any PR until #269 lands.
 
 ## Phase 1b scope (in-scope)
@@ -58,4 +59,9 @@ binding; a closed tracker with unchecked/HOLD criteria is NOT reported complete.
 ## Closure rule
 A tracker is merge-ready ONLY when every P0/P1 row above has `runtime` or
 `pilot-ready` classification with immutable evidence (HEAD SHA + test path + CI URL).
-Current state: NOT merge-ready (RBAC 0-test, attendance/notification/reporting/ux/acceptance open).
+Current state: NOT merge-ready (attendance/notification/reporting/ux/acceptance open).
+
+## Evidence CI URLs (main HEAD a11036d, last green)
+- Backend CI: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/32980316754
+- Sprint 1 Quality Gate: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/32980316858
+- DB Smoke: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/32980316860
