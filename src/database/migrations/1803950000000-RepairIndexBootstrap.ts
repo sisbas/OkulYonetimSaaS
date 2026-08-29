@@ -8,12 +8,14 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * indexes are absent, but on a FRESH database nothing creates them before that
  * migration runs -> DB Smoke fails. Incremental DBs pass (false-green).
  *
- * Fix: this NEW migration (timestamp BEFORE 1804000000000) create the repair
- * indexes idempotently so 1804000000000's preflight finds them. 1804000000000
- * then DROPs them, leaving a clean final schema (AC4).
+ * Fix: this NEW migration (timestamp BEFORE 1804000000000 but AFTER every table
+ * it indexes — 1784690000000 CreateStudentGroupReferenceFoundation is the latest
+ * referenced table) creates the repair indexes idempotently so 1804000000000's
+ * preflight finds them. 1804000000000 then DROPs them, leaving a clean final
+ * schema (AC4).
  *
  * HARD RULE compliance:
- * - Does NOT modify merged 1804000000000 (RULE 5/6): this is a separate migration.
+ * - Does NOT modify merged 1804000000000 (RULE 5/6): separate migration.
  * - Adds no business capability (RULE 8): only bootstrap indexes.
  * - Mixes no Attendance/Notification/UX (RULE 9).
  *
@@ -46,8 +48,8 @@ function indexDefinition(surface: IndexSurface): string {
   return `(${surface.columns.map((c) => `"${c}"`).join(', ')})`;
 }
 
-export class RepairIndexBootstrap1803990000000 implements MigrationInterface {
-  name = 'RepairIndexBootstrap1803990000000';
+export class RepairIndexBootstrap1803950000000 implements MigrationInterface {
+  name = 'RepairIndexBootstrap1803950000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // AC7 guard: if 1804000000000 already applied, its preflight already passed

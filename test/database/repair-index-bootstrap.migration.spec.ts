@@ -1,4 +1,4 @@
-import { RepairIndexBootstrap1803990000000 } from '../../src/database/migrations/1803990000000-RepairIndexBootstrap';
+import { RepairIndexBootstrap1803950000000 } from '../../src/database/migrations/1803950000000-RepairIndexBootstrap';
 
 /**
  * Unit-level logic test for the repair-index bootstrap migration (#330).
@@ -6,7 +6,7 @@ import { RepairIndexBootstrap1803990000000 } from '../../src/database/migrations
  * a real database. Fresh-DB determinism and final-schema assertions are covered
  * by CI DB Smoke (fresh + upgraded scenarios).
  */
-describe('RepairIndexBootstrap1803990000000 (#330)', () => {
+describe('RepairIndexBootstrap1803950000000 (#330)', () => {
   function fakeRunner(initialMigrations: string[] = []) {
     const created: string[] = [];
     const dropped: string[] = [];
@@ -38,7 +38,7 @@ describe('RepairIndexBootstrap1803990000000 (#330)', () => {
 
   it('up() creates all 8 repair indexes when 180400 not yet applied (fresh DB)', async () => {
     const runner = fakeRunner();
-    await new RepairIndexBootstrap1803990000000().up(runner);
+    await new RepairIndexBootstrap1803950000000().up(runner);
     expect(runner.created.length).toBe(8);
     expect(runner.created.every((s) => s.includes('CREATE UNIQUE INDEX IF NOT EXISTS uq_schedule_repair_'))).toBe(true);
     expect(runner.dropped.length).toBe(0);
@@ -46,14 +46,14 @@ describe('RepairIndexBootstrap1803990000000 (#330)', () => {
 
   it('up() SKIPs creation when 180400 already applied (AC7 guard, upgraded DB)', async () => {
     const runner = fakeRunner(['ParentOwnedScheduleSurfaces1804000000000']);
-    await new RepairIndexBootstrap1803990000000().up(runner);
+    await new RepairIndexBootstrap1803950000000().up(runner);
     expect(runner.created.length).toBe(0);
     expect(runner.dropped.length).toBe(0);
   });
 
   it('down() drops all 8 repair indexes', async () => {
     const runner = fakeRunner();
-    await new RepairIndexBootstrap1803990000000().down(runner);
+    await new RepairIndexBootstrap1803950000000().down(runner);
     expect(runner.dropped.length).toBe(8);
     expect(runner.dropped.every((s) => s.includes('DROP INDEX IF EXISTS uq_schedule_repair_'))).toBe(true);
   });
