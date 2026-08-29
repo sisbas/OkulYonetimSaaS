@@ -61,14 +61,14 @@ export class CreateAttendanceSessions1826000000000
     await queryRunner.query(`
       ALTER TABLE "attendance_sessions"
         ADD CONSTRAINT "fk_attendance_sessions_event"
-        FOREIGN KEY ("tenant_id", "schedule_event_id")
-        REFERENCES "schedule_events"("tenant_id", "id") ON DELETE RESTRICT
+        FOREIGN KEY ("schedule_event_id")
+        REFERENCES "schedule_events"("id") ON DELETE RESTRICT
     `);
     await queryRunner.query(`
       ALTER TABLE "attendance_sessions"
         ADD CONSTRAINT "fk_attendance_sessions_course"
-        FOREIGN KEY ("tenant_id", "course_id")
-        REFERENCES "courses"("tenant_id", "id") ON DELETE RESTRICT
+        FOREIGN KEY ("course_id")
+        REFERENCES "courses"("id") ON DELETE RESTRICT
     `);
 
     await queryRunner.query(`
