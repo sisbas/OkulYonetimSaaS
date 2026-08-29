@@ -63,7 +63,7 @@ export class RepairIndexBootstrap1803950000000 implements MigrationInterface {
     }
     for (const surface of REPAIR_INDEX_DEFINITIONS) {
       await queryRunner.query(
-        `CREATE UNIQUE INDEX IF NOT EXISTS ${surface.name} ${indexDefinition(surface)}`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS ${surface.name} ON ${surface.table} ${indexDefinition(surface)}`,
       );
     }
   }
