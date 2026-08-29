@@ -10,6 +10,11 @@ const state = {
   activeScheduleEventId: '',
   activeLeaveEtag: '',
   activeAssignmentId: '',
+  queueCount: 0,
+  impactCount: 0,
+  candidateCount: 0,
+  activeLessonLabel: '',
+  lastAction: 'Henüz işlem yapılmadı.',
 };
 
 const reasonUi = {
@@ -36,6 +41,51 @@ const reasonUi = {
 };
 
 const GENERIC_NEST_ERRORS = new Set(['Bad Request', 'Forbidden', 'Conflict', 'Precondition Failed', 'Not Found', 'Unauthorized']);
+const uiStateTitles = {
+  auth_required: 'Oturum yenilenmeli',
+  tenant_context_required: 'Kurum seçimi doğrulanamadı',
+  branch_context_required: 'Şube seçimi doğrulanamadı',
+  forbidden_non_enumerating: 'Bu işlem için yetkiniz yok',
+  empty_or_not_found_same_scope: 'Kayıt bulunamadı',
+  validation_error: 'Bilgileri kontrol edin',
+  version_required: 'Güncel kayıt bekleniyor',
+  stale_version: 'Kayıt güncellendi',
+  impact_analysis_not_ready: 'Etki analizi bekleniyor',
+  eligibility_not_ready: 'Uygunluk bekleniyor',
+  candidate_unavailable: 'Aday uygun değil',
+  conflict_blocking: 'Çakışma var',
+  locked_state: 'İşlem kilitli',
+  error_retryable: 'İşlem tamamlanamadı',
+  offline_or_unavailable: 'Bağlantı kurulamadı',
+};
+const statusLabels = {
+  pending: 'Beklemede',
+  approved: 'Onaylandı',
+  rejected: 'Reddedildi',
+  open: 'Açık',
+  unresolved: 'Henüz karşılanmadı',
+  assigned: 'Görevlendirildi',
+  resolved: 'Çözüldü',
+  covered: 'Karşılandı',
+  uncovered: 'Karşılanmadı',
+  partially_covered: 'Kısmen karşılandı',
+  not_required: 'Karşılık gerekmiyor',
+  cancelled: 'İptal edildi',
+  unknown: 'Durum bekleniyor',
+};
+const statusTones = {
+  approved: 'success',
+  assigned: 'success',
+  resolved: 'success',
+  covered: 'success',
+  pending: 'warning',
+  open: 'warning',
+  unresolved: 'warning',
+  partially_covered: 'warning',
+  uncovered: 'danger',
+  rejected: 'danger',
+  cancelled: 'neutral',
+};
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -47,7 +97,67 @@ function setStatus(text, tone = 'neutral') {
 
 function announce(message, tone = 'neutral') {
   const el = $('#message-region');
+  state.lastAction = message;
   el.innerHTML = `<div class="notice" data-tone="${tone}">${escapeHtml(message)}</div>`;
+  updateOperationalSnapshot();
+}
+
+function summaryText(value, fallback) {
+  return value ? String(value) : fallback;
+}
+
+function recommendedAction() {
+  if (!state.accessToken) return 'Önce oturum açın.';
+  if (!state.branchId && !$('#branch-id')?.value.trim()) return 'İşlem kapsamı için şube ve tarihi seçin.';
+  if (!state.activeLeaveId) return 'Öğretmen izni oluşturun veya günlük iş listesinden etkilenen talebi açın.';
+  if (!state.activeScheduleEventId) return 'Etki listesinden ders seçip adayları getirin.';
+  if (!state.activeAssignmentId && !state.candidateCount) return 'Uygun yedek öğretmen adaylarını getirin.';
+  if (!state.activeAssignmentId) return 'Uygun adayı seçerek görevlendirmeyi tamamlayın.';
+  return 'Ders karşılığı tamamlandı; günlük iş listesini yenileyerek sonucu doğrulayın.';
+}
+
+function updateOperationalSnapshot() {
+  const branchId = state.branchId || $('#branch-id')?.value.trim();
+  const date = state.date || $('#operation-date')?.value;
+  $('#summary-session').textContent = state.accessToken ? 'Aktif' : 'Bekleniyor';
+  $('#summary-scope').textContent = branchId ? `${branchId}${date ? ` · ${date}` : ''}` : 'Şube seçilmedi';
+  $('#summary-leave').textContent = summaryText(state.activeLeaveId, 'Talep seçilmedi');
+  $('#summary-assignment').textContent = state.activeAssignmentId
+    ? 'Görevlendirme tamamlandı'
+    : `${state.queueCount} açık ders · ${state.impactCount} etki · ${state.candidateCount} aday`;
+  $('#summary-lesson').textContent = summaryText(state.activeLessonLabel, 'Henüz seçilmedi');
+  $('#next-action').textContent = recommendedAction();
+  $('#activity-trail').textContent = `Son işlem: ${state.lastAction}`;
+  const selectedLesson = $('#selected-lesson-context');
+  if (selectedLesson) {
+    selectedLesson.innerHTML = state.activeLessonLabel
+      ? `<strong>${escapeHtml(state.activeLessonLabel)}</strong><p>Bu ders için etki ve aday seçimi aynı kayıt güncelliğiyle takip ediliyor.</p>`
+      : '<strong>Seçili ders yok</strong><p>Günlük iş listesinden bir dersin etkisini açtığınızda aday seçimi burada bağlama oturur.</p>';
+  }
+}
+
+function updateWorkflowProgress(blockedStep = '', blockedMessage = '') {
+  const steps = ['session', 'context', 'leave', 'impact', 'assignment'];
+  let current = 'session';
+  if (state.accessToken) current = 'context';
+  if (state.branchId || $('#branch-id')?.value.trim()) current = 'leave';
+  if (state.activeLeaveId) current = 'impact';
+  if (state.activeScheduleEventId) current = 'assignment';
+  if (state.activeAssignmentId) current = '';
+
+  document.querySelectorAll('#workflow-steps [data-step]').forEach((step) => {
+    const name = step.dataset.step;
+    const stepIndex = steps.indexOf(name);
+    const currentIndex = current ? steps.indexOf(current) : steps.length;
+    let stepState = stepIndex < currentIndex ? 'done' : '';
+    if (name === current) stepState = 'current';
+    if (name === blockedStep) stepState = 'blocked';
+    step.dataset.state = stepState;
+    step.setAttribute('aria-current', name === current ? 'step' : 'false');
+    const helper = step.querySelector('small');
+    if (helper && name === blockedStep && blockedMessage) helper.textContent = blockedMessage;
+  });
+  updateOperationalSnapshot();
 }
 
 function escapeHtml(value) {
@@ -111,22 +221,47 @@ function normalizeApiError(response, body) {
   if (response.status === 412) reasonCode = 'LEAVE_VERSION_MISMATCH';
   if (response.status === 409 && !reasonUi[reasonCode]) reasonCode = 'SUBSTITUTE_TIME_CONFLICT';
   const mapped = reasonUi[reasonCode] || reasonUi.SERVER_ERROR;
-  const message = GENERIC_NEST_ERRORS.has(messageText) ? mapped[1] : messageText || mapped[1];
+  const knownReasonCode = Boolean(reasonUi[reasonCode]);
+  const message = knownReasonCode || GENERIC_NEST_ERRORS.has(messageText) ? mapped[1] : messageText || mapped[1];
   return { status: response.status, reasonCode, uiState: mapped[0], message };
 }
 
 function renderError(target, error) {
+  const title = uiStateTitles[error.uiState] || 'İşlem tamamlanamadı';
+  const message = reasonUi[error.reasonCode]?.[1] || 'İşlem tamamlanamadı.';
   target.innerHTML = `<div class="error-state" data-state="${escapeHtml(error.uiState || 'error_retryable')}">
-    <strong>${escapeHtml(error.reasonCode || 'SERVER_ERROR')}</strong>
-    <p>${escapeHtml(error.message || 'İşlem tamamlanamadı.')}</p>
+    <strong>${escapeHtml(title)}</strong>
+    <p>${escapeHtml(message)}</p>
+    <small class="recovery-hint">${escapeHtml(recoveryHint(error.uiState))}</small>
   </div>`;
-  announce(error.message || 'İşlem tamamlanamadı.', 'danger');
+  announce(message, 'danger');
+}
+
+function recoveryHint(uiState) {
+  const hints = {
+    auth_required: 'Oturumu yenileyip işlemi tekrar deneyin.',
+    tenant_context_required: 'Kurum seçimini kontrol edin.',
+    branch_context_required: 'Şube seçimini kontrol edin.',
+    forbidden_non_enumerating: 'Yetki kapsamınız dışında kalan kayıtlar listelenmez.',
+    empty_or_not_found_same_scope: 'Kapsamı yenileyin veya farklı tarih/şube deneyin.',
+    validation_error: 'Zorunlu alanları ve tarih aralığını gözden geçirin.',
+    version_required: 'Önce güncel izin kaydını tekrar yükleyin.',
+    stale_version: 'Kayıt değişmiş; etki listesini yenileyin.',
+    impact_analysis_not_ready: 'Etki analizi tamamlanınca aday seçimi açılır.',
+    eligibility_not_ready: 'Uygunluk kaynağı tamamlandığında adaylar yeniden getirilebilir.',
+    candidate_unavailable: 'Başka bir adayı seçin veya ders kapsamını kontrol edin.',
+    conflict_blocking: 'Çakışma çözüldükten sonra yeniden deneyin.',
+    locked_state: 'Aktif görevlendirmeyi temizleyip yeniden işlem yapın.',
+    offline_or_unavailable: 'Bağlantıyı kontrol edip yeniden deneyin.',
+  };
+  return hints[uiState] || 'Sorun devam ederse günlük işleri yenileyin.';
 }
 
 function renderBlockingState(target, reasonCode) {
   const mapped = reasonUi[reasonCode] || reasonUi.SERVER_ERROR;
+  const title = uiStateTitles[mapped[0]] || 'İşlem bekliyor';
   target.innerHTML = `<div class="error-state" data-state="${escapeHtml(mapped[0])}">
-    <strong>${escapeHtml(reasonCode)}</strong>
+    <strong>${escapeHtml(title)}</strong>
     <p>${escapeHtml(mapped[1])}</p>
   </div>`;
   announce(mapped[1], 'warning');
@@ -135,6 +270,7 @@ function renderBlockingState(target, reasonCode) {
 function requireSession() {
   if (!state.accessToken) {
     announce('Önce oturum açın.', 'warning');
+    updateWorkflowProgress('session', 'Oturum açmadan devam edilemez');
     return false;
   }
   return true;
@@ -163,10 +299,12 @@ async function login(event) {
     state.accessToken = result.accessToken || '';
     state.tenantId = tenantId;
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
-    announce('Oturum açıldı. Role ve permission server endpointleri tarafından uygulanır.', 'success');
+    announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
+    updateWorkflowProgress();
   } catch (error) {
     state.accessToken = '';
     setStatus('Oturum başarısız', 'danger');
+    updateWorkflowProgress('session', 'Kimlik bilgilerini kontrol edin');
     renderError($('#teacher-output'), error);
   }
 }
@@ -175,6 +313,7 @@ async function updateContext(event) {
   event.preventDefault();
   state.branchId = $('#branch-id').value.trim();
   state.date = $('#operation-date').value;
+  updateWorkflowProgress(state.branchId ? '' : 'context', state.branchId ? '' : 'Şube seçimi gerekiyor');
   await loadQueue();
 }
 
@@ -191,7 +330,10 @@ async function createLeave(event) {
   event.preventDefault();
   if (!requireSession()) return;
   const branchId = getBranchId();
-  if (!branchId) return announce('İzin talebi için branchId gerekir.', 'warning');
+  if (!branchId) {
+    updateWorkflowProgress('context', 'İzin talebi için şube seçin');
+    return announce('İzin talebi için şube seçin.', 'warning');
+  }
   const body = {
     branchId,
     durationType: $('#leave-duration-type').value,
@@ -204,22 +346,27 @@ async function createLeave(event) {
   try {
     const { body: leave, etag } = await apiRequest('/leaves/me', { method: 'POST', body });
     captureLeaveVersion(leave, etag);
+    state.impactCount = 0;
+    state.candidateCount = 0;
     target.innerHTML = renderLeaveCard(leave, 'Kendi izin talebiniz oluşturuldu');
-    announce('İzin talebi server response ile oluşturuldu.', 'success');
+    announce('İzin talebi kaydedildi.', 'success');
+    updateWorkflowProgress();
   } catch (error) {
+    updateWorkflowProgress('leave', 'İzin talebi tamamlanamadı');
     renderError(target, error);
   }
 }
 
 async function loadOwnLeave() {
   if (!requireSession()) return;
-  if (!state.activeLeaveId) return announce('Önce oluşturulmuş veya seçilmiş leaveId gerekir.', 'warning');
+  if (!state.activeLeaveId) return announce('Önce bir izin talebi seçin veya oluşturun.', 'warning');
   const target = $('#teacher-output');
   target.innerHTML = loading('Kendi izin talebi getiriliyor');
   try {
     const { body, etag } = await apiRequest(`/leaves/me/${encodeURIComponent(state.activeLeaveId)}`);
     captureLeaveVersion(body, etag);
     target.innerHTML = renderLeaveCard(body, 'Kendi izin talebiniz');
+    updateWorkflowProgress();
   } catch (error) {
     renderError(target, error);
   }
@@ -229,17 +376,23 @@ async function loadQueue() {
   if (!requireSession()) return;
   const target = $('#queue-output');
   const branchId = getBranchId();
-  if (!branchId) return announce('Queue için branchId gerekir; authority server tarafından doğrulanır.', 'warning');
+  if (!branchId) {
+    updateWorkflowProgress('context', 'Günlük işler için şube seçin');
+    return announce('Günlük işler için şube seçin.', 'warning');
+  }
   state.date = state.date || $('#operation-date').value;
   const query = new URLSearchParams({ branchId });
   if (state.date) query.set('date', state.date);
-  target.innerHTML = loading('Daily Operations queue getiriliyor');
+  target.innerHTML = loading('Günlük işler getiriliyor');
   try {
     const { body } = await apiRequest(`/daily-operations/today?${query.toString()}`);
     const items = asArray(body, ['items', 'lessons', 'queue']);
-    target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı scope içinde açık ders bulunmuyor.');
-    announce('Queue server projection üzerinden yenilendi.', 'success');
+    state.queueCount = items.length;
+    target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı kapsamda açık ders bulunmuyor.');
+    announce('Günlük işler yenilendi.', 'success');
+    updateWorkflowProgress();
   } catch (error) {
+    updateWorkflowProgress('context', 'Günlük işler alınamadı');
     renderError(target, error);
   }
 }
@@ -247,31 +400,45 @@ async function loadQueue() {
 function renderQueueItem(item) {
   const leaveId = pick(item, ['leaveRequestId']);
   const eventId = pick(item, ['scheduleEventId', 'eventId']);
-  const stateLabel = pick(item, ['state', 'coverageStatus', 'assignmentStatus'], 'unknown');
-  return `<article class="card">
+  const rawState = pick(item, ['state', 'coverageStatus', 'assignmentStatus'], 'unknown');
+  const stateLabel = displayStatus(rawState);
+  return `<article class="card queue-card">
     <h3>${escapeHtml(pick(item, ['courseLabel', 'title'], 'Ders'))}</h3>
-    <p>${escapeHtml(pick(item, ['occurrenceDate', 'date'], ''))} ${escapeHtml(pick(item, ['timeRange', 'time'], ''))}</p>
-    <p>${escapeHtml(pick(item, ['studentGroupLabel', 'groupLabel'], ''))} · ${escapeHtml(pick(item, ['roomLabel'], ''))}</p>
-    <span class="tag">${escapeHtml(stateLabel)}</span>
-    <button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}">Etkiyi aç</button>
+    <p class="card-meta">
+      <span>${escapeHtml(pick(item, ['occurrenceDate', 'date'], 'Tarih bekleniyor'))}</span>
+      <span>${escapeHtml(pick(item, ['timeRange', 'time'], 'Saat bekleniyor'))}</span>
+      <span>${escapeHtml(pick(item, ['studentGroupLabel', 'groupLabel'], 'Sınıf bekleniyor'))}</span>
+      <span>${escapeHtml(pick(item, ['roomLabel'], 'Derslik bekleniyor'))}</span>
+    </p>
+    <span class="tag" data-tone="${escapeHtml(statusTone(rawState))}">${escapeHtml(stateLabel)}</span>
+    <button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}" data-course-label="${escapeHtml(pick(item, ['courseLabel', 'title'], 'Ders'))}">Bu dersin etkisini incele</button>
   </article>`;
 }
 
-async function loadImpact(leaveId, eventId) {
+async function loadImpact(leaveId, eventId, courseLabel = '') {
   if (!requireSession()) return;
   state.activeLeaveId = leaveId || state.activeLeaveId;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
+  state.activeLessonLabel = courseLabel || state.activeLessonLabel;
+  updateWorkflowProgress();
   const target = $('#impact-output');
-  if (!state.activeLeaveId) return announce('Etki analizi için leaveId gerekir.', 'warning');
+  if (!state.activeLeaveId) {
+    updateWorkflowProgress('leave', 'Önce izin talebi seçin');
+    return announce('Etki analizi için izin talebi seçin.', 'warning');
+  }
   target.innerHTML = loading('İzin etkisi getiriliyor');
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/impact`);
     captureLeaveVersion(body, etag);
     const events = asArray(body, ['events', 'affectedLessons', 'lessons', 'items']);
+    state.impactCount = events.length;
+    state.candidateCount = 0;
     if (!state.activeScheduleEventId && events[0]) state.activeScheduleEventId = eventIdentity(events[0]);
     updateAssignmentStateFromEvents(events);
     target.innerHTML = renderImpact(body, events);
+    updateWorkflowProgress();
   } catch (error) {
+    updateWorkflowProgress('impact', 'Etki analizi alınamadı');
     renderError(target, error);
   }
 }
@@ -285,50 +452,63 @@ function updateAssignmentStateFromEvents(events) {
   if (!activeEvent) return;
   state.activeScheduleEventId = eventIdentity(activeEvent) || state.activeScheduleEventId;
   state.activeAssignmentId = pick(activeEvent, ['substituteAssignmentId'], '');
+  state.activeLessonLabel = pick(activeEvent, ['courseLabel', 'title'], state.activeLessonLabel);
 }
 
 function renderImpact(body, events) {
   const rows = events.map((event) => `<li>
     <strong>${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}</strong>
     <span>${escapeHtml(pick(event, ['occurrenceDate'], ''))} ${escapeHtml(pick(event, ['timeRange'], ''))}</span>
-    <span>${escapeHtml(pick(event, ['assignmentStatus', 'coverageStatus'], 'open'))}</span>
-    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}">Adayları getir</button>
+    <span class="tag" data-tone="${escapeHtml(statusTone(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}">${escapeHtml(displayStatus(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}</span>
+    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}" data-course-label="${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}">Adayları getir ve bu dersi planla</button>
   </li>`).join('');
-  return `<div class="summary"><b>Coverage:</b> ${escapeHtml(pick(body, ['coverageStatus'], 'unknown'))}</div>
+  return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))} · ${events.length} ders etkileniyor</div>
     <ul class="impact-list">${rows || '<li>Etki satırı yok.</li>'}</ul>`;
 }
 
-async function loadCandidates(eventId) {
+async function loadCandidates(eventId, courseLabel = '') {
   if (!requireSession()) return;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
+  state.activeLessonLabel = courseLabel || state.activeLessonLabel;
+  updateWorkflowProgress();
   const target = $('#candidate-output');
-  if (!state.activeLeaveId || !state.activeScheduleEventId) return announce('Aday için leaveId ve scheduleEventId gerekir.', 'warning');
+  if (!state.activeLeaveId || !state.activeScheduleEventId) {
+    updateWorkflowProgress('impact', 'Etkilenen dersi seçin');
+    return announce('Aday listesi için etkilenen dersi seçin.', 'warning');
+  }
   target.innerHTML = loading('Adaylar getiriliyor');
   try {
     const { body } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/candidates`);
-    if (body?.eligibilityFinalized === false) return renderBlockingState(target, 'TEACHER_COURSE_ELIGIBILITY_NOT_READY');
+    if (body?.eligibilityFinalized === false) {
+      updateWorkflowProgress('assignment', 'Uygunluk kaynağı bekleniyor');
+      return renderBlockingState(target, 'TEACHER_COURSE_ELIGIBILITY_NOT_READY');
+    }
     const candidates = asArray(body, ['candidates', 'items']);
+    state.candidateCount = candidates.length;
     target.innerHTML = candidates.length ? candidates.map(renderCandidate).join('') : empty('Aynı scope içinde uygun aday yok.');
+    updateWorkflowProgress();
   } catch (error) {
+    updateWorkflowProgress('assignment', 'Aday listesi alınamadı');
     renderError(target, error);
   }
 }
 
 function renderCandidate(candidate) {
   const teacherId = pick(candidate, ['teacherId', 'candidateId']);
-  const available = pick(candidate, ['availabilityStatus'], 'unknown');
+  const available = displayStatus(pick(candidate, ['availabilityStatus'], 'unknown'));
   const eligible = Boolean(pick(candidate, ['courseEligible', 'eligible'], false));
   const disabled = !eligible || !state.activeLeaveEtag;
   return `<article class="card candidate">
     <h3>${escapeHtml(pick(candidate, ['displayName', 'name'], 'Aday öğretmen'))}</h3>
-    <p>Uygunluk: ${escapeHtml(String(eligible))} · Durum: ${escapeHtml(available)}</p>
-    <button type="button" data-action="assign" data-teacher-id="${escapeHtml(teacherId)}" ${disabled ? 'disabled aria-describedby="etag-help"' : ''}>Görevlendir</button>
+    <p>Uygunluk: ${eligible ? 'Uygun' : 'Uygun değil'} · Durum: ${escapeHtml(available)}</p>
+    <span class="tag" data-tone="${eligible ? 'success' : 'danger'}">${eligible ? 'Seçilebilir aday' : 'Seçilemez aday'}</span>
+    <button type="button" data-action="assign" data-teacher-id="${escapeHtml(teacherId)}" ${disabled ? 'disabled aria-describedby="etag-help"' : ''}>Bu öğretmeni görevlendir</button>
     <button type="button" data-action="clear" ${state.activeAssignmentId && state.activeLeaveEtag ? '' : 'disabled'}>Görevlendirmeyi temizle</button>
   </article>`;
 }
 
 async function createAssignment(teacherId) {
-  if (!state.activeLeaveEtag) return announce('Server-returned leaveEtag olmadan assignment yapılamaz.', 'warning');
+  if (!state.activeLeaveEtag) return announce('Güncel izin kaydı alınmadan görevlendirme yapılamaz.', 'warning');
   const target = $('#candidate-output');
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/substitution`, {
@@ -338,7 +518,9 @@ async function createAssignment(teacherId) {
     });
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
-    announce('Görevlendirme server response ile oluşturuldu; queue ve impact yenileniyor.', 'success');
+    if (!state.activeAssignmentId) state.activeAssignmentId = 'server-confirmed';
+    announce('Görevlendirme kaydedildi; günlük işler ve etki listesi yenileniyor.', 'success');
+    updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
   } catch (error) {
@@ -347,7 +529,7 @@ async function createAssignment(teacherId) {
 }
 
 async function clearAssignment() {
-  if (!state.activeLeaveEtag) return announce('Server-returned leaveEtag olmadan clear yapılamaz.', 'warning');
+  if (!state.activeLeaveEtag) return announce('Güncel izin kaydı alınmadan görevlendirme temizlenemez.', 'warning');
   const target = $('#candidate-output');
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/substitution`, {
@@ -356,7 +538,9 @@ async function clearAssignment() {
     });
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
-    announce('Görevlendirme server response ile temizlendi; queue ve impact yenileniyor.', 'success');
+    state.activeAssignmentId = '';
+    announce('Görevlendirme temizlendi; günlük işler ve etki listesi yenileniyor.', 'success');
+    updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
   } catch (error) {
@@ -372,21 +556,33 @@ function captureLeaveVersion(body, etag) {
 function renderLeaveCard(leave, title) {
   return `<article class="card">
     <h3>${escapeHtml(title)}</h3>
-    <p>Durum: ${escapeHtml(pick(leave, ['status'], 'unknown'))}</p>
-    <p>Karar: ${escapeHtml(pick(leave, ['decisionStatus'], 'unknown'))} · Coverage: ${escapeHtml(pick(leave, ['coverageStatus'], 'unknown'))}</p>
-    <p>Version: ${escapeHtml(pick(leave, ['resourceVersion'], 'server'))} · ETag: ${escapeHtml(state.activeLeaveEtag || 'server response bekleniyor')}</p>
+    <p>Durum: ${escapeHtml(displayStatus(pick(leave, ['status'], 'unknown')))}</p>
+    <p>Karar: ${escapeHtml(displayStatus(pick(leave, ['decisionStatus'], 'unknown')))} · Ders karşılığı: ${escapeHtml(displayStatus(pick(leave, ['coverageStatus'], 'unknown')))}</p>
+    <p>Güncellik: ${state.activeLeaveEtag ? 'Güncel kayıt alındı' : 'Güncel kayıt bekleniyor'}</p>
   </article>`;
 }
 
+function displayStatus(value) {
+  const key = String(value || 'unknown').toLowerCase();
+  return statusLabels[key] || statusLabels.unknown;
+}
+
+function statusTone(value) {
+  const key = String(value || 'unknown').toLowerCase();
+  return statusTones[key] || 'neutral';
+}
+
 const loading = (text) => `<div class="loading" role="status">${escapeHtml(text)}...</div>`;
-const empty = (text) => `<div class="empty-state">${escapeHtml(text)}</div>`;
+const empty = (text) => `<div class="empty-state"><strong>Burada işlem yok</strong><p>${escapeHtml(text)}</p></div>`;
 
 document.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
   if (target.classList.contains('tab')) activateTab(target.dataset.tab);
-  if (target.dataset.action === 'impact') loadImpact(target.dataset.leaveId, target.dataset.eventId);
-  if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId);
+  if (target.dataset.action === 'focus-teacher') activateTab('teacher');
+  if (target.dataset.action === 'focus-ops') activateTab('ops');
+  if (target.dataset.action === 'impact') loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
+  if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();
 });
@@ -396,3 +592,4 @@ $('#context-form').addEventListener('submit', updateContext);
 $('#leave-form').addEventListener('submit', createLeave);
 $('#load-own-leave').addEventListener('click', loadOwnLeave);
 $('#refresh-queue').addEventListener('click', loadQueue);
+updateWorkflowProgress();

@@ -80,6 +80,8 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(app).not.toContain('leave:${');
     expect(app).not.toContain('v${');
     expect(app).not.toContain('resourceVersion +');
+    expect(app).not.toContain('Version:');
+    expect(app).not.toContain('ETag:');
   });
 
   it('keeps role and permission authority on the API side', () => {
@@ -87,6 +89,17 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(html).not.toContain('role="operations"');
     expect(app).not.toContain('state.role');
     expect(app).not.toContain('permissions =');
-    expect(app).toContain('Role ve permission server endpointleri tarafından uygulanır');
+    expect(app).toContain('Rol ve yetkileriniz sistem tarafından uygulanır');
+  });
+
+  it('keeps institution and branch copy human-readable even though API fields remain technical', () => {
+    expect(html).toContain('Kurum');
+    expect(html).toContain('Şube');
+    expect(html).toContain('Yalnızca erişiminiz olan şubeler');
+    expect(html).not.toContain('Tenant ID');
+    expect(html).not.toContain('Branch ID');
+    expect(html).not.toContain('Auth / tenant / branch');
+    expect(app).toContain('İzin talebi için şube seçin');
+    expect(app).toContain('Günlük işler için şube seçin');
   });
 });

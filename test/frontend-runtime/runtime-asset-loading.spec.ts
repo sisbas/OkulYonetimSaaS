@@ -97,8 +97,8 @@ describe('WP-07F #185 runtime asset loading (hosted smoke)', () => {
     expect(opsMatch![1]).toContain('hidden');
   });
 
-  // --- Assertion 8: Operations Manager flow başlangıçta görünmez ---
-  it('Operations Manager flow başlangıçta görünmez; tab seçilince görünür', () => {
+  // --- Assertion 8: Operasyon yöneticisi akışı başlangıçta görünmez ---
+  it('Operasyon yöneticisi akışı başlangıçta görünmez; tab seçilince görünür', () => {
     const opsMatch = html.match(/id="ops-panel" class="([^"]*)"/);
     expect(opsMatch).not.toBeNull();
     expect(opsMatch![1]).toContain('hidden');
