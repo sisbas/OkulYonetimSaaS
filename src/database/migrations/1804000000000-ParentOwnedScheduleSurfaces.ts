@@ -143,7 +143,7 @@ function indexNameClause(surface: IndexSurface): string {
       JOIN pg_index index_metadata ON index_metadata.indexrelid = index_relation.oid
       JOIN pg_class table_relation ON table_relation.oid = index_metadata.indrelid
       JOIN pg_namespace namespace_relation ON namespace_relation.oid = table_relation.relnamespace
-      WHERE namespace_relation.nspname = current_schema()
+      WHERE namespace_relation.nspname = 'public'
         AND table_relation.relname = '${surface.table}'
         AND index_relation.relname = '${surface.name}'
     )`;
@@ -162,7 +162,7 @@ function validIndexClause(surface: IndexSurface): string {
       JOIN pg_attribute column_metadata
         ON column_metadata.attrelid = table_relation.oid
        AND column_metadata.attnum = key_columns.attnum
-      WHERE namespace_relation.nspname = current_schema()
+      WHERE namespace_relation.nspname = 'public'
         AND table_relation.relname = '${surface.table}'
         AND index_relation.relname = '${surface.name}'
         AND index_metadata.indisunique
@@ -180,7 +180,7 @@ function repairIndexLikeClause(): string {
       JOIN pg_index index_metadata ON index_metadata.indexrelid = index_relation.oid
       JOIN pg_class table_relation ON table_relation.oid = index_metadata.indrelid
       JOIN pg_namespace namespace_relation ON namespace_relation.oid = table_relation.relnamespace
-      WHERE namespace_relation.nspname = current_schema()
+      WHERE namespace_relation.nspname = 'public'
         AND index_relation.relname LIKE 'uq_schedule_repair_%'
     )`;
 }
@@ -249,8 +249,8 @@ function fkContractClause(): string {
       JOIN pg_namespace source_namespace ON source_namespace.oid = source_relation.relnamespace
       JOIN pg_class target_relation ON target_relation.oid = constraint_row.confrelid
       JOIN pg_namespace target_namespace ON target_namespace.oid = target_relation.relnamespace
-      WHERE source_namespace.nspname = current_schema()
-        AND target_namespace.nspname = current_schema()
+      WHERE source_namespace.nspname = 'public'
+        AND target_namespace.nspname = 'public'
         AND constraint_row.contype = 'f'
     ) actual_row ON actual_row.conname = expected_row.conname;
   `;
@@ -290,14 +290,14 @@ export class ParentOwnedScheduleSurfaces1804000000000 implements MigrationInterf
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF to_regclass(current_schema() || '.rooms') IS NULL
-           OR to_regclass(current_schema() || '.time_slots') IS NULL
-           OR to_regclass(current_schema() || '.schedules') IS NULL
-           OR to_regclass(current_schema() || '.schedule_versions') IS NULL
-           OR to_regclass(current_schema() || '.courses') IS NULL
-           OR to_regclass(current_schema() || '.teachers') IS NULL
-           OR to_regclass(current_schema() || '.teacher_branches') IS NULL
-           OR to_regclass(current_schema() || '.student_groups') IS NULL THEN
+        IF to_regclass('public' || '.rooms') IS NULL
+           OR to_regclass('public' || '.time_slots') IS NULL
+           OR to_regclass('public' || '.schedules') IS NULL
+           OR to_regclass('public' || '.schedule_versions') IS NULL
+           OR to_regclass('public' || '.courses') IS NULL
+           OR to_regclass('public' || '.teachers') IS NULL
+           OR to_regclass('public' || '.teacher_branches') IS NULL
+           OR to_regclass('public' || '.student_groups') IS NULL THEN
           RAISE EXCEPTION 'Parent surface preflight failed: required table is missing';
         END IF;
 
