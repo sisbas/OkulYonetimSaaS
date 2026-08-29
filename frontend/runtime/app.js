@@ -71,6 +71,19 @@ const statusLabels = {
   cancelled: 'İptal edildi',
   unknown: 'Durum bekleniyor',
 };
+const statusTones = {
+  approved: 'success',
+  assigned: 'success',
+  resolved: 'success',
+  covered: 'success',
+  pending: 'warning',
+  open: 'warning',
+  unresolved: 'warning',
+  partially_covered: 'warning',
+  uncovered: 'danger',
+  rejected: 'danger',
+  cancelled: 'neutral',
+};
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -207,8 +220,29 @@ function renderError(target, error) {
   target.innerHTML = `<div class="error-state" data-state="${escapeHtml(error.uiState || 'error_retryable')}">
     <strong>${escapeHtml(title)}</strong>
     <p>${escapeHtml(message)}</p>
+    <small class="recovery-hint">${escapeHtml(recoveryHint(error.uiState))}</small>
   </div>`;
   announce(message, 'danger');
+}
+
+function recoveryHint(uiState) {
+  const hints = {
+    auth_required: 'Oturumu yenileyip işlemi tekrar deneyin.',
+    tenant_context_required: 'Kurum seçimini kontrol edin.',
+    branch_context_required: 'Şube seçimini kontrol edin.',
+    forbidden_non_enumerating: 'Yetki kapsamınız dışında kalan kayıtlar listelenmez.',
+    empty_or_not_found_same_scope: 'Kapsamı yenileyin veya farklı tarih/şube deneyin.',
+    validation_error: 'Zorunlu alanları ve tarih aralığını gözden geçirin.',
+    version_required: 'Önce güncel izin kaydını tekrar yükleyin.',
+    stale_version: 'Kayıt değişmiş; etki listesini yenileyin.',
+    impact_analysis_not_ready: 'Etki analizi tamamlanınca aday seçimi açılır.',
+    eligibility_not_ready: 'Uygunluk kaynağı tamamlandığında adaylar yeniden getirilebilir.',
+    candidate_unavailable: 'Başka bir adayı seçin veya ders kapsamını kontrol edin.',
+    conflict_blocking: 'Çakışma çözüldükten sonra yeniden deneyin.',
+    locked_state: 'Aktif görevlendirmeyi temizleyip yeniden işlem yapın.',
+    offline_or_unavailable: 'Bağlantıyı kontrol edip yeniden deneyin.',
+  };
+  return hints[uiState] || 'Sorun devam ederse günlük işleri yenileyin.';
 }
 
 function renderBlockingState(target, reasonCode) {
@@ -354,13 +388,18 @@ async function loadQueue() {
 function renderQueueItem(item) {
   const leaveId = pick(item, ['leaveRequestId']);
   const eventId = pick(item, ['scheduleEventId', 'eventId']);
-  const stateLabel = displayStatus(pick(item, ['state', 'coverageStatus', 'assignmentStatus'], 'unknown'));
-  return `<article class="card">
+  const rawState = pick(item, ['state', 'coverageStatus', 'assignmentStatus'], 'unknown');
+  const stateLabel = displayStatus(rawState);
+  return `<article class="card queue-card">
     <h3>${escapeHtml(pick(item, ['courseLabel', 'title'], 'Ders'))}</h3>
-    <p>${escapeHtml(pick(item, ['occurrenceDate', 'date'], ''))} ${escapeHtml(pick(item, ['timeRange', 'time'], ''))}</p>
-    <p>${escapeHtml(pick(item, ['studentGroupLabel', 'groupLabel'], ''))} · ${escapeHtml(pick(item, ['roomLabel'], ''))}</p>
-    <span class="tag">${escapeHtml(stateLabel)}</span>
-    <button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}">Etkiyi aç</button>
+    <p class="card-meta">
+      <span>${escapeHtml(pick(item, ['occurrenceDate', 'date'], 'Tarih bekleniyor'))}</span>
+      <span>${escapeHtml(pick(item, ['timeRange', 'time'], 'Saat bekleniyor'))}</span>
+      <span>${escapeHtml(pick(item, ['studentGroupLabel', 'groupLabel'], 'Sınıf bekleniyor'))}</span>
+      <span>${escapeHtml(pick(item, ['roomLabel'], 'Derslik bekleniyor'))}</span>
+    </p>
+    <span class="tag" data-tone="${escapeHtml(statusTone(rawState))}">${escapeHtml(stateLabel)}</span>
+    <button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}">Bu dersin etkisini incele</button>
   </article>`;
 }
 
@@ -406,10 +445,10 @@ function renderImpact(body, events) {
   const rows = events.map((event) => `<li>
     <strong>${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}</strong>
     <span>${escapeHtml(pick(event, ['occurrenceDate'], ''))} ${escapeHtml(pick(event, ['timeRange'], ''))}</span>
-    <span>${escapeHtml(displayStatus(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}</span>
-    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}">Adayları getir</button>
+    <span class="tag" data-tone="${escapeHtml(statusTone(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}">${escapeHtml(displayStatus(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}</span>
+    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}">Bu ders için aday bul</button>
   </li>`).join('');
-  return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))}</div>
+  return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))} · ${events.length} ders etkileniyor</div>
     <ul class="impact-list">${rows || '<li>Etki satırı yok.</li>'}</ul>`;
 }
 
@@ -447,7 +486,8 @@ function renderCandidate(candidate) {
   return `<article class="card candidate">
     <h3>${escapeHtml(pick(candidate, ['displayName', 'name'], 'Aday öğretmen'))}</h3>
     <p>Uygunluk: ${eligible ? 'Uygun' : 'Uygun değil'} · Durum: ${escapeHtml(available)}</p>
-    <button type="button" data-action="assign" data-teacher-id="${escapeHtml(teacherId)}" ${disabled ? 'disabled aria-describedby="etag-help"' : ''}>Görevlendir</button>
+    <span class="tag" data-tone="${eligible ? 'success' : 'danger'}">${eligible ? 'Seçilebilir aday' : 'Seçilemez aday'}</span>
+    <button type="button" data-action="assign" data-teacher-id="${escapeHtml(teacherId)}" ${disabled ? 'disabled aria-describedby="etag-help"' : ''}>Bu öğretmeni görevlendir</button>
     <button type="button" data-action="clear" ${state.activeAssignmentId && state.activeLeaveEtag ? '' : 'disabled'}>Görevlendirmeyi temizle</button>
   </article>`;
 }
@@ -510,6 +550,11 @@ function renderLeaveCard(leave, title) {
 function displayStatus(value) {
   const key = String(value || 'unknown').toLowerCase();
   return statusLabels[key] || statusLabels.unknown;
+}
+
+function statusTone(value) {
+  const key = String(value || 'unknown').toLowerCase();
+  return statusTones[key] || 'neutral';
 }
 
 const loading = (text) => `<div class="loading" role="status">${escapeHtml(text)}...</div>`;

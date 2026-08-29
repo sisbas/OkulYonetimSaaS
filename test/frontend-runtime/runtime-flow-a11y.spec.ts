@@ -124,6 +124,26 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(css).toContain('.role-brief');
   });
 
+  it('adds operator trust cues, recovery hints and scannable decision cards', () => {
+    expect(html).toContain('Güvenli işlem kontrolleri');
+    expect(html).toContain('Kurum ve şube yetkisi sistemde doğrulanır');
+    expect(html).toContain('Önce izin bilgisini netleştirin');
+    expect(html).toContain('Öncelik sırası');
+    expect(app).toContain('const statusTones');
+    expect(app).toContain('function statusTone');
+    expect(app).toContain('function recoveryHint');
+    expect(app).toContain('class="recovery-hint"');
+    expect(app).toContain('class="card queue-card"');
+    expect(app).toContain('class="card-meta"');
+    expect(app).toContain('Bu dersin etkisini incele');
+    expect(app).toContain('Bu ders için aday bul');
+    expect(app).toContain('Bu öğretmeni görevlendir');
+    expect(css).toContain('.trust-strip');
+    expect(css).toContain('.panel-intro');
+    expect(css).toContain('.card-meta');
+    expect(css).toContain('.tag[data-tone="success"]');
+  });
+
   it('has accessible loading, empty and error regions', () => {
     expect(app).toContain('role="status"');
     expect(app).toContain('empty-state');

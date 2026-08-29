@@ -157,6 +157,10 @@ main { display: grid; gap: 1rem; }
 }
 .card p { margin-bottom: 0; }
 .tag { background: #eef2ff; color: #243b75; width: fit-content; }
+.tag[data-tone="success"] { background: #eaf7ef; color: #14532d; }
+.tag[data-tone="warning"] { background: #fff7ed; color: #7c2d12; }
+.tag[data-tone="danger"] { background: #fee2e2; color: #7f1d1d; }
+.tag[data-tone="neutral"] { background: #f1f5f9; color: #334155; }
 .decision-panel {
   display: grid;
   gap: 1rem;
@@ -191,6 +195,23 @@ main { display: grid; gap: 1rem; }
   color: #7c2d12;
   font-weight: 800;
   padding: 0.85rem 1rem;
+}
+.trust-strip {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.trust-strip li {
+  background: #f8fafc;
+  border: 1px solid #d9e0ee;
+  border-radius: 12px;
+  color: #334155;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0.75rem;
 }
 .quick-actions {
   display: flex;
@@ -250,6 +271,36 @@ main { display: grid; gap: 1rem; }
   color: #5b6680;
   line-height: 1.35;
 }
+.panel-intro {
+  background: #f8fafc;
+  border: 1px solid #d9e0ee;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem;
+}
+.checklist {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.card-meta {
+  color: #5b6680;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+}
+.card-meta span:not(:last-child)::after {
+  color: #94a3b8;
+  content: "•";
+  margin-left: 0.7rem;
+}
+.recovery-hint {
+  color: #7f1d1d;
+  font-weight: 700;
+}
 .impact-list { display: grid; gap: 0.7rem; list-style: none; padding: 0; }
 .impact-list li {
   align-items: center;
@@ -269,5 +320,5 @@ main { display: grid; gap: 1rem; }
   .shell { grid-template-columns: 1fr; }
   .topbar, .section-head { align-items: flex-start; flex-direction: column; }
   .tabs { position: sticky; top: 0; z-index: 10; }
-  .grid-form, .impact-list li, .workflow-steps, .summary-grid { grid-template-columns: 1fr; }
+  .grid-form, .impact-list li, .workflow-steps, .summary-grid, .trust-strip { grid-template-columns: 1fr; }
 }

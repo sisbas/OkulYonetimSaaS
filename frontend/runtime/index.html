@@ -90,6 +90,11 @@
             </div>
           </dl>
           <div id="next-action" class="next-action" role="status">Önce oturum açın.</div>
+          <ul class="trust-strip" aria-label="Güvenli işlem kontrolleri">
+            <li>Kurum ve şube yetkisi sistemde doğrulanır</li>
+            <li>Güncel kayıt kontrolüyle çakışan işlem engellenir</li>
+            <li>Yedek öğretmen seçimi ders ve zaman uygunluğuna göre yapılır</li>
+          </ul>
           <div class="quick-actions" aria-label="Hızlı geçişler">
             <button type="button" data-action="focus-teacher">İzin ekranına git</button>
             <button type="button" data-action="focus-ops">Operasyon ekranına git</button>
@@ -139,6 +144,14 @@
             </div>
             <button id="load-own-leave" type="button">Kendi talebimi getir</button>
           </div>
+          <div class="panel-intro">
+            <strong>Önce izin bilgisini netleştirin</strong>
+            <ul class="checklist">
+              <li>İzin aralığını okul saatine göre girin.</li>
+              <li>Gerekçe yalnızca talep kararında kullanılır.</li>
+              <li>Talep kaydedilince operasyon etkisi aynı ekrandan izlenir.</li>
+            </ul>
+          </div>
           <form id="leave-form" class="grid-form">
             <label>İzin türü
               <select id="leave-duration-type" required>
@@ -170,6 +183,14 @@
               <h2>Günlük iş listesi</h2>
             </div>
             <button id="refresh-queue" type="button">Günlük işleri yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Öncelik sırası</strong>
+            <ol class="checklist">
+              <li>Açık dersleri getir.</li>
+              <li>Etkilenen dersi aç.</li>
+              <li>Uygun adayı seç veya mevcut görevlendirmeyi temizle.</li>
+            </ol>
           </div>
           <div id="queue-output" class="cards" role="region" aria-label="Günlük operasyon kuyruğu"></div>
           <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
