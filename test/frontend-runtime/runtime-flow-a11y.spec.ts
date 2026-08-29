@@ -105,6 +105,25 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(css).toContain('.workflow-steps li[data-state="blocked"]');
   });
 
+  it('keeps the user oriented with role summaries and a live operational cockpit', () => {
+    expect(html).toContain('Rol özeti');
+    expect(html).toContain('Operasyon kokpiti');
+    expect(html).toContain('Şu anki kapsam ve önerilen aksiyon');
+    for (const id of ['summary-session', 'summary-scope', 'summary-leave', 'summary-assignment', 'next-action']) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(html).toContain('data-action="focus-teacher"');
+    expect(html).toContain('data-action="focus-ops"');
+    expect(app).toContain('function updateOperationalSnapshot');
+    expect(app).toContain('function recommendedAction');
+    expect(app).toContain("$('#next-action').textContent = recommendedAction()");
+    expect(app).toContain("if (target.dataset.action === 'focus-teacher') activateTab('teacher')");
+    expect(css).toContain('.decision-panel');
+    expect(css).toContain('.summary-grid');
+    expect(css).toContain('.next-action');
+    expect(css).toContain('.role-brief');
+  });
+
   it('has accessible loading, empty and error regions', () => {
     expect(app).toContain('role="status"');
     expect(app).toContain('empty-state');

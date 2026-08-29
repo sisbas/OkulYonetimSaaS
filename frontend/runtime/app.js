@@ -10,6 +10,9 @@ const state = {
   activeScheduleEventId: '',
   activeLeaveEtag: '',
   activeAssignmentId: '',
+  queueCount: 0,
+  impactCount: 0,
+  candidateCount: 0,
 };
 
 const reasonUi = {
@@ -82,6 +85,32 @@ function announce(message, tone = 'neutral') {
   el.innerHTML = `<div class="notice" data-tone="${tone}">${escapeHtml(message)}</div>`;
 }
 
+function summaryText(value, fallback) {
+  return value ? String(value) : fallback;
+}
+
+function recommendedAction() {
+  if (!state.accessToken) return 'Önce oturum açın.';
+  if (!state.branchId && !$('#branch-id')?.value.trim()) return 'İşlem kapsamı için şube ve tarihi seçin.';
+  if (!state.activeLeaveId) return 'Öğretmen izni oluşturun veya günlük iş listesinden etkilenen talebi açın.';
+  if (!state.activeScheduleEventId) return 'Etki listesinden ders seçip adayları getirin.';
+  if (!state.activeAssignmentId && !state.candidateCount) return 'Uygun yedek öğretmen adaylarını getirin.';
+  if (!state.activeAssignmentId) return 'Uygun adayı seçerek görevlendirmeyi tamamlayın.';
+  return 'Ders karşılığı tamamlandı; günlük iş listesini yenileyerek sonucu doğrulayın.';
+}
+
+function updateOperationalSnapshot() {
+  const branchId = state.branchId || $('#branch-id')?.value.trim();
+  const date = state.date || $('#operation-date')?.value;
+  $('#summary-session').textContent = state.accessToken ? 'Aktif' : 'Bekleniyor';
+  $('#summary-scope').textContent = branchId ? `${branchId}${date ? ` · ${date}` : ''}` : 'Şube seçilmedi';
+  $('#summary-leave').textContent = summaryText(state.activeLeaveId, 'Talep seçilmedi');
+  $('#summary-assignment').textContent = state.activeAssignmentId
+    ? 'Görevlendirme tamamlandı'
+    : `${state.queueCount} açık ders · ${state.impactCount} etki · ${state.candidateCount} aday`;
+  $('#next-action').textContent = recommendedAction();
+}
+
 function updateWorkflowProgress(blockedStep = '', blockedMessage = '') {
   const steps = ['session', 'context', 'leave', 'impact', 'assignment'];
   let current = 'session';
@@ -103,6 +132,7 @@ function updateWorkflowProgress(blockedStep = '', blockedMessage = '') {
     const helper = step.querySelector('small');
     if (helper && name === blockedStep && blockedMessage) helper.textContent = blockedMessage;
   });
+  updateOperationalSnapshot();
 }
 
 function escapeHtml(value) {
@@ -270,6 +300,8 @@ async function createLeave(event) {
   try {
     const { body: leave, etag } = await apiRequest('/leaves/me', { method: 'POST', body });
     captureLeaveVersion(leave, etag);
+    state.impactCount = 0;
+    state.candidateCount = 0;
     target.innerHTML = renderLeaveCard(leave, 'Kendi izin talebiniz oluşturuldu');
     announce('İzin talebi kaydedildi.', 'success');
     updateWorkflowProgress();
@@ -288,6 +320,7 @@ async function loadOwnLeave() {
     const { body, etag } = await apiRequest(`/leaves/me/${encodeURIComponent(state.activeLeaveId)}`);
     captureLeaveVersion(body, etag);
     target.innerHTML = renderLeaveCard(body, 'Kendi izin talebiniz');
+    updateWorkflowProgress();
   } catch (error) {
     renderError(target, error);
   }
@@ -308,6 +341,7 @@ async function loadQueue() {
   try {
     const { body } = await apiRequest(`/daily-operations/today?${query.toString()}`);
     const items = asArray(body, ['items', 'lessons', 'queue']);
+    state.queueCount = items.length;
     target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı kapsamda açık ders bulunmuyor.');
     announce('Günlük işler yenilendi.', 'success');
     updateWorkflowProgress();
@@ -345,6 +379,8 @@ async function loadImpact(leaveId, eventId) {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/impact`);
     captureLeaveVersion(body, etag);
     const events = asArray(body, ['events', 'affectedLessons', 'lessons', 'items']);
+    state.impactCount = events.length;
+    state.candidateCount = 0;
     if (!state.activeScheduleEventId && events[0]) state.activeScheduleEventId = eventIdentity(events[0]);
     updateAssignmentStateFromEvents(events);
     target.innerHTML = renderImpact(body, events);
@@ -394,6 +430,7 @@ async function loadCandidates(eventId) {
       return renderBlockingState(target, 'TEACHER_COURSE_ELIGIBILITY_NOT_READY');
     }
     const candidates = asArray(body, ['candidates', 'items']);
+    state.candidateCount = candidates.length;
     target.innerHTML = candidates.length ? candidates.map(renderCandidate).join('') : empty('Aynı scope içinde uygun aday yok.');
     updateWorkflowProgress();
   } catch (error) {
@@ -426,6 +463,7 @@ async function createAssignment(teacherId) {
     });
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
+    if (!state.activeAssignmentId) state.activeAssignmentId = 'server-confirmed';
     announce('Görevlendirme kaydedildi; günlük işler ve etki listesi yenileniyor.', 'success');
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
@@ -445,6 +483,7 @@ async function clearAssignment() {
     });
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
+    state.activeAssignmentId = '';
     announce('Görevlendirme temizlendi; günlük işler ve etki listesi yenileniyor.', 'success');
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
@@ -474,12 +513,14 @@ function displayStatus(value) {
 }
 
 const loading = (text) => `<div class="loading" role="status">${escapeHtml(text)}...</div>`;
-const empty = (text) => `<div class="empty-state">${escapeHtml(text)}</div>`;
+const empty = (text) => `<div class="empty-state"><strong>Burada işlem yok</strong><p>${escapeHtml(text)}</p></div>`;
 
 document.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
   if (target.classList.contains('tab')) activateTab(target.dataset.tab);
+  if (target.dataset.action === 'focus-teacher') activateTab('teacher');
+  if (target.dataset.action === 'focus-ops') activateTab('ops');
   if (target.dataset.action === 'impact') loadImpact(target.dataset.leaveId, target.dataset.eventId);
   if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);

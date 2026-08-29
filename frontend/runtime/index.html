@@ -21,6 +21,16 @@
 
       <aside class="panel" aria-labelledby="auth-heading">
         <h2 id="auth-heading">Oturum ve okul seçimi</h2>
+        <div class="role-brief" aria-label="Rol özeti">
+          <article>
+            <strong>Öğretmen</strong>
+            <span>Kendi izin talebini başlatır ve durumunu izler.</span>
+          </article>
+          <article>
+            <strong>Operasyon</strong>
+            <span>Açık ders etkisini görür ve güvenli yedek öğretmen atar.</span>
+          </article>
+        </div>
         <form id="login-form" class="stack">
           <label>E-posta
             <input id="email" name="email" type="email" autocomplete="username" required />
@@ -54,6 +64,37 @@
 
       <main id="runtime-main" tabindex="-1">
         <section id="message-region" class="message-region" aria-live="polite"></section>
+
+        <section class="panel decision-panel" aria-labelledby="decision-heading">
+          <div>
+            <p class="eyebrow">Operasyon kokpiti</p>
+            <h2 id="decision-heading">Şu anki kapsam ve önerilen aksiyon</h2>
+            <p class="hint">Bu bölüm ekranlar arasında kaybolmadan, seçili işlem bağlamını ve bir sonraki güvenli adımı gösterir.</p>
+          </div>
+          <dl id="runtime-summary" class="summary-grid" aria-label="Seçili işlem özeti">
+            <div>
+              <dt>Oturum</dt>
+              <dd id="summary-session">Bekleniyor</dd>
+            </div>
+            <div>
+              <dt>Kapsam</dt>
+              <dd id="summary-scope">Şube seçilmedi</dd>
+            </div>
+            <div>
+              <dt>İzin</dt>
+              <dd id="summary-leave">Talep seçilmedi</dd>
+            </div>
+            <div>
+              <dt>Ders karşılığı</dt>
+              <dd id="summary-assignment">Henüz başlamadı</dd>
+            </div>
+          </dl>
+          <div id="next-action" class="next-action" role="status">Önce oturum açın.</div>
+          <div class="quick-actions" aria-label="Hızlı geçişler">
+            <button type="button" data-action="focus-teacher">İzin ekranına git</button>
+            <button type="button" data-action="focus-ops">Operasyon ekranına git</button>
+          </div>
+        </section>
 
         <section class="panel workflow-guide" aria-labelledby="workflow-heading">
           <div>

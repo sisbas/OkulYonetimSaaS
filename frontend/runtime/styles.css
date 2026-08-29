@@ -95,6 +95,24 @@ input, textarea {
 }
 .hint { color: #5b6680; font-size: 0.9rem; line-height: 1.4; }
 .context-form { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid #d9e0ee; }
+.role-brief {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.role-brief article {
+  background: #f8fafc;
+  border: 1px solid #d9e0ee;
+  border-radius: 12px;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+}
+.role-brief span {
+  color: #5b6680;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
 .tabs {
   align-self: start;
   display: flex;
@@ -127,7 +145,8 @@ main { display: grid; gap: 1rem; }
 .notice[data-tone="danger"], .error-state { background: #fee2e2; border: 1px solid #fecaca; }
 .notice[data-tone="warning"] { background: #fff7ed; border-color: #fed7aa; }
 .loading { background: #f1f5f9; }
-.empty-state { background: #f8fafc; border: 1px dashed #94a3b8; }
+.empty-state { background: #f8fafc; border: 1px dashed #94a3b8; display: grid; gap: 0.25rem; }
+.empty-state p { margin-bottom: 0; }
 .cards { display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .card {
   border: 1px solid #d9e0ee;
@@ -138,6 +157,50 @@ main { display: grid; gap: 1rem; }
 }
 .card p { margin-bottom: 0; }
 .tag { background: #eef2ff; color: #243b75; width: fit-content; }
+.decision-panel {
+  display: grid;
+  gap: 1rem;
+}
+.summary-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+.summary-grid div {
+  background: #f8fafc;
+  border: 1px solid #d9e0ee;
+  border-radius: 14px;
+  padding: 0.85rem;
+}
+.summary-grid dt {
+  color: #5b6680;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.summary-grid dd {
+  font-weight: 800;
+  margin: 0.2rem 0 0;
+}
+.next-action {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  color: #7c2d12;
+  font-weight: 800;
+  padding: 0.85rem 1rem;
+}
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.quick-actions button {
+  background: #e7ecf7;
+  color: #172033;
+}
 .workflow-guide {
   display: grid;
   gap: 1rem;
@@ -206,5 +269,5 @@ main { display: grid; gap: 1rem; }
   .shell { grid-template-columns: 1fr; }
   .topbar, .section-head { align-items: flex-start; flex-direction: column; }
   .tabs { position: sticky; top: 0; z-index: 10; }
-  .grid-form, .impact-list li, .workflow-steps { grid-template-columns: 1fr; }
+  .grid-form, .impact-list li, .workflow-steps, .summary-grid { grid-template-columns: 1fr; }
 }
