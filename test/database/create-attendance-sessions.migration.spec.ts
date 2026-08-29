@@ -27,8 +27,12 @@ describe('CreateAttendanceSessions1826000000000 (#265)', () => {
     const all = (runner as unknown as { calls: string[] }).calls.join('\n');
     expect(all).toContain('CREATE TABLE IF NOT EXISTS "attendance_sessions"');
     expect(all).toContain('uq_attendance_sessions_tenant_event_date');
-    expect(all).toContain('fk_attendance_sessions_event');
+    // FKs are declared INLINE in CREATE TABLE (avoid ALTER ordering issues).
+    expect(all).toContain('REFERENCES "schedule_events"("id") ON DELETE RESTRICT');
+    expect(all).toContain('REFERENCES "courses"("id") ON DELETE RESTRICT');
+    expect(all).toContain('REFERENCES "tenants"("id") ON DELETE RESTRICT');
     expect(all).toContain("CHECK (\"status\" IN ('draft', 'published', 'locked'))");
+    expect(all).toContain('idx_attendance_sessions_tenant_teacher');
   });
 
   it('down() drops table + constraints', async () => {
@@ -36,6 +40,6 @@ describe('CreateAttendanceSessions1826000000000 (#265)', () => {
     await migration.down(runner as never);
     const all = (runner as unknown as { calls: string[] }).calls.join('\n');
     expect(all).toContain('DROP TABLE IF EXISTS "attendance_sessions"');
-    expect(all).toContain('fk_attendance_sessions_event');
+    expect(all).toContain('idx_attendance_sessions_tenant_teacher');
   });
 });
