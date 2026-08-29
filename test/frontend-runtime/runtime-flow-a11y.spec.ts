@@ -144,6 +144,24 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(css).toContain('.tag[data-tone="success"]');
   });
 
+  it('keeps selected lesson context and recent activity visible across screens', () => {
+    expect(html).toContain('İzin talebi, ders etkisi ve yedek öğretmen görevlendirmesini tek güvenli akışta yönetin.');
+    expect(html).toContain('summary-lesson');
+    expect(html).toContain('activity-trail');
+    expect(html).toContain('selected-lesson-context');
+    expect(html).toContain('Seçili ders yok');
+    expect(app).toContain("activeLessonLabel: ''");
+    expect(app).toContain("lastAction: 'Henüz işlem yapılmadı.'");
+    expect(app).toContain("$('#summary-lesson').textContent = summaryText(state.activeLessonLabel, 'Henüz seçilmedi')");
+    expect(app).toContain("$('#activity-trail').textContent = `Son işlem: ${state.lastAction}`");
+    expect(app).toContain('data-course-label');
+    expect(app).toContain("loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel)");
+    expect(app).toContain("loadCandidates(target.dataset.eventId, target.dataset.courseLabel)");
+    expect(css).toContain('.topbar-subtitle');
+    expect(css).toContain('.activity-trail');
+    expect(css).toContain('.selected-context');
+  });
+
   it('has accessible loading, empty and error regions', () => {
     expect(app).toContain('role="status"');
     expect(app).toContain('empty-state');

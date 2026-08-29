@@ -15,6 +15,7 @@
         <div>
           <p class="eyebrow">Faz 1 runtime</p>
           <h1>Okul iş akışı</h1>
+          <p class="topbar-subtitle">İzin talebi, ders etkisi ve yedek öğretmen görevlendirmesini tek güvenli akışta yönetin.</p>
         </div>
         <div id="session-status" class="status-pill" aria-live="polite">Oturum bekleniyor</div>
       </header>
@@ -58,8 +59,14 @@
       </aside>
 
       <nav class="tabs" aria-label="Runtime akışları">
-        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">Öğretmen</button>
-        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">Operasyon yöneticisi</button>
+        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">
+          <strong>Öğretmen</strong>
+          <small>İzin talebi</small>
+        </button>
+        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">
+          <strong>Operasyon yöneticisi</strong>
+          <small>Ders karşılığı</small>
+        </button>
       </nav>
 
       <main id="runtime-main" tabindex="-1">
@@ -88,8 +95,13 @@
               <dt>Ders karşılığı</dt>
               <dd id="summary-assignment">Henüz başlamadı</dd>
             </div>
+            <div>
+              <dt>Seçili ders</dt>
+              <dd id="summary-lesson">Henüz seçilmedi</dd>
+            </div>
           </dl>
           <div id="next-action" class="next-action" role="status">Önce oturum açın.</div>
+          <div id="activity-trail" class="activity-trail" role="status">Henüz işlem yapılmadı.</div>
           <ul class="trust-strip" aria-label="Güvenli işlem kontrolleri">
             <li>Kurum ve şube yetkisi sistemde doğrulanır</li>
             <li>Güncel kayıt kontrolüyle çakışan işlem engellenir</li>
@@ -193,6 +205,10 @@
             </ol>
           </div>
           <div id="queue-output" class="cards" role="region" aria-label="Günlük operasyon kuyruğu"></div>
+          <div id="selected-lesson-context" class="selected-context" role="region" aria-label="Seçili ders bağlamı">
+            <strong>Seçili ders yok</strong>
+            <p>Günlük iş listesinden bir dersin etkisini açtığınızda aday seçimi burada bağlama oturur.</p>
+          </div>
           <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
           <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve görevlendirme durumu"></div>
         </section>

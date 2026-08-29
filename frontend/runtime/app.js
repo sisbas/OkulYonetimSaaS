@@ -13,6 +13,8 @@ const state = {
   queueCount: 0,
   impactCount: 0,
   candidateCount: 0,
+  activeLessonLabel: '',
+  lastAction: 'Henüz işlem yapılmadı.',
 };
 
 const reasonUi = {
@@ -95,7 +97,9 @@ function setStatus(text, tone = 'neutral') {
 
 function announce(message, tone = 'neutral') {
   const el = $('#message-region');
+  state.lastAction = message;
   el.innerHTML = `<div class="notice" data-tone="${tone}">${escapeHtml(message)}</div>`;
+  updateOperationalSnapshot();
 }
 
 function summaryText(value, fallback) {
@@ -121,7 +125,15 @@ function updateOperationalSnapshot() {
   $('#summary-assignment').textContent = state.activeAssignmentId
     ? 'Görevlendirme tamamlandı'
     : `${state.queueCount} açık ders · ${state.impactCount} etki · ${state.candidateCount} aday`;
+  $('#summary-lesson').textContent = summaryText(state.activeLessonLabel, 'Henüz seçilmedi');
   $('#next-action').textContent = recommendedAction();
+  $('#activity-trail').textContent = `Son işlem: ${state.lastAction}`;
+  const selectedLesson = $('#selected-lesson-context');
+  if (selectedLesson) {
+    selectedLesson.innerHTML = state.activeLessonLabel
+      ? `<strong>${escapeHtml(state.activeLessonLabel)}</strong><p>Bu ders için etki ve aday seçimi aynı kayıt güncelliğiyle takip ediliyor.</p>`
+      : '<strong>Seçili ders yok</strong><p>Günlük iş listesinden bir dersin etkisini açtığınızda aday seçimi burada bağlama oturur.</p>';
+  }
 }
 
 function updateWorkflowProgress(blockedStep = '', blockedMessage = '') {
@@ -399,14 +411,15 @@ function renderQueueItem(item) {
       <span>${escapeHtml(pick(item, ['roomLabel'], 'Derslik bekleniyor'))}</span>
     </p>
     <span class="tag" data-tone="${escapeHtml(statusTone(rawState))}">${escapeHtml(stateLabel)}</span>
-    <button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}">Bu dersin etkisini incele</button>
+    <button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}" data-course-label="${escapeHtml(pick(item, ['courseLabel', 'title'], 'Ders'))}">Bu dersin etkisini incele</button>
   </article>`;
 }
 
-async function loadImpact(leaveId, eventId) {
+async function loadImpact(leaveId, eventId, courseLabel = '') {
   if (!requireSession()) return;
   state.activeLeaveId = leaveId || state.activeLeaveId;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
+  state.activeLessonLabel = courseLabel || state.activeLessonLabel;
   updateWorkflowProgress();
   const target = $('#impact-output');
   if (!state.activeLeaveId) {
@@ -439,6 +452,7 @@ function updateAssignmentStateFromEvents(events) {
   if (!activeEvent) return;
   state.activeScheduleEventId = eventIdentity(activeEvent) || state.activeScheduleEventId;
   state.activeAssignmentId = pick(activeEvent, ['substituteAssignmentId'], '');
+  state.activeLessonLabel = pick(activeEvent, ['courseLabel', 'title'], state.activeLessonLabel);
 }
 
 function renderImpact(body, events) {
@@ -446,15 +460,16 @@ function renderImpact(body, events) {
     <strong>${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}</strong>
     <span>${escapeHtml(pick(event, ['occurrenceDate'], ''))} ${escapeHtml(pick(event, ['timeRange'], ''))}</span>
     <span class="tag" data-tone="${escapeHtml(statusTone(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}">${escapeHtml(displayStatus(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}</span>
-    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}">Bu ders için aday bul</button>
+    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}" data-course-label="${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}">Bu ders için aday bul</button>
   </li>`).join('');
   return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))} · ${events.length} ders etkileniyor</div>
     <ul class="impact-list">${rows || '<li>Etki satırı yok.</li>'}</ul>`;
 }
 
-async function loadCandidates(eventId) {
+async function loadCandidates(eventId, courseLabel = '') {
   if (!requireSession()) return;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
+  state.activeLessonLabel = courseLabel || state.activeLessonLabel;
   updateWorkflowProgress();
   const target = $('#candidate-output');
   if (!state.activeLeaveId || !state.activeScheduleEventId) {
@@ -566,8 +581,8 @@ document.addEventListener('click', (event) => {
   if (target.classList.contains('tab')) activateTab(target.dataset.tab);
   if (target.dataset.action === 'focus-teacher') activateTab('teacher');
   if (target.dataset.action === 'focus-ops') activateTab('ops');
-  if (target.dataset.action === 'impact') loadImpact(target.dataset.leaveId, target.dataset.eventId);
-  if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId);
+  if (target.dataset.action === 'impact') loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
+  if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();
 });

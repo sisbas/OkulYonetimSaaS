@@ -51,6 +51,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, main:focus-vi
   padding: 1rem 1.25rem;
 }
 h1, h2, h3, p { margin-top: 0; }
+.topbar-subtitle {
+  color: #5b6680;
+  margin: 0.25rem 0 0;
+}
 .eyebrow {
   color: #5b6680;
   font-size: 0.78rem;
@@ -118,7 +122,14 @@ input, textarea {
   display: flex;
   gap: 0.5rem;
 }
-.tab { background: #e7ecf7; color: #172033; }
+.tab {
+  background: #e7ecf7;
+  color: #172033;
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+}
+.tab small { color: inherit; opacity: 0.78; }
 .tab[aria-selected="true"] { background: #244f99; color: #fff; }
 main { display: grid; gap: 1rem; }
 .hidden { display: none !important; }
@@ -195,6 +206,14 @@ main { display: grid; gap: 1rem; }
   color: #7c2d12;
   font-weight: 800;
   padding: 0.85rem 1rem;
+}
+.activity-trail {
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 12px;
+  color: #243b75;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
 }
 .trust-strip {
   display: grid;
@@ -301,6 +320,17 @@ main { display: grid; gap: 1rem; }
   color: #7f1d1d;
   font-weight: 700;
 }
+.selected-context {
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 14px;
+  color: #243b75;
+  display: grid;
+  gap: 0.25rem;
+  margin: 1rem 0;
+  padding: 0.85rem;
+}
+.selected-context p { margin-bottom: 0; }
 .impact-list { display: grid; gap: 0.7rem; list-style: none; padding: 0; }
 .impact-list li {
   align-items: center;
