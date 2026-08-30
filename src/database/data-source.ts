@@ -21,8 +21,13 @@ export const AppDataSource = new DataSource({
   migrationsTableName: 'migrations',
   synchronize: false,
   logging: process.env.TYPEORM_LOGGING === 'true',
+  // Connection-level search_path=public so every migration that validates via
+  // to_regclass(current_schema() || '.<table>') resolves 'public' deterministically
+  // even when the pool hands migration:run a fresh connection (avoids the
+  // "required table is missing" DB-Smoke failure on PRs carrying extra migrations).
+  extra: { options: '-c search_path=public' },
   entities: ['src/**/*.entity.ts', 'dist/**/*.entity.js'],
-  migrations: ['src/database/migrations/*.ts', 'dist/database/migrations/*.js'],
+  migrations: ['src/database/migrations/*.ts'],
 });
 
 const initializeAppDataSource = AppDataSource.initialize.bind(AppDataSource);
