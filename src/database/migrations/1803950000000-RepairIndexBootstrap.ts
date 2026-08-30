@@ -52,11 +52,6 @@ export class RepairIndexBootstrap1803950000000 implements MigrationInterface {
   name = 'RepairIndexBootstrap1803950000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Ensure the bootstrapped repair indexes land in the public schema so that
-    // 1804000000000's preflight (which queries to_regclass(current_schema() || '.<table>'))
-    // can find the underlying tables. Same connection is reused across migrations.
-    await queryRunner.query(`SET search_path TO public`);
-
     // AC7 guard: if 1804000000000 already applied, its preflight already passed
     // and it already DROPPED these indexes. Re-creating them here would orphan
     // them (1804000000000 will not run again). Skip to keep final schema clean.
@@ -68,7 +63,7 @@ export class RepairIndexBootstrap1803950000000 implements MigrationInterface {
     }
     for (const surface of REPAIR_INDEX_DEFINITIONS) {
       await queryRunner.query(
-        `CREATE UNIQUE INDEX IF NOT EXISTS ${surface.name} ON ${surface.table} ${indexDefinition(surface)}`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS ${surface.name} ON public.${surface.table} ${indexDefinition(surface)}`,
       );
     }
   }
