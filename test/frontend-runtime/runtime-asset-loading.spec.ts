@@ -87,10 +87,11 @@ describe('WP-07F #185 runtime asset loading (hosted smoke)', () => {
   it('yalnız selected tab panel görünür (ops panel başlangıçta .hidden)', () => {
     expect(html).toContain('id="teacher-panel"');
     expect(html).toContain('id="ops-panel"');
-    // teacher-panel .hidden class'ı TAŞIMAMALI (default görünür)
+    // Yeni giriş ekranı genel bakış; öğretmen paneli gezinme ile açılır.
     const teacherMatch = html.match(/id="teacher-panel" class="([^"]*)"/);
     expect(teacherMatch).not.toBeNull();
-    expect(teacherMatch![1]).not.toContain('hidden');
+    expect(teacherMatch![1]).toContain('hidden');
+    expect(html).toContain('id="overview-panel" class="view-panel"');
     // ops-panel .hidden class'ı TAŞIMALI (başlangıçta gizli)
     const opsMatch = html.match(/id="ops-panel" class="([^"]*)"/);
     expect(opsMatch).not.toBeNull();
