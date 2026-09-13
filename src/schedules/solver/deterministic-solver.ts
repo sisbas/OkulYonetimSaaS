@@ -106,8 +106,6 @@ export class DeterministicSolver implements SolverPort {
       const candidate = this.pickCandidate(demand, request, placed, rng, () => {
         nodesVisited++;
         yieldCounter++;
-        if (yieldCounter % DeterministicSolver.YIELD_EVERY === 0) return true; // signal caller to yield
-        return false;
       }, boundsExhausted);
 
       if (candidate === 'EXHAUSTED') {
@@ -133,7 +131,7 @@ export class DeterministicSolver implements SolverPort {
       // Periodic yield so cancellation can be observed (P2 bh0im).
       if (yieldCounter % DeterministicSolver.YIELD_EVERY === 0) {
         await Promise.resolve();
-        if (request.aborted?.value) break;
+        // Let the next iteration record every remaining demand as CANCELLED.
       }
     }
 
@@ -202,7 +200,7 @@ export class DeterministicSolver implements SolverPort {
     request: SolveRequest,
     placed: Placed[],
     rng: () => number,
-    tick: () => boolean,
+    tick: () => void,
     boundsExhausted: () => boolean,
   ): ScheduleEventDraft | null | 'EXHAUSTED' {
     const refs = request.referenceSet;
@@ -220,7 +218,7 @@ export class DeterministicSolver implements SolverPort {
     for (const slot of slots) {
       for (const room of rooms) {
         if (boundsExhausted()) return 'EXHAUSTED';
-        if (tick()) return 'EXHAUSTED';
+        tick();
         const dayHint = demand.preferredDayOfWeek ?? slot.dayOfWeek;
         const score = dayHint * 7 + (rooms.length - rooms.indexOf(room)) + rng() * 0.5;
         pairs.push({ slot, room, score });
@@ -230,7 +228,7 @@ export class DeterministicSolver implements SolverPort {
 
     for (const pair of pairs) {
       if (boundsExhausted()) return 'EXHAUSTED';
-      if (tick()) return 'EXHAUSTED';
+      tick();
       const event: ScheduleEventDraft = {
         eventId: `gen-${demand.demandId}`,
         teacherId: demand.teacherId,
