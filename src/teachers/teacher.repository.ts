@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
@@ -11,6 +11,36 @@ export type TeacherBranchIdentityRow = Readonly<{ teacherBranchId: string; branc
 @Injectable()
 export class TeacherRepository {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+
+  /** Decision identity does not depend on selecting one effective branch. */
+  async findDecisionActorTeacherId(ctx: RequestContext): Promise<string | null> {
+    assertTenantScope(ctx, 'teachers');
+    const userId = ctx.user?.userId;
+    if (!userId || ctx.user?.tenantId !== ctx.tenantId) {
+      throw new ForbiddenException('Decision actor identity unavailable');
+    }
+    const rows = await this.dataSource.query(
+      `SELECT u.id::text AS "actorUserId", t.id::text AS "teacherId"
+       FROM users u
+       LEFT JOIN teachers t ON t.user_id = u.id AND t.tenant_id = $1::uuid
+       WHERE u.id = $2::uuid AND u.status = 'active' AND u.deleted_at IS NULL
+         AND EXISTS (
+           SELECT 1 FROM tenant_memberships tm
+           WHERE tm.user_id = u.id AND tm.tenant_id = $1::uuid
+             AND tm.status = 'active' AND tm.deleted_at IS NULL
+         )
+       LIMIT 2`,
+      [ctx.tenantId, userId],
+    );
+    // Only a verified active actor with no teacher row is a non-teacher.
+    // Retain historical/inactive affiliation for self-decision protection;
+    // ambiguous affiliations and unavailable actors must never become absence.
+    if (rows.length !== 1 || rows[0].actorUserId !== userId ||
+        (rows[0].teacherId !== null && typeof rows[0].teacherId !== 'string')) {
+      throw new ForbiddenException('Decision actor identity unavailable');
+    }
+    return rows[0].teacherId;
+  }
 
   async findActiveTeacherForUser(ctx: RequestContext): Promise<TeacherIdentityRow | null> {
     assertTenantScope(ctx, 'teachers');

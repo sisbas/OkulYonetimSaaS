@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RequestContext } from '../common/context/request-context';
 import { TeacherIdentityService } from '../teachers/teacher-identity.service';
+import { TeacherRepository } from '../teachers/teacher.repository';
 
 export type LeaveActorIdentity = {
   actorUserId: string;
@@ -35,7 +36,14 @@ function contextWithBusinessDate(
 
 @Injectable()
 export class LeaveIdentityService {
-  constructor(private readonly teacherIdentity: TeacherIdentityService) {}
+  constructor(
+    private readonly teacherIdentity: TeacherIdentityService,
+    private readonly teachers: TeacherRepository,
+  ) {}
+
+  async resolveDecisionActorTeacherId(ctx: RequestContext): Promise<string | null> {
+    return this.teachers.findDecisionActorTeacherId(ctx);
+  }
 
   async resolveTeacherIdentity(
     ctx: RequestContext,
