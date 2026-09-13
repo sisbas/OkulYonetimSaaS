@@ -107,6 +107,69 @@ describe('DeterministicSolver (P1B-06 #262)', () => {
     expect(result.status).toBe('SOLVED');
   });
 
+  it.each([255, 256, 512])('places a valid demand with %i room-slot pairs across the accounting boundary', async (pairCount) => {
+    const roomIds = Array.from({ length: pairCount }, (_, i) => `room-${i}`);
+    const demand = { ...makeDemands(1)[0], roomIds, timeSlots: [makeDemands(1)[0].timeSlots[0]] };
+    const request = makeRequest([demand], 42);
+    request.referenceSet = { ...request.referenceSet, activeRoomIds: refs(roomIds) };
+
+    const result = await solver.solve(request);
+
+    expect(result.status).toBe('SOLVED');
+    expect(result.placementRatio).toBe(1);
+    expect(result.events).toHaveLength(1);
+    expect(result.unplaced).toEqual([]);
+    expect(result.nodesVisited).toBe(pairCount + 1);
+    expect(result.bestSoFar).toBe(true);
+    expect((await solver.solve(request)).events).toEqual(result.events);
+  });
+
+  it('still stops at the actual node bound during candidate enumeration', async () => {
+    const roomIds = Array.from({ length: 512 }, (_, i) => `room-${i}`);
+    const demand = { ...makeDemands(1)[0], roomIds, timeSlots: [makeDemands(1)[0].timeSlots[0]] };
+    const request = makeRequest([demand], 42);
+    request.referenceSet = { ...request.referenceSet, activeRoomIds: refs(roomIds) };
+    request.bounds.maxNodes = 300;
+
+    const result = await solver.solve(request);
+
+    expect(result.status).toBe('PARTIAL');
+    expect(result.nodesVisited).toBe(300);
+    expect(result.events).toEqual([]);
+    expect(result.unplaced).toEqual([expect.objectContaining({ reasonCode: 'BOUNDS_EXHAUSTED' })]);
+    expect(result.bestSoFar).toBe(false);
+  });
+
+  it('still stops when the actual duration bound is exhausted', async () => {
+    const request = makeRequest(makeDemands(1), 42);
+    request.bounds.maxDurationMs = 0;
+
+    const result = await solver.solve(request);
+
+    expect(result.status).toBe('PARTIAL');
+    expect(result.nodesVisited).toBe(0);
+    expect(result.events).toEqual([]);
+    expect(result.unplaced).toEqual([expect.objectContaining({ reasonCode: 'BOUNDS_EXHAUSTED' })]);
+    expect(result.bestSoFar).toBe(false);
+  });
+
+  it('accounts for all remaining demands when cancelled at the 256th evaluation yield', async () => {
+    const rooms = Array.from({ length: 255 }, (_, i) => `room-${i}`);
+    const demand = makeDemands(1)[0];
+    demand.timeSlots = [demand.timeSlots[0]];
+    demand.roomIds = rooms;
+    const request = makeRequest([{ ...demand, demandId: 'first' }, { ...demand, demandId: 'second' }], 42);
+    request.referenceSet = { ...request.referenceSet, activeRoomIds: refs(rooms) };
+    request.aborted = { value: false };
+    queueMicrotask(() => { request.aborted!.value = true; });
+
+    const result = await solver.solve(request);
+
+    expect(result.events).toHaveLength(1);
+    expect(result.unplaced).toEqual([expect.objectContaining({ reasonCode: 'CANCELLED' })]);
+    expect(result.events.length + result.unplaced.length).toBe(result.diagnostics.demandedCount);
+  });
+
   it('respects bounds: maxDepth caps processed demands', async () => {
     const demands = makeDemands(50);
     const result = await solver.solve({
