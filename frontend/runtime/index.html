@@ -5,22 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex,nofollow" />
     <link rel="icon" href="data:," />
-    <title>Okul Yönetim SaaS — Faz 1 Runtime</title>
+    <title>Ata Akademi — Eğitim Yönetimi</title>
     <link rel="stylesheet" href="/runtime/styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#runtime-main">İçeriğe geç</a>
     <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="#overview">ata akademi<span>EĞİTİM YÖNETİMİ</span></a>
+        <p class="sidebar-caption">Çalışma alanınız</p>
+        <nav class="primary-nav" aria-label="Ana gezinme">
+          <button data-view="overview">◫ <span>Genel bakış</span></button>
+          <button data-view="schedule">▦ <span>Ders programı</span></button>
+          <button data-view="analysis">◷ <span>Denge analizi</span></button>
+          <button data-view="teacher">＋ <span>İzin talebi</span></button>
+          <button data-view="ops">☷ <span>İzin yönetimi</span></button>
+        </nav>
+        <div class="sidebar-footer">Ata Akademi<br><span>Eğitimde fırsat eşitliği</span></div>
+      </aside>
       <header class="topbar">
         <div>
-          <p class="eyebrow">Faz 1 runtime</p>
-          <h1>İzin Yönetimi + Günlük Operasyon</h1>
+          <p class="eyebrow">ATA AKADEMİ / KURUM ÇALIŞMA ALANI</p>
+          <h1 id="view-title">Günlük genel bakış</h1>
         </div>
         <div id="session-status" class="status-pill" aria-live="polite">Oturum bekleniyor</div>
       </header>
 
-      <aside class="panel" aria-labelledby="auth-heading">
-        <h2 id="auth-heading">Auth / tenant / branch</h2>
+      <details class="panel account-panel"><summary>Oturum ve merkez seçimi</summary><div class="account-grid">
+        <h2 id="auth-heading" class="wide">Kurum hesabınızla giriş yapın</h2>
         <form id="login-form" class="stack">
           <label>E-posta
             <input id="email" name="email" type="email" autocomplete="username" required />
@@ -28,38 +40,56 @@
           <label>Şifre
             <input id="password" name="password" type="password" autocomplete="current-password" required />
           </label>
-          <label>Tenant ID
+          <label>Kurum kodu
             <input id="tenant-id" name="tenantId" inputmode="latin" aria-describedby="tenant-help" />
           </label>
-          <p id="tenant-help" class="hint">Tenant seçimi login body alanıdır; role, permission veya teacher authority içermez.</p>
+          <p id="tenant-help" class="hint">Kurum kodunuzu yöneticinizden edinebilirsiniz.</p>
           <button type="submit">Oturum aç</button>
         </form>
 
         <form id="context-form" class="stack context-form">
-          <label>Branch ID
+          <label>Merkez kodu
             <input id="branch-id" name="branchId" inputmode="latin" aria-describedby="branch-help" required />
           </label>
           <label>Tarih
             <input id="operation-date" name="date" type="date" />
           </label>
-          <p id="branch-help" class="hint">Branch query parametresi ve izin talebi branch alanı server tarafından tenant scope ile doğrulanır.</p>
-          <button type="submit">Queue getir</button>
+          <p id="branch-help" class="hint">Yalnızca yetkili olduğunuz merkezin kayıtları görüntülenir.</p>
+          <button type="submit">Merkezi seç</button>
         </form>
-      </aside>
+      </div></details>
 
       <nav class="tabs" aria-label="Runtime akışları">
-        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">Teacher</button>
-        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">Operations Manager</button>
+        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">İzin talebim</button>
+        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">Yönetici görünümü</button>
       </nav>
 
       <main id="runtime-main" tabindex="-1">
         <section id="message-region" class="message-region" aria-live="polite"></section>
 
-        <section id="teacher-panel" class="panel runtime-panel" data-panel="teacher">
+        <section id="overview-panel" class="view-panel" data-panel="overview">
+          <div class="section-head"><p class="hint" id="today-label"></p><button data-view="teacher">＋ Yeni izin talebi</button></div>
+          <div class="metrics"><article><span>Açık ders</span><strong id="open-count">—</strong><small>Seçili merkez ve tarih</small></article><article><span>İzin yönetimi</span><strong>Tek yerde</strong><small>Ders etkisi ve yedek planı</small></article><article><span>Ders programı</span><strong>Haftalık</strong><small>Şube ve öğretmen görünümü</small></article></div>
+          <div class="panel"><div class="section-head"><h2>Bugünün ders akışı</h2><button id="overview-refresh" class="secondary">Yenile</button></div><div id="overview-output" class="empty-state">Ders akışını görmek için oturum açıp merkez seçin.</div></div>
+          <div class="panel accent"><p class="eyebrow">GÜNLÜK OPERASYON</p><h2>İzin kararını ders etkisiyle birlikte verin.</h2><p>Etkilenen dersleri inceleyin, uygun öğretmenleri karşılaştırın ve görevlendirmeyi planlayın.</p><button data-view="ops">İzin yönetimine git →</button></div>
+        </section>
+        <section id="schedule-panel" class="view-panel hidden" data-panel="schedule">
+          <div class="notice" data-tone="warning">Program okuma ve otomatik oluşturma servisi henüz bu arayüze bağlı değil. Aşağıdaki örnek, canlı ders programı değildir.</div>
+          <div class="panel"><div class="section-head"><h2>Haftalık ders programı</h2><button id="sample-toggle" class="secondary" aria-expanded="false">Örnek görünümü aç</button></div>
+          <div id="schedule-example" class="hidden"><div class="filters"><label>Şube<select id="schedule-group"><option>12 SAY-1</option><option>Mezun EA-1</option></select></label><label>Öğretmen<select id="schedule-teacher"><option value="all">Tüm öğretmenler</option><option value="Deniz Yılmaz">Deniz Yılmaz</option><option value="Ece Kaya">Ece Kaya</option></select></label><span class="tag">Örnek veri</span></div><div class="table-scroll"><table id="weekly-grid"><caption>Örnek haftalık ders programı</caption></table></div></div>
+          <div class="section-head action-footer"><button disabled title="Çizelgeleme servisi bağlantısı gerekli">Otomatik program oluştur</button><button data-view="analysis" class="secondary">Denge analizini aç →</button></div></div>
+        </section>
+        <section id="analysis-panel" class="view-panel hidden" data-panel="analysis">
+          <div class="notice" data-tone="warning">Örnek sonuç • Canlı program analizi değildir.</div>
+          <div class="metrics"><article><span>Yerleşme oranı</span><strong>%97,5</strong><small>234 / 240 ders saati</small></article><article><span>Yerleşmeyen</span><strong>6 saat</strong><small>3 şubede kontrol gerekiyor</small></article><article><span>Pedagojik denge</span><strong>82 / 100</strong><small>Örnek denge puanı</small></article></div>
+          <div class="panel"><h2>Yerleşmeyen derslerin nedenleri</h2><div class="table-scroll"><table><thead><tr><th>Ders / Şube</th><th>Neden</th><th>Önerilen işlem</th></tr></thead><tbody><tr><td>Matematik · 12 SAY-1</td><td>Öğretmen haftalık limiti dolu</td><td>Alternatif öğretmen değerlendir</td></tr><tr><td>Tarih · 11 EA-1</td><td>Şube takviminde kapasite yok</td><td>Şube saatlerini düzenle</td></tr><tr><td>Fizik · Mezun SAY-2</td><td>Uygun derslik bulunamadı</td><td>Derslik müsaitliğini incele</td></tr></tbody></table></div></div>
+          <div class="panel accent"><h2>Gevşetilen kurallar görünür kalır.</h2><p>Örnek: günlük ders sınırı 2 → 4 saat. Öğretmen, derslik ve onaylı izin çakışmaları korunmalıdır.</p><button data-view="schedule">Programa dön</button></div>
+        </section>
+        <section id="teacher-panel" class="panel runtime-panel hidden" data-panel="teacher">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Teacher flow</p>
-              <h2>Kendi izin talebi</h2>
+              <!-- Teacher flow --><p class="eyebrow">ÖĞRETMEN ÇALIŞMA ALANI</p>
+              <h2>İzin talebi oluştur</h2>
             </div>
             <button id="load-own-leave" type="button">Kendi talebimi getir</button>
           </div>
@@ -81,7 +111,7 @@
             </label>
             <label>Başlangıç zamanı <input id="leave-starts-at" type="datetime-local" required /></label>
             <label>Bitiş zamanı <input id="leave-ends-at" type="datetime-local" required /></label>
-            <p class="hint wide">Payload yalnız CreateLeaveRequestDto alanlarını gönderir: branchId, durationType, reasonCode, startsAt, endsAt.</p>
+            <p class="hint wide">Talep göndermek izin onayı anlamına gelmez. İzin sonucunu bu ekrandan takip edebilirsiniz.</p>
             <button type="submit">İzin talebi oluştur</button>
           </form>
           <div id="teacher-output" class="state-box" role="region" aria-label="Teacher izin sonucu"></div>
@@ -90,17 +120,18 @@
         <section id="ops-panel" class="panel runtime-panel hidden" data-panel="ops">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Operations Manager flow</p>
-              <h2>Daily Operations queue</h2>
+              <!-- Operations Manager flow --><p class="eyebrow">YÖNETİCİ ÇALIŞMA ALANI</p>
+              <h2>İzin inceleme ve ders planı</h2>
             </div>
-            <button id="refresh-queue" type="button">Queue yenile</button>
+            <button id="refresh-queue" type="button">Dersleri yenile</button>
           </div>
           <div id="queue-output" class="cards" role="region" aria-label="Günlük operasyon kuyruğu"></div>
-          <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
-          <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve assignment durumu"></div>
+          <button id="refresh-leaves" class="secondary" type="button">Tüm izin taleplerini getir</button><div id="leave-list" class="cards"></div><h3>Etkilenen dersler</h3><div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
+          <h3>Uygun yedek öğretmenler</h3><p id="etag-help" class="hint">Uygunluk ve kayıt sürümü doğrulanmadan görevlendirme yapılamaz.</p><div id="candidate-output" class="state-box" role="region" aria-label="Aday ve assignment durumu"></div>
         </section>
-      </main>
+      <dialog id="decision-dialog"><form method="dialog"><h2 id="decision-title">İzin kararını doğrulayın</h2><p id="decision-record"></p><p>Bu karar seçilen izin kaydına uygulanacaktır. Yedek görevlendirme ayrı bir işlemdir.</p><div class="section-head"><button value="cancel" class="secondary">Vazgeç</button><button id="decision-confirm" value="confirm">Kararı kaydet</button></div></form></dialog></main>
     </div>
     <script src="/runtime/app.js" defer></script>
+    <script src="/runtime/workspace.js" defer></script>
   </body>
 </html>

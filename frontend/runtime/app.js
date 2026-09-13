@@ -2,6 +2,7 @@
 
 const API_ROOT = '/api/v1';
 const state = {
+  contextVersion: 0,
   accessToken: '',
   tenantId: '',
   branchId: '',
@@ -66,6 +67,7 @@ function pick(value, keys, fallback = '') {
 }
 
 async function apiRequest(path, options = {}) {
+  const version = state.contextVersion;
   const headers = { Accept: 'application/json', ...(options.headers || {}) };
   if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -75,7 +77,9 @@ async function apiRequest(path, options = {}) {
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
   const text = await response.text();
-  const body = text ? JSON.parse(text) : null;
+  if (version !== state.contextVersion) throw { obsolete: true };
+  let body;
+  try { body = text ? JSON.parse(text) : null; } catch { throw { reasonCode: 'SERVER_ERROR', uiState: 'error_retryable', message: 'Sunucudan beklenen yanıt alınamadı. Yeniden deneyin.' }; }
   if (!response.ok) throw normalizeApiError(response, body);
   return { body, etag: response.headers.get('etag') || pick(body, ['leaveEtag', 'etag']) };
 }
@@ -116,6 +120,7 @@ function normalizeApiError(response, body) {
 }
 
 function renderError(target, error) {
+  if (error.obsolete) return;
   target.innerHTML = `<div class="error-state" data-state="${escapeHtml(error.uiState || 'error_retryable')}">
     <strong>${escapeHtml(error.reasonCode || 'SERVER_ERROR')}</strong>
     <p>${escapeHtml(error.message || 'İşlem tamamlanamadı.')}</p>
@@ -140,6 +145,15 @@ function requireSession() {
   return true;
 }
 
+function resetScope() {
+  state.contextVersion++;
+  state.activeLeaveId = ''; state.activeLeaveEtag = ''; state.activeScheduleEventId = ''; state.activeAssignmentId = '';
+  state.branchId = ''; state.date = '';
+  for (const selector of ['#teacher-output','#queue-output','#impact-output','#candidate-output','#leave-list','#overview-output']) { const target=$(selector); if(target) target.innerHTML=''; }
+  if ($('#open-count')) $('#open-count').textContent='—';
+  if ($('#decision-dialog')?.open) $('#decision-dialog').close('cancel');
+}
+
 function getBranchId() {
   const branchId = state.branchId || $('#branch-id').value.trim();
   if (branchId) state.branchId = branchId;
@@ -152,6 +166,9 @@ function toIso8601(value) {
 
 async function login(event) {
   event.preventDefault();
+  resetScope();
+  state.accessToken = '';
+  const attempt = state.contextVersion;
   const body = {
     email: $('#email').value.trim(),
     password: $('#password').value,
@@ -163,8 +180,9 @@ async function login(event) {
     state.accessToken = result.accessToken || '';
     state.tenantId = tenantId;
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
-    announce('Oturum açıldı. Role ve permission server endpointleri tarafından uygulanır.', 'success');
+    announce('Oturum açıldı. Merkezinizi seçerek devam edin.', 'success');
   } catch (error) {
+    if (error.obsolete || attempt !== state.contextVersion) return;
     state.accessToken = '';
     setStatus('Oturum başarısız', 'danger');
     renderError($('#teacher-output'), error);
@@ -173,12 +191,14 @@ async function login(event) {
 
 async function updateContext(event) {
   event.preventDefault();
+  resetScope();
   state.branchId = $('#branch-id').value.trim();
   state.date = $('#operation-date').value;
   await loadQueue();
 }
 
 function activateTab(name) {
+  if (typeof showView === 'function') showView(name);
   document.querySelectorAll('.tab').forEach((tab) => {
     const active = tab.dataset.tab === name;
     tab.setAttribute('aria-selected', String(active));
@@ -192,6 +212,12 @@ async function createLeave(event) {
   if (!requireSession()) return;
   const branchId = getBranchId();
   if (!branchId) return announce('İzin talebi için branchId gerekir.', 'warning');
+  const from = new Date($('#leave-starts-at').value);
+  const to = new Date($('#leave-ends-at').value);
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || to <= from) return announce('Bitiş zamanı başlangıçtan sonra olmalı.', 'warning');
+  const submit = $('#leave-form button[type=submit], #leave-form button');
+  if (submit.disabled) return;
+  submit.disabled = true;
   const body = {
     branchId,
     durationType: $('#leave-duration-type').value,
@@ -208,7 +234,7 @@ async function createLeave(event) {
     announce('İzin talebi server response ile oluşturuldu.', 'success');
   } catch (error) {
     renderError(target, error);
-  }
+  } finally { submit.disabled = false; }
 }
 
 async function loadOwnLeave() {
@@ -233,14 +259,18 @@ async function loadQueue() {
   state.date = state.date || $('#operation-date').value;
   const query = new URLSearchParams({ branchId });
   if (state.date) query.set('date', state.date);
-  target.innerHTML = loading('Daily Operations queue getiriliyor');
+  target.innerHTML = loading('Ders akışı getiriliyor');
+  if ($('#overview-output')) { $('#overview-output').innerHTML=target.innerHTML; $('#open-count').textContent='—'; }
   try {
     const { body } = await apiRequest(`/daily-operations/today?${query.toString()}`);
     const items = asArray(body, ['items', 'lessons', 'queue']);
-    target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı scope içinde açık ders bulunmuyor.');
-    announce('Queue server projection üzerinden yenilendi.', 'success');
+    target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Bu tarih ve merkez için açık ders bulunmuyor.');
+    if ($('#overview-output')) { $('#overview-output').innerHTML = target.innerHTML; $('#open-count').textContent = String(items.length); }
+    if (typeof loadLeaveList === 'function' && !state.activeLeaveId) await loadLeaveList();
+    announce('Ders akışı yenilendi.', 'success');
   } catch (error) {
     renderError(target, error);
+    if (!error.obsolete && $('#overview-output')) { $('#overview-output').innerHTML=target.innerHTML; $('#open-count').textContent='—'; }
   }
 }
 
@@ -259,6 +289,9 @@ function renderQueueItem(item) {
 
 async function loadImpact(leaveId, eventId) {
   if (!requireSession()) return;
+  state.contextVersion++;
+  state.activeLeaveEtag=''; state.activeAssignmentId='';
+  $('#candidate-output').innerHTML='';
   state.activeLeaveId = leaveId || state.activeLeaveId;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
   const target = $('#impact-output');
@@ -300,6 +333,8 @@ function renderImpact(body, events) {
 
 async function loadCandidates(eventId) {
   if (!requireSession()) return;
+  state.contextVersion++;
+  if (eventId && state.activeScheduleEventId !== eventId) state.activeAssignmentId='';
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
   const target = $('#candidate-output');
   if (!state.activeLeaveId || !state.activeScheduleEventId) return announce('Aday için leaveId ve scheduleEventId gerekir.', 'warning');
@@ -372,9 +407,12 @@ function captureLeaveVersion(body, etag) {
 function renderLeaveCard(leave, title) {
   return `<article class="card">
     <h3>${escapeHtml(title)}</h3>
+    <p>Öğretmen: ${escapeHtml(pick(leave, ['teacherName','teacherId'], 'Bilgi yok'))}</p>
+    <p>${escapeHtml(pick(leave, ['startsAt']))} — ${escapeHtml(pick(leave, ['endsAt']))}</p>
+    <p>İzin: ${escapeHtml(pick(leave, ['reasonCode']))} · ${escapeHtml(pick(leave, ['durationType']))}</p>
     <p>Durum: ${escapeHtml(pick(leave, ['status'], 'unknown'))}</p>
     <p>Karar: ${escapeHtml(pick(leave, ['decisionStatus'], 'unknown'))} · Coverage: ${escapeHtml(pick(leave, ['coverageStatus'], 'unknown'))}</p>
-    <p>Version: ${escapeHtml(pick(leave, ['resourceVersion'], 'server'))} · ETag: ${escapeHtml(state.activeLeaveEtag || 'server response bekleniyor')}</p>
+    
   </article>`;
 }
 
@@ -385,7 +423,7 @@ document.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
   if (target.classList.contains('tab')) activateTab(target.dataset.tab);
-  if (target.dataset.action === 'impact') loadImpact(target.dataset.leaveId, target.dataset.eventId);
+  if (target.dataset.action === 'impact') { activateTab('ops'); loadImpact(target.dataset.leaveId, target.dataset.eventId); }
   if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();
@@ -396,3 +434,5 @@ $('#context-form').addEventListener('submit', updateContext);
 $('#leave-form').addEventListener('submit', createLeave);
 $('#load-own-leave').addEventListener('click', loadOwnLeave);
 $('#refresh-queue').addEventListener('click', loadQueue);
+
+// Role ve permission server endpointleri tarafından uygulanır; arayüz yetki vermez.
