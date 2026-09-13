@@ -41,84 +41,67 @@ describe('LeaveService', () => {
     );
   });
 
-  describe('decide — self-decision guard (fail-closed, #259)', () => {
+  describe('decision actor identity (#263/#259)', () => {
     const pendingLeave = {
       id: '90000000-0000-4000-8000-000000000001',
-      requesterUserId: '10000000-0000-4000-8000-000000000001',
-      teacherId: '20000000-0000-4000-8000-000000000001',
+      requesterUserId: 'requester',
+      teacherId: 'teacher-self',
       decisionStatus: LeaveDecisionStatus.PENDING,
       version: 1,
     };
+    const ifMatch = '"leave:90000000-0000-4000-8000-000000000001:v1"';
 
-    function buildService(overrides: {
-      findTenantScoped?: jest.Mock;
-      resolveTeacherIdentity?: jest.Mock;
-      decide?: jest.Mock;
-    }) {
+    function setup(resolve: jest.Mock) {
       const leaves = {
-        findTenantScoped: overrides.findTenantScoped ?? jest.fn(async () => pendingLeave),
-        decide: overrides.decide ?? jest.fn(async () => pendingLeave),
+        findTenantScoped: jest.fn(async () => pendingLeave),
+        decide: jest.fn(async () => pendingLeave),
       };
       const identity = {
-        resolveTeacherIdentity:
-          overrides.resolveTeacherIdentity ??
-          jest.fn(async () => ({
-            actorUserId: '10000000-0000-4000-8000-000000000001',
-            teacherId: '20000000-0000-4000-8000-000000000001',
-            branchId: '30000000-0000-4000-8000-000000000001',
-          })),
+        resolveDecisionActorTeacherId: resolve,
+        resolveTeacherIdentity: jest.fn(async () => {
+          throw new ForbiddenException('Multiple effective branches');
+        }),
       };
       return { service: new LeaveService(leaves as any, identity as any), leaves, identity };
     }
 
-    const ifMatch = 'W/"leave:90000000-0000-4000-8000-000000000001:v1"';
-
-    it('denies self-decision when actor is the requester', async () => {
-      const { service } = buildService({});
-      await expect(
-        service.decide(ctx, pendingLeave.id, { decision: 'REJECTED' as any }, ifMatch),
-      ).rejects.toBeInstanceOf(LeaveSelfDecisionException);
-    });
-
-    it('denies self-decision when identity lookup fails (no silent bypass)', async () => {
-      const { service } = buildService({
-        resolveTeacherIdentity: jest.fn(async () => {
-          throw new Error('identity unresolved');
-        }),
-      });
-      await expect(
-        service.decide(ctx, pendingLeave.id, { decision: 'REJECTED' as any }, ifMatch),
-      ).rejects.toBeInstanceOf(LeaveSelfDecisionException);
-    });
-
-    it('does NOT deny a non-teacher approver when identity resolves to Forbidden (no teacher affiliation)', async () => {
-      const approverCtx: RequestContext = {
-        ...ctx,
-        user: {
-          ...ctx.user!,
-          userId: '99999999-0000-4000-8000-000000000001',
-          roleIds: ['operations_manager'],
-        },
-      };
-      const { service, leaves, identity } = buildService({
-        resolveTeacherIdentity: jest.fn(async () => {
-          throw new ForbiddenException('Teacher identity unavailable');
-        }),
-      });
-      await service.decide(approverCtx, pendingLeave.id, { decision: 'REJECTED' as any }, ifMatch);
-      expect(identity.resolveTeacherIdentity).toHaveBeenCalledTimes(1);
+    it('allows a verified non-teacher manager to reject', async () => {
+      const { service, leaves } = setup(jest.fn().mockResolvedValue(null));
+      await service.decide(ctx, pendingLeave.id, { decision: LeaveDecisionStatus.REJECTED }, ifMatch);
       expect(leaves.decide).toHaveBeenCalledTimes(1);
     });
 
-    it('DENIES (fail-closed) when identity lookup fails with a non-Forbidden error', async () => {
-      const { service } = buildService({
-        resolveTeacherIdentity: jest.fn(async () => {
-          throw new Error('unexpected identity store failure');
-        }),
-      });
-      await expect(
-        service.decide(ctx, pendingLeave.id, { decision: 'REJECTED' as any }, ifMatch),
-      ).rejects.toBeInstanceOf(LeaveSelfDecisionException);
+    it('blocks the teacher deciding their own request even when branch identity is ambiguous', async () => {
+      const { service, leaves, identity } = setup(jest.fn().mockResolvedValue('teacher-self'));
+      await expect(service.decide(ctx, pendingLeave.id, { decision: LeaveDecisionStatus.REJECTED }, ifMatch))
+        .rejects.toBeInstanceOf(LeaveSelfDecisionException);
+      expect(leaves.decide).not.toHaveBeenCalled();
+      expect(identity.resolveTeacherIdentity).not.toHaveBeenCalled();
+    });
+
+    it.each([new ForbiddenException('Identity unavailable'), new Error('Database unavailable')])(
+      'fails closed for unresolved identity: %s', async (error) => {
+        const { service, leaves } = setup(jest.fn().mockRejectedValue(error));
+        await expect(service.decide(ctx, pendingLeave.id, { decision: LeaveDecisionStatus.REJECTED }, ifMatch))
+          .rejects.toBeInstanceOf(LeaveSelfDecisionException);
+        expect(leaves.decide).not.toHaveBeenCalled();
+      },
+    );
+
+    it('allows another teacher to reject without selecting a branch', async () => {
+      const { service, leaves, identity } = setup(jest.fn().mockResolvedValue('other-teacher'));
+      await service.decide(ctx, pendingLeave.id, { decision: LeaveDecisionStatus.REJECTED }, ifMatch);
+      expect(leaves.decide).toHaveBeenCalledTimes(1);
+      expect(identity.resolveTeacherIdentity).not.toHaveBeenCalled();
+    });
+
+    it('blocks the original requester before accessing the directory', async () => {
+      const resolve = jest.fn().mockResolvedValue(null);
+      const { service, leaves } = setup(resolve);
+      await expect(service.decide({ ...ctx, user: { ...ctx.user!, userId: 'requester' } }, pendingLeave.id,
+        { decision: LeaveDecisionStatus.REJECTED }, ifMatch)).rejects.toBeInstanceOf(LeaveSelfDecisionException);
+      expect(resolve).not.toHaveBeenCalled();
+      expect(leaves.decide).not.toHaveBeenCalled();
     });
   });
 });

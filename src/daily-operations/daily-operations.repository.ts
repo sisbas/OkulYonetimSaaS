@@ -79,6 +79,9 @@ type QueueLessonRow = {
   endTime: string;
 };
 
+/** Only known eligibility rejections may be omitted from candidate results. */
+export class SubstituteIneligibleError extends Error {}
+
 function assignmentKey(input: { scheduleEventId: string; scheduleVersionId: string }): string {
   return `${input.scheduleVersionId}:${input.scheduleEventId}`;
 }
@@ -405,7 +408,7 @@ export class DailyOperationsRepository {
        LIMIT 1`,
       [leave.tenantId, teacherId, leave.branchId, event.occurrenceDate],
     );
-    if (teacher.length !== 1) throw new Error('SUBSTITUTE_BRANCH_ASSIGNMENT_MISSING');
+    if (teacher.length !== 1) throw new SubstituteIneligibleError('SUBSTITUTE_BRANCH_ASSIGNMENT_MISSING');
     const eligible = await manager.query(
       `SELECT 1 FROM teacher_courses
        WHERE tenant_id = $1 AND teacher_id = $2 AND course_id = $3
@@ -415,7 +418,7 @@ export class DailyOperationsRepository {
        LIMIT 1`,
       [leave.tenantId, teacherId, event.courseId, event.occurrenceDate],
     );
-    if (eligible.length !== 1) throw new Error('TEACHER_COURSE_MISMATCH');
+    if (eligible.length !== 1) throw new SubstituteIneligibleError('TEACHER_COURSE_MISMATCH');
     const leaveOverlap = await manager.query(
       `SELECT 1 FROM leave_requests
        WHERE tenant_id = $1 AND teacher_id = $2 AND decision_status = 'approved'
@@ -423,20 +426,24 @@ export class DailyOperationsRepository {
        LIMIT 1`,
       [leave.tenantId, teacherId, startsAt, endsAt],
     );
-    if (leaveOverlap.length > 0) throw new Error('SUBSTITUTE_LEAVE_OVERLAP');
+    if (leaveOverlap.length > 0) throw new SubstituteIneligibleError('SUBSTITUTE_LEAVE_OVERLAP');
     const conflict = await manager.query(
       `SELECT 1 FROM schedule_events event
-       JOIN schedule_versions version ON version.id = event.version_id AND version.status = 'published'
-       JOIN schedules schedule ON schedule.id = event.schedule_id AND schedule.active_version_id = version.id AND schedule.status = 'published'
-       WHERE event.tenant_id = $1 AND event.branch_id = $2 AND event.teacher_id = $3
-         AND event.day_of_week = $4
-         AND event.start_time < $6::time AND event.end_time > $5::time
-         AND schedule.effective_from <= $7::date
-         AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= $7::date
+       JOIN schedule_versions version ON version.id = event.version_id
+         AND version.tenant_id = event.tenant_id AND version.branch_id = event.branch_id
+         AND version.schedule_id = event.schedule_id AND version.status = 'published'
+       JOIN schedules schedule ON schedule.id = event.schedule_id
+         AND schedule.tenant_id = event.tenant_id AND schedule.branch_id = event.branch_id
+         AND schedule.active_version_id = version.id AND schedule.status = 'published'
+       WHERE event.tenant_id = $1 AND event.teacher_id = $2
+         AND event.day_of_week = $3
+         AND event.start_time < $5::time AND event.end_time > $4::time
+         AND schedule.effective_from <= $6::date
+         AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= $6::date
        LIMIT 1`,
-      [leave.tenantId, leave.branchId, teacherId, event.dayOfWeek, event.startTime, event.endTime, event.occurrenceDate],
+      [leave.tenantId, teacherId, event.dayOfWeek, event.startTime, event.endTime, event.occurrenceDate],
     );
-    if (conflict.length > 0) throw new Error('SUBSTITUTE_TIME_CONFLICT');
+    if (conflict.length > 0) throw new SubstituteIneligibleError('SUBSTITUTE_TIME_CONFLICT');
     const substitutionConflict = await manager.query(
       `SELECT 1 FROM leave_substitution_assignments assignment
        JOIN leave_requests assigned_leave
@@ -459,20 +466,19 @@ export class DailyOperationsRepository {
         AND schedule.active_version_id = version.id
         AND schedule.status = 'published'
        WHERE assignment.tenant_id = $1
-         AND assignment.branch_id = $2
-         AND assignment.substitute_teacher_id = $3
+         AND assignment.substitute_teacher_id = $2
          AND assignment.state = 'assigned'
-         AND event.day_of_week = $4
-         AND event.start_time < $6::time AND event.end_time > $5::time
-         AND schedule.effective_from <= $7::date
-         AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= $7::date
-         AND assigned_leave.starts_at < $9
-         AND assigned_leave.ends_at > $8
-         AND NOT (assignment.leave_request_id = $10 AND assignment.schedule_event_id = $11)
+         AND event.day_of_week = $3
+         AND event.start_time < $5::time AND event.end_time > $4::time
+         AND schedule.effective_from <= $6::date
+         AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= $6::date
+         AND assigned_leave.starts_at < $8
+         AND assigned_leave.ends_at > $7
+         AND NOT (assignment.leave_request_id = $9 AND assignment.schedule_event_id = $10)
        LIMIT 1`,
-      [leave.tenantId, leave.branchId, teacherId, event.dayOfWeek, event.startTime, event.endTime, event.occurrenceDate, startsAt, endsAt, leave.id, event.scheduleEventId],
+      [leave.tenantId, teacherId, event.dayOfWeek, event.startTime, event.endTime, event.occurrenceDate, startsAt, endsAt, leave.id, event.scheduleEventId],
     );
-    if (substitutionConflict.length > 0) throw new Error('SUBSTITUTE_TIME_CONFLICT');
+    if (substitutionConflict.length > 0) throw new SubstituteIneligibleError('SUBSTITUTE_TIME_CONFLICT');
   }
 
   private async findEligibleCandidates(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[]): Promise<CandidateResponse['candidates']> {
@@ -495,8 +501,9 @@ export class DailyOperationsRepository {
           await this.assertEligibleCandidate(manager, leave, event, row.teacherId, event.startsAt, event.endsAt);
         }
         candidates.push({ teacherId: row.teacherId, teacherBranchId: row.teacherBranchId, decisionSupportOnly: true, eligible: true });
-      } catch {
-        // Ineligible candidates are deliberately omitted to avoid exposing branch/tenant or PII details.
+      } catch (error) {
+        // Storage, schema and unknown failures are not evidence of ineligibility.
+        if (!(error instanceof SubstituteIneligibleError)) throw error;
       }
     }
     return candidates;
