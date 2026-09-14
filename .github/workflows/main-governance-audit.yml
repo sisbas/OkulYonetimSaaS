@@ -17,6 +17,10 @@ jobs:
     name: Main Governance Audit
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Detect ungoverned main updates
         uses: actions/github-script@v8
         with:
@@ -37,21 +41,15 @@ jobs:
             ];
 
             const violations = [];
-            const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-              owner,
-              repo,
-              commit_sha: mergeSha
+            const { resolveMergedPullRequest } = require('./scripts/resolve-merged-pr.cjs');
+            const { pr: fullPr, attempts } = await resolveMergedPullRequest({
+              github, owner, repo, mergeSha
             });
-
-            const pr = associated.data.find((item) => item.merged_at && item.base?.ref === "main");
+            core.info(`Exact merge association lookup attempts: ${attempts}`);
+            const pr = fullPr;
             if (!pr) {
-              violations.push("main güncellemesiyle ilişkili merge edilmiş pull request bulunamadı; direct push veya korumasız ref update olasılığı var.");
+              violations.push("main güncellemesi için sınırlı yeniden denemeden sonra tam commit ile eşleşen merge edilmiş PR kanıtı bulunamadı; ilişkilendirme doğrulanamadı.");
             } else {
-              const fullPr = (await github.rest.pulls.get({
-                owner,
-                repo,
-                pull_number: pr.number
-              })).data;
               const mergedAt = new Date(fullPr.merged_at);
               const atOrBeforeMerge = (value) => Boolean(value) && new Date(value) <= mergedAt;
 
