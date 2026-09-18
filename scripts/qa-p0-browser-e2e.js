@@ -24,6 +24,7 @@ const HEAD_SHA = process.env.PULL_REQUEST_HEAD_SHA || process.env.GITHUB_HEAD_SH
 const RUN_ID = process.env.GITHUB_RUN_ID || 'local';
 const DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 const PUPPETEER_EXECUTABLE_STRATEGY = process.env.PUPPETEER_EXECUTABLE_STRATEGY || 'sparticuz';
+const SEED_ONLY = process.env.RUNTIME_DEMO_SEED_ONLY === 'true';
 
 const safeStrings = {
   tenantSlug: 'system-seed',
@@ -868,6 +869,20 @@ async function main() {
   ensureDirs();
   try {
     await seedSyntheticData();
+    if (SEED_ONLY) {
+      report.overallStatus = 'PASS';
+      report.finishedAt = new Date().toISOString();
+      const credential = {
+        tenantId: report.seed.tenantId,
+        branchId: report.seed.branchId,
+        teacherEmail: safeStrings.teacherEmail,
+        operationsEmail: safeStrings.opsEmail,
+        password: safeStrings.password,
+      };
+      fs.writeFileSync(REPORT_PATH, JSON.stringify({ ...report, credential }, null, 2));
+      console.log(JSON.stringify(credential, null, 2));
+      return;
+    }
     await runBrowserScenarios();
   } catch (error) {
     block(redact(error && error.stack ? error.stack : error));

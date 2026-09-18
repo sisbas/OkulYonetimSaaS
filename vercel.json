@@ -4,12 +4,6 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist/runtime",
-  "git": {
-    "deploymentEnabled": {
-      "preview": false,
-      "production": true
-    }
-  },
   "redirects": [
     {
       "source": "/",

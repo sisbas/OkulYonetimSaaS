@@ -14,13 +14,24 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Faz 1 runtime</p>
-          <h1>İzin Yönetimi + Günlük Operasyon</h1>
+          <h1>Okul iş akışı</h1>
+          <p class="topbar-subtitle">İzin talebi, ders etkisi ve yedek öğretmen görevlendirmesini tek güvenli akışta yönetin.</p>
         </div>
         <div id="session-status" class="status-pill" aria-live="polite">Oturum bekleniyor</div>
       </header>
 
       <aside class="panel" aria-labelledby="auth-heading">
-        <h2 id="auth-heading">Auth / tenant / branch</h2>
+        <h2 id="auth-heading">Oturum ve okul seçimi</h2>
+        <div class="role-brief" aria-label="Rol özeti">
+          <article>
+            <strong>Öğretmen</strong>
+            <span>Kendi izin talebini başlatır ve durumunu izler.</span>
+          </article>
+          <article>
+            <strong>Operasyon</strong>
+            <span>Açık ders etkisini görür ve güvenli yedek öğretmen atar.</span>
+          </article>
+        </div>
         <form id="login-form" class="stack">
           <label>E-posta
             <input id="email" name="email" type="email" autocomplete="username" required />
@@ -28,40 +39,130 @@
           <label>Şifre
             <input id="password" name="password" type="password" autocomplete="current-password" required />
           </label>
-          <label>Tenant ID
+          <label>Kurum
             <input id="tenant-id" name="tenantId" inputmode="latin" aria-describedby="tenant-help" />
           </label>
-          <p id="tenant-help" class="hint">Tenant seçimi login body alanıdır; role, permission veya teacher authority içermez.</p>
+          <p id="tenant-help" class="hint">Yetkileriniz ve kurum erişiminiz oturum açınca sistem tarafından doğrulanır.</p>
           <button type="submit">Oturum aç</button>
         </form>
 
         <form id="context-form" class="stack context-form">
-          <label>Branch ID
+          <label>Şube
             <input id="branch-id" name="branchId" inputmode="latin" aria-describedby="branch-help" required />
           </label>
           <label>Tarih
             <input id="operation-date" name="date" type="date" />
           </label>
-          <p id="branch-help" class="hint">Branch query parametresi ve izin talebi branch alanı server tarafından tenant scope ile doğrulanır.</p>
-          <button type="submit">Queue getir</button>
+          <p id="branch-help" class="hint">Yalnızca erişiminiz olan şubeler için işlem yapılabilir.</p>
+          <button type="submit">Günlük işleri getir</button>
         </form>
       </aside>
 
       <nav class="tabs" aria-label="Runtime akışları">
-        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">Teacher</button>
-        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">Operations Manager</button>
+        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">
+          <strong>Öğretmen</strong>
+          <small>İzin talebi</small>
+        </button>
+        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">
+          <strong>Operasyon yöneticisi</strong>
+          <small>Ders karşılığı</small>
+        </button>
       </nav>
 
       <main id="runtime-main" tabindex="-1">
         <section id="message-region" class="message-region" aria-live="polite"></section>
 
+        <section class="panel decision-panel" aria-labelledby="decision-heading">
+          <div>
+            <p class="eyebrow">Operasyon kokpiti</p>
+            <h2 id="decision-heading">Şu anki kapsam ve önerilen aksiyon</h2>
+            <p class="hint">Bu bölüm ekranlar arasında kaybolmadan, seçili işlem bağlamını ve bir sonraki güvenli adımı gösterir.</p>
+          </div>
+          <dl id="runtime-summary" class="summary-grid" aria-label="Seçili işlem özeti">
+            <div>
+              <dt>Oturum</dt>
+              <dd id="summary-session">Bekleniyor</dd>
+            </div>
+            <div>
+              <dt>Kapsam</dt>
+              <dd id="summary-scope">Şube seçilmedi</dd>
+            </div>
+            <div>
+              <dt>İzin</dt>
+              <dd id="summary-leave">Talep seçilmedi</dd>
+            </div>
+            <div>
+              <dt>Ders karşılığı</dt>
+              <dd id="summary-assignment">Henüz başlamadı</dd>
+            </div>
+            <div>
+              <dt>Seçili ders</dt>
+              <dd id="summary-lesson">Henüz seçilmedi</dd>
+            </div>
+          </dl>
+          <div id="next-action" class="next-action" role="status">Önce oturum açın.</div>
+          <div id="activity-trail" class="activity-trail" role="status">Henüz işlem yapılmadı.</div>
+          <ul class="trust-strip" aria-label="Güvenli işlem kontrolleri">
+            <li>Kurum ve şube yetkisi sistemde doğrulanır</li>
+            <li>Güncel kayıt kontrolüyle çakışan işlem engellenir</li>
+            <li>Yedek öğretmen seçimi ders ve zaman uygunluğuna göre yapılır</li>
+          </ul>
+          <div class="quick-actions" aria-label="Hızlı geçişler">
+            <button type="button" data-action="focus-teacher">İzin ekranına git</button>
+            <button type="button" data-action="focus-ops">Operasyon ekranına git</button>
+          </div>
+        </section>
+
+        <section class="panel workflow-guide" aria-labelledby="workflow-heading">
+          <div>
+            <p class="eyebrow">Akış rehberi</p>
+            <h2 id="workflow-heading">Bugünkü işlemi adım adım tamamlayın</h2>
+            <p class="hint">Ekran, rol yetkinize göre aynı güvenli API sınırını kullanır; sıradaki adımı aşağıda gösterir.</p>
+          </div>
+          <ol id="workflow-steps" class="workflow-steps" aria-label="İşlem adımları">
+            <li data-step="session" data-state="current">
+              <span class="step-index">1</span>
+              <strong>Oturum aç</strong>
+              <small>Kimlik ve kurum doğrulansın</small>
+            </li>
+            <li data-step="context">
+              <span class="step-index">2</span>
+              <strong>Şube ve tarih seç</strong>
+              <small>Günlük iş kapsamını belirle</small>
+            </li>
+            <li data-step="leave">
+              <span class="step-index">3</span>
+              <strong>İzin talebini netleştir</strong>
+              <small>Öğretmen izni veya mevcut kayıt</small>
+            </li>
+            <li data-step="impact">
+              <span class="step-index">4</span>
+              <strong>Etkiyi incele</strong>
+              <small>Etkilenen dersi seç</small>
+            </li>
+            <li data-step="assignment">
+              <span class="step-index">5</span>
+              <strong>Karşılığı tamamla</strong>
+              <small>Aday seç veya görevi temizle</small>
+            </li>
+          </ol>
+        </section>
+
         <section id="teacher-panel" class="panel runtime-panel" data-panel="teacher">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Teacher flow</p>
+              <p class="eyebrow">Öğretmen işlemleri</p>
               <h2>Kendi izin talebi</h2>
             </div>
             <button id="load-own-leave" type="button">Kendi talebimi getir</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Önce izin bilgisini netleştirin</strong>
+            <ul class="checklist">
+              <li>İzin aralığını okul saatine göre girin.</li>
+              <li>Gerekçe yalnızca talep kararında kullanılır.</li>
+              <li>Talep kaydedilince operasyon etkisi aynı ekrandan izlenir.</li>
+            </ul>
           </div>
           <form id="leave-form" class="grid-form">
             <label>İzin türü
@@ -81,23 +182,35 @@
             </label>
             <label>Başlangıç zamanı <input id="leave-starts-at" type="datetime-local" required /></label>
             <label>Bitiş zamanı <input id="leave-ends-at" type="datetime-local" required /></label>
-            <p class="hint wide">Payload yalnız CreateLeaveRequestDto alanlarını gönderir: branchId, durationType, reasonCode, startsAt, endsAt.</p>
+            <p class="hint wide">Talep bilgileri yalnızca izin oluşturmak için kullanılır; kurum ve şube yetkisi sistem tarafından kontrol edilir.</p>
             <button type="submit">İzin talebi oluştur</button>
           </form>
-          <div id="teacher-output" class="state-box" role="region" aria-label="Teacher izin sonucu"></div>
+          <div id="teacher-output" class="state-box" role="region" aria-label="Öğretmen izin sonucu"></div>
         </section>
 
         <section id="ops-panel" class="panel runtime-panel hidden" data-panel="ops">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Operations Manager flow</p>
-              <h2>Daily Operations queue</h2>
+              <p class="eyebrow">Operasyon yöneticisi işlemleri</p>
+              <h2>Günlük iş listesi</h2>
             </div>
-            <button id="refresh-queue" type="button">Queue yenile</button>
+            <button id="refresh-queue" type="button">Günlük işleri yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Öncelik sırası</strong>
+            <ol class="checklist">
+              <li>Açık dersleri getir.</li>
+              <li>Etkilenen dersi aç.</li>
+              <li>Uygun adayı seç veya mevcut görevlendirmeyi temizle.</li>
+            </ol>
           </div>
           <div id="queue-output" class="cards" role="region" aria-label="Günlük operasyon kuyruğu"></div>
+          <div id="selected-lesson-context" class="selected-context" role="region" aria-label="Seçili ders bağlamı">
+            <strong>Seçili ders yok</strong>
+            <p>Günlük iş listesinden bir dersin etkisini açtığınızda aday seçimi burada bağlama oturur.</p>
+          </div>
           <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
-          <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve assignment durumu"></div>
+          <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve görevlendirme durumu"></div>
         </section>
       </main>
     </div>
