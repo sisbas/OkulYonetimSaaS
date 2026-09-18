@@ -1,0 +1,28 @@
+name: Governance Association Tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/resolve-merged-pr.cjs'
+      - 'tests/resolve-merged-pr.test.cjs'
+      - '.github/workflows/main-governance-audit.yml'
+      - '.github/workflows/governance-association-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/resolve-merged-pr.cjs'
+      - 'tests/resolve-merged-pr.test.cjs'
+      - '.github/workflows/main-governance-audit.yml'
+      - '.github/workflows/governance-association-tests.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/resolve-merged-pr.test.cjs
