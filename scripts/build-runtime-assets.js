@@ -15,4 +15,10 @@ rmSync(outputDir, { recursive: true, force: true });
 mkdirSync(outputDir, { recursive: true });
 cpSync(sourceDir, outputDir, { recursive: true });
 
+for (const name of ['app', 'ux']) {
+  cpSync(join(projectRoot, 'frontend', name), join(outputDir, name), {
+    recursive: true,
+  });
+}
+
 console.log(`Runtime assets copied: ${sourceDir} -> ${outputDir}`);
