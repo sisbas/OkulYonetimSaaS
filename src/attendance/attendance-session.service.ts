@@ -1,4 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -8,6 +14,10 @@ import {
 import { AttendanceRecord, AttendanceStatus } from './attendance.entity';
 import { ScheduleEvent } from '../schedules/schedule-event.entity';
 import { RequestContext } from '../common/context/request-context';
+import {
+  assertAttendanceSessionAccess,
+  AttendanceActor,
+} from './attendance-access';
 
 export interface CreateSessionInput {
   tenantId: string;
@@ -19,11 +29,9 @@ export interface CreateSessionInput {
 }
 
 export interface MarkSessionRecordInput {
-  tenantId: string;
   sessionId: string;
   studentId: string;
   status: AttendanceStatus;
-  markedById?: string | null;
   notes?: string | null;
 }
 
@@ -107,56 +115,72 @@ export class AttendanceSessionService {
   }
 
   async lock(
-    tenantId: string,
+    actor: AttendanceActor,
     sessionId: string,
-    actorId: string,
     expectedVersion: number,
   ): Promise<AttendanceSession> {
     const session = await this.sessionRepo.findOne({
-      where: { id: sessionId, tenantId },
+      where: { id: sessionId, tenantId: actor.tenantId },
     });
     if (!session) {
-      throw new Error('AttendanceSession not found');
+      throw new NotFoundException('AttendanceSession not found');
     }
+    // BOLA (fail-closed): öğretmen yalnız kendi dersini, gözetim rolleri tüm kiracıyı.
+    assertAttendanceSessionAccess(actor, session);
     if (session.version !== expectedVersion) {
-      throw new Error('Optimistic concurrency conflict: version mismatch');
+      throw new ConflictException(
+        'Optimistic concurrency conflict: version mismatch',
+      );
     }
     if (session.status === AttendanceSessionStatus.LOCKED) {
       return session; // idempotent
     }
     session.status = AttendanceSessionStatus.LOCKED;
-    session.lockedById = actorId;
+    session.lockedById = actor.userId;
     session.lockedAt = new Date();
     session.version += 1;
     const saved = await this.sessionRepo.save(session);
     this.logger.log(
       JSON.stringify({
         event: 'attendance.session.locked',
-        tenantId,
+        tenantId: actor.tenantId,
         sessionId,
-        actorId,
+        actorId: actor.userId,
         version: saved.version,
       }),
     );
     return saved;
   }
 
-  async markRecord(input: MarkSessionRecordInput): Promise<AttendanceRecord> {
+  async markRecord(
+    actor: AttendanceActor,
+    input: MarkSessionRecordInput,
+  ): Promise<AttendanceRecord> {
     const session = await this.sessionRepo.findOne({
-      where: { id: input.sessionId, tenantId: input.tenantId },
+      where: { id: input.sessionId, tenantId: actor.tenantId },
     });
     if (!session) {
-      throw new Error('AttendanceSession not found');
+      throw new NotFoundException('AttendanceSession not found');
     }
+    // BOLA (fail-closed): öğretmen yalnız kendi dersinin yoklamasını işaretler.
+    assertAttendanceSessionAccess(actor, session);
     if (session.status === AttendanceSessionStatus.LOCKED) {
-      throw new Error('Session is locked; corrections require controlled flow');
+      throw new ConflictException(
+        'Session is locked; corrections require controlled flow',
+      );
+    }
+    // Immutable roster snapshot: oturum kapsamı dışındaki öğrenci işaretlenemez.
+    if (!session.rosterSnapshot?.includes(input.studentId)) {
+      throw new ForbiddenException(
+        'Öğrenci bu yoklama oturumunun roster listesinde değil',
+      );
     }
     const entity = this.recordRepo.create({
-      tenantId: input.tenantId,
+      tenantId: actor.tenantId,
       studentId: input.studentId,
       sessionId: input.sessionId,
       status: input.status,
-      markedById: input.markedById ?? null,
+      markedById: actor.userId,
       notes: input.notes ?? null,
     });
     await this.recordRepo.upsert(entity, {
@@ -164,7 +188,7 @@ export class AttendanceSessionService {
     });
     return (await this.recordRepo.findOne({
       where: {
-        tenantId: input.tenantId,
+        tenantId: actor.tenantId,
         studentId: input.studentId,
         sessionId: input.sessionId,
       },
@@ -177,6 +201,18 @@ export class AttendanceSessionService {
   ): Promise<AttendanceSession[]> {
     return this.sessionRepo.find({
       where: { tenantId, teacherId },
+      order: { sessionDate: 'DESC' },
+    });
+  }
+
+  /**
+   * Gözetim rolleri (operations_manager / tenant_admin) için kiracı geneli
+   * liste. Önceki controller sürümü `listByTeacher(tenantId, '*')` çağırdığı
+   * için müdür listesi her zaman boş dönüyordu.
+   */
+  async listByTenant(tenantId: string): Promise<AttendanceSession[]> {
+    return this.sessionRepo.find({
+      where: { tenantId },
       order: { sessionDate: 'DESC' },
     });
   }

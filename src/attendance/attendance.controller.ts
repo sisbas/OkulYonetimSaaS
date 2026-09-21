@@ -4,104 +4,124 @@ import {
   ForbiddenException,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Req,
+  UseGuards,
 } from '@nestjs/common';
-import { RequestContext } from '../common/context/request-context';
+import { AuthGuard } from '@nestjs/passport';
+import { RequestWithContext } from '../common/context/request-context';
+import { Permissions } from '../common/decorators/permissions.decorator';
+import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
+import { AttendanceActor, hasAttendanceOversight } from './attendance-access';
+import { AttendanceAccessService } from './attendance-access.service';
 import {
   AttendanceSessionService,
   CreateSessionInput,
   MarkSessionRecordInput,
 } from './attendance-session.service';
 import { AttendanceStatus } from './attendance.entity';
-import { TeacherOwnLessonGuard } from './teacher-own-lesson.guard';
-import { UseGuards } from '@nestjs/common';
-import { AttendanceSession } from './attendance-session.entity';
+import { AttendanceRequest, TeacherOwnLessonGuard } from './teacher-own-lesson.guard';
 
-interface AuthedRequest extends Request {
-  user?: RequestContext & { userId?: string; roleIds?: string[] };
-  attendanceSession?: AttendanceSession;
-}
-
+// Kimlik doğrulama (JWT) + kiracı sınırı; yetki her route'ta @Permissions ile
+// zorunlu kılınır. @Permissions metadata'sı olmadan global
+// PermissionAuthenticationGuard ve PermissionGuard handler'ı atlar (fail-open);
+// bu yüzden bu controller'daki her route bir izin anahtarı taşımak zorundadır.
+@UseGuards(AuthGuard('jwt'), TenantScopeGuard)
 @Controller('attendance/sessions')
 export class AttendanceSessionController {
-  constructor(private readonly sessionService: AttendanceSessionService) {}
+  constructor(
+    private readonly sessionService: AttendanceSessionService,
+    private readonly access: AttendanceAccessService,
+  ) {}
+
+  /**
+   * Aktör bağlamı sunucu tarafında çözülür. JWT'deki kimlik `users.id`
+   * olduğu için `AttendanceSession.teacherId` (`teachers.id`) ile
+   * karşılaştırma/sorgulama ÖNCE `AttendanceAccessService` üzerinden
+   * `teachers.id`'ye çözümlenir; aksi hâlde gerçek sahibi öğretmen reddedilir
+   * ve `listByTeacher` sorgusu boş döner.
+   */
+  private async resolveActor(req: RequestWithContext): Promise<AttendanceActor> {
+    return this.access.resolve(req.user, req.context?.requestId ?? 'unknown');
+  }
 
   @Post()
-  async create(@Req() req: AuthedRequest, @Body() body: CreateSessionInput) {
-    const user = req.user;
-    if (!user) throw new ForbiddenException('Kimlik gerekli');
+  @Permissions('attendance:generate')
+  async create(
+    @Req() req: RequestWithContext,
+    @Body() body: CreateSessionInput,
+  ) {
+    const actor = await this.resolveActor(req);
     return this.sessionService.createFromPublishedOccurrence({
       ...body,
-      actorId: user.userId ?? null,
+      actorId: actor.userId,
     });
   }
 
   @Post(':id/lock')
+  @Permissions('attendance:lock')
   async lock(
-    @Req() req: AuthedRequest,
-    @Param('id') id: string,
+    @Req() req: RequestWithContext,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { expectedVersion: number },
   ) {
-    const user = req.user;
-    if (!user) throw new ForbiddenException('Kimlik gerekli');
-    return this.sessionService.lock(
-      user.tenantId ?? '',
-      id,
-      user.userId ?? '',
-      body.expectedVersion,
-    );
+    const actor = await this.resolveActor(req);
+    return this.sessionService.lock(actor, id, body.expectedVersion);
   }
 
   @Post(':id/records')
+  @Permissions('attendance:record:update')
   @UseGuards(TeacherOwnLessonGuard)
   async markRecord(
-    @Req() req: AuthedRequest,
-    @Param('id') id: string,
+    @Req() req: RequestWithContext,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body()
     body: {
       studentId: string;
       status: AttendanceStatus;
-      markedById?: string;
       notes?: string;
     },
   ) {
-    const user = req.user;
-    if (!user) throw new ForbiddenException('Kimlik gerekli');
+    const actor = await this.resolveActor(req);
     const input: MarkSessionRecordInput = {
-      tenantId: user.tenantId ?? '',
       sessionId: id,
       studentId: body.studentId,
       status: body.status,
-      markedById: body.markedById ?? user.userId ?? null,
       notes: body.notes ?? null,
     };
-    return this.sessionService.markRecord(input);
+    return this.sessionService.markRecord(actor, input);
   }
 
   @Get(':id/records')
+  @Permissions('attendance:own:read')
   @UseGuards(TeacherOwnLessonGuard)
-  async getRecords(@Req() req: AuthedRequest, @Param('id') id: string) {
-    const user = req.user;
-    if (!user) throw new ForbiddenException('Kimlik gerekli');
-    const session = await this.sessionService.getById(user.tenantId ?? '', id);
+  async getRecords(
+    @Req() req: AttendanceRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const actor = await this.resolveActor(req);
+    // Guard, sahibi öğretmen için oturumu zaten yükledi; gözetim rollerinde
+    // tekrar yüklenir (kiracı filtresi ile).
+    const session =
+      req.attendanceSession ??
+      (await this.sessionService.getById(actor.tenantId, id));
     if (!session) throw new ForbiddenException('Session bulunamadı');
     return session;
   }
 
   @Get()
-  async list(@Req() req: AuthedRequest) {
-    const user = req.user;
-    if (!user) throw new ForbiddenException('Kimlik gerekli');
-    const isManager = Array.isArray(user.roleIds)
-      ? user.roleIds.includes('manager')
-      : false;
-    if (isManager) {
-      return this.sessionService.listByTeacher(user.tenantId ?? '', '*');
+  @Permissions('attendance:own:read')
+  async list(@Req() req: RequestWithContext) {
+    const actor = await this.resolveActor(req);
+    if (hasAttendanceOversight(actor)) {
+      return this.sessionService.listByTenant(actor.tenantId);
     }
-    return this.sessionService.listByTeacher(
-      user.tenantId ?? '',
-      user.userId ?? '',
-    );
+    // Öğretmen listesi teachers.id ile sorgulanır (users.id DEĞİL); öğretmen
+    // kimliği çözümlenemeyen kullanıcı için bilgi sızdırmayan boş liste.
+    if (!actor.teacherId) {
+      return [];
+    }
+    return this.sessionService.listByTeacher(actor.tenantId, actor.teacherId);
   }
 }

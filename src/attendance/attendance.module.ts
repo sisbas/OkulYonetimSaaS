@@ -6,7 +6,9 @@ import { AttendanceService } from './attendance.service';
 import { AttendanceSessionService } from './attendance-session.service';
 import { AttendanceSessionController } from './attendance.controller';
 import { TeacherOwnLessonGuard } from './teacher-own-lesson.guard';
+import { AttendanceAccessService } from './attendance-access.service';
 import { ScheduleEvent } from '../schedules/schedule-event.entity';
+import { TeachersModule } from '../teachers/teachers.module';
 
 @Module({
   imports: [
@@ -15,13 +17,15 @@ import { ScheduleEvent } from '../schedules/schedule-event.entity';
       AttendanceSession,
       ScheduleEvent,
     ]),
+    TeachersModule,
   ],
   controllers: [AttendanceSessionController],
   providers: [
     AttendanceService,
     AttendanceSessionService,
+    AttendanceAccessService,
     TeacherOwnLessonGuard,
   ],
-  exports: [AttendanceService, AttendanceSessionService],
+  exports: [AttendanceService, AttendanceSessionService, AttendanceAccessService],
 })
 export class AttendanceModule {}
