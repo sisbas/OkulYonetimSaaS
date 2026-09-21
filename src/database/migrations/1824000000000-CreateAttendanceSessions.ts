@@ -56,6 +56,12 @@ export class CreateAttendanceSessions1824000000000
       `CREATE INDEX IF NOT EXISTS "idx_attendance_sessions_tenant_teacher"
         ON "attendance_sessions" ("tenant_id", "teacher_id")`,
     );
+
+    // Unique index for FK from attendance_records (tenant_id, session_id) -> (tenant_id, id)
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "uq_attendance_sessions_tenant_id"
+        ON "attendance_sessions" ("tenant_id", "id")`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
