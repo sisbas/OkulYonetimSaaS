@@ -6,8 +6,9 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Creates the backing tables for the Raporlama module:
  *  - students            : tenant-scoped öğrenci kayıtları (PII taşır)
  *  - guardians           : tenant-scoped veli/kanuni temsilci kayıtları (PII taşır)
- *  - attendance_sessions : tenant-scoped devamsızlık oturumları (ders bazlı yoklama)
  *  - attendance_records  : tenant-scoped devamsızlık kayıtları (öğrenci bazlı durum)
+ *
+ * attendance_sessions is owned by 1826000000000-CreateAttendanceSessions (#265).
  *
  * All tables are tenant-scoped and carry KVKK-relevant PII. The Raporlama
  * export layer masks this PII unless the caller holds the dedicated
@@ -71,44 +72,9 @@ export class CreateReportsFoundation1810000000000 implements MigrationInterface 
     await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_guardians_tenant_id ON guardians (tenant_id, id)`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_guardians_tenant_student ON guardians (tenant_id, student_id)`);
 
-    await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS attendance_sessions (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id uuid NOT NULL,
-        branch_id uuid NOT NULL,
-        course_id uuid NULL,
-        session_date date NOT NULL,
-        start_time time NULL,
-        end_time time NULL,
-        status varchar(16) NOT NULL DEFAULT 'open',
-        created_at timestamptz NOT NULL DEFAULT now(),
-        updated_at timestamptz NOT NULL DEFAULT now(),
-        deleted_at timestamptz NULL,
-        CONSTRAINT fk_attendance_sessions_tenant
-          FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
-        CONSTRAINT fk_attendance_sessions_branch_same_tenant
-          FOREIGN KEY (tenant_id, branch_id)
-          REFERENCES branches(tenant_id, id) ON DELETE RESTRICT,
-        CONSTRAINT fk_attendance_sessions_course_same_tenant
-          FOREIGN KEY (tenant_id, course_id)
-          REFERENCES courses(tenant_id, id) ON DELETE RESTRICT,
-        CONSTRAINT chk_attendance_sessions_status
-          CHECK (status IN ('open', 'closed', 'locked'))
-      )
-    `);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_attendance_sessions_tenant_id ON attendance_sessions (tenant_id, id)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_attendance_sessions_tenant_branch_date ON attendance_sessions (tenant_id, branch_id, session_date)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_attendance_sessions_tenant_course ON attendance_sessions (tenant_id, course_id)`);
-
-    // NOTE: attendance_records is intentionally NOT created here. Two merged
-    // migrations (1700000000101-CreateAttendanceRecords with course_id, and this
-    // one with session_id) both issued `CREATE TABLE IF NOT EXISTS
-    // attendance_records`; because 1700000000101 sorts first, its schema wins and
-    // this block is always a no-op on a fresh DB — yet its `WHERE deleted_at IS
-    // NULL` index then fails because that column is absent. The canonical
-    // attendance_records lifecycle is owned by 1700000000101 + reconcile
-    // 1825000000000 (course_id -> session_id, no deleted_at). attendance_sessions
-    // above is still owned by this migration. See #261.
+    // attendance_sessions is owned by 1826000000000-CreateAttendanceSessions (#265).
+    // This migration intentionally does not create it to avoid duplicate table
+    // definition conflict. See #265.
 
     // Raporlama modülü tabloları (OKUL-09).
     await queryRunner.query(`
@@ -154,7 +120,7 @@ export class CreateReportsFoundation1810000000000 implements MigrationInterface 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TABLE IF EXISTS report_runs`);
     await queryRunner.query(`DROP TABLE IF EXISTS report_definitions`);
-    await queryRunner.query(`DROP TABLE IF EXISTS attendance_sessions`);
+    // attendance_sessions is owned by 1826000000000-CreateAttendanceSessions (#265).
     await queryRunner.query(`DROP TABLE IF EXISTS guardians`);
     await queryRunner.query(`DROP TABLE IF EXISTS students`);
   }
