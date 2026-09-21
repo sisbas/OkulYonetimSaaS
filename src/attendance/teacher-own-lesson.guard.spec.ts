@@ -4,6 +4,7 @@ import {
   TeacherOwnLessonGuard,
 } from './teacher-own-lesson.guard';
 import { AttendanceSessionService } from './attendance-session.service';
+import { AttendanceAccessService } from './attendance-access.service';
 import {
   AttendanceSession,
   AttendanceSessionStatus,
@@ -11,10 +12,14 @@ import {
 import { RequestUser } from '../common/context/request-context';
 
 describe('TeacherOwnLessonGuard (OKUL-06 / #265 AC-3)', () => {
+  const SESSION_ID = '550e8400-e29b-41d4-a716-446655440000';
+const SESSION_ID_2 = '550e8400-e29b-41d4-a716-446655440001';
+const SESSION_ID_OTHER_TENANT = '550e8400-e29b-41d4-a716-446655440002';
+
   const makeSession = (
     overrides: Partial<AttendanceSession> = {},
   ): AttendanceSession => ({
-    id: 'sess-1',
+    id: SESSION_ID,
     tenantId: 't1',
     branchId: 'b1',
     scheduleEventId: 'evt-1',
@@ -43,10 +48,12 @@ describe('TeacherOwnLessonGuard (OKUL-06 / #265 AC-3)', () => {
 
   function setup(
     getById: jest.Mock,
+    resolveFn: jest.Mock,
     request: Partial<AttendanceRequest>,
   ): { guard: TeacherOwnLessonGuard; context: ExecutionContext } {
     const sessions = { getById } as unknown as AttendanceSessionService;
-    const guard = new TeacherOwnLessonGuard(sessions);
+    const access = { resolve: resolveFn } as unknown as AttendanceAccessService;
+    const guard = new TeacherOwnLessonGuard(sessions, access);
     const context = {
       switchToHttp: () => ({ getRequest: () => request }),
     } as unknown as ExecutionContext;
@@ -55,17 +62,20 @@ describe('TeacherOwnLessonGuard (OKUL-06 / #265 AC-3)', () => {
 
   it('rejects when there is no authenticated user (fail-closed)', async () => {
     const getById = jest.fn();
-    const { guard, context } = setup(getById, { params: { id: 'sess-1' } });
+    const resolveFn = jest.fn();
+    const { guard, context } = setup(getById, resolveFn, { params: { id: SESSION_ID } });
 
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
     expect(getById).not.toHaveBeenCalled();
+    expect(resolveFn).not.toHaveBeenCalled();
   });
 
   it('rejects when the route carries no session id (fail-closed)', async () => {
     const getById = jest.fn();
-    const { guard, context } = setup(getById, {
+    const resolveFn = jest.fn();
+    const { guard, context } = setup(getById, resolveFn, {
       user: makeUser(),
       params: {},
     });
@@ -78,24 +88,36 @@ describe('TeacherOwnLessonGuard (OKUL-06 / #265 AC-3)', () => {
 
   it('allows the owning teacher and attaches the session to the request', async () => {
     const getById = jest.fn(async () => makeSession());
+    const resolveFn = jest.fn(async () => ({
+      userId: 'teach-1',
+      tenantId: 't1',
+      roleIds: ['teacher'],
+      teacherId: 'teach-1',
+    }));
     const request: Partial<AttendanceRequest> = {
       user: makeUser(),
-      params: { id: 'sess-1' },
+      params: { id: SESSION_ID },
     };
-    const { guard, context } = setup(getById, request);
+    const { guard, context } = setup(getById, resolveFn, request);
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(getById).toHaveBeenCalledWith('t1', 'sess-1');
-    expect(request.attendanceSession?.id).toBe('sess-1');
+    expect(getById).toHaveBeenCalledWith('t1', SESSION_ID);
+    expect(request.attendanceSession?.id).toBe(SESSION_ID);
   });
 
   it('rejects a teacher acting on another teacher session (BOLA negative)', async () => {
     const getById = jest.fn(async () =>
       makeSession({ teacherId: 'teach-2' }),
     );
-    const { guard, context } = setup(getById, {
+    const resolveFn = jest.fn(async () => ({
+      userId: 'teach-1',
+      tenantId: 't1',
+      roleIds: ['teacher'],
+      teacherId: 'teach-1',
+    }));
+    const { guard, context } = setup(getById, resolveFn, {
       user: makeUser(),
-      params: { id: 'sess-1' },
+      params: { id: SESSION_ID },
     });
 
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
@@ -105,9 +127,15 @@ describe('TeacherOwnLessonGuard (OKUL-06 / #265 AC-3)', () => {
 
   it('rejects a student role on another teacher session (BOLA negative)', async () => {
     const getById = jest.fn(async () => makeSession());
-    const { guard, context } = setup(getById, {
+    const resolveFn = jest.fn(async () => ({
+      userId: 'student-1',
+      tenantId: 't1',
+      roleIds: ['student'],
+      teacherId: null,
+    }));
+    const { guard, context } = setup(getById, resolveFn, {
       user: makeUser({ userId: 'student-1', roleIds: ['student'] }),
-      params: { id: 'sess-1' },
+      params: { id: SESSION_ID },
     });
 
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
@@ -117,9 +145,15 @@ describe('TeacherOwnLessonGuard (OKUL-06 / #265 AC-3)', () => {
 
   it('rejects when the session is not visible in the actor tenant (no existence leak)', async () => {
     const getById = jest.fn(async () => null);
-    const { guard, context } = setup(getById, {
+    const resolveFn = jest.fn(async () => ({
+      userId: 'teach-1',
+      tenantId: 't1',
+      roleIds: ['teacher'],
+      teacherId: 'teach-1',
+    }));
+    const { guard, context } = setup(getById, resolveFn, {
       user: makeUser(),
-      params: { id: 'other-tenant-session' },
+      params: { id: SESSION_ID_OTHER_TENANT },
     });
 
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
@@ -129,9 +163,10 @@ describe('TeacherOwnLessonGuard (OKUL-06 / #265 AC-3)', () => {
 
   it('allows operations_manager without loading the session (oversight)', async () => {
     const getById = jest.fn();
-    const { guard, context } = setup(getById, {
+    const resolveFn = jest.fn();
+    const { guard, context } = setup(getById, resolveFn, {
       user: makeUser({ userId: 'mgr-1', roleIds: ['operations_manager'] }),
-      params: { id: 'sess-1' },
+      params: { id: SESSION_ID },
     });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
@@ -140,9 +175,10 @@ describe('TeacherOwnLessonGuard (OKUL-06 / #265 AC-3)', () => {
 
   it('allows tenant_admin on any tenant session (oversight)', async () => {
     const getById = jest.fn(async () => makeSession({ teacherId: 'teach-9' }));
-    const { guard, context } = setup(getById, {
+    const resolveFn = jest.fn();
+    const { guard, context } = setup(getById, resolveFn, {
       user: makeUser({ userId: 'admin-1', roleIds: ['tenant_admin'] }),
-      params: { id: 'sess-1' },
+      params: { id: SESSION_ID },
     });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);

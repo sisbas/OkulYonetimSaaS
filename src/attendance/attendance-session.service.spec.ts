@@ -83,16 +83,19 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     userId: 'mgr-1',
     tenantId: 't1',
     roleIds: ['operations_manager'],
+    teacherId: null,
   };
   const ownerActor: AttendanceActor = {
     userId: 'teach-1',
     tenantId: 't1',
     roleIds: ['teacher'],
+    teacherId: 'teach-1',
   };
   const otherTeacherActor: AttendanceActor = {
     userId: 'teach-2',
     tenantId: 't1',
     roleIds: ['teacher'],
+    teacherId: 'teach-2',
   };
 
   const publishedSession = (overrides: Record<string, unknown> = {}) => ({

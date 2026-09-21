@@ -6,6 +6,7 @@ import { AttendanceService } from './attendance.service';
 import { AttendanceSessionService } from './attendance-session.service';
 import { AttendanceSessionController } from './attendance.controller';
 import { TeacherOwnLessonGuard } from './teacher-own-lesson.guard';
+import { AttendanceAccessService } from './attendance-access.service';
 import { ScheduleEvent } from '../schedules/schedule-event.entity';
 
 @Module({
@@ -20,8 +21,9 @@ import { ScheduleEvent } from '../schedules/schedule-event.entity';
   providers: [
     AttendanceService,
     AttendanceSessionService,
+    AttendanceAccessService,
     TeacherOwnLessonGuard,
   ],
-  exports: [AttendanceService, AttendanceSessionService],
+  exports: [AttendanceService, AttendanceSessionService, AttendanceAccessService],
 })
 export class AttendanceModule {}
