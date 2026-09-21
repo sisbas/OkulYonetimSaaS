@@ -42,7 +42,7 @@ export class AttendanceSessionController {
    * `teachers.id`'ye çözümlenir; aksi hâlde gerçek sahibi öğretmen reddedilir
    * ve `listByTeacher` sorgusu boş döner.
    */
-  private resolveActor(req: RequestWithContext): Promise<AttendanceActor> {
+  private async resolveActor(req: RequestWithContext): Promise<AttendanceActor> {
     return this.access.resolve(req.user, req.context?.requestId ?? 'unknown');
   }
 
