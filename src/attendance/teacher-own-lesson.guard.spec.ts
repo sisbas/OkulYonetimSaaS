@@ -1,4 +1,4 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import {
   AttendanceRequest,
   TeacherOwnLessonGuard,
@@ -84,6 +84,40 @@ const SESSION_ID_OTHER_TENANT = '550e8400-e29b-41d4-a716-446655440002';
       ForbiddenException,
     );
     expect(getById).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed session id with 400 before any query (P2 regression)', async () => {
+    const getById = jest.fn();
+    const resolveFn = jest.fn();
+    const { guard, context } = setup(getById, resolveFn, {
+      user: makeUser(),
+      params: { id: 'not-a-uuid' },
+    });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    // Malformed değer veritabanına asla ulaşmamalı (PostgreSQL uuid cast 500).
+    expect(getById).not.toHaveBeenCalled();
+    expect(resolveFn).not.toHaveBeenCalled();
+  });
+
+  it('rejects a teacher whose teacher identity cannot be resolved (fail-closed)', async () => {
+    const getById = jest.fn(async () => makeSession());
+    const resolveFn = jest.fn(async () => ({
+      userId: 'teach-1',
+      tenantId: 't1',
+      roleIds: ['teacher'],
+      teacherId: null,
+    }));
+    const { guard, context } = setup(getById, resolveFn, {
+      user: makeUser(),
+      params: { id: SESSION_ID },
+    });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('allows the owning teacher and attaches the session to the request', async () => {

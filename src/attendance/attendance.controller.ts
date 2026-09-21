@@ -7,7 +7,6 @@ import {
   ParseUUIDPipe,
   Post,
   Req,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -15,28 +14,14 @@ import { RequestWithContext } from '../common/context/request-context';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 import { AttendanceActor, hasAttendanceOversight } from './attendance-access';
+import { AttendanceAccessService } from './attendance-access.service';
 import {
   AttendanceSessionService,
   CreateSessionInput,
   MarkSessionRecordInput,
 } from './attendance-session.service';
 import { AttendanceStatus } from './attendance.entity';
-import { TeacherOwnLessonGuard } from './teacher-own-lesson.guard';
-
-/**
- * Aktör bağlamı sunucu tarafında çözülür; istemciden gelen user/tenant/role
- * değerleri yetki kaynağı değildir.
- */
-function getActor(request: RequestWithContext): AttendanceActor {
-  const user = request.user;
-  if (!user?.userId) throw new UnauthorizedException('Authentication required');
-  if (!user.tenantId) throw new ForbiddenException('Tenant context required');
-  return {
-    userId: user.userId,
-    tenantId: user.tenantId,
-    roleIds: user.roleIds ?? [],
-  };
-}
+import { AttendanceRequest, TeacherOwnLessonGuard } from './teacher-own-lesson.guard';
 
 // Kimlik doğrulama (JWT) + kiracı sınırı; yetki her route'ta @Permissions ile
 // zorunlu kılınır. @Permissions metadata'sı olmadan global
@@ -45,7 +30,21 @@ function getActor(request: RequestWithContext): AttendanceActor {
 @UseGuards(AuthGuard('jwt'), TenantScopeGuard)
 @Controller('attendance/sessions')
 export class AttendanceSessionController {
-  constructor(private readonly sessionService: AttendanceSessionService) {}
+  constructor(
+    private readonly sessionService: AttendanceSessionService,
+    private readonly access: AttendanceAccessService,
+  ) {}
+
+  /**
+   * Aktör bağlamı sunucu tarafında çözülür. JWT'deki kimlik `users.id`
+   * olduğu için `AttendanceSession.teacherId` (`teachers.id`) ile
+   * karşılaştırma/sorgulama ÖNCE `AttendanceAccessService` üzerinden
+   * `teachers.id`'ye çözümlenir; aksi hâlde gerçek sahibi öğretmen reddedilir
+   * ve `listByTeacher` sorgusu boş döner.
+   */
+  private resolveActor(req: RequestWithContext): Promise<AttendanceActor> {
+    return this.access.resolve(req.user, req.context?.requestId ?? 'unknown');
+  }
 
   @Post()
   @Permissions('attendance:generate')
@@ -53,7 +52,7 @@ export class AttendanceSessionController {
     @Req() req: RequestWithContext,
     @Body() body: CreateSessionInput,
   ) {
-    const actor = getActor(req);
+    const actor = await this.resolveActor(req);
     return this.sessionService.createFromPublishedOccurrence({
       ...body,
       actorId: actor.userId,
@@ -67,7 +66,7 @@ export class AttendanceSessionController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { expectedVersion: number },
   ) {
-    const actor = getActor(req);
+    const actor = await this.resolveActor(req);
     return this.sessionService.lock(actor, id, body.expectedVersion);
   }
 
@@ -84,7 +83,7 @@ export class AttendanceSessionController {
       notes?: string;
     },
   ) {
-    const actor = getActor(req);
+    const actor = await this.resolveActor(req);
     const input: MarkSessionRecordInput = {
       sessionId: id,
       studentId: body.studentId,
@@ -98,11 +97,15 @@ export class AttendanceSessionController {
   @Permissions('attendance:own:read')
   @UseGuards(TeacherOwnLessonGuard)
   async getRecords(
-    @Req() req: RequestWithContext,
+    @Req() req: AttendanceRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    const actor = getActor(req);
-    const session = await this.sessionService.getById(actor.tenantId, id);
+    const actor = await this.resolveActor(req);
+    // Guard, sahibi öğretmen için oturumu zaten yükledi; gözetim rollerinde
+    // tekrar yüklenir (kiracı filtresi ile).
+    const session =
+      req.attendanceSession ??
+      (await this.sessionService.getById(actor.tenantId, id));
     if (!session) throw new ForbiddenException('Session bulunamadı');
     return session;
   }
@@ -110,10 +113,15 @@ export class AttendanceSessionController {
   @Get()
   @Permissions('attendance:own:read')
   async list(@Req() req: RequestWithContext) {
-    const actor = getActor(req);
+    const actor = await this.resolveActor(req);
     if (hasAttendanceOversight(actor)) {
       return this.sessionService.listByTenant(actor.tenantId);
     }
-    return this.sessionService.listByTeacher(actor.tenantId, actor.userId);
+    // Öğretmen listesi teachers.id ile sorgulanır (users.id DEĞİL); öğretmen
+    // kimliği çözümlenemeyen kullanıcı için bilgi sızdırmayan boş liste.
+    if (!actor.teacherId) {
+      return [];
+    }
+    return this.sessionService.listByTeacher(actor.tenantId, actor.teacherId);
   }
 }
