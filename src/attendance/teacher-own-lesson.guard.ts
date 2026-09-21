@@ -4,40 +4,65 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { RequestContext, RequestUser } from '../common/context/request-context';
+import { RequestWithContext } from '../common/context/request-context';
+import { AttendanceSession } from './attendance-session.entity';
+import { AttendanceSessionService } from './attendance-session.service';
+import {
+  assertAttendanceSessionAccess,
+  hasAttendanceOversight,
+} from './attendance-access';
+
+export type AttendanceRequest = RequestWithContext & {
+  attendanceSession?: AttendanceSession;
+};
 
 /**
- * Teacher-own-lesson guard (OKUL-06, M5).
+ * Teacher-own-lesson guard (OKUL-06 / #265 AC-3).
  *
- * Bir öğretmen yalnızca kendi teacherId'sine ait AttendanceSession üzerinde
- * işlem yapabilir. Müdür (role manager) tüm branch'i görür.
- * BOLA negative: başka öğretmenin session'ı -> 403.
+ * Önceki sürüm `request.attendanceSession` alanının başka bir katman
+ * (interceptor) tarafından doldurulmasını bekliyordu. NestJS yürütme sırası
+ * guard → interceptor olduğu için bu alan hiçbir zaman doldurulamıyordu ve
+ * guard `if (!session) return true` ile **her isteği geçiriyordu (fail-open)**.
+ *
+ * Bu sürüm:
+ *  - kimlik yoksa reddeder (fail-closed),
+ *  - gözetim rollerini (operations_manager / tenant_admin) geçirir,
+ *  - oturumu **kendi yükler** (kiracı filtresi ile),
+ *  - sahiplik tutmuyorsa 403 döner,
+ *  - bulunamayan/başka kiracıdaki oturumda varlık sızdırmadan 403 döner.
  */
 @Injectable()
 export class TeacherOwnLessonGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    const user = request.user as RequestUser | undefined;
-    if (!user) {
+  constructor(private readonly sessions: AttendanceSessionService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AttendanceRequest>();
+    const user = request.user;
+    if (!user?.userId || !user.tenantId) {
       throw new ForbiddenException('Kimlik doğrulaması gerekli');
     }
-    const session = (request as Record<string, unknown>)
-      .attendanceSession as
-      | { teacherId?: string; tenantId?: string }
-      | undefined;
+    if (hasAttendanceOversight(user)) {
+      return true;
+    }
+
+    const rawSessionId = request.params?.id;
+    const sessionId = typeof rawSessionId === 'string' ? rawSessionId : undefined;
+    if (!sessionId) {
+      throw new ForbiddenException('Yoklama oturumu kimliği gerekli');
+    }
+
+    // Kiracı filtresi: başka kiracının oturumu asla yüklenmez.
+    const session = await this.sessions.getById(user.tenantId, sessionId);
     if (!session) {
-      return true;
-    }
-    const isManager = Array.isArray(user.roleIds)
-      ? user.roleIds.includes('manager')
-      : false;
-    if (isManager) {
-      return true;
-    }
-    if (user.userId !== session.teacherId) {
       throw new ForbiddenException('Bu dersin yoklamasına erişim izniniz yok');
     }
+    assertAttendanceSessionAccess(
+      { userId: user.userId, tenantId: user.tenantId, roleIds: user.roleIds ?? [] },
+      session,
+    );
+    request.attendanceSession = session;
     return true;
   }
 }
+
 

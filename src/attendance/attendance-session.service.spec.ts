@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { ForbiddenException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
   AttendanceSessionService,
@@ -8,6 +9,7 @@ import { AttendanceSession } from './attendance-session.entity';
 import { AttendanceRecord } from './attendance.entity';
 import { ScheduleEvent } from '../schedules/schedule-event.entity';
 import { AttendanceSessionStatus } from './attendance-session.entity';
+import { AttendanceActor } from './attendance-access';
 
 describe('AttendanceSessionService (OKUL-06, #265)', () => {
   let service: AttendanceSessionService;
@@ -77,43 +79,140 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     expect(sessionRepo.save).not.toHaveBeenCalled();
   });
 
+  const managerActor: AttendanceActor = {
+    userId: 'mgr-1',
+    tenantId: 't1',
+    roleIds: ['operations_manager'],
+  };
+  const ownerActor: AttendanceActor = {
+    userId: 'teach-1',
+    tenantId: 't1',
+    roleIds: ['teacher'],
+  };
+  const otherTeacherActor: AttendanceActor = {
+    userId: 'teach-2',
+    tenantId: 't1',
+    roleIds: ['teacher'],
+  };
+
+  const publishedSession = (overrides: Record<string, unknown> = {}) => ({
+    id: 'sess-1',
+    tenantId: 't1',
+    teacherId: 'teach-1',
+    rosterSnapshot: ['s1', 's2', 's3'],
+    version: 1,
+    status: AttendanceSessionStatus.PUBLISHED,
+    ...overrides,
+  });
+
   it('lock enforces optimistic concurrency (version mismatch throws)', async () => {
-    sessionRepo.findOne = jest.fn(async () => ({
-      id: 'sess-1',
-      tenantId: 't1',
-      version: 2,
-      status: AttendanceSessionStatus.PUBLISHED,
-    }));
+    sessionRepo.findOne = jest.fn(async () => publishedSession({ version: 2 }));
+    await expect(service.lock(managerActor, 'sess-1', 1)).rejects.toThrow(
+      /version mismatch/,
+    );
+  });
+
+  it('lock rejects a teacher who is not the session owner (BOLA negative)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
     await expect(
-      service.lock('t1', 'sess-1', 'mgr-1', 1),
-    ).rejects.toThrow(/version mismatch/);
+      service.lock(otherTeacherActor, 'sess-1', 1),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(sessionRepo.save).not.toHaveBeenCalled();
   });
 
   it('lock transitions published -> locked and bumps version', async () => {
-    sessionRepo.findOne = jest.fn(async () => ({
-      id: 'sess-1',
-      tenantId: 't1',
-      version: 1,
-      status: AttendanceSessionStatus.PUBLISHED,
-    }));
-    const sess = await service.lock('t1', 'sess-1', 'mgr-1', 1);
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    const sess = await service.lock(managerActor, 'sess-1', 1);
     expect(sess.status).toBe(AttendanceSessionStatus.LOCKED);
     expect(sess.version).toBe(2);
+    expect(sess.lockedById).toBe('mgr-1');
   });
 
   it('markRecord rejects on locked session (controlled correction required)', async () => {
-    sessionRepo.findOne = jest.fn(async () => ({
-      id: 'sess-1',
-      tenantId: 't1',
-      status: AttendanceSessionStatus.LOCKED,
-    }));
+    sessionRepo.findOne = jest.fn(async () =>
+      publishedSession({ status: AttendanceSessionStatus.LOCKED }),
+    );
     await expect(
-      service.markRecord({
-        tenantId: 't1',
+      service.markRecord(ownerActor, {
         sessionId: 'sess-1',
         studentId: 's1',
         status: 'present' as never,
       }),
     ).rejects.toThrow(/locked/);
+  });
+
+  it('markRecord rejects a teacher who is not the session owner (BOLA negative)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    await expect(
+      service.markRecord(otherTeacherActor, {
+        sessionId: 'sess-1',
+        studentId: 's1',
+        status: 'present' as never,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(recordRepo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('markRecord rejects a student outside the immutable roster snapshot', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    await expect(
+      service.markRecord(ownerActor, {
+        sessionId: 'sess-1',
+        studentId: 'student-unknown',
+        status: 'present' as never,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(recordRepo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('markRecord allows the owning teacher and stamps the server-side actor', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    recordRepo.findOne = jest.fn(async () => ({ id: 'rec-1' }));
+    await service.markRecord(ownerActor, {
+      sessionId: 'sess-1',
+      studentId: 's1',
+      status: 'present' as never,
+    });
+    expect(recordRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 't1',
+        studentId: 's1',
+        markedById: 'teach-1',
+      }),
+    );
+    expect(recordRepo.upsert).toHaveBeenCalled();
+  });
+
+  it('markRecord allows an oversight role on another teacher session (manager visibility)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    recordRepo.findOne = jest.fn(async () => ({ id: 'rec-1' }));
+    await expect(
+      service.markRecord(managerActor, {
+        sessionId: 'sess-1',
+        studentId: 's2',
+        status: 'present' as never,
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('markRecord rejects an unknown session (fail-closed)', async () => {
+    sessionRepo.findOne = jest.fn(async () => null);
+    await expect(
+      service.markRecord(ownerActor, {
+        sessionId: 'missing',
+        studentId: 's1',
+        status: 'present' as never,
+      }),
+    ).rejects.toThrow(/not found/);
+  });
+
+  it('listByTenant returns tenant-wide sessions for oversight roles (manager visibility)', async () => {
+    sessionRepo.find = jest.fn(async () => [publishedSession()]);
+    const sessions = await service.listByTenant('t1');
+    expect(sessions).toHaveLength(1);
+    expect(sessionRepo.find).toHaveBeenCalledWith({
+      where: { tenantId: 't1' },
+      order: { sessionDate: 'DESC' },
+    });
   });
 });
