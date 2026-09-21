@@ -1,12 +1,12 @@
-import { CreateAttendanceSessions1826000000000 } from '../../src/database/migrations/1826000000000-CreateAttendanceSessions';
+import { CreateAttendanceSessions1824000000000 } from '../../src/database/migrations/1824000000000-CreateAttendanceSessions';
 
 /**
  * Migration smoke: attendance_sessions table create/down shape validation.
  * Kept OUT of src/database/migrations/ so TypeORM's migration runner does not
  * try to load it as a migration (describe is jest-only).
  */
-describe('CreateAttendanceSessions1826000000000 (#265)', () => {
-  const migration = new CreateAttendanceSessions1826000000000();
+describe('CreateAttendanceSessions1824000000000 (#265)', () => {
+  const migration = new CreateAttendanceSessions1824000000000();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const makeRunner = () => {
     const calls: string[] = [];

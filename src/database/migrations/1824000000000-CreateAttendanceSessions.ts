@@ -14,13 +14,14 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *   - roster_snapshot jsonb (immutable student-id list)
  *   - status draft/published/locked + version (optimistic concurrency)
  *
- * NOTE: timestamp 1826000000000 chosen to be strictly after 1825000000000.
+ * NOTE: timestamp 1824000000000 chosen to be BEFORE 1825000000000 so that
+ * attendance_sessions exists when 1825 reconciles attendance_records.
  * FKs are declared INLINE in CREATE TABLE to avoid ALTER ordering issues.
  */
-export class CreateAttendanceSessions1826000000000
+export class CreateAttendanceSessions1824000000000
   implements MigrationInterface
 {
-  name = 'CreateAttendanceSessions1826000000000';
+  name = 'CreateAttendanceSessions1824000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
