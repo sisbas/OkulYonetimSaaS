@@ -13,6 +13,10 @@ import {
 } from './attendance-session.entity';
 import { AttendanceRecord, AttendanceStatus } from './attendance.entity';
 import { ScheduleEvent } from '../schedules/schedule-event.entity';
+import {
+  ScheduleVersion,
+  ScheduleVersionStatus,
+} from '../schedules/schedule-version.entity';
 import { RequestContext } from '../common/context/request-context';
 import {
   assertAttendanceSessionAccess,
@@ -21,7 +25,6 @@ import {
 
 export interface CreateSessionInput {
   tenantId: string;
-  branchId: string;
   scheduleEventId: string;
   sessionDate: Date;
   studentIds: string[];
@@ -55,17 +58,27 @@ export class AttendanceSessionService {
     private readonly eventRepo: Repository<ScheduleEvent>,
     @InjectRepository(AttendanceRecord)
     private readonly recordRepo: Repository<AttendanceRecord>,
+    @InjectRepository(ScheduleVersion)
+    private readonly versionRepo: Repository<ScheduleVersion>,
   ) {}
 
   async createFromPublishedOccurrence(
     input: CreateSessionInput,
     ctx?: RequestContext,
   ): Promise<AttendanceSession> {
+    // Immutable roster snapshot: boş roster ile oturum asla işaretlenemez
+    // (AC-2); oluşturmayı baştan reddederiz.
+    if (!input.studentIds?.length) {
+      throw new ForbiddenException(
+        'AttendanceSession requires a non-empty roster snapshot',
+      );
+    }
+
     const event = await this.eventRepo.findOne({
       where: { id: input.scheduleEventId, tenantId: input.tenantId },
     });
     if (!event) {
-      throw new Error('ScheduleEvent not found or not in tenant');
+      throw new NotFoundException('ScheduleEvent not found or not in tenant');
     }
 
     const existing = await this.sessionRepo.findOne({
@@ -88,9 +101,29 @@ export class AttendanceSessionService {
       return existing;
     }
 
+    // AC-2 (#265): oturum YALNIZCA yayınlanmış bir schedule sürümünden türer.
+    // Yayın durumu ScheduleEvent üzerinde değil ScheduleVersion üzerindedir
+    // (status + published_at + unpublished_at).
+    const version = await this.versionRepo.findOne({
+      where: { id: event.versionId, tenantId: input.tenantId },
+    });
+    if (!version) {
+      throw new NotFoundException('Schedule version not found for event');
+    }
+    if (
+      version.status !== ScheduleVersionStatus.PUBLISHED ||
+      !version.publishedAt ||
+      version.unpublishedAt
+    ) {
+      throw new ForbiddenException(
+        'AttendanceSession can only be created from a published schedule occurrence',
+      );
+    }
+
     const session = this.sessionRepo.create({
       tenantId: input.tenantId,
-      branchId: input.branchId,
+      // branchId istemciden DEĞİL, ScheduleEvent'ten alınır (server-authoritative).
+      branchId: event.branchId,
       scheduleEventId: input.scheduleEventId,
       teacherId: event.teacherId,
       studentGroupId: event.studentGroupId,
