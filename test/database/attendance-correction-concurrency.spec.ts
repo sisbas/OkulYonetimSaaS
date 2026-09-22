@@ -71,6 +71,18 @@ describeWithPostgres('attendance correction PostgreSQL concurrency (#265, AC-7)'
       new TransactionalAttendanceAuditAdapter(
         new TypeOrmTransactionalAuditWriter(new AuditLogRepository()),
       ),
+      // Kilit akışındaki outbox portu (bu spec düzeltme eşzamanlılığını ölçer;
+      // devamsızlık bildirimi ayrı suite'te doğrulanır).
+      {
+        enqueueLockedAbsenceNotifications: jest.fn(async () => ({
+          sessionStatus: 'locked',
+          absentStudents: 0,
+          intendedPending: 0,
+          intendedBlockedConsent: 0,
+          insertedRows: 0,
+          duplicatesSkipped: 0,
+        })),
+      },
     );
   });
 

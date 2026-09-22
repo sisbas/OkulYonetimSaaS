@@ -19,6 +19,7 @@ import {
 import { ScheduleEvent } from '../schedules/schedule-event.entity';
 import { ScheduleVersion } from '../schedules/schedule-version.entity';
 import { TeachersModule } from '../teachers/teachers.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -29,6 +30,8 @@ import { TeachersModule } from '../teachers/teachers.module';
       ScheduleVersion,
     ]),
     TeachersModule,
+    // #266: kilitli devamsızlık → outbox portu (notifications uygular).
+    NotificationsModule,
   ],
   controllers: [AttendanceSessionController],
   providers: [

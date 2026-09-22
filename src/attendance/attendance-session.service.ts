@@ -34,6 +34,10 @@ import {
   ATTENDANCE_AUDIT_PORT,
   AttendanceAuditPort,
 } from './attendance-audit.adapter';
+import {
+  ATTENDANCE_ABSENCE_NOTIFICATION_PORT,
+  AttendanceAbsenceNotificationPort,
+} from './attendance-absence-notification.port';
 
 export interface CreateSessionInput {
   tenantId: string;
@@ -94,6 +98,9 @@ export class AttendanceSessionService {
     // Durable audit portu (#259): yazımlar domain transaction'ının içindedir.
     @Inject(ATTENDANCE_AUDIT_PORT)
     private readonly audit: AttendanceAuditPort,
+    // #266: kilitli devamsızlık → idempotent outbox olayı (aynı transaction).
+    @Inject(ATTENDANCE_ABSENCE_NOTIFICATION_PORT)
+    private readonly absenceNotifications: AttendanceAbsenceNotificationPort,
   ) {}
 
   async createFromPublishedOccurrence(
@@ -257,6 +264,15 @@ export class AttendanceSessionService {
         newStatus: AttendanceSessionStatus.LOCKED,
       });
 
+      // #265 AC-6 / #266: oturum kilitlendiğinde devamsızlıklar için idempotent
+      // outbox olayı üretilir (aynı transaction; draft/published asla bildirmez).
+      const absenceOutcome =
+        await this.absenceNotifications.enqueueLockedAbsenceNotifications(em, {
+          tenantId: actor.tenantId,
+          sessionId: saved.id,
+          actorUserId: actor.userId,
+        });
+
       this.logger.log(
         JSON.stringify({
           event: 'attendance.session.locked',
@@ -264,6 +280,8 @@ export class AttendanceSessionService {
           sessionId,
           actorId: actor.userId,
           version: saved.version,
+          absenceOutboxInserted: absenceOutcome.insertedRows,
+          absenceOutboxDuplicates: absenceOutcome.duplicatesSkipped,
         }),
       );
       return saved;

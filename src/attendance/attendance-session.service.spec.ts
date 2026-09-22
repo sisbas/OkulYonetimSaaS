@@ -15,6 +15,7 @@ import {
 import { AttendanceSessionStatus } from './attendance-session.entity';
 import { AttendanceActor } from './attendance-access';
 import { ATTENDANCE_AUDIT_PORT } from './attendance-audit.adapter';
+import { ATTENDANCE_ABSENCE_NOTIFICATION_PORT } from './attendance-absence-notification.port';
 
 describe('AttendanceSessionService (OKUL-06, #265)', () => {
   let service: AttendanceSessionService;
@@ -30,6 +31,8 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
   let em: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let audit: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let absenceNotifications: any;
 
   const makeRepo = () => ({
     findOne: jest.fn(),
@@ -105,12 +108,26 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
       ),
     };
     audit = { write: jest.fn(async () => undefined) };
+    absenceNotifications = {
+      enqueueLockedAbsenceNotifications: jest.fn(async () => ({
+        sessionStatus: 'locked',
+        absentStudents: 0,
+        intendedPending: 0,
+        intendedBlockedConsent: 0,
+        insertedRows: 0,
+        duplicatesSkipped: 0,
+      })),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AttendanceSessionService,
         { provide: getRepositoryToken(AttendanceSession), useValue: sessionRepo },
         { provide: getRepositoryToken(AttendanceRecord), useValue: recordRepo },
         { provide: ATTENDANCE_AUDIT_PORT, useValue: audit },
+        {
+          provide: ATTENDANCE_ABSENCE_NOTIFICATION_PORT,
+          useValue: absenceNotifications,
+        },
       ],
     }).compile();
     service = moduleRef.get(AttendanceSessionService);
@@ -560,6 +577,21 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     await service.lock(managerActor, 'sess-1', 1);
 
     expect(audit.write).not.toHaveBeenCalled();
+    expect(absenceNotifications.enqueueLockedAbsenceNotifications).not.toHaveBeenCalled();
+  });
+
+  it('enqueues locked-absence notifications inside the lock transaction (AC-6)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+
+    await service.lock(managerActor, 'sess-1', 1);
+
+    expect(
+      absenceNotifications.enqueueLockedAbsenceNotifications,
+    ).toHaveBeenCalledWith(em, {
+      tenantId: 't1',
+      sessionId: 'sess-1',
+      actorUserId: 'mgr-1',
+    });
   });
 
   it('writes the record-marked audit row inside the mark transaction', async () => {
