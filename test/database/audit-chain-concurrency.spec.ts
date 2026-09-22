@@ -198,7 +198,7 @@ describeWithPostgres('audit chain PostgreSQL concurrency (#259, AC-7)', () => {
     expect(headHash).toBe(after[after.length - 1].entry_hash);
   });
 
-  it('detects tail truncation against a published head checkpoint', async () => {
+  it('detects tail truncation via the expected last sequence', async () => {
     await Promise.all(
       [0, 1, 2].map((index) =>
         dataSource.transaction((manager) => repository.insert(manager, record(index))),
@@ -206,7 +206,6 @@ describeWithPostgres('audit chain PostgreSQL concurrency (#259, AC-7)', () => {
     );
     const before = await readChain();
     const last = before[before.length - 1];
-    const expectedHeadHash = last.entry_hash as string;
     const expectedLastSequence = Number(last.seq);
 
     await dataSource.query(
@@ -216,10 +215,29 @@ describeWithPostgres('audit chain PostgreSQL concurrency (#259, AC-7)', () => {
 
     const after = await readChain();
     expect(
+      verifyAuditChain(after.map(toVerifiable), { expectedLastSequence }),
+    ).toMatchObject({ valid: false, reason: 'truncated-chain' });
+  });
+
+  it('detects tail truncation against a published head checkpoint', async () => {
+    await Promise.all(
+      [0, 1, 2].map((index) =>
+        dataSource.transaction((manager) => repository.insert(manager, record(index))),
+      ),
+    );
+    const before = await readChain();
+    const expectedHeadHash = before[before.length - 1].entry_hash as string;
+
+    await dataSource.query(
+      'DELETE FROM audit_logs WHERE tenant_id = $1 AND seq = $2',
+      [TENANT_ID, before[before.length - 1].seq],
+    );
+
+    const after = await readChain();
+    expect(
       verifyAuditChain(after.map(toVerifiable), {
         hmacKey: TEST_AUDIT_HMAC_KEY,
         expectedHeadHash,
-        expectedLastSequence,
       }),
     ).toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
   });
