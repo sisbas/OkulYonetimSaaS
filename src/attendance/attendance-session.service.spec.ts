@@ -25,6 +25,8 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
   let recordRepo: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let versionRepo: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let em: any;
 
   const makeRepo = () => ({
     findOne: jest.fn(),
@@ -70,13 +72,29 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     eventRepo = makeRepo();
     recordRepo = makeRepo();
     versionRepo = makeRepo();
+    // Transaction içi EntityManager mock'u: entity tipine göre ilgili repo
+    // mock'unun jest.fn'lerine devreder (mevcut test beklentileri korunur).
+    em = {
+      findOne: jest.fn(async (entity: unknown, opts: unknown) => {
+        if (entity === ScheduleEvent) return eventRepo.findOne(opts);
+        if (entity === ScheduleVersion) return versionRepo.findOne(opts);
+        return sessionRepo.findOne(opts);
+      }),
+      create: jest.fn((_entity: unknown, data: unknown) =>
+        sessionRepo.create(data),
+      ),
+      save: jest.fn(async (entity: unknown) => sessionRepo.save(entity)),
+    };
+    sessionRepo.manager = {
+      transaction: jest.fn(async (cb: (m: unknown) => Promise<unknown>) =>
+        cb(em),
+      ),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AttendanceSessionService,
         { provide: getRepositoryToken(AttendanceSession), useValue: sessionRepo },
-        { provide: getRepositoryToken(ScheduleEvent), useValue: eventRepo },
         { provide: getRepositoryToken(AttendanceRecord), useValue: recordRepo },
-        { provide: getRepositoryToken(ScheduleVersion), useValue: versionRepo },
       ],
     }).compile();
     service = moduleRef.get(AttendanceSessionService);
@@ -93,6 +111,19 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     expect(sess.rosterSnapshot).toEqual(['s1', 's2', 's3']);
     expect(sess.status).toBe(AttendanceSessionStatus.PUBLISHED);
     expect(sessionRepo.save).toHaveBeenCalled();
+  });
+
+  it('createFromPublishedOccurrence locks the ScheduleVersion row (pessimistic_write) inside one transaction', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () => publishedVersion());
+    await service.createFromPublishedOccurrence(baseInput);
+    // Yayın kontrolü + insert tek transaction'da (race-condition koruması, #265).
+    expect(sessionRepo.manager.transaction).toHaveBeenCalled();
+    expect(em.findOne).toHaveBeenCalledWith(ScheduleVersion, {
+      where: { id: 'ver-1', tenantId: 't1' },
+      lock: { mode: 'pessimistic_write' },
+    });
   });
 
   it('createFromPublishedOccurrence rejects a DRAFT schedule version (AC-2)', async () => {

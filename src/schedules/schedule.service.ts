@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, EntityManager } from 'typeorm';
 import { Schedule } from './schedule.entity';
 import { ScheduleVersion, ScheduleVersionStatus } from './schedule-version.entity';
 import { ScheduleEvent } from './schedule-event.entity';
@@ -496,18 +496,37 @@ export class ScheduleService {
       markSchedulePublished: async () => undefined,
       markScheduleUnpublished: async (sid, expectedRevision) => {
         // Bulgu 5: aktif version pointer'ı ve published version status'u birlikte kapat.
-        await this.versionRepo.update(published.id, {
-          status: ScheduleVersionStatus.UNPUBLISHED,
-          unpublishedAt: new Date(),
+        // AC-2 (#265) atomikliği: AttendanceSessionService.createFromPublishedOccurrence
+        // aynı ScheduleVersion satırını pessimistic_write ile kilitler; burada da aynı
+        // kilit alınır ki yayın kapatma ile oturum açma asla yarışmasın. Kilit altında
+        // status yeniden doğrulanır (fail-closed).
+        await this.versionRepo.manager.transaction(async (em: EntityManager) => {
+          const locked = await em.findOne(ScheduleVersion, {
+            where: { id: published.id, tenantId },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (!locked) {
+            throw new NotFoundException('No published version to unpublish');
+          }
+          if (locked.status !== ScheduleVersionStatus.PUBLISHED) {
+            throw new ConflictException(
+              'Schedule version is no longer published',
+            );
+          }
+          await em.update(ScheduleVersion, locked.id, {
+            status: ScheduleVersionStatus.UNPUBLISHED,
+            unpublishedAt: new Date(),
+          });
+          await em.update(
+            Schedule,
+            { tenantId, id: sid },
+            {
+              status: ScheduleStatus.UNPUBLISHED,
+              activeVersionId: null,
+              revision: expectedRevision,
+            },
+          );
         });
-        await this.scheduleRepo.update(
-          { tenantId, id: sid },
-          {
-            status: ScheduleStatus.UNPUBLISHED,
-            activeVersionId: null,
-            revision: expectedRevision,
-          },
-        );
       },
       appendAudit: async (event: ScheduleAuditEvent) => {
         void event;

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import {
   AttendanceSession,
   AttendanceSessionStatus,
@@ -54,12 +54,8 @@ export class AttendanceSessionService {
   constructor(
     @InjectRepository(AttendanceSession)
     private readonly sessionRepo: Repository<AttendanceSession>,
-    @InjectRepository(ScheduleEvent)
-    private readonly eventRepo: Repository<ScheduleEvent>,
     @InjectRepository(AttendanceRecord)
     private readonly recordRepo: Repository<AttendanceRecord>,
-    @InjectRepository(ScheduleVersion)
-    private readonly versionRepo: Repository<ScheduleVersion>,
   ) {}
 
   async createFromPublishedOccurrence(
@@ -74,75 +70,87 @@ export class AttendanceSessionService {
       );
     }
 
-    const event = await this.eventRepo.findOne({
-      where: { id: input.scheduleEventId, tenantId: input.tenantId },
-    });
-    if (!event) {
-      throw new NotFoundException('ScheduleEvent not found or not in tenant');
-    }
+    // AC-2 (#265) atomikliği: yayın kontrolü ile oturum insert'i aynı
+    // transaction'da yapılır ve ScheduleVersion satırı pessimistic_write ile
+    // kilitlenir. ScheduleService.unpublish aynı kilidi aldığı için iki
+    // istek serialize olur; unpublish commit'lediyse kilitli okuma
+    // UNPUBLISHED görür ve oturum asla oluşturulmaz.
+    const saved = await this.sessionRepo.manager.transaction(
+      async (em: EntityManager) => {
+        const event = await em.findOne(ScheduleEvent, {
+          where: { id: input.scheduleEventId, tenantId: input.tenantId },
+        });
+        if (!event) {
+          throw new NotFoundException(
+            'ScheduleEvent not found or not in tenant',
+          );
+        }
 
-    const existing = await this.sessionRepo.findOne({
-      where: {
-        tenantId: input.tenantId,
-        scheduleEventId: input.scheduleEventId,
-        sessionDate: input.sessionDate,
-      },
-    });
+        const existing = await em.findOne(AttendanceSession, {
+          where: {
+            tenantId: input.tenantId,
+            scheduleEventId: input.scheduleEventId,
+            sessionDate: input.sessionDate,
+          },
+        });
+        if (existing) {
+          // Idempotent: roster + version korunur, yeniden oluşturulmaz.
+          this.logger.log(
+            JSON.stringify({
+              event: 'attendance.session.already_exists',
+              tenantId: input.tenantId,
+              sessionId: existing.id,
+            }),
+          );
+          return existing;
+        }
 
-    if (existing) {
-      // Idempotent: roster + version korunur, yeniden oluşturulmaz.
-      this.logger.log(
-        JSON.stringify({
-          event: 'attendance.session.already_exists',
+        // AC-2 (#265): oturum YALNIZCA yayınlanmış bir schedule sürümünden
+        // türer. Yayın durumu ScheduleEvent üzerinde değil ScheduleVersion
+        // üzerindedir (status + published_at + unpublished_at).
+        const version = await em.findOne(ScheduleVersion, {
+          where: { id: event.versionId, tenantId: input.tenantId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!version) {
+          throw new NotFoundException('Schedule version not found for event');
+        }
+        if (
+          version.status !== ScheduleVersionStatus.PUBLISHED ||
+          !version.publishedAt ||
+          version.unpublishedAt
+        ) {
+          throw new ForbiddenException(
+            'AttendanceSession can only be created from a published schedule occurrence',
+          );
+        }
+
+        const session = em.create(AttendanceSession, {
           tenantId: input.tenantId,
-          sessionId: existing.id,
-        }),
-      );
-      return existing;
-    }
-
-    // AC-2 (#265): oturum YALNIZCA yayınlanmış bir schedule sürümünden türer.
-    // Yayın durumu ScheduleEvent üzerinde değil ScheduleVersion üzerindedir
-    // (status + published_at + unpublished_at).
-    const version = await this.versionRepo.findOne({
-      where: { id: event.versionId, tenantId: input.tenantId },
-    });
-    if (!version) {
-      throw new NotFoundException('Schedule version not found for event');
-    }
-    if (
-      version.status !== ScheduleVersionStatus.PUBLISHED ||
-      !version.publishedAt ||
-      version.unpublishedAt
-    ) {
-      throw new ForbiddenException(
-        'AttendanceSession can only be created from a published schedule occurrence',
-      );
-    }
-
-    const session = this.sessionRepo.create({
-      tenantId: input.tenantId,
-      // branchId istemciden DEĞİL, ScheduleEvent'ten alınır (server-authoritative).
-      branchId: event.branchId,
-      scheduleEventId: input.scheduleEventId,
-      teacherId: event.teacherId,
-      studentGroupId: event.studentGroupId,
-      courseId: event.courseId,
-      roomId: event.roomId,
-      sessionDate: input.sessionDate,
-      rosterSnapshot: input.studentIds,
-      status: AttendanceSessionStatus.PUBLISHED,
-      version: 1,
-    });
-    const saved = await this.sessionRepo.save(session);
-    this.logger.log(
-      JSON.stringify({
-        event: 'attendance.session.created',
-        tenantId: input.tenantId,
-        sessionId: saved.id,
-        rosterSize: input.studentIds.length,
-        actorId: ctx?.userId ?? input.actorId ?? 'system',
-      }),
+          // branchId istemciden DEĞİL, ScheduleEvent'ten alınır (server-authoritative).
+          branchId: event.branchId,
+          scheduleEventId: input.scheduleEventId,
+          teacherId: event.teacherId,
+          studentGroupId: event.studentGroupId,
+          courseId: event.courseId,
+          roomId: event.roomId,
+          sessionDate: input.sessionDate,
+          rosterSnapshot: input.studentIds,
+          status: AttendanceSessionStatus.PUBLISHED,
+          version: 1,
+        });
+        const inserted = await em.save(session);
+        this.logger.log(
+          JSON.stringify({
+            event: 'attendance.session.created',
+            tenantId: input.tenantId,
+            sessionId: inserted.id,
+            rosterSize: input.studentIds.length,
+            actorId: ctx?.userId ?? input.actorId ?? 'system',
+          }),
+        );
+        return inserted;
+      },
     );
     return saved;
   }
