@@ -33,12 +33,14 @@ describe('permission seed', () => {
     'role:assign',
     'role:remove',
     'audit_log:security:read',
+    // #259: retention kırpma koşusu yıkıcıdır → yalnız tenant_admin.
+    'audit_log:retention:run',
     'attendance:unlock',
   ];
 
-  it('contains exactly 116 unique permissions', () => {
-    expect(permissionCodes).toHaveLength(116);
-    expect(permissionSet.size).toBe(116);
+  it('contains exactly 117 unique permissions', () => {
+    expect(permissionCodes).toHaveLength(117);
+    expect(permissionSet.size).toBe(117);
   });
 
   it('uses colon-delimited seeded permission keys', () => {

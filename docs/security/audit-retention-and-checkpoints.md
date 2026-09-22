@@ -58,3 +58,29 @@ kırpmak ve kırpılan geçmişin bütünlüğünü kanıtlanabilir tutmak.
   doğrulaması genesis'ten beklenen duruma döner; kırpılmış satırlar geri gelmez
   (geri dönüşü yoktur — bu yüzden prune yalnız saklama süresi dolmuş prefix
   üzerinde çalışır).
+
+## HTTP yüzeyi (`/api/v1/audit`)
+
+| Route | Yetki | Amaç |
+|---|---|---|
+| `GET /api/v1/audit/logs` | `audit_log:read` | Tenant-scoped, KVKK maskeli okuma (`entityType`, `entityId`, `actorUserId`, `actions`, `from`, `to`, `limit`, `offset`) |
+| `GET /api/v1/audit/verify` | `audit_log:operations:read` | Zincir doğrulama; `expectedHeadHash` / `expectedLastSequence` ile kırpma tespiti |
+| `POST /api/v1/audit/retention/plan` | `audit_log:retention:run` | Salt okunur kırpma planı (hangi prefix, kaç satır) |
+| `POST /api/v1/audit/retention/run` | `audit_log:retention:run` | Kırpma koşusu; `{ reason, dryRun?, maxRows? }` — **varsayılan `dryRun: true`** |
+
+Sözleşme notları:
+
+- Tüm route'lar `AuthGuard('jwt')` + `TenantScopeGuard` altındadır ve her route
+  `@Permissions` taşır (metadata'sız route global guard'ları atlar → fail-open;
+  bu yüzden `test/rbac/controller-enforcement-consistency.spec.ts` ile zorunlu).
+- `logs` tenant sınırının dışına çıkamaz; PII alanları maskelenir ve okuma
+  işlemi `dataprotection.export.redacted` olarak **redactionReceipt** ile
+  audit'lenir (KVKK madde 12 teknik tedbir kanıtı).
+- `verify` varsa son retention checkpoint'inden başlar; checkpoint yoksa
+  genesis'ten doğrular. Sonuç `valid`, `reason`, `checkedRows`,
+  `lastCheckpoint`, `startedFromCheckpoint` alanlarını döner.
+- `retention/run` yıkıcıdır: yalnız `tenant_admin` (yeni izin
+  `audit_log:retention:run`), `reason` zorunlu ve `dryRun` varsayılan **true**.
+- Parametreler fail-closed doğrulanır (UUID/hash/ISO tarih/aralık); geçersiz
+  girdi `400` döner.
+
