@@ -54,7 +54,7 @@ kanıtla bağlanıyor.
 | `npm run test:e2e` (yerel, DB yok) | FAIL closed — `E2eEnvironmentError` (beklenen) |
 | `npm run test:e2e` (CI, fresh DB) | CI'da çalışacak — run URL aşağıda |
 
-## KVKK / audit etkisi
+## KVKK/audit etkisi
 İşlenen veri yalnız **sentetik referans fixture**'dır (`ops.s0a1@qa.invalid`, `teacher.s0a1@qa.invalid`,
 env'den gelen sentetik parola); gerçek kişisel veri (öğrenci/veli iletişimi, sağlık/rehberlik notu)
 işlenmez ve yazılmaz. Acceptance kapsamında yeni audit kaydı üretilmez, audit tabloları seed edilmez.
