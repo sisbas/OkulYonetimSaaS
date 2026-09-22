@@ -49,6 +49,23 @@ export class AttendanceRecord {
   @Column({ name: 'notes', type: 'text', nullable: true })
   notes!: string | null;
 
+  /**
+   * Kontrollü düzeltme (AC-4, #265). Kilitli oturumda yapılan her düzeltme
+   * kapalı sözlükten bir gerekçe kodu, sunucu atamalı aktör ve zaman damgası
+   * taşır; `correctionCount` düzeltme dizisini denetlenebilir kılar.
+   */
+  @Column({ name: 'correction_reason_code', type: 'varchar', length: 40, nullable: true })
+  correctionReasonCode!: string | null;
+
+  @Column({ name: 'corrected_by_id', type: 'uuid', nullable: true })
+  correctedById!: string | null;
+
+  @Column({ name: 'corrected_at', type: 'timestamptz', nullable: true })
+  correctedAt!: Date | null;
+
+  @Column({ name: 'correction_count', type: 'integer', default: 0 })
+  correctionCount!: number;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

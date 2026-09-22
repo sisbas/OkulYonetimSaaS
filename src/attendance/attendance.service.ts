@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AttendanceRecord, AttendanceStatus } from './attendance.entity';
-import { redactValue } from '../kvkk/redaction-registry';
+import { redactAttendanceNotes } from './attendance-notes';
 import { RequestContext } from '../common/context/request-context';
 
 export interface MarkAttendanceInput {
@@ -37,7 +37,9 @@ export class AttendanceService {
   ) {}
 
   async mark(input: MarkAttendanceInput, ctx?: RequestContext): Promise<AttendanceRecord> {
-    const notes = input.notes ?? null;
+    // KVKK (AC-5, #265): serbest not yazma yolunda maskelenir; ham metin
+    // asla `attendance_records.notes` alanına yazılmaz.
+    const notes = this.redactNotes(input.notes ?? null);
     const entity = this.repo.create({
       tenantId: input.tenantId,
       studentId: input.studentId,
@@ -93,10 +95,11 @@ export class AttendanceService {
     });
   }
 
-  // KVKK: serbest notu maskeler (kayıt dışı log/export için).
+  /**
+   * KVKK: serbest notu maskeler. Yazma yolu (`mark`) ve okuma/export
+   * katmanları aynı politikayı kullanır — tek kaynak `attendance-notes.ts`.
+   */
   redactNotes(notes: string | null): string | null {
-    if (!notes) return null;
-    const masked = redactValue('notes', notes);
-    return typeof masked === 'string' ? masked : String(masked);
+    return redactAttendanceNotes(notes);
   }
 }
