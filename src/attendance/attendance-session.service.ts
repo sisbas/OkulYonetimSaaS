@@ -41,6 +41,8 @@ export interface CreateSessionInput {
   sessionDate: Date;
   studentIds: string[];
   actorId?: string | null;
+  /** Correlation ID; controller `AttendanceActor.requestId` geçirir (#259). */
+  requestId?: string | null;
 }
 
 export interface MarkSessionRecordInput {
@@ -183,11 +185,15 @@ export class AttendanceSessionService {
           tenantId: input.tenantId,
           actorUserId: ctx?.userId ?? input.actorId ?? null,
           actorSessionId: null,
-          requestId: ctx?.requestId ?? 'unknown',
+          // Correlation: HTTP yolunda aktörün requestId'si taşınır.
+          requestId: ctx?.requestId ?? input.requestId ?? 'unknown',
           entityType: 'attendance',
           entityId: inserted.id,
           result: 'success',
           changedFields: ['openedAt'],
+          // Denetlenebilir kanıt: oluşturulan durum ve roster büyüklüğü (PII yok).
+          newStatus: AttendanceSessionStatus.PUBLISHED,
+          rosterSize: input.studentIds.length,
         });
         this.logger.log(
           JSON.stringify({
@@ -229,6 +235,7 @@ export class AttendanceSessionService {
       if (session.status === AttendanceSessionStatus.LOCKED) {
         return session; // idempotent
       }
+      const previousStatus = session.status;
       session.status = AttendanceSessionStatus.LOCKED;
       session.lockedById = actor.userId;
       session.lockedAt = new Date();
@@ -245,6 +252,9 @@ export class AttendanceSessionService {
         entityId: saved.id,
         result: 'success',
         changedFields: ['status', 'closedAt'],
+        // Denetlenebilir kanıt: hangi durumdan kilitli duruma geçildi.
+        previousStatus,
+        newStatus: AttendanceSessionStatus.LOCKED,
       });
 
       this.logger.log(
@@ -316,6 +326,8 @@ export class AttendanceSessionService {
         entityId: session.id,
         result: 'success',
         changedFields: ['status', 'markedForStudentId'],
+        // Denetlenebilir kanıt: işaretlenen durum (öğrenci kimliği PII değil, UUID).
+        newStatus: input.status,
       });
 
       return saved!;
@@ -395,6 +407,7 @@ export class AttendanceSessionService {
         );
       }
 
+      const previousStatus = record.status;
       record.status = input.status;
       // KVKK: düzeltme notu da yazma yolunda maskelenir (ham metin saklanmaz).
       record.notes = redactAttendanceNotes(input.notes);
@@ -419,6 +432,12 @@ export class AttendanceSessionService {
         entityId: session.id,
         result: 'success',
         changedFields: ['status', 'reasonCode', 'correctionCount'],
+        // Denetlenebilir kanıt (alan adı DEĞİL, değer): hangi gerekçe koduyla,
+        // hangi durumdan hangi duruma ve kaçıncı düzeltmede.
+        reasonCode: input.reasonCode,
+        correctionCount: savedRecord.correctionCount,
+        previousStatus,
+        newStatus: input.status,
       });
 
       // Kanıt logu (PII taşımaz).

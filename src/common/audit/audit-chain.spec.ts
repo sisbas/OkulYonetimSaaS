@@ -123,6 +123,80 @@ describe('audit chain (#259)', () => {
       verifyAuditChain([{ ...records[0], signature: null }], TEST_AUDIT_HMAC_KEY),
     ).toMatchObject({ valid: false, reason: 'missing-signature' });
   });
+
+  it('detects tail truncation against a published head checkpoint (review P1)', () => {
+    const records = chainOf(3);
+    const expectedHeadHash = records[2].entryHash as string;
+
+    // Yalnız ilk iki kayıt kaldı: zincir kendi içinde tutarlı, baş özeti tutmuyor.
+    expect(
+      verifyAuditChain(records.slice(0, 2), {
+        hmacKey: TEST_AUDIT_HMAC_KEY,
+        expectedHeadHash,
+      }),
+    ).toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
+
+    expect(
+      verifyAuditChain(records, { hmacKey: TEST_AUDIT_HMAC_KEY, expectedHeadHash })
+        .valid,
+    ).toBe(true);
+  });
+
+  it('detects a fully deleted chain when a head checkpoint is published', () => {
+    expect(
+      verifyAuditChain([], {
+        hmacKey: TEST_AUDIT_HMAC_KEY,
+        expectedHeadHash: 'a'.repeat(64),
+      }),
+    ).toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
+  });
+
+  it('detects tail truncation via expectedLastSequence', () => {
+    const records = chainOf(3);
+
+    expect(
+      verifyAuditChain(records.slice(0, 2), { expectedLastSequence: 3 }),
+    ).toMatchObject({ valid: false, reason: 'truncated-chain' });
+    expect(verifyAuditChain(records, { expectedLastSequence: 3 }).valid).toBe(true);
+  });
+
+  it('rejects out-of-order or duplicated sequences', () => {
+    const records = chainOf(2);
+
+    // Sıra bozulduğunda hash bağı daha önce kırılır (ilk kayıt genesis bekler).
+    expect(verifyAuditChain([records[1], records[0]])).toMatchObject({
+      valid: false,
+      reason: 'prev-hash-mismatch',
+    });
+
+    // Aynı sequence iki kez: monotonluk ihlali.
+    expect(
+      verifyAuditChain([records[0], { ...records[1], sequence: records[0].sequence }]),
+    ).toMatchObject({ valid: false, reason: 'sequence-order' });
+  });
+
+  it('selects the verification key by signature key id after rotation (review P2)', () => {
+    const rotatedKey = 'rotated-audit-hmac-key-with-32-chars-min';
+    const rotatedRecord = {
+      ...chainOf(1)[0],
+      signature: signAuditEntryHash(
+        chainOf(1)[0].entryHash as string,
+        rotatedKey,
+      ),
+      signatureKeyId: 'key-2027-01',
+    };
+    const keys: Record<string, string> = { 'key-2027-01': rotatedKey };
+
+    expect(
+      verifyAuditChain([rotatedRecord], {
+        resolveHmacKey: (keyId) => (keyId ? keys[keyId] : undefined),
+      }).valid,
+    ).toBe(true);
+
+    expect(
+      verifyAuditChain([rotatedRecord], { resolveHmacKey: () => undefined }),
+    ).toMatchObject({ valid: false, reason: 'unknown-signature-key' });
+  });
 });
 
 describe('audit HMAC key contract (#259)', () => {

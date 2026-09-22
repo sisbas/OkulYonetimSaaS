@@ -132,16 +132,39 @@ export type AuditChainRecordForVerification = Readonly<{
   payload: AuditChainPayload;
 }>;
 
+/** `signature_key_id` -> anahtar eşlemesi (rotasyon sonrası eski kayıtlar için). */
+export type AuditHmacKeyResolver = (keyId: string | null) => string | undefined;
+
+export type AuditChainVerificationOptions = Readonly<{
+  /** Tek anahtar (kısa ömürlü/tek sürümlü doğrulama). */
+  hmacKey?: string;
+  /** Rotasyon sonrası doğru anahtarı `signature_key_id` ile seçer. */
+  resolveHmacKey?: AuditHmacKeyResolver;
+  /**
+   * Yayınlanmış zincir başı (head checkpoint) özeti. Kuyruktan satır
+   * silinmesi zinciri içsel olarak tutarlı bırakır; bu yüzden kırpma ancak
+   * dışarıdan bilinen bir baş özetiyle tespit edilebilir.
+   */
+  expectedHeadHash?: string;
+  /** Beklenen son `sequence`: kuyruk kırpma tespiti. */
+  expectedLastSequence?: number;
+}>;
+
+export type AuditChainVerificationReason =
+  | 'unchained-entry'
+  | 'sequence-order'
+  | 'prev-hash-mismatch'
+  | 'entry-hash-mismatch'
+  | 'missing-signature'
+  | 'unknown-signature-key'
+  | 'signature-mismatch'
+  | 'truncated-chain'
+  | 'head-hash-mismatch';
+
 export type AuditChainVerification = Readonly<{
   valid: boolean;
   brokenAtSequence: number | null;
-  reason:
-    | 'unchained-entry'
-    | 'prev-hash-mismatch'
-    | 'entry-hash-mismatch'
-    | 'missing-signature'
-    | 'signature-mismatch'
-    | null;
+  reason: AuditChainVerificationReason | null;
 }>;
 
 function constantTimeEquals(a: string, b: string): boolean {
@@ -154,13 +177,21 @@ function constantTimeEquals(a: string, b: string): boolean {
 /**
  * Zinciri baştan sona doğrular (`sequence` artan sırada).
  *
- * @param hmacKey verilirse imzalar da doğrulanır (zorunlu hâle gelir).
+ * @param options `string` verilirse tek HMAC anahtarı olarak yorumlanır
+ *   (geriye dönük uyumluluk). Nesne verilirse imza anahtarı seçimi ve
+ *   kuyruk-kırpma (head checkpoint) kontrolleri uygulanır.
  */
 export function verifyAuditChain(
   records: readonly AuditChainRecordForVerification[],
-  hmacKey?: string,
+  options: AuditChainVerificationOptions | string = {},
 ): AuditChainVerification {
+  const opts: AuditChainVerificationOptions =
+    typeof options === 'string' ? { hmacKey: options } : options;
+  const signatureCheckRequested =
+    opts.hmacKey !== undefined || opts.resolveHmacKey !== undefined;
+
   let expectedPrev = AUDIT_CHAIN_GENESIS_HASH;
+  let previousSequence: number | null = null;
 
   for (const record of records) {
     if (!record.entryHash || !record.prevHash) {
@@ -170,6 +201,15 @@ export function verifyAuditChain(
         reason: 'unchained-entry',
       };
     }
+    if (previousSequence !== null && record.sequence <= previousSequence) {
+      return {
+        valid: false,
+        brokenAtSequence: record.sequence,
+        reason: 'sequence-order',
+      };
+    }
+    previousSequence = record.sequence;
+
     if (record.prevHash !== expectedPrev) {
       return {
         valid: false,
@@ -185,7 +225,7 @@ export function verifyAuditChain(
         reason: 'entry-hash-mismatch',
       };
     }
-    if (hmacKey !== undefined) {
+    if (signatureCheckRequested) {
       if (!record.signature) {
         return {
           valid: false,
@@ -193,7 +233,18 @@ export function verifyAuditChain(
           reason: 'missing-signature',
         };
       }
-      const expectedSignature = signAuditEntryHash(record.entryHash, hmacKey);
+      // Rotasyon: imza, kaydın kendi anahtar kimliğiyle doğrulanır.
+      const key = opts.resolveHmacKey
+        ? opts.resolveHmacKey(record.signatureKeyId)
+        : opts.hmacKey;
+      if (key === undefined) {
+        return {
+          valid: false,
+          brokenAtSequence: record.sequence,
+          reason: 'unknown-signature-key',
+        };
+      }
+      const expectedSignature = signAuditEntryHash(record.entryHash, key);
       if (!constantTimeEquals(expectedSignature, record.signature)) {
         return {
           valid: false,
@@ -203,6 +254,29 @@ export function verifyAuditChain(
       }
     }
     expectedPrev = record.entryHash;
+  }
+
+  // Kuyruk kırpma: zincirin tamamı silinirse döngü hiç çalışmaz; bu yüzden
+  // beklenen uzunluk/baş özeti kontrolleri döngüden SONRA yapılır.
+  if (
+    opts.expectedLastSequence !== undefined &&
+    (previousSequence ?? 0) !== opts.expectedLastSequence
+  ) {
+    return {
+      valid: false,
+      brokenAtSequence: previousSequence,
+      reason: 'truncated-chain',
+    };
+  }
+
+  if (opts.expectedHeadHash !== undefined) {
+    if (expectedPrev !== opts.expectedHeadHash) {
+      return {
+        valid: false,
+        brokenAtSequence: previousSequence,
+        reason: 'head-hash-mismatch',
+      };
+    }
   }
 
   return { valid: true, brokenAtSequence: null, reason: null };

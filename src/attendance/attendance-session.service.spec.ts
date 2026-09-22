@@ -496,7 +496,43 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
         entityId: 'sess-new',
         result: 'success',
         changedFields: ['openedAt'],
+        newStatus: 'published',
+        rosterSize: 3,
       }),
+    );
+  });
+
+  it('propagates the request id into the session-open audit (review P2)', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () => publishedVersion());
+
+    await service.createFromPublishedOccurrence({
+      ...baseInput,
+      requestId: 'req-from-actor',
+    });
+
+    expect(audit.write).toHaveBeenCalledWith(
+      em,
+      'attendance.session.opened',
+      expect.objectContaining({ requestId: 'req-from-actor' }),
+    );
+  });
+
+  it('prefers the request context request id over the input request id', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () => publishedVersion());
+
+    await service.createFromPublishedOccurrence(
+      { ...baseInput, requestId: 'req-from-actor' },
+      { requestId: 'req-from-ctx' },
+    );
+
+    expect(audit.write).toHaveBeenCalledWith(
+      em,
+      'attendance.session.opened',
+      expect.objectContaining({ requestId: 'req-from-ctx' }),
     );
   });
 
@@ -564,6 +600,11 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
         actorUserId: 'mgr-1',
         requestId: 'req-test',
         changedFields: ['status', 'reasonCode', 'correctionCount'],
+        // Kanıt: alan adı değil, gerçek değerler (review P1).
+        reasonCode: 'excused_document',
+        correctionCount: 1,
+        previousStatus: 'absent',
+        newStatus: 'excused',
       }),
     );
   });

@@ -107,14 +107,43 @@ describe('AuditLogRepository.insert chain extension (#259)', () => {
   });
 
   it('fails closed when the HMAC key is missing in production', async () => {
-    const previousEnv = { ...process.env };
+    // Repository local/test env ile kurulur; env sonradan production'a çevrilir
+    // (bootstrap doğrulaması ayrı testte ele alınır).
+    const repository = new AuditLogRepository();
     const manager = makeManager([]);
+    const previousEnv = { ...process.env };
     try {
       process.env.NODE_ENV = 'production';
       delete process.env.AUDIT_HMAC_KEY;
       await expect(
-        new AuditLogRepository().insert(manager as never, record),
+        repository.insert(manager as never, record),
       ).rejects.toThrow(/AUDIT_HMAC_KEY is required in production/);
+    } finally {
+      process.env = previousEnv;
+    }
+  });
+
+  it('rejects a production bootstrap with a missing HMAC key (fail-fast at startup)', () => {
+    const previousEnv = { ...process.env };
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.AUDIT_HMAC_KEY;
+      // DI sağlayıcısı uygulama başlangıcında oluşturulur; eksik anahtar
+      // yapılandırması ilk yazımı beklemeden reddedilmelidir.
+      expect(() => new AuditLogRepository()).toThrow(
+        /AUDIT_HMAC_KEY is required in production/,
+      );
+    } finally {
+      process.env = previousEnv;
+    }
+  });
+
+  it('rejects a weak production HMAC key at startup', () => {
+    const previousEnv = { ...process.env };
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.AUDIT_HMAC_KEY = 'weak-key';
+      expect(() => new AuditLogRepository()).toThrow(/too weak/);
     } finally {
       process.env = previousEnv;
     }

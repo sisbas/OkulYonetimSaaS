@@ -54,10 +54,15 @@ export class AttendanceSessionController {
     @Body() body: CreateSessionInput,
   ) {
     const actor = await this.resolveActor(req);
-    return this.sessionService.createFromPublishedOccurrence({
-      ...body,
-      actorId: actor.userId,
-    });
+    return this.sessionService.createFromPublishedOccurrence(
+      {
+        ...body,
+        actorId: actor.userId,
+        // Correlation ID: audit kaydı isteğin izini taşır (#259).
+        requestId: actor.requestId,
+      },
+      req.context,
+    );
   }
 
   @Post(':id/lock')

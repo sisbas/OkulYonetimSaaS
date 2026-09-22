@@ -22,6 +22,13 @@ export type AuditChainWriteResult = Readonly<{
 
 @Injectable()
 export class AuditLogRepository {
+  constructor() {
+    // Fail-closed konfigürasyon kontrolü (#259): bu sağlayıcı uygulama
+    // bootstrap'ında (DI) oluşturulduğu için eksik/zayıf HMAC anahtarı süreci
+    // ilk audit yazımında değil, BAŞLANGIÇTA durdurur.
+    resolveAuditHmacKey();
+  }
+
   /**
    * Audit kaydını zincire ekler (#259).
    *

@@ -173,6 +173,21 @@ export type AttendanceAuditChangedField =
   | 'reasonCode'
   | 'correctionCount'
   | 'sessionVersion';
+
+/**
+ * Attendance audit kanıtı için allowlist'lenmiş SKALER değerler (#259).
+ *
+ * `changedFields` hangi alanların değiştiğini söyler; bu alanlar ise
+ * değişikliğin denetlenebilir kanıtını taşır (ör. düzeltmenin gerekçe kodu).
+ * Hepsi PII taşımaz: kod, sayaç ve durum adları.
+ */
+export type AttendanceAuditValueEvidence = Readonly<{
+  reasonCode?: string;
+  correctionCount?: number;
+  previousStatus?: string;
+  newStatus?: string;
+  rosterSize?: number;
+}>;
 export type NotificationAuditChangedField =
   | 'channel'
   | 'status'
@@ -242,7 +257,8 @@ export type TeacherAuditMetadata = CommonSuccessAuditMetadata<'teacher', Teacher
     branchId: string;
   }>;
 
-export type AttendanceAuditMetadata = CommonSuccessAuditMetadata<'attendance', AttendanceAuditChangedField>;
+export type AttendanceAuditMetadata = CommonSuccessAuditMetadata<'attendance', AttendanceAuditChangedField> &
+  AttendanceAuditValueEvidence;
 
 export type NotificationAuditMetadata = CommonSuccessAuditMetadata<'notification', NotificationAuditChangedField>;
 
@@ -313,6 +329,12 @@ export type PersistableAuditRecord = Readonly<{
     changedFields: readonly string[];
     branchId?: string;
     redactionReceipt?: RedactionReceipt;
+    /**
+     * Allowlist'lenmiş skaler kanıt değerleri (ör. `reasonCode`,
+     * `correctionCount`). Serbest metin/PII taşımaz; policy tarafından
+     * `allowedValueKeys` ile sınırlandırılır.
+     */
+    valueEvidence?: Readonly<Record<string, string | number | boolean>>;
   }>;
 }>;
 

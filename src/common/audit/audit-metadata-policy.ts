@@ -107,6 +107,12 @@ type AuditMetadataPolicy = Readonly<{
     | 'notification';
   allowedKeys: readonly string[];
   allowedChangedFields: readonly string[];
+  /**
+   * `changedFields` yanında taşınabilecek SKALER kanıt anahtarları (#259).
+   * Yalnız string/number/boolean kabul edilir; nesne/dizi reddedilir, böylece
+   * allowlist dışı serbest metin veya PII bloğu audit'e sokulamaz.
+   */
+  allowedValueKeys?: readonly string[];
   branchScoped: boolean;
   actorRequired?: boolean;
   resultAllowlist: readonly AuditResultValue[];
@@ -175,6 +181,15 @@ const ATTENDANCE_POLICY: AuditMetadataPolicy = {
   entityType: 'attendance',
   allowedKeys: COMMON_KEYS,
   allowedChangedFields: ATTENDANCE_CHANGED_FIELDS,
+  // Skaler kanıt: hangi gerekçe koduyla, hangi durumdan hangi duruma, kaç
+  // öğrenciyle. Serbest metin yok (PII taşımaz).
+  allowedValueKeys: [
+    'reasonCode',
+    'correctionCount',
+    'previousStatus',
+    'newStatus',
+    'rosterSize',
+  ],
   branchScoped: false,
   actorRequired: true,
   resultAllowlist: ['success'],
@@ -345,10 +360,21 @@ function asPlainRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function assertExactKeys(metadata: Record<string, unknown>, allowedKeys: readonly string[]): void {
+/**
+ * Metadata anahtarlarını doğrular: `requiredKeys` zorunlu, `optionalKeys`
+ * yalnız izinli (opsiyonel). Fazladan anahtar unknown sayılır ve reddedilir.
+ */
+function assertExactKeys(
+  metadata: Record<string, unknown>,
+  requiredKeys: readonly string[],
+  optionalKeys: readonly string[] = [],
+): void {
+  const allowedKeys = [...requiredKeys, ...optionalKeys];
   const actualKeys = Object.keys(metadata);
   const unknownKeys = actualKeys.filter((key) => !allowedKeys.includes(key));
-  const missingKeys = allowedKeys.filter((key) => !Object.prototype.hasOwnProperty.call(metadata, key));
+  const missingKeys = requiredKeys.filter(
+    (key) => !Object.prototype.hasOwnProperty.call(metadata, key),
+  );
 
   if (unknownKeys.length > 0) {
     throw new TypeError(`Audit metadata contains non-allowlisted keys: ${unknownKeys.sort().join(', ')}`);
@@ -442,6 +468,33 @@ function assertRedactionReceipt(value: unknown): RedactionReceipt {
   };
 }
 
+/**
+ * Allowlist'lenmiş skaler kanıt anahtarlarını doğrular ve döndürür (#259).
+ * Yalnız string/number/boolean kabul edilir; nesne/dizi ile serbest metin
+ * bloğu audit'e sokulamaz.
+ */
+function assertValueEvidence(
+  metadata: Record<string, unknown>,
+  allowedValueKeys: readonly string[],
+): Record<string, string | number | boolean> {
+  const evidence: Record<string, string | number | boolean> = {};
+  for (const key of allowedValueKeys) {
+    if (!Object.prototype.hasOwnProperty.call(metadata, key)) continue;
+    const value = metadata[key];
+    const isScalar =
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean';
+    if (!isScalar) {
+      throw new TypeError(
+        `Audit value evidence '${key}' must be a string, number or boolean`,
+      );
+    }
+    evidence[key] = value;
+  }
+  return evidence;
+}
+
 export function validateTransactionalAuditMetadata<E extends TransactionalAuditEventName>(
   eventName: E,
   metadataInput: AuditMetadataByEvent[E] | unknown,
@@ -449,7 +502,8 @@ export function validateTransactionalAuditMetadata<E extends TransactionalAuditE
   assertKnownEventName(eventName);
   const policy = POLICY_BY_EVENT[eventName];
   const metadata = asPlainRecord(metadataInput);
-  assertExactKeys(metadata, policy.allowedKeys);
+  const allowedValueKeys = policy.allowedValueKeys ?? [];
+  assertExactKeys(metadata, policy.allowedKeys, allowedValueKeys);
 
   if (metadata.schemaVersion !== 1) throw new TypeError('schemaVersion must be 1');
   if (metadata.entityType !== policy.entityType) throw new TypeError(`entityType must be ${policy.entityType}`);
@@ -487,6 +541,7 @@ export function validateTransactionalAuditMetadata<E extends TransactionalAuditE
   const redactionReceipt = policy.redactionReceiptRequired
     ? assertRedactionReceipt(metadata.redactionReceipt)
     : undefined;
+  const valueEvidence = assertValueEvidence(metadata, allowedValueKeys);
 
   return {
     tenantId,
@@ -502,6 +557,7 @@ export function validateTransactionalAuditMetadata<E extends TransactionalAuditE
       changedFields,
       ...(branchId ? { branchId } : {}),
       ...(redactionReceipt ? { redactionReceipt } : {}),
+      ...(Object.keys(valueEvidence).length > 0 ? { valueEvidence } : {}),
     },
   };
 }
