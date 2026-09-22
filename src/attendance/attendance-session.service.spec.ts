@@ -98,6 +98,13 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
           ? sessionRepo.save(entity)
           : recordRepo.save(entity),
       ),
+
+      // Session satırı `rosterSnapshot` taşır; attendance record taşımaz.
+      save: jest.fn(async (entity: unknown) =>
+        entity && typeof entity === 'object' && 'rosterSnapshot' in entity
+          ? sessionRepo.save(entity)
+          : recordRepo.save(entity),
+      ),
     };
     sessionRepo.manager = {
       transaction: jest.fn(async (cb: (m: unknown) => Promise<unknown>) =>
@@ -624,4 +631,5 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
       }),
     ).rejects.toThrow(/audit sink unavailable/);
   });
+
 });

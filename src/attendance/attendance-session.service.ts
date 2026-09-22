@@ -35,6 +35,7 @@ import {
   AttendanceAuditPort,
 } from './attendance-audit.adapter';
 
+
 export interface CreateSessionInput {
   tenantId: string;
   scheduleEventId: string;
@@ -441,6 +442,122 @@ export class AttendanceSessionService {
       });
 
       // Kanıt logu (PII taşımaz).
+      this.logger.log(
+        JSON.stringify({
+          event: 'attendance.record.corrected',
+          tenantId: actor.tenantId,
+          sessionId: input.sessionId,
+          studentId: input.studentId,
+          status: input.status,
+          reasonCode: input.reasonCode,
+          correctionCount: savedRecord.correctionCount,
+          actorId: actor.userId,
+          sessionVersion: savedSession.version,
+        }),
+      );
+
+      return { record: savedRecord, sessionVersion: savedSession.version };
+    }
+    const entity = this.recordRepo.create({
+      tenantId: actor.tenantId,
+      studentId: input.studentId,
+      sessionId: input.sessionId,
+      status: input.status,
+      markedById: actor.userId,
+      // KVKK (AC-5, #265): yazma yolunda maskeleme — ham not saklanmaz.
+      notes: redactAttendanceNotes(input.notes),
+    });
+    await this.recordRepo.upsert(entity, {
+      conflictPaths: ['tenantId', 'sessionId', 'studentId'],
+    });
+  }
+
+  /**
+   * Kontrollü düzeltme (AC-4, #265).
+   *
+   * Kural (fail-closed):
+   * - Düzeltme YALNIZCA kilitli bir oturumda yapılır; kilit açıkken `markRecord`
+   *   yolu kullanılır (submit → lock → controlled correction).
+   * - Yetki: oturum sahibi öğretmen DEĞİL, yalnız gözetim rolleri düzeltir
+   *   (görevler ayrılığı). Öğretmen denemesi 403 ile reddedilir.
+   * - Gerekçe kapalı sözlükten bir koddur (`ATTENDANCE_CORRECTION_REASON_CODES`);
+   *   serbest metin gerekiyorsa `notes` alanı kullanılır ve KVKK maskesinden geçer.
+   * - Optimistic concurrency: `expectedVersion` oturum version'ıyla karşılaştırılır;
+   *   her başarılı düzeltme version'ı 1 artırır (düzeltme dizisi denetlenebilir).
+   * - Oturum satırı `pessimistic_write` ile kilitlenir → eşzamanlı düzeltmeler
+   *   serialize olur, version kontrolü güvenilir kalır.
+   */
+  async correctRecord(
+    actor: AttendanceActor,
+    input: CorrectSessionRecordInput,
+  ): Promise<AttendanceCorrectionResult> {
+    if (!isAttendanceCorrectionReasonCode(input.reasonCode)) {
+      throw new BadRequestException(
+        `Geçersiz düzeltme gerekçe kodu: ${String(input.reasonCode)}`,
+      );
+    }
+
+    return this.sessionRepo.manager.transaction(async (em: EntityManager) => {
+      const session = await em.findOne(AttendanceSession, {
+        where: { id: input.sessionId, tenantId: actor.tenantId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!session) {
+        throw new NotFoundException('AttendanceSession not found');
+      }
+      // BOLA (fail-closed): öğretmen yalnız kendi dersinin oturumuna dokunabilir.
+      assertAttendanceSessionAccess(actor, session);
+
+      // Görevler ayrılığı: kontrollü düzeltme gözetim sorumluluğudur.
+      if (!hasAttendanceOversight(actor)) {
+        throw new ForbiddenException(
+          'Kontrollü düzeltme yalnız gözetim rolleri tarafından yapılabilir',
+        );
+      }
+      if (session.status !== AttendanceSessionStatus.LOCKED) {
+        throw new ConflictException(
+          'Session is not locked; corrections require a locked session',
+        );
+      }
+      if (session.version !== input.expectedVersion) {
+        throw new ConflictException(
+          'Optimistic concurrency conflict: version mismatch',
+        );
+      }
+      // Immutable roster snapshot: kapsam dışındaki öğrenci düzeltilemez.
+      if (!session.rosterSnapshot?.includes(input.studentId)) {
+        throw new ForbiddenException(
+          'Öğrenci bu yoklama oturumunun roster listesinde değil',
+        );
+      }
+
+      const record = await em.findOne(AttendanceRecord, {
+        where: {
+          tenantId: actor.tenantId,
+          sessionId: input.sessionId,
+          studentId: input.studentId,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!record) {
+        throw new NotFoundException(
+          'AttendanceRecord not found for this session/student',
+        );
+      }
+
+      record.status = input.status;
+      // KVKK: düzeltme notu da yazma yolunda maskelenir (ham metin saklanmaz).
+      record.notes = redactAttendanceNotes(input.notes);
+      record.correctionReasonCode = input.reasonCode;
+      record.correctedById = actor.userId;
+      record.correctedAt = new Date();
+      record.correctionCount = (record.correctionCount ?? 0) + 1;
+      const savedRecord = await em.save(record);
+
+      session.version += 1;
+      const savedSession = await em.save(session);
+
+      // Audit (durable audit #259 kapsamındadır; PII taşımaz).
       this.logger.log(
         JSON.stringify({
           event: 'attendance.record.corrected',
