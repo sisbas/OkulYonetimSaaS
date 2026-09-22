@@ -12,9 +12,9 @@
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 
-import { RequestContext, RequestWithContext } from '../common/context/request-context';
-import { Permissions } from '../common/decorators/permissions.decorator';
-import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
+import { RequestContext, RequestWithContext } from '../context/request-context';
+import { Permissions } from '../decorators/permissions.decorator';
+import { TenantScopeGuard } from '../tenant/tenant-scope.guard';
 import { AuditQueryService, AuditQueryActor } from './audit-query.service';
 import {
   AuditRetentionService,
@@ -97,7 +97,7 @@ function parseActions(value: string | undefined): AuditActionFilter[] | undefine
       throw new BadRequestException(`invalid action filter: ${part}`);
     }
   }
-  return parts;
+  return parts as AuditActionFilter[];
 }
 
 // Kimlik doğrulama (JWT) + kiracı sınırı; yetki her route'ta @Permissions ile
