@@ -1,7 +1,7 @@
 # Evidence — S0-A1 (#269)
 
-- Baz main: `43b616363a5d1d1d4cab5057e666f4e7ae3a2c1e` · PR: #353 · Kanıtlanan head: `766a1c3496418dcf4c217e866838977b5bbb8574` · Tarih: 2026-09-22
-  (Bu dosyanın eklendiği commit docs-only'dir; ağaç farkı yalnız `artifacts/` altındadır —
+- Baz main: `43b616363a5d1d1d4cab5057e666f4e7ae3a2c1e` · PR: #353 · Doğrulanan kod head'i: `0b795b965eb2395372964dd709fa46ddc31bc9d5` (RCA_REPAIR sonrası) · Tarih: 2026-09-22
+  (Bu dosyanın son revizyonu docs-only'dir; yürütülebilir ağaç farkı `artifacts/` ile sınırlıdır —
   güncel head'in check URL'leri PR #353 gövdesindeki "CI run referansı" bölümündedir.)
 - Claim: `P0 browser E2E and artifact evidence` check'i, iş sonucunu SQL ile seed eden ve UI'yi
   `page.evaluate(fetch)` ile atlayan bir script'ten ayrıldı; artık **referans-fixture-only** seed eden,
@@ -99,7 +99,22 @@ migration/DB etkisi yoktur (`git revert <sha>` yeterlidir).
 | Data/DB | GO (koşullu) | Şema/migration yok; seeder referans-only ve `assertReferenceWrite` ile kilitli |
 | QA/Acceptance | HOLD → GO | Fresh-DB journey kanıtı CI run URL'ine bağlanana kadar HOLD |
 
-## CI (head `766a1c3496418dcf4c217e866838977b5bbb8574` — tümü `success`)
+## Bağımsız review bulguları ve düzeltmeler (RCA_REPAIR)
+PR #353'te `chatgpt-codex-connector` 3 geçerli bulgu açtı; hiçbiri "kapatıldı" denilerek geçiştirilmedi —
+her biri düzeltildi, `fixed:0b795b965eb2395372964dd709fa46ddc31bc9d5` kanıtıyla yanıtlandı, sonra kapatıldı.
+
+| # | Bulgu | Kök neden | Düzeltme | Kanıt |
+|---|---|---|---|---|
+| P1 | İşaret her dosyayı istisna sayıyor | `source.includes(marker)` → ihlal, dosyaya işaret satırı eklenerek susturulabilirdi (fail-open) | İstisna yalnız `LEGACY_EXCLUDED_FILE` için; başka dosyada işaret = ihlal (`isMarkerMisuse`); gerçek dosya provası | guard 11/11; "P1 — işaret eklenerek ihlal susturulamaz" testi |
+| P2 | Hazır olma yabancı sürece bağlanabilir | `healthIsReady()` portta yanıt veren herhangi bir süreci kabul ediyordu | Örnek öncesi port-boş kanıtı (`assertRuntimePortOwnedByHarness`), hazır olma yalnız kendi çocuk süreç ayaktayken, `report.json`→`backend.pid` | negatif prova: yabancı dinleyici → `RuntimeOwnershipError`; CI `backend.pid=3206` |
+| P2 | "Taranmış" görünen boş artefakt alanı | `artifacts: []` hiç taranmadan yazılıyordu (kozmetik yeşil) | Gerçek `artifact-scan.ts`; `report.json` yazıldıktan sonra kendisi de taranır; bulgu → verdict FAIL + suite kırmızı | CI `leakScan.textArtifacts.textFiles={"backend.log":[]}`, `findingCount=0` |
+
+Düzeltme head'i `0b795b9` için `WP-07F P0 Browser E2E` success:
+https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35782140079
+`PR Governance` (thread resolution dahil) success:
+https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35782475673
+
+
 | Check | Sonuç | Run URL |
 |---|---|---|
 | WP-07F P0 Browser E2E | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765140 |
