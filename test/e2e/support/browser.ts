@@ -92,6 +92,11 @@ export async function createUiSession(input: Readonly<{
   fs.mkdirSync(input.screenshotDir, { recursive: true });
 
   const page = await input.browser.newPage();
+  // HTTP cache KAPALI: aynı URL'e yapılan tekrar ziyaretler 304 (Not Modified)
+  // dönerse "canlı 200" iddiası yanlış negatif üretir (ilk CI koşusunda
+  // gözlendi: Expected 200 / Received 304). Kabul kanıtı her seferinde gerçek
+  // bir ağ yanıtına bağlanmalıdır.
+  await page.setCacheEnabled(false);
   await page.setViewport({ width: 1440, height: 900 });
   const consoleErrors: string[] = [];
   page.on('console', (message) => {

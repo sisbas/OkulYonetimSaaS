@@ -129,8 +129,14 @@ export async function startRuntimeServer(input: StartRuntimeServerInput): Promis
         logPath,
         pid: child.pid ?? -1,
         stop: async () => {
+          child.stdout.unpipe(logStream);
+          child.stderr.unpipe(logStream);
           await stopProcessTree(child);
-          logStream.end();
+          // Açık handle bırakmamak için akış 'finish' olana kadar beklenir;
+          // aksi hâlde jest "did not exit one second after the test run" uyarır.
+          await new Promise<void>((resolve) => logStream.end(() => resolve()));
+          child.stdout.destroy();
+          child.stderr.destroy();
         },
       });
     }
@@ -138,7 +144,9 @@ export async function startRuntimeServer(input: StartRuntimeServerInput): Promis
   }
 
   await stopProcessTree(child);
-  logStream.end();
+  await new Promise<void>((resolve) => logStream.end(() => resolve()));
+  child.stdout.destroy();
+  child.stderr.destroy();
   throw new Error(
     `Nest backend did not expose /api/v1/health within ${readyTimeoutMs}ms. Inspect ${logPath}.`,
   );

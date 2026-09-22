@@ -258,7 +258,11 @@ describe('S0-A1 acceptance — runtime shell auth (fresh DB, real backend, real 
   });
 
   it('hatalı kimlik bilgisi fail-closed ve non-enumerating davranıyor', async () => {
-    expect(await session!.navigateToRuntime()).toBe(200);
+    // Yeniden yükleme gerçek bir ağ yanıtı olmalıdır (cache kapalı); nesne
+    // karşılaştırması hata hâlinde gözlenen durumu rapor eder.
+    expect({ runtimeReloadStatus: await session!.navigateToRuntime() }).toEqual({
+      runtimeReloadStatus: 200,
+    });
     await session!.typeInto('#email', fixture.opsUser.email);
     await session!.typeInto('#password', `${fixture.opsUser.credential}-wrong`);
 
