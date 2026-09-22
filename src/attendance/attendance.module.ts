@@ -8,6 +8,7 @@ import { AttendanceSessionController } from './attendance.controller';
 import { TeacherOwnLessonGuard } from './teacher-own-lesson.guard';
 import { AttendanceAccessService } from './attendance-access.service';
 import { ScheduleEvent } from '../schedules/schedule-event.entity';
+import { ScheduleVersion } from '../schedules/schedule-version.entity';
 import { TeachersModule } from '../teachers/teachers.module';
 
 @Module({
@@ -16,6 +17,7 @@ import { TeachersModule } from '../teachers/teachers.module';
       AttendanceRecord,
       AttendanceSession,
       ScheduleEvent,
+      ScheduleVersion,
     ]),
     TeachersModule,
   ],

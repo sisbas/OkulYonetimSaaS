@@ -8,6 +8,10 @@ import {
 import { AttendanceSession } from './attendance-session.entity';
 import { AttendanceRecord } from './attendance.entity';
 import { ScheduleEvent } from '../schedules/schedule-event.entity';
+import {
+  ScheduleVersion,
+  ScheduleVersionStatus,
+} from '../schedules/schedule-version.entity';
 import { AttendanceSessionStatus } from './attendance-session.entity';
 import { AttendanceActor } from './attendance-access';
 
@@ -19,6 +23,10 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
   let eventRepo: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let recordRepo: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let versionRepo: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let em: any;
 
   const makeRepo = () => ({
     findOne: jest.fn(),
@@ -33,50 +41,145 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
 
   const baseInput: CreateSessionInput = {
     tenantId: 't1',
-    branchId: 'b1',
     scheduleEventId: 'evt-1',
     sessionDate: new Date('2026-09-01'),
     studentIds: ['s1', 's2', 's3'],
   };
 
+  const publishedEvent = (overrides: Record<string, unknown> = {}) => ({
+    id: 'evt-1',
+    tenantId: 't1',
+    branchId: 'b1',
+    versionId: 'ver-1',
+    teacherId: 'teach-1',
+    studentGroupId: 'grp-1',
+    courseId: 'c1',
+    roomId: 'r1',
+    ...overrides,
+  });
+
+  const publishedVersion = (overrides: Record<string, unknown> = {}) => ({
+    id: 'ver-1',
+    tenantId: 't1',
+    status: ScheduleVersionStatus.PUBLISHED,
+    publishedAt: new Date('2026-08-31T10:00:00Z'),
+    unpublishedAt: null,
+    ...overrides,
+  });
+
   beforeEach(async () => {
     sessionRepo = makeRepo();
     eventRepo = makeRepo();
     recordRepo = makeRepo();
+    versionRepo = makeRepo();
+    // Transaction içi EntityManager mock'u: entity tipine göre ilgili repo
+    // mock'unun jest.fn'lerine devreder (mevcut test beklentileri korunur).
+    em = {
+      findOne: jest.fn(async (entity: unknown, opts: unknown) => {
+        if (entity === ScheduleEvent) return eventRepo.findOne(opts);
+        if (entity === ScheduleVersion) return versionRepo.findOne(opts);
+        return sessionRepo.findOne(opts);
+      }),
+      create: jest.fn((_entity: unknown, data: unknown) =>
+        sessionRepo.create(data),
+      ),
+      save: jest.fn(async (entity: unknown) => sessionRepo.save(entity)),
+    };
+    sessionRepo.manager = {
+      transaction: jest.fn(async (cb: (m: unknown) => Promise<unknown>) =>
+        cb(em),
+      ),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AttendanceSessionService,
         { provide: getRepositoryToken(AttendanceSession), useValue: sessionRepo },
-        { provide: getRepositoryToken(ScheduleEvent), useValue: eventRepo },
         { provide: getRepositoryToken(AttendanceRecord), useValue: recordRepo },
       ],
     }).compile();
     service = moduleRef.get(AttendanceSessionService);
   });
 
-  it('createFromPublishedOccurrence derives session from event + immutable roster', async () => {
-    eventRepo.findOne = jest.fn(async () => ({
-      id: 'evt-1',
-      tenantId: 't1',
-      teacherId: 'teach-1',
-      studentGroupId: 'grp-1',
-      courseId: 'c1',
-      roomId: 'r1',
-    }));
+  it('createFromPublishedOccurrence derives session from a published event + immutable roster', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
     sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () => publishedVersion());
     const sess = await service.createFromPublishedOccurrence(baseInput);
     expect(sess.teacherId).toBe('teach-1');
+    // branchId istemciden değil, ScheduleEvent'ten gelir (server-authoritative).
+    expect(sess.branchId).toBe('b1');
     expect(sess.rosterSnapshot).toEqual(['s1', 's2', 's3']);
     expect(sess.status).toBe(AttendanceSessionStatus.PUBLISHED);
     expect(sessionRepo.save).toHaveBeenCalled();
   });
 
-  it('createFromPublishedOccurrence is idempotent (returns existing)', async () => {
-    eventRepo.findOne = jest.fn(async () => ({ id: 'evt-1', tenantId: 't1' }));
+  it('createFromPublishedOccurrence locks the ScheduleVersion row (pessimistic_write) inside one transaction', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () => publishedVersion());
+    await service.createFromPublishedOccurrence(baseInput);
+    // Yayın kontrolü + insert tek transaction'da (race-condition koruması, #265).
+    expect(sessionRepo.manager.transaction).toHaveBeenCalled();
+    expect(em.findOne).toHaveBeenCalledWith(ScheduleVersion, {
+      where: { id: 'ver-1', tenantId: 't1' },
+      lock: { mode: 'pessimistic_write' },
+    });
+  });
+
+  it('createFromPublishedOccurrence rejects a DRAFT schedule version (AC-2)', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () =>
+      publishedVersion({ status: ScheduleVersionStatus.DRAFT, publishedAt: null }),
+    );
+    await expect(
+      service.createFromPublishedOccurrence(baseInput),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(sessionRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('createFromPublishedOccurrence rejects an unpublished schedule version (AC-2)', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () =>
+      publishedVersion({
+        status: ScheduleVersionStatus.UNPUBLISHED,
+        unpublishedAt: new Date('2026-09-05T10:00:00Z'),
+      }),
+    );
+    await expect(
+      service.createFromPublishedOccurrence(baseInput),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(sessionRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('createFromPublishedOccurrence rejects when the schedule version cannot be resolved (fail-closed)', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () => null);
+    await expect(
+      service.createFromPublishedOccurrence(baseInput),
+    ).rejects.toThrow(/not found/);
+    expect(sessionRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('createFromPublishedOccurrence rejects an empty roster snapshot (immutable roster)', async () => {
+    await expect(
+      service.createFromPublishedOccurrence({ ...baseInput, studentIds: [] }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(eventRepo.findOne).not.toHaveBeenCalled();
+    expect(sessionRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('createFromPublishedOccurrence is idempotent (returns existing; publish re-check yapılmaz)', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
     sessionRepo.findOne = jest.fn(async () => ({ id: 'sess-existing' }));
     const sess = await service.createFromPublishedOccurrence(baseInput);
     expect(sess.id).toBe('sess-existing');
     expect(sessionRepo.save).not.toHaveBeenCalled();
+    // Mevcut oturum oluşturulma anında published invariant'ı doğrulanmıştı;
+    // idempotent dönüşte yayın sorgusu tekrar çalışmaz.
+    expect(versionRepo.findOne).not.toHaveBeenCalled();
   });
 
   const managerActor: AttendanceActor = {

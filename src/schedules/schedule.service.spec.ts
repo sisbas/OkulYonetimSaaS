@@ -56,6 +56,23 @@ function makeService() {
     create: (e: any) => e,
     save: async (e: ScheduleEvent[]) => e,
   };
+  // Transaction içi EntityManager mock'u: entity tipine göre ilgili repo mock'una
+  // devreder. `unpublish` artık ScheduleVersion satırını pessimistic_write ile
+  // kilitleyip aynı transaction içinde güncellediği için (#265 AC-2 atomikliği)
+  // bu wiring zorunludur.
+  const em: any = {
+    findOne: async (entity: unknown, opts: unknown) =>
+      entity === ScheduleVersion
+        ? versionRepo.findOne(opts)
+        : scheduleRepo.findOne(opts),
+    update: async (entity: unknown, criteria: unknown, update: unknown) =>
+      entity === ScheduleVersion
+        ? versionRepo.update(criteria, update)
+        : scheduleRepo.update(criteria, update),
+  };
+  versionRepo.manager = {
+    transaction: async (cb: (m: unknown) => Promise<unknown>) => cb(em),
+  };
   const solver: any = {
     solve: async () => ({
       status: 'SOLVED',
@@ -71,7 +88,7 @@ function makeService() {
     }),
   };
   const service = new ScheduleService(scheduleRepo, versionRepo, eventRepo, solver);
-  return { service, scheduleRepo, versionRepo, eventRepo, solver };
+  return { service, scheduleRepo, versionRepo, eventRepo, solver, em };
 }
 
 describe('ScheduleService (P1B-05 wiring)', () => {
@@ -226,6 +243,43 @@ describe('ScheduleService (P1B-05 wiring)', () => {
       activeVersionId: null,
       revision: 3,
     });
+  });
+
+  it('unpublish fails closed when the locked version row is already unpublished (AC-2, #265)', async () => {
+    const { service, scheduleRepo, versionRepo, em } = makeService();
+    scheduleRepo.findOne = async () =>
+      ({
+        id: 's1',
+        tenantId: 't1',
+        branchId: 'b1',
+        status: 'published',
+        revision: 3,
+        activeVersionId: 'v1',
+      }) as Schedule;
+    // Kilit öncesi okuma published döner; kilitli okuma (lock set) bağımsız bir
+    // unpublish commit'inden sonra satırı UNPUBLISHED görür → fail-closed.
+    const publishedRow = {
+      id: 'v1',
+      tenantId: 't1',
+      branchId: 'b1',
+      scheduleId: 's1',
+      versionNo: 2,
+      status: ScheduleVersionStatus.PUBLISHED,
+      publishedAt: new Date('2026-09-01T09:00:00.000Z'),
+    } as ScheduleVersion;
+    versionRepo.findOne = async () => publishedRow;
+    em.findOne = async (entity: unknown, opts: { lock?: unknown } | undefined) =>
+      entity === ScheduleVersion && opts?.lock
+        ? ({
+            ...publishedRow,
+            status: ScheduleVersionStatus.UNPUBLISHED,
+            unpublishedAt: new Date('2026-09-02T09:00:00.000Z'),
+          } as ScheduleVersion)
+        : versionRepo.findOne(opts);
+
+    await expect(
+      service.unpublish('t1', 'b1', 's1', 'actor', 'req', 3),
+    ).rejects.toThrow(/no longer published/);
   });
 
   it('solve() builds the active-reference lookup from demands, not an empty event list (bh0ii)', async () => {
