@@ -63,8 +63,14 @@ export class AuditLogRepository {
       AUDIT_CHAIN_LOCK_KEY,
     ]);
 
+    // Zincir başı: en son audit satırı; tenant'ı tamamen kırpılmış (arşivlenmiş)
+    // bir zincirde ise son checkpoint'in `head_hash`'i. Böylece retention
+    // sonrası zincir sürekliliği korunur (genesis'e geri düşülmez).
     const head = (await entityManager.query(
-      `SELECT "entry_hash" FROM "audit_logs" ORDER BY "seq" DESC LIMIT 1`,
+      `SELECT COALESCE(
+         (SELECT "entry_hash" FROM "audit_logs" ORDER BY "seq" DESC LIMIT 1),
+         (SELECT "head_hash" FROM "audit_chain_checkpoints" ORDER BY "up_to_sequence" DESC LIMIT 1)
+       ) AS entry_hash`,
     )) as Array<{ entry_hash: string | null }>;
     const prevHash = head[0]?.entry_hash ?? AUDIT_CHAIN_GENESIS_HASH;
 

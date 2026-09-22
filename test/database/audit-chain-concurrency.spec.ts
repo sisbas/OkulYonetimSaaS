@@ -127,11 +127,15 @@ describeWithPostgres('audit chain PostgreSQL concurrency (#259, AC-7)', () => {
     await dataSource.query('DELETE FROM audit_logs WHERE tenant_id = $1', [
       TENANT_ID,
     ]);
+    // Retention checkpoint'i de temizle: aksi hâlde ilk satır genesis yerine
+    // checkpoint head'ine bağlanır (suite izolasyonu).
+    await dataSource.query('DELETE FROM audit_chain_checkpoints');
   });
 
   afterAll(async () => {
     if (!dataSource?.isInitialized) return;
     await dataSource.query('DELETE FROM audit_logs WHERE tenant_id = $1', [TENANT_ID]);
+    await dataSource.query('DELETE FROM audit_chain_checkpoints');
     await dataSource.query('DELETE FROM users WHERE id = $1', [ACTOR_ID]);
     await dataSource.query('DELETE FROM tenants WHERE id = $1', [TENANT_ID]);
     await dataSource.destroy();

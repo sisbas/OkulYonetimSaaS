@@ -148,6 +148,12 @@ export type AuditChainVerificationOptions = Readonly<{
   expectedHeadHash?: string;
   /** Beklenen son `sequence`: kuyruk kırpma tespiti. */
   expectedLastSequence?: number;
+  /**
+   * Zincir segmentinin başlaması gereken önceki özet. Retention (arşiv/kırpma)
+   * sonrası ilk satır genesis'e değil, **zincir checkpoint'inin `head_hash`**'ine
+   * bağlanır; bu seçenek segment doğrulamasını mümkün kılar.
+   */
+  startPrevHash?: string;
 }>;
 
 export type AuditChainVerificationReason =
@@ -190,7 +196,7 @@ export function verifyAuditChain(
   const signatureCheckRequested =
     opts.hmacKey !== undefined || opts.resolveHmacKey !== undefined;
 
-  let expectedPrev = AUDIT_CHAIN_GENESIS_HASH;
+  let expectedPrev = opts.startPrevHash ?? AUDIT_CHAIN_GENESIS_HASH;
   let previousSequence: number | null = null;
 
   for (const record of records) {

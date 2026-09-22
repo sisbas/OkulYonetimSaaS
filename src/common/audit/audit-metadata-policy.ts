@@ -104,7 +104,8 @@ type AuditMetadataPolicy = Readonly<{
     | 'student'
     | 'teacher'
     | 'attendance'
-    | 'notification';
+    | 'notification'
+    | 'audit';
   allowedKeys: readonly string[];
   allowedChangedFields: readonly string[];
   /**
@@ -202,6 +203,23 @@ const NOTIFICATION_POLICY: AuditMetadataPolicy = {
   branchScoped: false,
   actorRequired: false,
   resultAllowlist: ['success', 'failure'],
+};
+
+// Audit retention (#259): destructive işlem, aktör zorunlu; yalnız sayaç/sıra.
+const AUDIT_RETENTION_CHANGED_FIELDS = [
+  'prunedRowCount',
+  'upToSequence',
+  'dryRun',
+] as const;
+
+const AUDIT_RETENTION_POLICY: AuditMetadataPolicy = {
+  entityType: 'audit',
+  allowedKeys: COMMON_KEYS,
+  allowedChangedFields: AUDIT_RETENTION_CHANGED_FIELDS,
+  allowedValueKeys: ['prunedRowCount', 'upToSequence', 'dryRun'],
+  branchScoped: false,
+  actorRequired: true,
+  resultAllowlist: ['success'],
 };
 
 const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> = {
@@ -317,6 +335,7 @@ const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> 
   'attendance.session.closed': ATTENDANCE_POLICY,
   'attendance.record.marked': ATTENDANCE_POLICY,
   'attendance.record.corrected': ATTENDANCE_POLICY,
+  'audit.retention.pruned': AUDIT_RETENTION_POLICY,
   'notification.sent': NOTIFICATION_POLICY,
   'notification.failed': NOTIFICATION_POLICY,
   'notification.preferences.updated': NOTIFICATION_POLICY,

@@ -85,6 +85,12 @@ export const NOTIFICATION_AUDIT_EVENT_NAMES = [
   'notification.preferences.updated',
 ] as const;
 
+// Audit retention (#259): saklama süresi dolan kayıtların kırpılması da
+// denetlenebilir olmalıdır (destructive işlem). Yalnız sayaç ve sıra taşır.
+export const AUDIT_RETENTION_AUDIT_EVENT_NAMES = [
+  'audit.retention.pruned',
+] as const;
+
 export type CourseSuccessAuditEventName = (typeof COURSE_SUCCESS_AUDIT_EVENT_NAMES)[number];
 export type RoomSuccessAuditEventName = (typeof ROOM_SUCCESS_AUDIT_EVENT_NAMES)[number];
 export type TimeSlotSuccessAuditEventName = (typeof TIME_SLOT_SUCCESS_AUDIT_EVENT_NAMES)[number];
@@ -95,6 +101,8 @@ export type StudentAuditEventName = (typeof STUDENT_AUDIT_EVENT_NAMES)[number];
 export type TeacherAuditEventName = (typeof TEACHER_AUDIT_EVENT_NAMES)[number];
 export type AttendanceAuditEventName = (typeof ATTENDANCE_AUDIT_EVENT_NAMES)[number];
 export type NotificationAuditEventName = (typeof NOTIFICATION_AUDIT_EVENT_NAMES)[number];
+export type AuditRetentionAuditEventName =
+  (typeof AUDIT_RETENTION_AUDIT_EVENT_NAMES)[number];
 
 // Enum benzeri event adları için küçük string literal yardımcıları (tip genişletilebilirliği).
 export type AuthAuditAction = AuthAuditEventName;
@@ -114,7 +122,8 @@ export type TransactionalAuditEventName =
   | StudentAuditEventName
   | TeacherAuditEventName
   | AttendanceAuditEventName
-  | NotificationAuditEventName;
+  | NotificationAuditEventName
+  | AuditRetentionAuditEventName;
 
 export type CourseAuditChangedField = 'name' | 'code' | 'description' | 'status' | 'deactivatedAt';
 export type RoomAuditChangedField =
@@ -194,6 +203,10 @@ export type NotificationAuditChangedField =
   | 'templateId'
   | 'recipientRole'
   | 'preferenceKey';
+export type AuditRetentionChangedField =
+  | 'prunedRowCount'
+  | 'upToSequence'
+  | 'dryRun';
 
 type CommonSuccessAuditMetadata<
   TEntityType extends
@@ -206,7 +219,8 @@ type CommonSuccessAuditMetadata<
     | 'student'
     | 'teacher'
     | 'attendance'
-    | 'notification',
+    | 'notification'
+    | 'audit',
   TChangedField extends string,
 > = Readonly<{
   schemaVersion: 1;
@@ -263,6 +277,20 @@ export type AttendanceAuditMetadata = CommonSuccessAuditMetadata<'attendance', A
 export type NotificationAuditMetadata = CommonSuccessAuditMetadata<'notification', NotificationAuditChangedField>;
 
 /**
+ * Audit retention kırpma kaydı (#259). Saklama süresi dolan kayıtların
+ * silindiği işlemin kanıtı: kaç satır ve hangi `sequence`'e kadar.
+ */
+export type AuditRetentionAuditMetadata = CommonSuccessAuditMetadata<
+  'audit',
+  AuditRetentionChangedField
+> &
+  Readonly<{
+    prunedRowCount?: number;
+    upToSequence?: string;
+    dryRun?: boolean;
+  }>;
+
+/**
  * KVKK redaction kanıt kaydı.
  *
  * Bir audit kaydı ya da dışa aktarılan veri PII içeriyorsa, bu nesne ilgili
@@ -303,6 +331,8 @@ export type AuditMetadataByEvent = {
   [K in AttendanceAuditEventName]: AttendanceAuditMetadata;
 } & {
   [K in NotificationAuditEventName]: NotificationAuditMetadata;
+} & {
+  [K in AuditRetentionAuditEventName]: AuditRetentionAuditMetadata;
 };
 
 export type PersistableAuditRecord = Readonly<{
@@ -320,7 +350,8 @@ export type PersistableAuditRecord = Readonly<{
     | 'student'
     | 'teacher'
     | 'attendance'
-    | 'notification';
+    | 'notification'
+    | 'audit';
   entityId: string;
   requestId: string;
   metadataJson: Readonly<{
