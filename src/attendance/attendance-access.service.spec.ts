@@ -38,6 +38,8 @@ describe('AttendanceAccessService (users.id -> teachers.id çözümlemesi)', () 
       tenantId: 't1',
       roleIds: ['teacher'],
       teacherId: 'teacher-row-1',
+      // Durable audit correlation ID'si aktöre taşınır (#259).
+      requestId: 'req-1',
     });
     expect(findActiveTeacherForUser).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: 't1' }),

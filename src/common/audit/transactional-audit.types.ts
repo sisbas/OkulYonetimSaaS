@@ -68,10 +68,13 @@ export const TEACHER_AUDIT_EVENT_NAMES = [
 ] as const;
 
 // Devam/devamsızlık olayları. Öğrenci kimliği yalnızca UUID olarak tutulur.
+// `attendance.record.corrected` (#265 AC-4): kontrollü düzeltme yalnız kapalı
+// sözlükten gerekçe kodu taşır — serbest metin gerekçe audit'e girmez.
 export const ATTENDANCE_AUDIT_EVENT_NAMES = [
   'attendance.session.opened',
   'attendance.session.closed',
   'attendance.record.marked',
+  'attendance.record.corrected',
 ] as const;
 
 // Bildirim olayları. `notificationBody`/`messageBody` gibi serbest metinler
@@ -165,7 +168,11 @@ export type AttendanceAuditChangedField =
   | 'closedAt'
   | 'markedForStudentId'
   | 'present'
-  | 'lateMinutes';
+  | 'lateMinutes'
+  // Kontrollü düzeltme (#265 AC-4): serbest metin yok, yalnız kod/sayaç.
+  | 'reasonCode'
+  | 'correctionCount'
+  | 'sessionVersion';
 export type NotificationAuditChangedField =
   | 'channel'
   | 'status'

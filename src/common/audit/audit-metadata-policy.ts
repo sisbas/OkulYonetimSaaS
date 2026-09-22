@@ -79,6 +79,10 @@ const ATTENDANCE_CHANGED_FIELDS = [
   'markedForStudentId',
   'present',
   'lateMinutes',
+  // Kontrollü düzeltme (#265 AC-4): gerekçe kodu ve düzeltme dizisi.
+  'reasonCode',
+  'correctionCount',
+  'sessionVersion',
 ] as const;
 const NOTIFICATION_CHANGED_FIELDS = ['channel', 'status', 'templateId', 'recipientRole', 'preferenceKey'] as const;
 
@@ -297,6 +301,7 @@ const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> 
   'attendance.session.opened': ATTENDANCE_POLICY,
   'attendance.session.closed': ATTENDANCE_POLICY,
   'attendance.record.marked': ATTENDANCE_POLICY,
+  'attendance.record.corrected': ATTENDANCE_POLICY,
   'notification.sent': NOTIFICATION_POLICY,
   'notification.failed': NOTIFICATION_POLICY,
   'notification.preferences.updated': NOTIFICATION_POLICY,

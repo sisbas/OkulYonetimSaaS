@@ -14,6 +14,7 @@ import {
 } from '../schedules/schedule-version.entity';
 import { AttendanceSessionStatus } from './attendance-session.entity';
 import { AttendanceActor } from './attendance-access';
+import { ATTENDANCE_AUDIT_PORT } from './attendance-audit.adapter';
 
 describe('AttendanceSessionService (OKUL-06, #265)', () => {
   let service: AttendanceSessionService;
@@ -27,6 +28,8 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
   let versionRepo: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let em: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let audit: any;
 
   const makeRepo = () => ({
     findOne: jest.fn(),
@@ -44,6 +47,7 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     scheduleEventId: 'evt-1',
     sessionDate: new Date('2026-09-01'),
     studentIds: ['s1', 's2', 's3'],
+    actorId: 'user-1',
   };
 
   const publishedEvent = (overrides: Record<string, unknown> = {}) => ({
@@ -81,9 +85,13 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
         if (entity === AttendanceRecord) return recordRepo.findOne(opts);
         return sessionRepo.findOne(opts);
       }),
-      create: jest.fn((_entity: unknown, data: unknown) =>
-        sessionRepo.create(data),
+      create: jest.fn((entity: unknown, data: unknown) =>
+        entity === AttendanceRecord ? recordRepo.create(data) : sessionRepo.create(data),
       ),
+      upsert: jest.fn(async (entity: unknown, data: unknown, opts: unknown) => {
+        if (entity === AttendanceRecord) return recordRepo.upsert(data, opts);
+        return sessionRepo.upsert(data, opts);
+      }),
       // Session satırı `rosterSnapshot` taşır; attendance record taşımaz.
       save: jest.fn(async (entity: unknown) =>
         entity && typeof entity === 'object' && 'rosterSnapshot' in entity
@@ -96,11 +104,13 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
         cb(em),
       ),
     };
+    audit = { write: jest.fn(async () => undefined) };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AttendanceSessionService,
         { provide: getRepositoryToken(AttendanceSession), useValue: sessionRepo },
         { provide: getRepositoryToken(AttendanceRecord), useValue: recordRepo },
+        { provide: ATTENDANCE_AUDIT_PORT, useValue: audit },
       ],
     }).compile();
     service = moduleRef.get(AttendanceSessionService);
@@ -193,18 +203,21 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     tenantId: 't1',
     roleIds: ['operations_manager'],
     teacherId: null,
+    requestId: 'req-test',
   };
   const ownerActor: AttendanceActor = {
     userId: 'teach-1',
     tenantId: 't1',
     roleIds: ['teacher'],
     teacherId: 'teach-1',
+    requestId: 'req-test',
   };
   const otherTeacherActor: AttendanceActor = {
     userId: 'teach-2',
     tenantId: 't1',
     roleIds: ['teacher'],
     teacherId: 'teach-2',
+    requestId: 'req-test',
   };
 
   const publishedSession = (overrides: Record<string, unknown> = {}) => ({
@@ -462,5 +475,112 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     await expect(
       service.correctRecord(managerActor, correctionInput),
     ).rejects.toThrow(/not found/);
+  });
+
+  // --- Durable audit (#259): yazımlar domain transaction'ının içinde olmalı ---
+
+  it('writes the session-opened audit row inside the create transaction', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () => publishedVersion());
+
+    await service.createFromPublishedOccurrence(baseInput);
+
+    expect(audit.write).toHaveBeenCalledWith(
+      em,
+      'attendance.session.opened',
+      expect.objectContaining({
+        tenantId: 't1',
+        actorUserId: 'user-1',
+        entityType: 'attendance',
+        entityId: 'sess-new',
+        result: 'success',
+        changedFields: ['openedAt'],
+      }),
+    );
+  });
+
+  it('writes the session-closed audit row inside the lock transaction', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+
+    await service.lock(managerActor, 'sess-1', 1);
+
+    expect(audit.write).toHaveBeenCalledWith(
+      em,
+      'attendance.session.closed',
+      expect.objectContaining({
+        actorUserId: 'mgr-1',
+        requestId: 'req-test',
+        changedFields: ['status', 'closedAt'],
+      }),
+    );
+  });
+
+  it('does not audit an idempotent lock of an already locked session', async () => {
+    sessionRepo.findOne = jest.fn(async () =>
+      publishedSession({ status: AttendanceSessionStatus.LOCKED }),
+    );
+
+    await service.lock(managerActor, 'sess-1', 1);
+
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('writes the record-marked audit row inside the mark transaction', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    recordRepo.findOne = jest.fn(async () => ({ id: 'rec-1' }));
+
+    await service.markRecord(ownerActor, {
+      sessionId: 'sess-1',
+      studentId: 's1',
+      status: 'present' as never,
+    });
+
+    expect(audit.write).toHaveBeenCalledWith(
+      em,
+      'attendance.record.marked',
+      expect.objectContaining({
+        actorUserId: 'teach-1',
+        entityId: 'sess-1',
+        changedFields: ['status', 'markedForStudentId'],
+      }),
+    );
+  });
+
+  it('writes the record-corrected audit row inside the correction transaction', async () => {
+    sessionRepo.findOne = jest.fn(async () => lockedSession({ version: 3 }));
+    recordRepo.findOne = jest.fn(async () => existingRecord());
+    recordRepo.save = jest.fn(async (e: Record<string, unknown>) => ({ ...e }));
+
+    await service.correctRecord(managerActor, {
+      ...correctionInput,
+      expectedVersion: 3,
+    });
+
+    expect(audit.write).toHaveBeenCalledWith(
+      em,
+      'attendance.record.corrected',
+      expect.objectContaining({
+        actorUserId: 'mgr-1',
+        requestId: 'req-test',
+        changedFields: ['status', 'reasonCode', 'correctionCount'],
+      }),
+    );
+  });
+
+  it('fails the mutation when durable audit cannot be written (same-transaction guarantee)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    recordRepo.findOne = jest.fn(async () => ({ id: 'rec-1' }));
+    audit.write = jest.fn(async () => {
+      throw new Error('audit sink unavailable');
+    });
+
+    await expect(
+      service.markRecord(ownerActor, {
+        sessionId: 'sess-1',
+        studentId: 's1',
+        status: 'present' as never,
+      }),
+    ).rejects.toThrow(/audit sink unavailable/);
   });
 });
