@@ -1,6 +1,8 @@
 # Evidence — S0-A1 (#269)
 
-- Baz main: `43b616363a5d1d1d4cab5057e666f4e7ae3a2c1e` · PR head: `<PR açıldığında eklenir>` · Tarih: 2026-09-22
+- Baz main: `43b616363a5d1d1d4cab5057e666f4e7ae3a2c1e` · PR: #353 · Kanıtlanan head: `766a1c3496418dcf4c217e866838977b5bbb8574` · Tarih: 2026-09-22
+  (Bu dosyanın eklendiği commit docs-only'dir; ağaç farkı yalnız `artifacts/` altındadır —
+  güncel head'in check URL'leri PR #353 gövdesindeki "CI run referansı" bölümündedir.)
 - Claim: `P0 browser E2E and artifact evidence` check'i, iş sonucunu SQL ile seed eden ve UI'yi
   `page.evaluate(fetch)` ile atlayan bir script'ten ayrıldı; artık **referans-fixture-only** seed eden,
   gerçek Nest backend + gerçek tarayıcı + görünür UI kontrolleri ile çalışan fail-closed bir harness'a
@@ -97,6 +99,39 @@ migration/DB etkisi yoktur (`git revert <sha>` yeterlidir).
 | Data/DB | GO (koşullu) | Şema/migration yok; seeder referans-only ve `assertReferenceWrite` ile kilitli |
 | QA/Acceptance | HOLD → GO | Fresh-DB journey kanıtı CI run URL'ine bağlanana kadar HOLD |
 
-## CI (doldurulacak)
-- `<check adı>`: `<run URL>` — head_sha: `<sha>`
+## CI (head `766a1c3496418dcf4c217e866838977b5bbb8574` — tümü `success`)
+| Check | Sonuç | Run URL |
+|---|---|---|
+| WP-07F P0 Browser E2E | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765140 |
+| Backend CI | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765060 |
+| Sprint 1 Quality Gate | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765250 |
+| DB Smoke | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765151 |
+| Gate 1 CI | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765120 |
+| Sensitive Pattern Scanner | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765243 |
+| GitGuardian scan | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765077 |
+| PR Governance | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765154 |
+| Room Migration Cycle | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765214 |
+| TeacherCourse Eligibility Cycle | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765143 |
+| Identity Teacher Reference Cycle | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765169 |
+
+### Harness artefaktı (`report.json`, aynı head)
+- `verdict`: **PASS** · `browserStrategy`: `sparticuz` · 7/7 senaryo PASS (health, shell fail-safe,
+  gerçek UI login, sekme/panel görünürlüğü, token/PII sızıntı yok, hatalı giriş fail-closed,
+  reference-only).
+- `referenceOnlyFixtures.jobOutcomeRowsBefore == jobOutcomeRowsAfter` →
+  `leave_requests=0, leave_substitution_assignments=0, schedule_events=0, attendance_records=0,
+  notification_logs=0, leave_outbox_events=0`; **üretilen iş sonucu satırı = 0** (#269 AC-1 kanıtı).
+- `leakScan.domText`: `[]` (JWT/Bearer/ham backend detayı/telefon/sentetik olmayan e-posta yok).
+- Artefaktlar: `report.json`, `backend.log`, `screenshots/01-runtime-shell-initial.png`,
+  `screenshots/02-shell-authenticated.png`, `screenshots/03-tab-visibility-contract.png`,
+  `screenshots/04-login-failure-non-enumerating.png` (kimlik alanları temizlenerek alınmıştır).
+
+### İlk CI koşusu (RCA kaydı, head `525752b`)
+`WP-07F P0 Browser E2E` **failure**: yalnız "hatalı kimlik bilgisi" senaryosu kırıldı; ikinci
+`/runtime/` ziyareti tarayıcı HTTP cache'inden **304 Not Modified** döndü (log: `Expected: 200 /
+Received: 304`), diğer 6 senaryo PASS idi. Düzeltme: `page.setCacheEnabled(false)` + deterministik
+akış teardown'ı (`Jest did not exit` açık handle uyarısı giderildi). İddia gevşetilmedi; yalnız hata
+mesajı gözlenen durumu raporlayacak şekilde netleştirildi. Run:
+https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780411431
+
 

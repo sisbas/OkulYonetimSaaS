@@ -31,12 +31,12 @@ kanıtla bağlanıyor.
 - Playwright geçişi ve yeni production bağımlılığı (yeni bağımlılık EKLENMEDİ).
 
 ## Acceptance criteria
-- [ ] Fresh DB + gerçek backend ile en az bir `e2e-spec` PASS → kanıt: `npm run test:e2e` CI run URL (workflow `postgres:16` service)
-- [ ] Kasıtlı eklenen ihlalde statik guard FAIL veriyor → kanıt: `test/acceptance-guard/acceptance-evidence.guard.spec.ts` negatif testleri + geçici probe ile EXIT=1 gözlemi
-- [ ] İş sonucu SQL seed yok (yalnız referans fixture) → kanıt: guard 9/9 PASS + `test/` ve `scripts/` taramasında istisnasız ihlal kalmaması
-- [ ] `page.evaluate(fetch)` / DOM imalatı yasak → kanıt: guard R3/R4 negatif testleri + harness'ta yalnız gerçek UI kontrolleri
-- [ ] Env eksikse harness fail-closed (skip/neutral/yeşil yok) → kanıt: DB'siz çalıştırmada `E2eEnvironmentError`
-- [ ] `npm run lint`, `test:unit`, `test:rbac`, `test:kvkk`, `test:audit-redaction`, `build` yeşil → kanıt: yerel çıktılar + CI run URL
+- [x] Fresh DB + gerçek backend ile en az bir `e2e-spec` PASS → kanıt: `WP-07F P0 Browser E2E` success, run 35780765140 (7/7 senaryo PASS, `report.json` verdict=PASS)
+- [x] Kasıtlı eklenen ihlalde statik guard FAIL veriyor → kanıt: `test/acceptance-guard/acceptance-evidence.guard.spec.ts` negatif testleri + geçici probe ile EXIT=1 / `rule=job-outcome-write` gözlemi
+- [x] İş sonucu SQL seed yok (yalnız referans fixture) → kanıt: guard 9/9 PASS + `report.json` `jobOutcomeRowsCreated: 0` (tüm iş sonucu tabloları 0 → 0)
+- [x] `page.evaluate(fetch)` / DOM imalatı yasak → kanıt: guard R3/R4 negatif testleri + harness'ta yalnız gerçek UI kontrolleri (klavye/tıklama/form)
+- [x] Env eksikse harness fail-closed (skip/neutral/yeşil yok) → kanıt: DB'siz yerel çalıştırmada `E2eEnvironmentError` ile FAIL
+- [x] `npm run lint`, `test:unit`, `test:rbac`, `test:kvkk`, `test:audit-redaction`, `build` yeşil → kanıt: Sprint 1 Quality Gate success (run 35780765250) + yerel çıktılar
 
 ## Test çıktısı
 | Komut | Sonuç |
@@ -72,7 +72,19 @@ Dilim yalnız test/CI dosyalarına dokunur; `src/` ve şema değişmez, migratio
 Prova: DB/migration etkisi olmadığı için geri dönüş veri kaybı riski taşımaz.
 
 ## CI run referansı
-`<draft aşaması: CI run URL'leri yeşil olduktan sonra bu bölüme yazılacak; ready_for_review öncesi doldurulur>`
+Kod head: `766a1c3496418dcf4c217e866838977b5bbb8574` (bu satırdan sonraki değişiklik yalnız `artifacts/` dokümanıdır — ağaç farkı yürütülebilir kodda değildir).
+
+- `WP-07F P0 Browser E2E` (name: **P0 browser E2E and artifact evidence**): https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765140 (success)
+- `Backend CI`: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765060 (success)
+- `Sprint 1 Quality Gate`: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765250 (success)
+- `DB Smoke`: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765151 (success)
+- `Gate 1 CI`: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765120 (success)
+- `Sensitive Pattern Scanner`: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765243 (success)
+- `GitGuardian scan`: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765077 (success)
+- `PR Governance`: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780765154 (success)
+- `Room Migration Cycle` / `TeacherCourse Eligibility Cycle` / `Identity Teacher Reference Cycle`: 35780765214 / 35780765143 / 35780765169 (success)
+- İlk koşu RCA kaydı (head `525752b`, failure → `304 Not Modified` cache sorunu): https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35780411431
+- Harness artefaktı (`report.json` verdict=PASS, 4 maskeli screenshot, `backend.log`) aynı run'ın artefaktıdır.
 
 ## Kalite / governance notları
 - Issue reference: Refs #269
