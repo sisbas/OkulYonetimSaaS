@@ -1,6 +1,23 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
+import { createConnection } from 'node:net';
 import * as path from 'node:path';
+
+/**
+ * S0-A1 — backend sahipliği sözleşmesi (review bulgusu P2).
+ *
+ * `/api/v1/health` yanıt vermesi tek başına "kabul backend'i hazır" demek
+ * DEĞİLDİR: portu başka bir süreç (eski bir çalıştırma, elle başlatılmış bir
+ * sunucu) tutuyorsa kanıt yabancı bir sürece bağlanır. Bu yüzden örnek
+ * başlatılmadan önce portun BOŞ olduğu kanıtlanır; hazır olma işareti ancak
+ * bizim başlattığımız süreç ayakta olduğu sürece kabul edilir.
+ */
+export class RuntimeOwnershipError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RuntimeOwnershipError';
+  }
+}
 
 /**
  * Yalnızca yaşam döngüsü yönetimi için gereken yapısal süreç arayüzü.
@@ -57,6 +74,33 @@ function resolveTsNodeBin(repoRoot: string): string {
   return bin;
 }
 
+/** Portu tutan bir dinleyici var mı? (Kanıt sahipliği için ön kontrol.) */
+export function isTcpPortOpen(host: string, port: number, timeoutMs = 1_000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host, port });
+    const settle = (open: boolean): void => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(open);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => settle(true));
+    socket.once('timeout', () => settle(false));
+    socket.once('error', () => settle(false));
+  });
+}
+
+export async function assertRuntimePortOwnedByHarness(baseUrl: string): Promise<void> {
+  const parsed = new URL(baseUrl);
+  const port = parsed.port.length > 0 ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80;
+  if (await isTcpPortOpen(parsed.hostname, port)) {
+    throw new RuntimeOwnershipError(
+      `${parsed.hostname}:${port} is already served by another process. Refusing to bind acceptance ` +
+        'evidence to a foreign backend; stop the process on that port and re-run.',
+    );
+  }
+}
+
 async function healthIsReady(baseUrl: string): Promise<boolean> {
   try {
     const response = await fetch(`${baseUrl}/api/v1/health`, {
@@ -97,6 +141,9 @@ export async function startRuntimeServer(input: StartRuntimeServerInput): Promis
   const tsNodeBin = resolveTsNodeBin(repoRoot);
   const readyTimeoutMs = input.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
 
+  // Sahiplik kanıtı: port boşsa yalnız bizim süreç oraya bağlanabilir.
+  await assertRuntimePortOwnedByHarness(input.baseUrl);
+
   fs.mkdirSync(input.artifactDir, { recursive: true });
   const logPath = path.join(input.artifactDir, 'backend.log');
   const logStream = fs.createWriteStream(logPath, { flags: 'a' });
@@ -125,6 +172,11 @@ export async function startRuntimeServer(input: StartRuntimeServerInput): Promis
       );
     }
     if (await healthIsReady(input.baseUrl)) {
+      if (child.exitCode !== null || exitedEarly) {
+        throw new RuntimeOwnershipError(
+          'Health endpoint answered but the spawned backend had already exited; readiness cannot be attributed to it.',
+        );
+      }
       return Object.freeze({
         logPath,
         pid: child.pid ?? -1,

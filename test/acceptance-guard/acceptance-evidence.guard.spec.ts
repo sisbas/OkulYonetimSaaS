@@ -37,6 +37,19 @@ const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'coverage', '.git']
 export const LEGACY_EXCLUDED_FILE = path.join('scripts', 'qa-p0-browser-e2e.js');
 
 /**
+ * İşaretin bulunabileceği dosyalar (review bulgusu P1).
+ *
+ * Önceki sürüm işareti TAŞIYAN HER dosyayı istisna sayıyordu; yani herhangi bir
+ * ihlal, dosyaya bu satır eklenerek sessizce bastırılabilirdi (fail-open).
+ * Artık işaret yalnız (a) işaretli legacy dosyada ve (b) sabitin TANIMLANDIĞI
+ * yerde bulunabilir; başka her dosyada işaret = ihlal.
+ */
+export const MARKER_ALLOWED_FILES: ReadonlyArray<string> = Object.freeze([
+  LEGACY_EXCLUDED_FILE,
+  path.join('test', 'e2e', 'support', 'acceptance-tables.ts'),
+]);
+
+/**
  * Kabul kanıtı OLMAYAN, bilinçli olarak kapsam dışı bırakılmış test yüzeyleri.
  *
  * `test/` ve `scripts/` tamamı taranır; bu liste tek tek gerekçeyle daraltır.
@@ -236,11 +249,52 @@ function isExemptSurface(relativeFile: string): boolean {
   return NON_ACCEPTANCE_EXEMPTIONS.some((entry) => entry.file.split('\\').join('/') === file);
 }
 
-function scanRepository(): GuardFinding[] {
-  return collectScannableFiles(repoRoot).flatMap((file) => {
-    if (isExemptSurface(file)) return [];
-    return scanSource(file, fs.readFileSync(path.join(repoRoot, file), 'utf8'));
+/**
+ * Legacy istisnası YALNIZ izinli dosyada ve işaret oradayken geçerlidir
+ * (review bulgusu P1: işaret taşıyan her dosyayı istisna saymak fail-open'tı).
+ */
+export function isLegacyExempt(relativeFile: string, source: string): boolean {
+  return (
+    normalized(relativeFile) === normalized(LEGACY_EXCLUDED_FILE) &&
+    source.includes(LEGACY_EXCLUSION_MARKER)
+  );
+}
+
+/** İşaret, izinli dosyaların dışında bir yerde geçiyorsa suistimaldir. */
+export function isMarkerMisuse(relativeFile: string, source: string): boolean {
+  const file = normalized(relativeFile);
+  return (
+    source.includes(LEGACY_EXCLUSION_MARKER) &&
+    !MARKER_ALLOWED_FILES.some((allowed) => normalized(allowed) === file)
+  );
+}
+
+type ScannedFile = Readonly<{ file: string; source: string; findings: GuardFinding[] }>;
+
+function scanRepositoryWithSource(): ScannedFile[] {
+  return collectScannableFiles(repoRoot).map((file) => {
+    const source = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+    return { file, source, findings: scanSource(file, source) };
   });
+}
+
+/** Ham tarama (negatif probe testi için; istisna uygulanmaz). */
+function scanRepository(): GuardFinding[] {
+  return scanRepositoryWithSource().flatMap((entry) => entry.findings);
+}
+
+/** İstisnalar uygulandıktan sonra kalan ihlaller. */
+function unexemptedFindings(): GuardFinding[] {
+  return scanRepositoryWithSource()
+    .filter(({ file, source }) => !isExemptSurface(file) && !isLegacyExempt(file, source))
+    .flatMap((entry) => entry.findings);
+}
+
+/** İşaretin izinli dosyalar dışında kullanıldığı dosyalar. */
+function markerMisuseFiles(): string[] {
+  return scanRepositoryWithSource()
+    .filter(({ file, source }) => isMarkerMisuse(file, source))
+    .map(({ file }) => file);
 }
 
 describe('acceptance evidence guard (fail-closed)', () => {
@@ -296,11 +350,48 @@ describe('acceptance evidence guard (fail-closed)', () => {
   });
 
   it('depoda istisnasız kabul ihlali bırakmaz', () => {
-    const unexempted = scanRepository().filter((finding) => {
-      const source = fs.readFileSync(path.join(repoRoot, finding.file), 'utf8');
-      return !source.includes(LEGACY_EXCLUSION_MARKER);
-    });
-    expect(unexempted).toEqual([]);
+    expect(unexemptedFindings()).toEqual([]);
+  });
+
+  it('P1 — legacy işareti yalnız izinli dosyalarda geçerlidir', () => {
+    // İşaret; sabitin tanımlandığı dosya ve işaretli legacy dosya dışında
+    // hiçbir yerde bulunamaz (aksi hâlde ihlal susturulabilirdi).
+    expect(markerMisuseFiles()).toEqual([]);
+
+    // İşareti literal olarak yazmıyoruz; aksi hâlde bu test dosyasının kendisi
+    // işaret taşımış olurdu.
+    const marker = ['ACCEPTANCE', 'EVIDENCE', 'EXCLUDED'].join('-');
+    const elsewhere = 'test/e2e/zz-silenced.e2e-spec.ts';
+
+    expect(isMarkerMisuse(elsewhere, `// ${marker}\n`)).toBe(true);
+    expect(isLegacyExempt(elsewhere, `// ${marker}\n`)).toBe(false);
+
+    expect(isLegacyExempt(LEGACY_EXCLUDED_FILE, `// ${marker}\n`)).toBe(true);
+    expect(isMarkerMisuse(LEGACY_EXCLUDED_FILE, `// ${marker}\n`)).toBe(false);
+    expect(isMarkerMisuse(MARKER_ALLOWED_FILES[1], marker)).toBe(false);
+  });
+
+  it('P1 — işaret eklenerek ihlal susturulamaz (gerçek dosya provası)', () => {
+    const probeRelative = path.join('test', 'e2e', 'zz-marker-abuse-probe.e2e-spec.ts');
+    const probeAbsolute = path.join(repoRoot, probeRelative);
+    const marker = ['ACCEPTANCE', 'EVIDENCE', 'EXCLUDED'].join('-');
+    const probeSource = [
+      `// ${marker}`,
+      "await client.query('INSERT INTO leave_requests (tenant_id) VALUES (1)');",
+    ].join('\n');
+
+    fs.writeFileSync(probeAbsolute, probeSource, 'utf8');
+    try {
+      const probeKey = 'test/e2e/zz-marker-abuse-probe.e2e-spec.ts';
+      const rules = unexemptedFindings()
+        .filter((finding) => finding.file.split('\\').join('/') === probeKey)
+        .map((finding) => finding.rule);
+      expect(rules).toContain('job-outcome-write');
+      expect(markerMisuseFiles().map((file) => file.split('\\').join('/'))).toContain(probeKey);
+    } finally {
+      fs.rmSync(probeAbsolute, { force: true });
+    }
+    expect(fs.existsSync(probeAbsolute)).toBe(false);
   });
 
   it('kapsam dışı istisnası gerekçeli ve bayat değil', () => {

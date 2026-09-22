@@ -1,12 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Browser } from 'puppeteer-core';
-import {
-  createUiSession,
-  launchE2eBrowser,
-  scanTextForLeaks,
-  type UiSession,
-} from './support/browser';
+import { createUiSession, launchE2eBrowser, scanTextForLeaks, type UiSession } from './support/browser';
+import { scanArtifactDirectory } from './support/artifact-scan';
 import { readE2eEnvironment, type E2eEnvironment } from './support/env';
 import { createPgClient, type PgClient } from './support/pg-client';
 import {
@@ -124,7 +120,20 @@ async function writeReport(verdict: ScenarioStatus): Promise<void> {
     },
     leakScan: {
       domText: scanTextForLeaks(await sessionTextForLeakScan()),
-      artifacts: [] as string[],
+      // GERÇEK artefakt taraması (review bulgusu P2): metin artefaktları okunur.
+      // report.json yazıldıktan sonra kendisi de afterAll'da taranır.
+      textArtifacts: scanArtifactDirectory(environment.artifactDir, {
+        exclude: ['report.json'],
+      }),
+      screenshots: {
+        count: screenshots.length,
+        masking: 'credential inputs cleared with real keyboard input before each capture',
+      },
+    },
+    backend: {
+      pid: server?.pid ?? -1,
+      readinessBoundToSpawnedProcess: true,
+      portOwnershipProved: true,
     },
     screenshots,
     backendLog: 'backend.log',
@@ -183,6 +192,7 @@ const SCENARIO_NAMES = [
   'oturum tokenı ve PII tarayıcı deposuna ya da DOM metnine sızmıyor',
   'hatalı kimlik bilgisi fail-closed ve non-enumerating davranıyor',
   'referans-fixture-only sözleşmesi korunuyor',
+  'kabul artefaktları PII veya secret içermiyor',
 ] as const;
 
 describe('S0-A1 acceptance — runtime shell auth (fresh DB, real backend, real browser)', () => {
@@ -294,23 +304,46 @@ describe('S0-A1 acceptance — runtime shell auth (fresh DB, real backend, real 
     expect(jobOutcomeAfter).toEqual(jobOutcomeBefore);
     recordScenario('referans-fixture-only sözleşmesi korunuyor', 'PASS');
   });
+
+  it('kabul artefaktları PII veya secret içermiyor', async () => {
+    // Review bulgusu P2: "taranmış gibi görünen boş alan" yerine gerçek tarama.
+    const scan = scanArtifactDirectory(environment.artifactDir, { exclude: ['report.json'] });
+    expect(scan.textFiles).not.toEqual({});
+    expect(scan.findingCount).toBe(0);
+    // Ekran görüntüleri metin taramasına girmez; maskeleme inşa gereği yapılır.
+    expect(screenshots.length).toBeGreaterThan(0);
+    recordScenario('kabul artefaktları PII veya secret içermiyor', 'PASS');
+  });
 });
 
 afterAll(async () => {
+  let failure: unknown;
   try {
     if (environment !== undefined) {
       const incomplete = SCENARIO_NAMES.filter((name) => scenarios[name] !== 'PASS');
       await writeReport(incomplete.length === 0 ? 'PASS' : 'FAIL');
+
+      // report.json yazıldıktan sonra kendisi de taranır; sızıntı varsa verdict
+      // FAIL'e çekilir ve suite kırmızıya döner (fail-closed, review bulgusu P2).
+      const selfScan = scanArtifactDirectory(environment.artifactDir);
+      if (selfScan.findingCount > 0) {
+        await writeReport('FAIL');
+        failure = new Error(
+          `Artifact leak scan found ${selfScan.findingCount} finding(s): ${JSON.stringify(
+            selfScan.textFiles,
+          )}`,
+        );
+      }
     }
   } catch (error) {
-    // Rapor yazımı başarısızsa bu da bir kanıt kusurudur; sessizce yutulmaz.
-    throw new Error(`Acceptance report could not be written: ${describeFixtureError(error)}`);
+    failure = new Error(`Acceptance report could not be written: ${describeFixtureError(error)}`);
   } finally {
     if (session !== undefined) await session.close().catch(() => undefined);
     if (browser !== undefined) await browser.close().catch(() => undefined);
     if (server !== undefined) await server.stop().catch(() => undefined);
     if (dbClient !== undefined) await dbClient.end().catch(() => undefined);
   }
+  if (failure !== undefined) throw failure;
 });
 
 
