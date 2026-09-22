@@ -1,3 +1,16 @@
+/**
+ * ACCEPTANCE-EVIDENCE-EXCLUDED — synthetic/legacy runner.
+ *
+ * Bu dosya KABUL KANITI DEĞİLDİR ve hiçbir required check'e bağlanamaz:
+ *  - iş sonucu tablolarına doğrudan SQL ile yazıyor (schedule_events,
+ *    leave_requests) → kullanıcı yolu atlanıyor,
+ *  - işlemsel adımları `page.evaluate(fetch)` ile UI'yi atlayarak yürütüyor.
+ *
+ * Kabul kanıtı yalnız `test/e2e/*.e2e-spec.ts` harness'ından üretilir
+ * (S0-A1 / #269). Statik guard (test/acceptance-guard) işaretli bir dosyanın
+ * herhangi bir workflow tarafından çalıştırılmasını FAIL sayar.
+ */
+
 'use strict';
 
 const fs = require('node:fs');
