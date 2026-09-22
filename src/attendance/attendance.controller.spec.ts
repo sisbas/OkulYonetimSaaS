@@ -2,6 +2,7 @@ import { AttendanceSessionController } from './attendance.controller';
 import { AttendanceSessionService } from './attendance-session.service';
 import { AttendanceAccessService } from './attendance-access.service';
 import { AttendanceSession, AttendanceSessionStatus } from './attendance-session.entity';
+import { AttendanceRecord, AttendanceStatus } from './attendance.entity';
 import { AttendanceActor } from './attendance-access';
 import { RequestWithContext } from '../common/context/request-context';
 
@@ -37,6 +38,22 @@ describe('AttendanceSessionController list() (P1: users.id vs teachers.id)', () 
     lockedAt: null,
     createdAt: new Date('2026-09-01T08:00:00Z'),
     updatedAt: new Date('2026-09-01T08:00:00Z'),
+  });
+
+  const makeRecord = (): AttendanceRecord => ({
+    id: '77777777-7777-4777-8777-777777777777',
+    tenantId: TENANT_ID,
+    sessionId: '55555555-5555-4555-8555-555555555555',
+    studentId: '66666666-6666-4666-8666-666666666666',
+    status: AttendanceStatus.EXCUSED,
+    markedById: USERS_ID,
+    notes: null,
+    correctionReasonCode: 'excused_document',
+    correctedById: USERS_ID,
+    correctedAt: new Date('2026-09-02T09:00:00Z'),
+    correctionCount: 1,
+    createdAt: new Date('2026-09-01T08:00:00Z'),
+    updatedAt: new Date('2026-09-02T09:00:00Z'),
   });
 
   function setup(
@@ -97,5 +114,38 @@ describe('AttendanceSessionController list() (P1: users.id vs teachers.id)', () 
 
     expect(result).toEqual([]);
     expect(listByTeacher).not.toHaveBeenCalled();
+  });
+
+  it('delegates controlled correction with the server-resolved actor and body fields (AC-4)', async () => {
+    const SESSION_ID = '55555555-5555-4555-8555-555555555555';
+    const STUDENT_ID = '66666666-6666-4666-8666-666666666666';
+    const correctRecord = jest.fn(async () => ({
+      record: makeRecord(),
+      sessionVersion: 4,
+    }));
+    const { controller, req } = setup(
+      makeActor({ roleIds: ['operations_manager'], teacherId: null }),
+      { correctRecord },
+    );
+
+    const result = await controller.correctRecord(req, SESSION_ID, STUDENT_ID, {
+      status: 'excused' as never,
+      reasonCode: 'excused_document' as never,
+      expectedVersion: 3,
+      notes: 'mazeret belgesi sonradan ulaştı',
+    });
+
+    expect(correctRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: USERS_ID, tenantId: TENANT_ID }),
+      {
+        sessionId: SESSION_ID,
+        studentId: STUDENT_ID,
+        status: 'excused',
+        reasonCode: 'excused_document',
+        expectedVersion: 3,
+        notes: 'mazeret belgesi sonradan ulaştı',
+      },
+    );
+    expect(result.sessionVersion).toBe(4);
   });
 });

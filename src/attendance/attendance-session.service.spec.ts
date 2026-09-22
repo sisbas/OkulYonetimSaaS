@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
   AttendanceSessionService,
@@ -78,12 +78,18 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
       findOne: jest.fn(async (entity: unknown, opts: unknown) => {
         if (entity === ScheduleEvent) return eventRepo.findOne(opts);
         if (entity === ScheduleVersion) return versionRepo.findOne(opts);
+        if (entity === AttendanceRecord) return recordRepo.findOne(opts);
         return sessionRepo.findOne(opts);
       }),
       create: jest.fn((_entity: unknown, data: unknown) =>
         sessionRepo.create(data),
       ),
-      save: jest.fn(async (entity: unknown) => sessionRepo.save(entity)),
+      // Session satırı `rosterSnapshot` taşır; attendance record taşımaz.
+      save: jest.fn(async (entity: unknown) =>
+        entity && typeof entity === 'object' && 'rosterSnapshot' in entity
+          ? sessionRepo.save(entity)
+          : recordRepo.save(entity),
+      ),
     };
     sessionRepo.manager = {
       transaction: jest.fn(async (cb: (m: unknown) => Promise<unknown>) =>
@@ -349,5 +355,112 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     });
 
     expect(recordRepo.create.mock.calls[0][0].notes).toBeNull();
+  });
+
+  const lockedSession = (overrides: Record<string, unknown> = {}) =>
+    publishedSession({ status: AttendanceSessionStatus.LOCKED, ...overrides });
+
+  const existingRecord = (overrides: Record<string, unknown> = {}) => ({
+    id: 'rec-1',
+    tenantId: 't1',
+    sessionId: 'sess-1',
+    studentId: 's1',
+    status: 'absent',
+    notes: null,
+    correctionCount: 0,
+    ...overrides,
+  });
+
+  const correctionInput = {
+    sessionId: 'sess-1',
+    studentId: 's1',
+    status: 'excused' as never,
+    reasonCode: 'excused_document' as never,
+    expectedVersion: 1,
+  };
+
+  it('correctRecord requires a locked session (submit -> lock -> correction, AC-4)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    await expect(
+      service.correctRecord(managerActor, correctionInput),
+    ).rejects.toThrow(/not locked/);
+    expect(recordRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('correctRecord rejects a teacher even for their own session (separation of duties)', async () => {
+    sessionRepo.findOne = jest.fn(async () => lockedSession());
+    await expect(
+      service.correctRecord(ownerActor, correctionInput),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(recordRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('correctRecord rejects a version mismatch (optimistic concurrency)', async () => {
+    sessionRepo.findOne = jest.fn(async () => lockedSession({ version: 5 }));
+    await expect(
+      service.correctRecord(managerActor, correctionInput),
+    ).rejects.toThrow(/version mismatch/);
+  });
+
+  it('correctRecord rejects a reason code outside the closed vocabulary', async () => {
+    sessionRepo.findOne = jest.fn(async () => lockedSession());
+    await expect(
+      service.correctRecord(managerActor, {
+        ...correctionInput,
+        reasonCode: 'serbest_metin' as never,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(sessionRepo.manager.transaction).not.toHaveBeenCalled();
+  });
+
+  it('correctRecord rejects a student outside the immutable roster snapshot', async () => {
+    sessionRepo.findOne = jest.fn(async () => lockedSession());
+    await expect(
+      service.correctRecord(managerActor, {
+        ...correctionInput,
+        studentId: 'student-unknown',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('correctRecord rejects when there is no record to correct (fail-closed)', async () => {
+    sessionRepo.findOne = jest.fn(async () => lockedSession());
+    recordRepo.findOne = jest.fn(async () => null);
+    await expect(
+      service.correctRecord(managerActor, correctionInput),
+    ).rejects.toThrow(/not found/);
+    expect(recordRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('correctRecord masks the correction note, stamps the actor and bumps the session version', async () => {
+    sessionRepo.findOne = jest.fn(async () => lockedSession({ version: 3 }));
+    recordRepo.findOne = jest.fn(async () => existingRecord());
+    recordRepo.save = jest.fn(async (e: Record<string, unknown>) => ({ ...e }));
+
+    const result = await service.correctRecord(managerActor, {
+      ...correctionInput,
+      expectedVersion: 3,
+      notes: 'Veli 0532 111 22 33 numarasından arandı',
+    });
+
+    const saved = recordRepo.save.mock.calls[0][0];
+    expect(saved.status).toBe('excused');
+    expect(saved.notes).toBe('[REDACTED]');
+    expect(JSON.stringify(saved)).not.toContain('0532');
+    expect(saved.correctionReasonCode).toBe('excused_document');
+    expect(saved.correctedById).toBe('mgr-1');
+    expect(saved.correctedAt).toBeInstanceOf(Date);
+    expect(saved.correctionCount).toBe(1);
+    expect(result.sessionVersion).toBe(4);
+    expect(sessionRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'sess-1', version: 4 }),
+    );
+  });
+
+  it('correctRecord rejects an unknown session (fail-closed)', async () => {
+    sessionRepo.findOne = jest.fn(async () => null);
+    await expect(
+      service.correctRecord(managerActor, correctionInput),
+    ).rejects.toThrow(/not found/);
   });
 });

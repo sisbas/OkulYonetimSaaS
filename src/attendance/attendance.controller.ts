@@ -15,6 +15,7 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 import { AttendanceActor, hasAttendanceOversight } from './attendance-access';
 import { AttendanceAccessService } from './attendance-access.service';
+import { AttendanceCorrectionReasonCode } from './attendance-correction';
 import {
   AttendanceSessionService,
   CreateSessionInput,
@@ -93,6 +94,39 @@ export class AttendanceSessionController {
       notes: body.notes ?? null,
     };
     return this.sessionService.markRecord(actor, input);
+  }
+
+  /**
+   * Kontrollü düzeltme (AC-4, #265).
+   *
+   * Yalnız kilitli oturum + gözetim rolü + kapalı sözlükten gerekçe kodu +
+   * optimistic concurrency (`expectedVersion`). Öğretmenin kendi oturumu için
+   * bile düzeltme yetkisi yoktur; servis katmanı fail-closed reddeder.
+   */
+  @Post(':id/records/:studentId/correction')
+  @Permissions('attendance:update')
+  @UseGuards(TeacherOwnLessonGuard)
+  async correctRecord(
+    @Req() req: RequestWithContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Body()
+    body: {
+      status: AttendanceStatus;
+      reasonCode: AttendanceCorrectionReasonCode;
+      expectedVersion: number;
+      notes?: string;
+    },
+  ) {
+    const actor = await this.resolveActor(req);
+    return this.sessionService.correctRecord(actor, {
+      sessionId: id,
+      studentId,
+      status: body.status,
+      reasonCode: body.reasonCode,
+      expectedVersion: body.expectedVersion,
+      notes: body.notes ?? null,
+    });
   }
 
   @Get(':id/records')
