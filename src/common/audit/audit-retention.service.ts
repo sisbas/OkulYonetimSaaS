@@ -216,37 +216,40 @@ export class AuditRetentionService {
         ]);
         const prefix = await this.scanPrefix(manager, scanLimit, now, maxRows);
 
-        if (!prefix.boundary) {
-          return {
-            prunedRows: 0,
-            checkpoint: null as AuditRetentionCheckpoint | null,
+        let checkpoint: AuditRetentionCheckpoint | null = null;
+        if (prefix.boundary) {
+          const { key, keyId } = resolveAuditHmacKey();
+          const signature = signAuditEntryHash(prefix.boundary.headHash, key);
+          // Dry-run'da checkpoint yalnızca RAPORLANIR (persist edilmez).
+          checkpoint = {
+            upToSequence: prefix.boundary.sequence,
+            headHash: prefix.boundary.headHash,
+            signatureKeyId: keyId,
           };
-        }
 
-        const { key, keyId } = resolveAuditHmacKey();
-        const signature = signAuditEntryHash(prefix.boundary.headHash, key);
-
-        if (!input.dryRun) {
-          await manager.query(
-            `INSERT INTO "audit_chain_checkpoints"
-               (up_to_sequence, head_hash, signature, signature_key_id, reason, pruned_row_count, created_by_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
+          if (!input.dryRun) {
+            await manager.query(
+              `INSERT INTO "audit_chain_checkpoints"
+                 (up_to_sequence, head_hash, signature, signature_key_id, reason, pruned_row_count, created_by_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [
+                prefix.boundary.sequence,
+                prefix.boundary.headHash,
+                signature,
+                keyId,
+                reason,
+                prefix.count,
+                input.actorUserId,
+              ],
+            );
+            await manager.query('DELETE FROM audit_logs WHERE seq <= $1', [
               prefix.boundary.sequence,
-              prefix.boundary.headHash,
-              signature,
-              keyId,
-              reason,
-              prefix.count,
-              input.actorUserId,
-            ],
-          );
-          await manager.query('DELETE FROM audit_logs WHERE seq <= $1', [
-            prefix.boundary.sequence,
-          ]);
+            ]);
+          }
         }
 
-        // Kırpma işleminin kendisi de durable audit kaydı üretir (aynı transaction).
+        // Kırpma ÇALIŞMASI (kırpılacak kayıt olmasa bile) durable audit kaydı
+        // üretir: no-op koşular da denetlenebilir kalır.
         await this.auditWriter.write(manager, 'audit.retention.pruned', {
           schemaVersion: 1,
           tenantId: input.tenantId,
@@ -258,18 +261,13 @@ export class AuditRetentionService {
           result: 'success',
           changedFields: ['prunedRowCount', 'upToSequence'],
           prunedRowCount: prefix.count,
-          upToSequence: String(prefix.boundary.sequence),
+          ...(prefix.boundary
+            ? { upToSequence: String(prefix.boundary.sequence) }
+            : {}),
           dryRun: input.dryRun,
         });
 
-        return {
-          prunedRows: prefix.count,
-          checkpoint: {
-            upToSequence: prefix.boundary.sequence,
-            headHash: prefix.boundary.headHash,
-            signatureKeyId: keyId,
-          } as AuditRetentionCheckpoint | null,
-        };
+        return { prunedRows: prefix.count, checkpoint };
       },
     );
 
