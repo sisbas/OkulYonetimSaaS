@@ -56,4 +56,29 @@ describe('AttendanceService (OKUL-06)', () => {
     expect(typeof masked).toBe('string');
     expect(redactValue).toBeDefined();
   });
+
+  it('mark masks free-text notes on the write path (KVKK, AC-5)', async () => {
+    await service.mark({
+      tenantId: 't1',
+      studentId: 's1',
+      sessionId: 'sess-1',
+      status: AttendanceStatus.ABSENT,
+      notes: 'Veli 0532 111 22 33 numarasından arandı',
+    });
+
+    const created = repo.create.mock.calls[0][0];
+    expect(created.notes).toBe('[REDACTED]');
+    expect(JSON.stringify(created)).not.toContain('0532');
+  });
+
+  it('mark stores null when no note is supplied', async () => {
+    await service.mark({
+      tenantId: 't1',
+      studentId: 's1',
+      sessionId: 'sess-1',
+      status: AttendanceStatus.PRESENT,
+    });
+
+    expect(repo.create.mock.calls[0][0].notes).toBeNull();
+  });
 });

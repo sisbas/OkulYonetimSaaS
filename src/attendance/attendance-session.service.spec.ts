@@ -321,4 +321,33 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
       order: { sessionDate: 'DESC' },
     });
   });
+
+  it('markRecord masks free-text notes on the write path (KVKK, AC-5)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    recordRepo.findOne = jest.fn(async () => ({ id: 'rec-1' }));
+
+    await service.markRecord(ownerActor, {
+      sessionId: 'sess-1',
+      studentId: 's1',
+      status: 'excused' as never,
+      notes: 'Veli 0532 111 22 33 numarasından arandı',
+    });
+
+    const created = recordRepo.create.mock.calls[0][0];
+    expect(created.notes).toBe('[REDACTED]');
+    expect(JSON.stringify(created)).not.toContain('0532');
+  });
+
+  it('markRecord stores null when no note is supplied', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    recordRepo.findOne = jest.fn(async () => ({ id: 'rec-1' }));
+
+    await service.markRecord(ownerActor, {
+      sessionId: 'sess-1',
+      studentId: 's1',
+      status: 'present' as never,
+    });
+
+    expect(recordRepo.create.mock.calls[0][0].notes).toBeNull();
+  });
 });

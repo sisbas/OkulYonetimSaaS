@@ -73,6 +73,8 @@ export class AttendanceSessionController {
   @Post(':id/records')
   @Permissions('attendance:record:update')
   @UseGuards(TeacherOwnLessonGuard)
+  // Not: notes alanı yazma yolunda KVKK maskesinden geçer
+  // (AttendanceSessionService.markRecord -> redactAttendanceNotes).
   async markRecord(
     @Req() req: RequestWithContext,
     @Param('id', ParseUUIDPipe) id: string,

@@ -18,6 +18,7 @@ import {
   ScheduleVersionStatus,
 } from '../schedules/schedule-version.entity';
 import { RequestContext } from '../common/context/request-context';
+import { redactAttendanceNotes } from './attendance-notes';
 import {
   assertAttendanceSessionAccess,
   AttendanceActor,
@@ -44,8 +45,9 @@ export interface MarkSessionRecordInput {
  * - createFromPublishedOccurrence: yalnızca PUBLISHED ScheduleEvent'den türetir;
  *   rosterSnapshot immutable. Idempotent: aynı (tenant, event, date) varsa günceller.
  * - lock: draft/published -> locked (optimistic concurrency via version).
- * - markRecord: session altında AttendanceRecord upsert (mevcut AttendanceService
- *   mark'ını yeniden kullanır; teacher-own-lesson kontrolü guard katmanında).
+ * - markRecord: session altında AttendanceRecord upsert (teacher-own-lesson
+ *   kontrolü servis + guard katmanında); notes KVKK yazma-yolu maskesinden
+ *   geçer (redactAttendanceNotes — ham serbest metin saklanmaz).
  */
 @Injectable()
 export class AttendanceSessionService {
@@ -222,7 +224,8 @@ export class AttendanceSessionService {
       sessionId: input.sessionId,
       status: input.status,
       markedById: actor.userId,
-      notes: input.notes ?? null,
+      // KVKK (AC-5, #265): yazma yolunda maskeleme — ham not saklanmaz.
+      notes: redactAttendanceNotes(input.notes),
     });
     await this.recordRepo.upsert(entity, {
       conflictPaths: ['tenantId', 'sessionId', 'studentId'],
