@@ -1,6 +1,9 @@
 # Evidence — R4 (#339) Sunucu-tek-kaynak güvenlik bağlamı + default-deny
 
 - Baz main: `15c5ab8d44f21b3165cf50658fadbc42b4bd68ae` · Branch: `p1b/security-context-default-deny` · Tarih: 2026-09-23
+- Doğrulanan kod head'i: **`69f1c0f`** (`feat(security): server-authoritative request context + protected endpoint default-deny`) —
+  aşağıdaki `tsc`/`jest` koşuları bu ağaçta (kod + test aynı commit) çalıştırıldı. Bu evidence dosyasının sürümünü
+  taşıyan commit docs-only'dir; yürütülebilir ağaç farkı yoktur.
 - Sahiplik: `src/common/context/**`, `src/common/guards/**`, `src/common/tenant/**`, `src/rbac/**` (+ madde 7 gereği `test/rbac/controller-enforcement-consistency.spec.ts` genişletmesi).
 - Ortak dosya değişikliği: **YOK** — `src/app.module.ts`, `package.json`, `src/database/data-source.ts` dokunulmadı.
 - Şema değişikliği: **YOK** → `migration 1840*` üretilmedi. Fresh PostgreSQL kanıtı şema için gerekmez; DB'ye bağlı
