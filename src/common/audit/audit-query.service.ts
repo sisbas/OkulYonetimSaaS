@@ -7,7 +7,8 @@ import {
   AUDIT_CHAIN_GENESIS_HASH,
   AuditChainPayload,
   AuditChainVerification,
-  resolveAuditHmacKey,
+  auditHmacKeyResolver,
+  resolveAuditHmacKeyRing,
   verifyAuditChain,
 } from './audit-chain';
 import { redactAuditRowsForExport } from './audit-tenant-query.builder';
@@ -82,7 +83,11 @@ export class AuditQueryService {
     private readonly repository: AuditLogRepository,
     @Inject(TRANSACTIONAL_AUDIT_WRITER)
     private readonly auditWriter: TransactionalAuditWriter,
-  ) {}
+  ) {
+    // Fail-closed konfigürasyon kontrolü (#259 review P1): bozuk/zayıf anahtar
+    // halkası süreci ilk doğrulamada değil, BAŞLANGIÇTA durdurur.
+    resolveAuditHmacKeyRing();
+  }
 
   async list(
     query: TenantScopedAuditQuery,
@@ -135,9 +140,13 @@ export class AuditQueryService {
       [checkpoint?.upToSequence ?? 0, limit],
     )) as AuditLogRow[];
 
-    const { key } = resolveAuditHmacKey();
+    // Rotasyon sözleşmesi: doğrulama anahtarı satırın KENDİ `signature_key_id`'si
+    // ile seçilir (aktif anahtar + emekliye ayrılmış anahtarlar). Tek sabit
+    // anahtar kullanmak, rotasyon sonrası eski satırların tamamını
+    // `signature-mismatch` ile düşürürdü (#259 review P1).
+    const keyRing = resolveAuditHmacKeyRing();
     const verification = verifyAuditChain(rows.map(toVerifiable), {
-      hmacKey: key,
+      resolveHmacKey: auditHmacKeyResolver(keyRing),
       startPrevHash,
       ...(input.expectedHeadHash
         ? { expectedHeadHash: input.expectedHeadHash }

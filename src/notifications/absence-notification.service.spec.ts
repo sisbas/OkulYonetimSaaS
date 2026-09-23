@@ -1,9 +1,13 @@
+import { Logger } from '@nestjs/common';
+
+import { pseudonymize } from '../kvkk/pseudonym';
 import { AbsenceNotificationService } from './absence-notification.service';
 import { NotificationOutboxRepository } from './notification-outbox.repository';
 
 /**
  * Devamsızlık → outbox olayı (#266, #265 AC-6): yalnız LOCKED oturum,
- * idempotent dedupe anahtarı, KVKK onay kapısı ve PII'siz payload.
+ * idempotent dedupe anahtarı, KVKK onay kapısı ve **minimize + pseudonymize**
+ * payload (ham öğrenci/oturum UUID'si payload'a ve log'a yazılmaz).
  */
 describe('AbsenceNotificationService (#266)', () => {
   const TENANT_ID = '11111111-1111-4111-8111-111111111111';
@@ -112,15 +116,57 @@ describe('AbsenceNotificationService (#266)', () => {
       `attendance.absent:${SESSION_ID}:${STUDENT_B}`,
     ]);
     expect(rows.every((row) => row.status === 'pending')).toBe(true);
-    // KVKK: payload yalnız kimlik/kod taşır (isim, telefon, serbest metin yok).
-    expect(JSON.stringify(rows[0].payloadMasked)).not.toMatch(/name|phone|notes|body/i);
+    // KVKK (#266 review P2): payload ham UUID taşımaz; kiracıya kilitli
+    // deterministik pseudonym referansları taşır (isim/telefon/serbest metin yok).
+    const serialized = JSON.stringify(rows.map((row) => row.payloadMasked));
+    expect(serialized).not.toMatch(/name|phone|notes|body/i);
+    expect(serialized).not.toContain(SESSION_ID);
+    expect(serialized).not.toContain(STUDENT_A);
+    expect(serialized).not.toContain(STUDENT_B);
     expect(rows[0].payloadMasked).toMatchObject({
       eventType: 'attendance.absent.locked',
-      sessionId: SESSION_ID,
-      studentId: STUDENT_A,
+      sessionRef: pseudonymize({ tenantId: TENANT_ID, scope: 'session', rawId: SESSION_ID }),
+      studentRef: pseudonymize({ tenantId: TENANT_ID, scope: 'student', rawId: STUDENT_A }),
       status: 'absent',
       channel: 'sms',
     });
+    // Korelasyon korunur ama kimlik ifşa edilmez: aynı oturum → aynı sessionRef,
+    // farklı öğrenci → farklı studentRef.
+    const payloads = rows.map((row) => row.payloadMasked as Record<string, unknown>);
+    expect(payloads[1].sessionRef).toBe(payloads[0].sessionRef);
+    expect(payloads[1].studentRef).not.toBe(payloads[0].studentRef);
+  });
+
+  it('never logs raw student/session identifiers (KVKK)', async () => {
+    const logged: string[] = [];
+    const spy = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation((...args: unknown[]) => {
+        logged.push(args.map((value) => String(value)).join(' '));
+      });
+    try {
+      const manager = makeManager({
+        sessionStatus: 'locked',
+        absent: [STUDENT_A],
+        consents: approvedConsents,
+      });
+      const service = new AbsenceNotificationService(outbox);
+
+      await service.enqueueLockedAbsenceNotifications(manager as never, {
+        tenantId: TENANT_ID,
+        sessionId: SESSION_ID,
+        actorUserId: ACTOR_ID,
+      });
+
+      const output = logged.join('\n');
+      expect(output).toContain('notification.outbox.enqueued');
+      expect(output).toContain('sessionRef');
+      expect(output).not.toContain(SESSION_ID);
+      expect(output).not.toContain(STUDENT_A);
+      expect(output).not.toContain(ACTOR_ID);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('blocks enqueue when parent_notification consent is missing', async () => {

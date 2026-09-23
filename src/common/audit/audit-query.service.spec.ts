@@ -1,5 +1,11 @@
 import { AuditQueryService } from './audit-query.service';
 import { AuditLogRepository } from './audit-log.repository';
+import {
+  AUDIT_CHAIN_GENESIS_HASH,
+  AuditChainPayload,
+  computeAuditEntryHash,
+  signAuditEntryHash,
+} from './audit-chain';
 
 /**
  * Audit okuma + doğrulama servisi (#259): KVKK maskeli okuma, okuma audit'i ve
@@ -14,6 +20,32 @@ describe('AuditQueryService (#259)', () => {
   } as unknown as AuditLogRepository;
 
   const auditWriter = { write: jest.fn(async () => undefined) };
+
+  // Rotasyon sözleşmesi (#259 review P1): doğrulama anahtarı satırın
+  // `signature_key_id`'siyle seçilir; emekliye ayrılmış anahtar
+  // AUDIT_HMAC_PREVIOUS_KEYS ile doğrulama için elde tutulur.
+  const ACTIVE_KEY = 'active-audit-hmac-key-with-32-chars-mini';
+  const RETIRED_KEY = 'retired-audit-hmac-key-with-32-chars-min';
+  const ACTIVE_KEY_ID = 'key-2026-09';
+  const RETIRED_KEY_ID = 'key-2026-01';
+  const ROTATION_ENV_KEYS = [
+    'AUDIT_HMAC_KEY',
+    'AUDIT_HMAC_KEY_ID',
+    'AUDIT_HMAC_PREVIOUS_KEYS',
+  ] as const;
+  const envBackup: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of ROTATION_ENV_KEYS) envBackup[key] = process.env[key];
+  });
+
+  afterEach(() => {
+    for (const key of ROTATION_ENV_KEYS) {
+      const value = envBackup[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
 
   function makeDataSource(queryImpl: (sql: string, params?: unknown[]) => unknown) {
     return {
@@ -117,5 +149,144 @@ describe('AuditQueryService (#259)', () => {
     expect(result.startedFromCheckpoint).toBe(false);
     expect(result.lastCheckpoint).toBeNull();
     expect(result).toMatchObject({ valid: true, reason: null });
+  });
+
+  /**
+   * Zincir satırı üretimi gerçek üretim fonksiyonlarıyla (hash + HMAC) yapılır;
+   * böylece doğrulama yolu uçtan uca sınanır.
+   */
+  function auditRow(input: {
+    seq: number;
+    prevHash: string;
+    signatureKeyId: string;
+    signatureKey: string;
+  }) {
+    const payload: AuditChainPayload = {
+      tenantId: TENANT_ID,
+      actorUserId: ACTOR_ID,
+      actorSessionId: null,
+      action: 'attendance.session.closed',
+      entityType: 'attendance',
+      entityId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      requestId: `req-${input.seq}`,
+      metadataJson: { schemaVersion: 1, result: 'success' },
+      createdAt: `2026-09-22T12:00:0${input.seq}.000Z`,
+    };
+    const entryHash = computeAuditEntryHash(input.prevHash, payload);
+    return {
+      seq: input.seq,
+      prev_hash: input.prevHash,
+      entry_hash: entryHash,
+      signature: signAuditEntryHash(entryHash, input.signatureKey),
+      signature_key_id: input.signatureKeyId,
+      tenant_id: payload.tenantId,
+      actor_user_id: payload.actorUserId,
+      actor_session_id: null,
+      action: payload.action,
+      entity_type: payload.entityType,
+      entity_id: payload.entityId,
+      request_id: payload.requestId,
+      metadata_json: payload.metadataJson,
+      created_at: new Date(payload.createdAt),
+    };
+  }
+
+  function dataSourceWithRows(rows: readonly unknown[]) {
+    return makeDataSource((sql) =>
+      sql.includes('audit_chain_checkpoints') ? [] : rows,
+    );
+  }
+
+  it('verifies rows signed before AND after a key rotation via signature_key_id (#259 review P1)', async () => {
+    process.env.AUDIT_HMAC_KEY = ACTIVE_KEY;
+    process.env.AUDIT_HMAC_KEY_ID = ACTIVE_KEY_ID;
+    process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({
+      [RETIRED_KEY_ID]: RETIRED_KEY,
+    });
+
+    const retired = auditRow({
+      seq: 1,
+      prevHash: AUDIT_CHAIN_GENESIS_HASH,
+      signatureKeyId: RETIRED_KEY_ID,
+      signatureKey: RETIRED_KEY,
+    });
+    const active = auditRow({
+      seq: 2,
+      prevHash: retired.entry_hash,
+      signatureKeyId: ACTIVE_KEY_ID,
+      signatureKey: ACTIVE_KEY,
+    });
+    const service = new AuditQueryService(
+      dataSourceWithRows([retired, active]) as never,
+      repository,
+      auditWriter as never,
+    );
+
+    // Tek sabit anahtar kullanılsaydı 1. satır 'signature-mismatch' ile düşerdi.
+    await expect(service.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({
+      valid: true,
+      reason: null,
+      checkedRows: 2,
+    });
+  });
+
+  it('fails closed when the retired key for a row key id is not retained (#259 review P1)', async () => {
+    process.env.AUDIT_HMAC_KEY = ACTIVE_KEY;
+    process.env.AUDIT_HMAC_KEY_ID = ACTIVE_KEY_ID;
+    delete process.env.AUDIT_HMAC_PREVIOUS_KEYS;
+
+    const retired = auditRow({
+      seq: 1,
+      prevHash: AUDIT_CHAIN_GENESIS_HASH,
+      signatureKeyId: RETIRED_KEY_ID,
+      signatureKey: RETIRED_KEY,
+    });
+    const service = new AuditQueryService(
+      dataSourceWithRows([retired]) as never,
+      repository,
+      auditWriter as never,
+    );
+
+    await expect(service.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({
+      valid: false,
+      brokenAtSequence: 1,
+      reason: 'unknown-signature-key',
+    });
+  });
+
+  it('rejects a row whose signature does not match the key selected by its key id', async () => {
+    process.env.AUDIT_HMAC_KEY = ACTIVE_KEY;
+    process.env.AUDIT_HMAC_KEY_ID = ACTIVE_KEY_ID;
+    process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({
+      [RETIRED_KEY_ID]: RETIRED_KEY,
+    });
+
+    // key-id AKTİF anahtarı işaret ediyor ama imza emekliye ayrılmış anahtarla
+    // üretilmiş → doğrulama başarısız (yanlış key-id kabul edilmez).
+    const mismatched = auditRow({
+      seq: 1,
+      prevHash: AUDIT_CHAIN_GENESIS_HASH,
+      signatureKeyId: ACTIVE_KEY_ID,
+      signatureKey: RETIRED_KEY,
+    });
+    const service = new AuditQueryService(
+      dataSourceWithRows([mismatched]) as never,
+      repository,
+      auditWriter as never,
+    );
+
+    await expect(service.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({
+      valid: false,
+      brokenAtSequence: 1,
+      reason: 'signature-mismatch',
+    });
+  });
+
+  it('rejects a malformed retired-key configuration at startup (fail-closed)', () => {
+    process.env.AUDIT_HMAC_PREVIOUS_KEYS = 'not-json';
+
+    expect(
+      () => new AuditQueryService({} as never, repository, auditWriter as never),
+    ).toThrow(/AUDIT_HMAC_PREVIOUS_KEYS/);
   });
 });

@@ -20,9 +20,15 @@ kaybı veya çift gönderim, domain verisiyle tutarsız kalmaz.
    (`sms_notification` / `whatsapp_notification` / `email_notification`) `approved`,
    iptal edilmemiş (`revoked_at IS NULL`) ve süresi dolmamış olmalıdır. Aksi
    hâlde satır `blocked_consent` olarak yazılır (gönderim yok, `reason` kayıtlı).
-4. **PII'siz payload**: `payload_masked` yalnız olay türü, oturum/öğrenci
-   kimliği, durum ve kanal taşır; isim, telefon, e-posta veya serbest metin
-   yazılmaz.
+4. **Minimize + pseudonymize payload**: `payload_masked` yalnız olay türü,
+   durum, kanal ve **kiracıya kilitli deterministik pseudonym referansları**
+   (`studentRef`, `sessionRef`) taşır. Ham öğrenci/oturum UUID'si payload'a,
+   log satırına veya audit kaydına YAZILMAZ; isim, telefon, e-posta ve serbest
+   metin de yazılmaz. Pseudonym üretimi `src/kvkk/pseudonym.ts` içindedir:
+   `HMAC_SHA256(KVKK_PSEUDONYM_KEY, tenantId|scope|rawId)` → geri döndürülemez,
+   kiracılar arası eşleştirilemez ve rotasyonda `keyVersion` ile izlenebilir.
+   (Not: 2026-09 satırlarında `payload_masked` ham `studentId`/`sessionId`
+   taşıyordu ve "PII'siz" ifadesi yanlıştı — #266 review P2.)
 
 ## Veri modeli
 
@@ -33,10 +39,15 @@ kaybı veya çift gönderim, domain verisiyle tutarsız kalmaz.
 | `dedupe_key` | idempotency anahtarı (`UNIQUE (tenant_id, dedupe_key)`) |
 | `event_type` | `attendance.absent.locked` |
 | `status` | `pending` \| `blocked_consent` \| `dispatched` \| `failed` (DB CHECK) |
-| `payload_masked` | jsonb, PII'siz |
+| `payload_masked` | jsonb, PII taşımaz: olay türü + durum + kanal + pseudonym referansları |
 | `reason` | engel nedeni (`blocked_consent`, `blocked_channel_consent`) |
 | `consent_version` | onay sürümü izi (granüler/versioned consent sonraki dilim) |
 | `attempts`, `available_at`, `dispatched_at` | relay deneme/backoff alanları |
+
+`student_id` / `session_id` kolonları relay'in alıcıyı çözmesi için ham UUID
+tutmaya devam eder (tenant-scoped domain verisi); bu kolonlar log'a, audit
+metadata'sına, API yanıtına veya artefakta serialize EDİLMEZ. Bildirim
+payload'ı ve log yalnız pseudonym referanslarını taşır.
 
 ## Akış
 

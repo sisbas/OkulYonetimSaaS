@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 
+import { pseudonymize, resolvePseudonymKey } from '../kvkk/pseudonym';
 import {
   NotificationOutboxRepository,
   EnqueueOutboxRow,
@@ -52,7 +53,11 @@ type ConsentRow = {
  * - KVKK: `parent_notification` onayı **ve** kanal onayı (varsa) approved,
  *   iptal edilmemiş ve süresi dolmamış olmalı; aksi hâlde satır
  *   `blocked_consent` yazılır (gönderim yok, neden kayıtlı).
- * - `payload_masked` PII taşımaz: olay türü, kimlikler, durum ve kanal.
+ * - `payload_masked` **minimize edilmiş + pseudonymize** içerik taşır: olay türü,
+ *   durum, kanal ve kiracıya kilitli deterministik referanslar (`studentRef`,
+ *   `sessionRef`). Ham öğrenci/oturum UUID'si payload'a, log'a veya audit
+ *   kaydına YAZILMAZ (#266 review P2 — "PII'siz" ifadesi ham UUID taşırken
+ *   yanlıştı; bkz. src/kvkk/pseudonym.ts).
  *
  * Çağıran, bu metodu **kendi transaction'ı içinde** çalıştırır; bildirim niyeti
  * domain mutasyonuyla atomik kalıcılaşır.
@@ -61,7 +66,13 @@ type ConsentRow = {
 export class AbsenceNotificationService {
   private readonly logger = new Logger(AbsenceNotificationService.name);
 
-  constructor(private readonly outbox: NotificationOutboxRepository) {}
+  constructor(private readonly outbox: NotificationOutboxRepository) {
+    // Fail-closed konfigürasyon kontrolü: eksik/zayıf pseudonym anahtarı süreci
+    // ilk bildirim üretiminde (kilit transaction'ı içinde) değil BAŞLANGIÇTA
+    // durdurur. Ham kimlik pseudonym'lenemediği için fail-closed davranış
+    // zorunludur (#266 review P2).
+    resolvePseudonymKey();
+  }
 
   async enqueueLockedAbsenceNotifications(
     entityManager: EntityManager,
@@ -97,6 +108,16 @@ export class AbsenceNotificationService {
     )) as AbsentRow[];
     if (absent.length === 0) return empty;
 
+    // KVKK (A3 redaction): ham öğrenci/oturum UUID'si payload'a veya log'a
+    // yazılmaz. Yerine kiracıya kilitli, geri döndürülemez deterministik
+    // pseudonym referansları üretilir (aynı kiracı+kapsam+özne → aynı değer;
+    // kiracılar arası eşleştirme yapılamaz).
+    const pseudonymKey = resolvePseudonymKey();
+    const sessionRef = pseudonymize(
+      { tenantId: input.tenantId, scope: 'session', rawId: input.sessionId },
+      pseudonymKey,
+    );
+
     const rows: EnqueueOutboxRow[] = [];
     let intendedBlockedConsent = 0;
     for (const record of absent) {
@@ -117,8 +138,15 @@ export class AbsenceNotificationService {
         status: decision.approved ? 'pending' : 'blocked_consent',
         payloadMasked: {
           eventType: ABSENCE_NOTIFICATION_EVENT_TYPE,
-          sessionId: input.sessionId,
-          studentId: record.student_id,
+          sessionRef,
+          studentRef: pseudonymize(
+            {
+              tenantId: input.tenantId,
+              scope: 'student',
+              rawId: record.student_id,
+            },
+            pseudonymKey,
+          ),
           status: 'absent',
           channel,
         },
@@ -141,7 +169,7 @@ export class AbsenceNotificationService {
       JSON.stringify({
         event: 'notification.outbox.enqueued',
         tenantId: input.tenantId,
-        sessionId: input.sessionId,
+        sessionRef,
         channel,
         ...outcome,
       }),

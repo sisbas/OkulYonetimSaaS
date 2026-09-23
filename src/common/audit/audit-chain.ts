@@ -118,6 +118,87 @@ export function resolveAuditHmacKey(
   return { key: TEST_AUDIT_HMAC_KEY, keyId: 'local-test-key' };
 }
 
+/**
+ * Rotasyon sözleşmesi (`.env.example`): yeni anahtar `AUDIT_HMAC_KEY_ID`'ye
+ * yazılır, ESKİ anahtar doğrulama için bu ortam değişkeninde tutulur
+ * (JSON: `{"key-1":"<32+ karakter anahtar>"}`). Emekliye ayrılan anahtar
+ * verilmezse rotasyon öncesi kayıtlar doğrulanamaz (fail-closed).
+ */
+export const AUDIT_HMAC_PREVIOUS_KEYS_ENV = 'AUDIT_HMAC_PREVIOUS_KEYS';
+
+export type AuditHmacKeyRing = Readonly<{
+  /** Yeni satırların imzalandığı aktif anahtar. */
+  current: AuditHmacKey;
+  /** Rotasyondan önceki anahtarlar: `signature_key_id` → anahtar. */
+  previous: ReadonlyMap<string, string>;
+}>;
+
+/**
+ * İmza anahtarı halkasını fail-closed çözer (#259 review P1: key-id bazlı
+ * doğrulama). Bozuk JSON, zayıf eski anahtar veya aktif kimliğin tekrarı
+ * sessizce yok sayılmaz — FATAL.
+ */
+export function resolveAuditHmacKeyRing(
+  env: NodeJS.ProcessEnv = process.env,
+): AuditHmacKeyRing {
+  const current = resolveAuditHmacKey(env);
+  const configured = env[AUDIT_HMAC_PREVIOUS_KEYS_ENV];
+  if (configured === undefined || configured.trim() === '') {
+    return { current, previous: new Map() };
+  }
+
+  const invalidShape = `FATAL: ${AUDIT_HMAC_PREVIOUS_KEYS_ENV} must be a JSON object of { "<keyId>": "<key>" }.`;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(configured);
+  } catch {
+    throw new Error(invalidShape);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(invalidShape);
+  }
+
+  const previous = new Map<string, string>();
+  for (const [keyId, key] of Object.entries(parsed as Record<string, unknown>)) {
+    if (keyId.trim() === '' || keyId.length > 40) {
+      throw new Error(
+        `FATAL: ${AUDIT_HMAC_PREVIOUS_KEYS_ENV} contains an invalid key id (1..40 chars).`,
+      );
+    }
+    if (typeof key !== 'string' || key.length < MIN_AUDIT_HMAC_KEY_BYTES) {
+      throw new Error(
+        `FATAL: ${AUDIT_HMAC_PREVIOUS_KEYS_ENV}["${keyId}"] is too weak (need >= ${MIN_AUDIT_HMAC_KEY_BYTES} chars).`,
+      );
+    }
+    if (keyId === current.keyId) {
+      throw new Error(
+        `FATAL: ${AUDIT_HMAC_PREVIOUS_KEYS_ENV} repeats the active key id "${keyId}".`,
+      );
+    }
+    previous.set(keyId, key);
+  }
+
+  return { current, previous };
+}
+
+/**
+ * Kaydın `signature_key_id`'sine göre doğrulama anahtarını seçer: aktif kimlik
+ * aktif anahtarı, emekliye ayrılmış kimlik eski anahtarı verir. Bilinmeyen
+ * kimlik `undefined` döner ve `verifyAuditChain` kaydı
+ * `unknown-signature-key` ile REDDEDER (yanlış key-id → doğrulama başarısız).
+ *
+ * `null` kimlik (kimlik izlemeyen legacy satır) aktif anahtarla denenir; satır
+ * başka bir anahtarla imzalanmışsa `signature-mismatch` ile yine reddedilir.
+ */
+export function auditHmacKeyResolver(ring: AuditHmacKeyRing): AuditHmacKeyResolver {
+  return (keyId) => {
+    if (keyId === null || keyId === undefined || keyId === ring.current.keyId) {
+      return ring.current.key;
+    }
+    return ring.previous.get(keyId);
+  };
+}
+
 /** `entry_hash` üzerinden HMAC-SHA256 imzası (hex). */
 export function signAuditEntryHash(entryHash: string, hmacKey: string): string {
   return createHmac('sha256', hmacKey).update(entryHash, 'utf8').digest('hex');
@@ -133,7 +214,9 @@ export type AuditChainRecordForVerification = Readonly<{
 }>;
 
 /** `signature_key_id` -> anahtar eşlemesi (rotasyon sonrası eski kayıtlar için). */
-export type AuditHmacKeyResolver = (keyId: string | null) => string | undefined;
+export type AuditHmacKeyResolver = (
+  keyId: string | null | undefined,
+) => string | undefined;
 
 export type AuditChainVerificationOptions = Readonly<{
   /** Tek anahtar (kısa ömürlü/tek sürümlü doğrulama). */
