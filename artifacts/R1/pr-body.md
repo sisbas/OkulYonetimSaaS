@@ -47,7 +47,7 @@ dersler boşta?" sorusu sunucu tarafında yanıtlanır.
 - [x] If-Match/version sözleşmesi (`LEAVE_VERSION_REQUIRED` 428 / `LEAVE_VERSION_MISMATCH` 412) + stale recovery
 - [x] Sıfır etki açıkça ifade edilir (sessiz boş dönüş yok)
 
-## Test çıktısı (yerel)
+## Test çıktısı
 
 | Doğrulama | Komut | Sonuç |
 |---|---|---|
@@ -56,7 +56,7 @@ dersler boşta?" sorusu sunucu tarafında yanıtlanır.
 | Hedef suite'ler | `npx jest --runInBand src/leaves src/daily-operations test/contracts test/acceptance-guard test/kvkk test/rbac test/database` | **exit 0** — 40 passed / 9 skipped suite · **301 passed**, 37 skipped test |
 | Mutasyon 1 (etki transaction dışına) | hedef jest | **exit 1** — 2 failed suite, 2 failed test → geri alındı |
 | Mutasyon 2 (outbox transaction dışına) | hedef jest | **exit 1** — 2 failed suite, 3 failed test → geri alındı |
-| Rollback provası | `git revert c892607` + hedef jest | **exit 0** — 12 suite / 110 test yeşil → `git reset --hard` ile geri uygulandı |
+| Rollback provası | `git revert 12876bc` + hedef jest | **exit 0** — 12 suite / 110 test yeşil → `git reset --hard` ile geri uygulandı |
 | DB suite (gerçek PostgreSQL) | CI `npm run qa:db` (`test:database:required`) | yerelde PostgreSQL yok → **CI'da koşacak**; run URL'i PR sonrası eklenecek |
 
 Ayrıntı ve ham çıktı satırları: `artifacts/R1/evidence.md` §1, §4, §6.
@@ -87,11 +87,20 @@ Ayrıntı ve ham çıktı satırları: `artifacts/R1/evidence.md` §1, §4, §6.
 - Prova: `artifacts/R1/evidence.md` §6 — revert edilmiş ağaçta hedef suite'ler yeşil, ardından değişiklik geri
   uygulandı.
 
-## CI referansı
+## CI run referansı
 
-- PR **henüz açılmadı** (brief: PR yalnız A7 GO verdict'i + ORCH onayı sonrası açılır). Açılışta zorunlu check'ler:
-  Backend CI, Sprint 1 Quality Gate, **DB Smoke** (`npm run qa:db` → `test:database:required`, skip yasak),
-  Gate 1 CI, P0 browser E2E, PR Governance, Sensitive Pattern Scanner, GitGuardian.
-- Run URL'leri PR açıldığında bu bölüme ve `artifacts/R1/evidence.md` §2/§3 satırlarına yazılacaktır; yeşil olmadan
-  merge talep edilmez.
+Bu PR'ın kendi koşuları (run id'leri ile); **yeşil olmadan merge talep edilmez** ve `runtime` sınıflandırması beyan edilmez:
+
+| Check | Run |
+|---|---|
+| DB Smoke (`npm run qa:db` → `test:database:required`, skip yasak) | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35926296243 |
+| Backend CI | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35926296282 |
+| Sprint 1 Quality Gate | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35926296272 |
+| Gate 1 CI | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35926296301 |
+| P0 browser E2E and artifact evidence | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35926296293 |
+| PR Governance | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35926296449 |
+| Sensitive Pattern Scanner | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35926296274 |
+| GitGuardian scan | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/35926296161 |
+
+Run URL'leri yeşile döndükçe `artifacts/R1/evidence.md` §2/§3 satırlarına işlenecektir. `skipped`/`cancelled`/`queued` **PASS sayılmaz**.
 
