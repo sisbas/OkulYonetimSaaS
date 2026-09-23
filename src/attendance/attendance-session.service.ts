@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -29,6 +30,14 @@ import {
   AttendanceCorrectionReasonCode,
   isAttendanceCorrectionReasonCode,
 } from './attendance-correction';
+import {
+  ATTENDANCE_AUDIT_PORT,
+  AttendanceAuditPort,
+} from './attendance-audit.adapter';
+import {
+  ATTENDANCE_ABSENCE_NOTIFICATION_PORT,
+  AttendanceAbsenceNotificationPort,
+} from './attendance-absence-notification.port';
 
 export interface CreateSessionInput {
   tenantId: string;
@@ -36,6 +45,8 @@ export interface CreateSessionInput {
   sessionDate: Date;
   studentIds: string[];
   actorId?: string | null;
+  /** Correlation ID; controller `AttendanceActor.requestId` geçirir (#259). */
+  requestId?: string | null;
 }
 
 export interface MarkSessionRecordInput {
@@ -84,6 +95,12 @@ export class AttendanceSessionService {
     private readonly sessionRepo: Repository<AttendanceSession>,
     @InjectRepository(AttendanceRecord)
     private readonly recordRepo: Repository<AttendanceRecord>,
+    // Durable audit portu (#259): yazımlar domain transaction'ının içindedir.
+    @Inject(ATTENDANCE_AUDIT_PORT)
+    private readonly audit: AttendanceAuditPort,
+    // #266: kilitli devamsızlık → idempotent outbox olayı (aynı transaction).
+    @Inject(ATTENDANCE_ABSENCE_NOTIFICATION_PORT)
+    private readonly absenceNotifications: AttendanceAbsenceNotificationPort,
   ) {}
 
   async createFromPublishedOccurrence(
@@ -168,6 +185,23 @@ export class AttendanceSessionService {
           version: 1,
         });
         const inserted = await em.save(session);
+        // Durable audit (#259, #265 AC-5): aynı transaction'da yazılır; domain
+        // mutasyonu rollback olursa audit kaydı da yazılmaz.
+        await this.audit.write(em, 'attendance.session.opened', {
+          schemaVersion: 1,
+          tenantId: input.tenantId,
+          actorUserId: ctx?.userId ?? input.actorId ?? null,
+          actorSessionId: null,
+          // Correlation: HTTP yolunda aktörün requestId'si taşınır.
+          requestId: ctx?.requestId ?? input.requestId ?? 'unknown',
+          entityType: 'attendance',
+          entityId: inserted.id,
+          result: 'success',
+          changedFields: ['openedAt'],
+          // Denetlenebilir kanıt: oluşturulan durum ve roster büyüklüğü (PII yok).
+          newStatus: AttendanceSessionStatus.PUBLISHED,
+          rosterSize: input.studentIds.length,
+        });
         this.logger.log(
           JSON.stringify({
             event: 'attendance.session.created',
@@ -188,81 +222,134 @@ export class AttendanceSessionService {
     sessionId: string,
     expectedVersion: number,
   ): Promise<AttendanceSession> {
-    const session = await this.sessionRepo.findOne({
-      where: { id: sessionId, tenantId: actor.tenantId },
-    });
-    if (!session) {
-      throw new NotFoundException('AttendanceSession not found');
-    }
-    // BOLA (fail-closed): öğretmen yalnız kendi dersini, gözetim rolleri tüm kiracıyı.
-    assertAttendanceSessionAccess(actor, session);
-    if (session.version !== expectedVersion) {
-      throw new ConflictException(
-        'Optimistic concurrency conflict: version mismatch',
-      );
-    }
-    if (session.status === AttendanceSessionStatus.LOCKED) {
-      return session; // idempotent
-    }
-    session.status = AttendanceSessionStatus.LOCKED;
-    session.lockedById = actor.userId;
-    session.lockedAt = new Date();
-    session.version += 1;
-    const saved = await this.sessionRepo.save(session);
-    this.logger.log(
-      JSON.stringify({
-        event: 'attendance.session.locked',
+    // Kilit + audit aynı transaction'da: durable audit (#259) domain
+    // mutasyonuyla birlikte commit/rollback olur.
+    return this.sessionRepo.manager.transaction(async (em: EntityManager) => {
+      const session = await em.findOne(AttendanceSession, {
+        where: { id: sessionId, tenantId: actor.tenantId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!session) {
+        throw new NotFoundException('AttendanceSession not found');
+      }
+      // BOLA (fail-closed): öğretmen yalnız kendi dersini, gözetim rolleri tüm kiracıyı.
+      assertAttendanceSessionAccess(actor, session);
+      if (session.version !== expectedVersion) {
+        throw new ConflictException(
+          'Optimistic concurrency conflict: version mismatch',
+        );
+      }
+      if (session.status === AttendanceSessionStatus.LOCKED) {
+        return session; // idempotent
+      }
+      const previousStatus = session.status;
+      session.status = AttendanceSessionStatus.LOCKED;
+      session.lockedById = actor.userId;
+      session.lockedAt = new Date();
+      session.version += 1;
+      const saved = await em.save(session);
+
+      await this.audit.write(em, 'attendance.session.closed', {
+        schemaVersion: 1,
         tenantId: actor.tenantId,
-        sessionId,
-        actorId: actor.userId,
-        version: saved.version,
-      }),
-    );
-    return saved;
+        actorUserId: actor.userId,
+        actorSessionId: null,
+        requestId: actor.requestId,
+        entityType: 'attendance',
+        entityId: saved.id,
+        result: 'success',
+        changedFields: ['status', 'closedAt'],
+        // Denetlenebilir kanıt: hangi durumdan kilitli duruma geçildi.
+        previousStatus,
+        newStatus: AttendanceSessionStatus.LOCKED,
+      });
+
+      // #265 AC-6 / #266: oturum kilitlendiğinde devamsızlıklar için idempotent
+      // outbox olayı üretilir (aynı transaction; draft/published asla bildirmez).
+      const absenceOutcome =
+        await this.absenceNotifications.enqueueLockedAbsenceNotifications(em, {
+          tenantId: actor.tenantId,
+          sessionId: saved.id,
+          actorUserId: actor.userId,
+        });
+
+      this.logger.log(
+        JSON.stringify({
+          event: 'attendance.session.locked',
+          tenantId: actor.tenantId,
+          sessionId,
+          actorId: actor.userId,
+          version: saved.version,
+          absenceOutboxInserted: absenceOutcome.insertedRows,
+          absenceOutboxDuplicates: absenceOutcome.duplicatesSkipped,
+        }),
+      );
+      return saved;
+    });
   }
 
   async markRecord(
     actor: AttendanceActor,
     input: MarkSessionRecordInput,
   ): Promise<AttendanceRecord> {
-    const session = await this.sessionRepo.findOne({
-      where: { id: input.sessionId, tenantId: actor.tenantId },
-    });
-    if (!session) {
-      throw new NotFoundException('AttendanceSession not found');
-    }
-    // BOLA (fail-closed): öğretmen yalnız kendi dersinin yoklamasını işaretler.
-    assertAttendanceSessionAccess(actor, session);
-    if (session.status === AttendanceSessionStatus.LOCKED) {
-      throw new ConflictException(
-        'Session is locked; corrections require controlled flow',
-      );
-    }
-    // Immutable roster snapshot: oturum kapsamı dışındaki öğrenci işaretlenemez.
-    if (!session.rosterSnapshot?.includes(input.studentId)) {
-      throw new ForbiddenException(
-        'Öğrenci bu yoklama oturumunun roster listesinde değil',
-      );
-    }
-    const entity = this.recordRepo.create({
-      tenantId: actor.tenantId,
-      studentId: input.studentId,
-      sessionId: input.sessionId,
-      status: input.status,
-      markedById: actor.userId,
-      // KVKK (AC-5, #265): yazma yolunda maskeleme — ham not saklanmaz.
-      notes: redactAttendanceNotes(input.notes),
-    });
-    await this.recordRepo.upsert(entity, {
-      conflictPaths: ['tenantId', 'sessionId', 'studentId'],
-    });
-    return (await this.recordRepo.findOne({
-      where: {
+    // Kayıt + durable audit aynı transaction'da (#259): audit yazımı
+    // başarısız olursa işaretleme de commit edilmez.
+    return this.sessionRepo.manager.transaction(async (em: EntityManager) => {
+      const session = await em.findOne(AttendanceSession, {
+        where: { id: input.sessionId, tenantId: actor.tenantId },
+      });
+      if (!session) {
+        throw new NotFoundException('AttendanceSession not found');
+      }
+      // BOLA (fail-closed): öğretmen yalnız kendi dersinin yoklamasını işaretler.
+      assertAttendanceSessionAccess(actor, session);
+      if (session.status === AttendanceSessionStatus.LOCKED) {
+        throw new ConflictException(
+          'Session is locked; corrections require controlled flow',
+        );
+      }
+      // Immutable roster snapshot: oturum kapsamı dışındaki öğrenci işaretlenemez.
+      if (!session.rosterSnapshot?.includes(input.studentId)) {
+        throw new ForbiddenException(
+          'Öğrenci bu yoklama oturumunun roster listesinde değil',
+        );
+      }
+      const entity = em.create(AttendanceRecord, {
         tenantId: actor.tenantId,
         studentId: input.studentId,
         sessionId: input.sessionId,
-      },
-    }))!;
+        status: input.status,
+        markedById: actor.userId,
+        // KVKK (AC-5, #265): yazma yolunda maskeleme — ham not saklanmaz.
+        notes: redactAttendanceNotes(input.notes),
+      });
+      await em.upsert(AttendanceRecord, entity, {
+        conflictPaths: ['tenantId', 'sessionId', 'studentId'],
+      });
+      const saved = await em.findOne(AttendanceRecord, {
+        where: {
+          tenantId: actor.tenantId,
+          studentId: input.studentId,
+          sessionId: input.sessionId,
+        },
+      });
+
+      await this.audit.write(em, 'attendance.record.marked', {
+        schemaVersion: 1,
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        actorSessionId: null,
+        requestId: actor.requestId,
+        entityType: 'attendance',
+        entityId: session.id,
+        result: 'success',
+        changedFields: ['status', 'markedForStudentId'],
+        // Denetlenebilir kanıt: işaretlenen durum (öğrenci kimliği PII değil, UUID).
+        newStatus: input.status,
+      });
+
+      return saved!;
+    });
   }
 
   /**
@@ -338,6 +425,7 @@ export class AttendanceSessionService {
         );
       }
 
+      const previousStatus = record.status;
       record.status = input.status;
       // KVKK: düzeltme notu da yazma yolunda maskelenir (ham metin saklanmaz).
       record.notes = redactAttendanceNotes(input.notes);
@@ -350,7 +438,27 @@ export class AttendanceSessionService {
       session.version += 1;
       const savedSession = await em.save(session);
 
-      // Audit (durable audit #259 kapsamındadır; PII taşımaz).
+      // Durable audit (#259, #265 AC-4/AC-5): düzeltme ile aynı transaction'da.
+      // Audit yazımı başarısız olursa düzeltme de commit edilmez.
+      await this.audit.write(em, 'attendance.record.corrected', {
+        schemaVersion: 1,
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        actorSessionId: null,
+        requestId: actor.requestId,
+        entityType: 'attendance',
+        entityId: session.id,
+        result: 'success',
+        changedFields: ['status', 'reasonCode', 'correctionCount'],
+        // Denetlenebilir kanıt (alan adı DEĞİL, değer): hangi gerekçe koduyla,
+        // hangi durumdan hangi duruma ve kaçıncı düzeltmede.
+        reasonCode: input.reasonCode,
+        correctionCount: savedRecord.correctionCount,
+        previousStatus,
+        newStatus: input.status,
+      });
+
+      // Kanıt logu (PII taşımaz).
       this.logger.log(
         JSON.stringify({
           event: 'attendance.record.corrected',

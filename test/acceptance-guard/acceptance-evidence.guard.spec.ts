@@ -70,6 +70,17 @@ export const NON_ACCEPTANCE_EXEMPTIONS: ReadonlyArray<{
       'evidence and is never bound to the P0 acceptance check.',
     mustContain: 'INSERT INTO schedule_events',
   },
+  {
+    file: path.join('test', 'database', 'attendance-correction-concurrency.spec.ts'),
+    reason:
+      'Real-PostgreSQL concurrency test (AC-7, #265): it seeds reference fixtures plus a ' +
+      'locked attendance session through SQL so that two parallel controlled corrections ' +
+      'with the same expectedVersion can be raced and proven to serialize (exactly one wins, ' +
+      'the other gets 409) with exactly one durable audit row per successful correction. The ' +
+      'seeded rows are scaffolding for the pessimistic-lock race, not acceptance evidence, and ' +
+      'this spec is never bound to the P0 acceptance check.',
+    mustContain: 'INSERT INTO schedule_versions',
+  },
 ]);
 
 /**

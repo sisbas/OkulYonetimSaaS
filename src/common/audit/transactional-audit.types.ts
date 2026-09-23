@@ -68,10 +68,13 @@ export const TEACHER_AUDIT_EVENT_NAMES = [
 ] as const;
 
 // Devam/devamsızlık olayları. Öğrenci kimliği yalnızca UUID olarak tutulur.
+// `attendance.record.corrected` (#265 AC-4): kontrollü düzeltme yalnız kapalı
+// sözlükten gerekçe kodu taşır — serbest metin gerekçe audit'e girmez.
 export const ATTENDANCE_AUDIT_EVENT_NAMES = [
   'attendance.session.opened',
   'attendance.session.closed',
   'attendance.record.marked',
+  'attendance.record.corrected',
 ] as const;
 
 // Bildirim olayları. `notificationBody`/`messageBody` gibi serbest metinler
@@ -80,6 +83,12 @@ export const NOTIFICATION_AUDIT_EVENT_NAMES = [
   'notification.sent',
   'notification.failed',
   'notification.preferences.updated',
+] as const;
+
+// Audit retention (#259): saklama süresi dolan kayıtların kırpılması da
+// denetlenebilir olmalıdır (destructive işlem). Yalnız sayaç ve sıra taşır.
+export const AUDIT_RETENTION_AUDIT_EVENT_NAMES = [
+  'audit.retention.pruned',
 ] as const;
 
 export type CourseSuccessAuditEventName = (typeof COURSE_SUCCESS_AUDIT_EVENT_NAMES)[number];
@@ -92,6 +101,8 @@ export type StudentAuditEventName = (typeof STUDENT_AUDIT_EVENT_NAMES)[number];
 export type TeacherAuditEventName = (typeof TEACHER_AUDIT_EVENT_NAMES)[number];
 export type AttendanceAuditEventName = (typeof ATTENDANCE_AUDIT_EVENT_NAMES)[number];
 export type NotificationAuditEventName = (typeof NOTIFICATION_AUDIT_EVENT_NAMES)[number];
+export type AuditRetentionAuditEventName =
+  (typeof AUDIT_RETENTION_AUDIT_EVENT_NAMES)[number];
 
 // Enum benzeri event adları için küçük string literal yardımcıları (tip genişletilebilirliği).
 export type AuthAuditAction = AuthAuditEventName;
@@ -111,7 +122,8 @@ export type TransactionalAuditEventName =
   | StudentAuditEventName
   | TeacherAuditEventName
   | AttendanceAuditEventName
-  | NotificationAuditEventName;
+  | NotificationAuditEventName
+  | AuditRetentionAuditEventName;
 
 export type CourseAuditChangedField = 'name' | 'code' | 'description' | 'status' | 'deactivatedAt';
 export type RoomAuditChangedField =
@@ -165,13 +177,36 @@ export type AttendanceAuditChangedField =
   | 'closedAt'
   | 'markedForStudentId'
   | 'present'
-  | 'lateMinutes';
+  | 'lateMinutes'
+  // Kontrollü düzeltme (#265 AC-4): serbest metin yok, yalnız kod/sayaç.
+  | 'reasonCode'
+  | 'correctionCount'
+  | 'sessionVersion';
+
+/**
+ * Attendance audit kanıtı için allowlist'lenmiş SKALER değerler (#259).
+ *
+ * `changedFields` hangi alanların değiştiğini söyler; bu alanlar ise
+ * değişikliğin denetlenebilir kanıtını taşır (ör. düzeltmenin gerekçe kodu).
+ * Hepsi PII taşımaz: kod, sayaç ve durum adları.
+ */
+export type AttendanceAuditValueEvidence = Readonly<{
+  reasonCode?: string;
+  correctionCount?: number;
+  previousStatus?: string;
+  newStatus?: string;
+  rosterSize?: number;
+}>;
 export type NotificationAuditChangedField =
   | 'channel'
   | 'status'
   | 'templateId'
   | 'recipientRole'
   | 'preferenceKey';
+export type AuditRetentionChangedField =
+  | 'prunedRowCount'
+  | 'upToSequence'
+  | 'dryRun';
 
 type CommonSuccessAuditMetadata<
   TEntityType extends
@@ -184,7 +219,8 @@ type CommonSuccessAuditMetadata<
     | 'student'
     | 'teacher'
     | 'attendance'
-    | 'notification',
+    | 'notification'
+    | 'audit',
   TChangedField extends string,
 > = Readonly<{
   schemaVersion: 1;
@@ -235,9 +271,24 @@ export type TeacherAuditMetadata = CommonSuccessAuditMetadata<'teacher', Teacher
     branchId: string;
   }>;
 
-export type AttendanceAuditMetadata = CommonSuccessAuditMetadata<'attendance', AttendanceAuditChangedField>;
+export type AttendanceAuditMetadata = CommonSuccessAuditMetadata<'attendance', AttendanceAuditChangedField> &
+  AttendanceAuditValueEvidence;
 
 export type NotificationAuditMetadata = CommonSuccessAuditMetadata<'notification', NotificationAuditChangedField>;
+
+/**
+ * Audit retention kırpma kaydı (#259). Saklama süresi dolan kayıtların
+ * silindiği işlemin kanıtı: kaç satır ve hangi `sequence`'e kadar.
+ */
+export type AuditRetentionAuditMetadata = CommonSuccessAuditMetadata<
+  'audit',
+  AuditRetentionChangedField
+> &
+  Readonly<{
+    prunedRowCount?: number;
+    upToSequence?: string;
+    dryRun?: boolean;
+  }>;
 
 /**
  * KVKK redaction kanıt kaydı.
@@ -280,6 +331,8 @@ export type AuditMetadataByEvent = {
   [K in AttendanceAuditEventName]: AttendanceAuditMetadata;
 } & {
   [K in NotificationAuditEventName]: NotificationAuditMetadata;
+} & {
+  [K in AuditRetentionAuditEventName]: AuditRetentionAuditMetadata;
 };
 
 export type PersistableAuditRecord = Readonly<{
@@ -297,7 +350,8 @@ export type PersistableAuditRecord = Readonly<{
     | 'student'
     | 'teacher'
     | 'attendance'
-    | 'notification';
+    | 'notification'
+    | 'audit';
   entityId: string;
   requestId: string;
   metadataJson: Readonly<{
@@ -306,6 +360,12 @@ export type PersistableAuditRecord = Readonly<{
     changedFields: readonly string[];
     branchId?: string;
     redactionReceipt?: RedactionReceipt;
+    /**
+     * Allowlist'lenmiş skaler kanıt değerleri (ör. `reasonCode`,
+     * `correctionCount`). Serbest metin/PII taşımaz; policy tarafından
+     * `allowedValueKeys` ile sınırlandırılır.
+     */
+    valueEvidence?: Readonly<Record<string, string | number | boolean>>;
   }>;
 }>;
 
