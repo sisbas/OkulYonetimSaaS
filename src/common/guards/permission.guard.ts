@@ -146,7 +146,20 @@ export class PermissionGuard implements CanActivate {
           requiredPermission,
         );
       }
-      throw error;
+      // Altyapı hatası (ör. çözümleyicinin veri kaynağı geçici olarak erişilemez):
+      // istemci beyanı YETKİ ÜRETMEZ ama burada sunucu tarafında zaten doğrulanmış
+      // oturum yetkisine düşülür (kimlik katmanı DB oturum + token_version kontrolünü
+      // geçmiştir) ve durum GÜRÜLTÜLÜ şekilde loglanır. Şube seçimi uygulanmaz
+      // (kapsam daraltan seçim uygulanmadığı için yetki genişlemez).
+      this.logger.warn(
+        JSON.stringify({
+          event: 'security.context.authority_resolver_unavailable',
+          requestId: this.baseContext(request).requestId,
+          tenantId: user.tenantId,
+          actorId: user.userId,
+        }),
+      );
+      return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission);
     }
   }
 

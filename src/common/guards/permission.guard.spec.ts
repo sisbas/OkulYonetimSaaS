@@ -175,6 +175,25 @@ describe('PermissionGuard', () => {
     expect(resolveSelection).not.toHaveBeenCalled();
   });
 
+  it('falls back to the session-resolved authority on a resolver infrastructure error (logged, no extra authority)', async () => {
+    // Altyapı hatası senaryosu: sunucu-çözümlü oturum yetkisi kullanılır, istemci beyanı yine yetki vermez.
+    const allowed = harness({
+      permissions: ['user:read'],
+      authority: new Error('driver not connected'),
+    });
+    await expect(
+      Promise.resolve(allowed.guard.canActivate(executionContext(request(['user:read'])))),
+    ).resolves.toBe(true);
+
+    const denied = harness({
+      permissions: ['tenant:branch:read'],
+      authority: new Error('driver not connected'),
+    });
+    await expect(
+      Promise.resolve(denied.guard.canActivate(executionContext(request(['user:read'])))),
+    ).resolves.toBe(false);
+  });
+
   it('keeps public routes reachable without permissions metadata', async () => {
     const { guard, resolve } = harness({ permissions: undefined, contextScoped: false });
     const anonymous = { header: jest.fn(), user: undefined };

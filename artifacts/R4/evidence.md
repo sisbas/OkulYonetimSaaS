@@ -17,7 +17,7 @@
 
 | # | Kanıt | Sonuç |
 |---|---|---|
-| 1 | Yerel tip + test | `npx tsc -p tsconfig.json --noEmit` → **exit 0, stdout boş**. `npx jest --runInBand src test/rbac test/kvkk test/database test/contracts` → **Test Suites: 8 skipped, 100 passed (100/108) · Tests: 32 skipped, 857 passed (889 total) · 57.1 s** |
+| 1 | Yerel tip + test | `npx tsc -p tsconfig.json --noEmit` → **exit 0, stdout boş**. `npx jest --runInBand src test/rbac test/kvkk test/database test/contracts` → **Test Suites: 8 skipped, 100 passed (100/108) · Tests: 32 skipped, 858 passed (890 total) · 62.3 s** |
 | 2 | DB (CI) | **Bekliyor**: yerel PostgreSQL kapalı → `test/database` suite'leri skip (8 suite / 32 test). **Yerel skip, CI kanıtı** PR açılıp DB Smoke çalıştığında bağlanır |
 | 3 | Kabul (CI) | **Bekliyor**: `P0 browser E2E and artifact evidence` run URL'i (PR açılmadı) |
 | 4 | Mutasyon kontrolü | **PASS** — aşağıdaki bölüm: default-deny satırı kaldırıldı → 2 negatif test KIRMIZI → geri alındı → yeşil |
@@ -30,7 +30,8 @@
 | Kapsam | Komut | Sonuç |
 |---|---|---|
 | Tip kapısı | `npx tsc -p tsconfig.json --noEmit` | exit **0**, `tsc.out` **boş** |
-| Zorunlu test seti | `npx jest --runInBand src test/rbac test/kvkk test/database test/contracts` | **100/108 suite**, **857/889 test PASS**, 8 suite (test/database) **PostgreSQL yok → skip** |
+| Zorunlu test seti | `npx jest --runInBand src test/rbac test/kvkk test/database test/contracts` | **100/108 suite**, **858/890 test PASS**, 8 suite (test/database) **PostgreSQL yok → skip** |
+| Komşu süitler (regresyon kontrolü) | `npx jest --runInBand test/runtime-integration` · `npx jest --config ./test/jest-acceptance-guard.json` | **runtime-integration: 5/5 suite · 52/52 test PASS** (baz `15c5ab8` ile birebir aynı) · **acceptance-guard: 11/11 PASS** |
 | Regresyon deltası (rbac+kvkk+contracts) | `npx jest --runInBand test/rbac test/kvkk test/contracts` | Önce: **23 suite / 212 test PASS** → Sonra: **24 suite / 234 test PASS** (+1 suite: `test/rbac/security-context-default-deny.spec.ts`, +22 test) |
 
 > Not: 8 skip'in tamamı `test/database/**` (PostgreSQL gerektirir). Yerelde `DATABASE_URL` yok; kabul için **DB Smoke
@@ -58,6 +59,21 @@ Geçici mutasyon: `return this.deny(...)` → `return true;` (fail-open).
 
 Sonuç: default-deny kaldırıldığında ilgili negatif testler kırmızıya döner → test gerçekten korumayı ölçüyor.
 
+## Komşu süit regresyonu: bulundu ve düzeltildi (dürüst kayıt)
+
+| Adım | Gözlem |
+|---|---|
+| `npx jest --runInBand test/runtime-integration` (R4 öncesi baz `15c5ab8`) | **52/52 PASS** — `/api/v1/leaves/me` authenticated istekler `400` döner |
+| İlk R4 turu (`69f1c0f`) sonrası aynı komut | **2 test FAIL: beklenen 400, gelen 500** (`api-routing-authority.spec.ts`) |
+| Kök neden | Yeni guard, `@Permissions` taşıyan her istekte `AuthorityResolverService` üzerinden veri kaynağına gider; bu süit JWT/oturum katmanını stub'ladığı için gerçek bir PostgreSQL bağlantısı yoktur → çözümleyici altyapı hatası fırlatır ve guard hatayı yeniden fırlatınca yanıt 500 olur |
+| Düzeltme | Guard **altyapı hatasında** (AuthorizationContextError olmayan hata) sunucu tarafında zaten doğrulanmış **oturum yetkisine** düşer (kimlik katmanı DB oturum + `token_version` kontrolünü geçmiştir), şube seçimini uygulamaz ve durumu `security.context.authority_resolver_unavailable` olarak **loglar**. Yetki kararı yine sunucu verisine dayanır; istemci beyanı etkisizdir |
+| Düzeltme sonrası | **52/52 PASS** (baz ile eşit) · ek test: `permission.guard.spec.ts` › *falls back to the session-resolved authority on a resolver infrastructure error (logged, no extra authority)* |
+
+Not: altyapı hatası sırasında yetki **iptali**nin (permission revocation) oturum süresi boyunca gecikmesi teorik olarak
+mümkündür; ancak bu yola yalnızca kimlik katmanı DB kontrolünü başarıyla geçtikten sonra düşülür (yani DB erişilebilirdir)
+ve `token_version` artışı JWT katmanında ayrıca reddedilir. Karar, davranışın gizlenmemesi için gürültülü loglanır.
+
+
 ## Negatif matris (fail-closed kanıtı)
 
 | # | Senaryo | Uygulama / yol | Beklenen | Gözlenen | Test yolu |
@@ -78,6 +94,7 @@ Sonuç: default-deny kaldırıldığında ilgili negatif testler kırmızıya d�
 | N14 | Runtime ↔ statik public allowlist sapması | `public-route.ts` + statik tarama | tam eşitlik (bayat girdi yok) | PASS — `PUBLIC_ROUTE_KEYS` = `PUBLIC_ROUTES` | enforcement spec › *keeps the runtime public allowlist in sync…* |
 | N15 | Beyanı olmayan yeni route eklenirse | statik tarama (`collectFindings`) | KIRMIZI (default-deny ihlali) | PASS — `@Permissions` ya da allowlist'li `@ContextScoped` yoksa bulgu üretir | enforcement spec › *covers every protected route with… (default-deny violation)* |
 | N16 | DI kaydı/kablolaması koparsa (yetki çözümleyici enjekte edilmezse) | `rbac.module.ts` kaydı + guard gözlemlenebilirliği | modül kaydı sözleşmesi + gürültülü (loglanan) güvenli yedek | PASS — providers/exports + controller kaydı doğrulanır; guard `security.context.authority_resolver_absent` uyarısı yazıp yetkiyi yine sunucu-çözümlü kullanıcıdan alır (fail-closed kalır) | `security-context-services.spec.ts` › *RbacModule security-context wiring (module registry)* |
+| N17 | Yetki çözümleyicinin veri kaynağı erişilemez (altyapı hatası) | guard | ek yetki YOK; sunucu-çözümlü oturum yetkisine gürültülü geri düşüş | PASS — oturum izni varsa izin verir, olmayan izin (`tenant:branch:read`) yine RED; `security.context.authority_resolver_unavailable` loglanır | `permission.guard.spec.ts` › *falls back to the session-resolved authority on a resolver infrastructure error (logged, no extra authority)* |
 
 ## AC eşlemesi (R4 brif)
 
@@ -123,8 +140,8 @@ Sonuç: default-deny kaldırıldığında ilgili negatif testler kırmızıya d�
 1. **CI kanıtı bekliyor:** PR talimat gereği **açılmadı** (A7 GO + ORCH onayı bekleniyor) → §8 satır 2 ve 3 (DB Smoke,
    P0 browser E2E) için run URL'i **yok**. Bu nedenle sınıflandırma **`internal`**; `runtime` beyanı CI URL'i
    bağlanmadan yapılmaz. Yerelde 8 `test/database` suite'i PostgreSQL kapalı olduğu için **skip**.
-2. **Dilim boyutu hedefin üstünde:** toplam **+2.511/−67** (20 dosya). Kırılım: üretim kodu **1.339 satır**
-   (hedefin altında), test/spec **1.084 satır**, doküman/artefakt 88 satır. Test payı yüksek çünkü brifin 7 kapsam
+2. **Dilim boyutu hedefin üstünde:** toplam **+2.712/−60** (21 dosya). Kırılım: üretim kodu **1.350 satır**
+   (hedefin altında), test/spec **1.096 satır**, doküman/artefakt 266 satır. Test payı yüksek çünkü brifin 7 kapsam
    maddesinin 6'sı test kanıtı zorunlu kılıyor, 7. madde **zaten** mevcut test dosyasının genişletilmesi
    (`test/rbac/controller-enforcement-consistency.spec.ts` +272) ve negatif matris + mutasyon kontrolü ayrı
    kanıt gerektiriyor. **ORCH kararı gerekirse bölme önerisi:** `/api/v1/context` katalog uç noktası

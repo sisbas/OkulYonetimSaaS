@@ -50,12 +50,20 @@ npx tsc -p tsconfig.json --noEmit
 
 npx jest --runInBand src test/rbac test/kvkk test/database test/contracts
 → Test Suites: 8 skipped, 100 passed, 100 of 108 total
-→ Tests:       32 skipped, 857 passed, 889 total   (57.1 s)
+→ Tests:       32 skipped, 858 passed, 890 total   (62.3 s)
    (8 suite skip = test/database/** — yerel PostgreSQL kapalı: "yerel skip, CI kanıtı")
+
+npx jest --runInBand test/runtime-integration          → 5/5 suite · 52/52 test PASS (baz 15c5ab8 ile eşit)
+npx jest --config ./test/jest-acceptance-guard.json    → 1/1 suite · 11/11 test PASS
 
 npx jest --runInBand test/rbac test/kvkk test/contracts
 → Önce: 23 suite / 212 test PASS  →  Sonra: 24 suite / 234 test PASS
 ```
+
+**Komşu süit regresyonu (bulundu + düzeltildi):** ilk turda `test/runtime-integration` içinde 2 test `400` yerine `500`
+döndü (yeni guard'ın veri kaynağı bağımlılığı, JWT katmanı stub'lanmış süitte karşılıksız kaldı). Düzeltme: guard
+altyapı hatasında sunucu-çözümlü **oturum yetkisine** gürültülü şekilde düşer (şube seçimini uygulamaz, ek yetki
+üretmez); düzeltme sonrası 52/52 PASS. Ayrıntı: `artifacts/R4/evidence.md`.
 
 **Mutasyon kontrolü:** `PermissionGuard` default-deny satırı geçici olarak `return true;` yapıldı →
 `Test Suites: 2 failed` / `Tests: 2 failed, 34 passed` (ilgili negatifler kırmızı) → geri alındı →
@@ -91,5 +99,5 @@ npx jest --runInBand test/rbac test/kvkk test/contracts
 
 ## Boyut
 
-Toplam **+2.511/−67** (20 dosya): üretim kodu 1.339 · test/spec 1.084 · doküman/artefakt 88. Dilim hedefinin
+Toplam **+2.712/−60** (21 dosya): üretim kodu 1.350 · test/spec 1.096 · doküman/artefakt 266. Dilim hedefinin
 (~1.500) üstünde; gerekçe ve önerilen bölme planı `artifacts/R4/evidence.md` “Açık boşluklar” §2'de.
