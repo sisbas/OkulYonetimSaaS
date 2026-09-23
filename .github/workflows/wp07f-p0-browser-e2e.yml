@@ -132,3 +132,80 @@ jobs:
           path: artifacts/wp07f-p0-browser-e2e
           if-no-files-found: error
           retention-days: 14
+
+      # Kanıt sözleşmesi (F1, #269): artefakt manifestoları exact head SHA'ya
+      # bağlı olmalı ve PII/secret taraması bulgu=0 olmalıdır. Derin yapısal
+      # doğrulama harness'ta (`verifyArtifactManifest`) ve guard spec'inde
+      # yapılır; burada CI düzeyinde head bağı + redaksiyon + yasak verdict
+      # etiketi denetlenir.
+      - name: Verify acceptance artifacts are bound to the exact head SHA
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const headSha = process.env.PULL_REQUEST_HEAD_SHA || '';
+          const root = path.join('artifacts', 'wp07f-p0-browser-e2e');
+          const manifests = [
+            path.join(root, 'artifact-manifest.json'),
+            path.join(root, 'journey', 'artifact-manifest.json'),
+          ];
+          const reports = [
+            path.join(root, 'report.json'),
+            path.join(root, 'journey', 'journey-report.json'),
+          ];
+          // Yasak verdict etiketleri: PASS yerine geçemez (skip ≠ PASS).
+          const forbiddenVerdictTokens = ['SKIP', 'SKIPPED', 'NEUTRAL', 'CANCELLED', 'PENDING', 'UNKNOWN'];
+
+          const problems = [];
+          if (!/^[0-9a-f]{40}$/i.test(headSha)) {
+            problems.push(`PULL_REQUEST_HEAD_SHA is not an exact commit SHA: '${headSha}'`);
+          }
+
+          for (const manifestPath of manifests) {
+            if (!fs.existsSync(manifestPath)) {
+              problems.push(`missing manifest: ${manifestPath}`);
+              continue;
+            }
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+            if (manifest.headSha !== headSha) {
+              problems.push(`${manifestPath}: headSha '${manifest.headSha}' != '${headSha}'`);
+            }
+            const findings = manifest.redaction?.findingCount;
+            if (findings !== 0) {
+              problems.push(`${manifestPath}: redaction findingCount=${findings}`);
+            }
+            const files = manifest.coverage?.files ?? [];
+            if (files.length === 0) problems.push(`${manifestPath}: no covered artifact`);
+            const manifestDir = path.dirname(manifestPath);
+            for (const relative of files) {
+              if (!fs.existsSync(path.join(manifestDir, relative))) {
+                problems.push(`${manifestPath}: covered artifact missing on disk: ${relative}`);
+              }
+            }
+            console.log(`manifest ok: ${manifestPath} (head=${manifest.headSha}, files=${files.length}, findings=${findings})`);
+          }
+
+          for (const reportPath of reports) {
+            if (!fs.existsSync(reportPath)) {
+              problems.push(`missing report: ${reportPath}`);
+              continue;
+            }
+            const report = fs.readFileSync(reportPath, 'utf8');
+            const upper = report.toUpperCase();
+            for (const token of forbiddenVerdictTokens) {
+              if (new RegExp(`"${token}"`).test(upper)) {
+                problems.push(`${reportPath}: forbidden verdict token '${token}' is not acceptance evidence`);
+              }
+            }
+            console.log(`report ok: ${reportPath}`);
+          }
+
+          if (problems.length > 0) {
+            console.error(`Artifact head-SHA binding check failed (${problems.length}):`);
+            for (const problem of problems) console.error(` - ${problem}`);
+            process.exit(1);
+          }
+          console.log('Acceptance artifacts are bound to the exact head SHA with zero redaction findings.');
+          NODE

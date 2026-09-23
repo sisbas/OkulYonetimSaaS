@@ -26,6 +26,8 @@ export type E2eEnvironment = Readonly<{
   headSha: string;
   /** Artefakt (screenshot/report/log) dizini. */
   artifactDir: string;
+  /** Journey/negatif matris iskeletinin kendi artefakt dizini. */
+  journeyArtifactDir: string;
   /** Tarayıcı çalıştırma stratejisi; yalnız 'sparticuz' kabul edilir. */
   browserStrategy: string;
   /** Backend'in dinleyeceği port. */
@@ -39,6 +41,37 @@ export type E2eEnvironment = Readonly<{
 const REQUIRED_BROWSER_STRATEGY = 'sparticuz';
 
 export const E2E_ARTIFACT_DIR = path.join(process.cwd(), 'artifacts', 'wp07f-p0-browser-e2e');
+
+/**
+ * Journey iskeletinin artefakt kökü. Shell-auth spec'i ile aynı dizine
+ * yazmak iki koşunun manifestolarını/raporlarını birbirine karıştırırdı;
+ * her yüzey kendi dizininde kendi manifestosunu üretir.
+ */
+export const JOURNEY_ARTIFACT_DIR = path.join(E2E_ARTIFACT_DIR, 'journey');
+
+/** Shell-auth manifestosu journey alt ağacını kapsamaz. */
+export const JOURNEY_ARTIFACT_PREFIX = 'journey';
+
+/**
+ * İkinci bir kabul yüzeyi (`journey`) aynı portu kullanamaz: `startRuntimeServer`
+ * port sahipliğini kanıtlar ve başka bir süreç portu tutuyorsa reddeder. İki
+ * spec çakışmasın diye journey kendi portunu (PORT + offset) ve kendi
+ * baseUrl'ini kullanır. Uzak bir `APP_BASE_URL` verilmişse port sahipliği zaten
+ * harness'ta değildir; o durumda yapılandırılmış yüzey korunur.
+ */
+export function resolveSecondaryRuntimeTarget(
+  environment: E2eEnvironment,
+  offset = 1,
+): Readonly<{ baseUrl: string; port: number }> {
+  const parsed = new URL(environment.baseUrl);
+  const isLocal = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost';
+  if (!isLocal) {
+    const port = parsed.port.length > 0 ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80;
+    return Object.freeze({ baseUrl: environment.baseUrl, port });
+  }
+  const port = environment.port + offset;
+  return Object.freeze({ baseUrl: `http://127.0.0.1:${port}`, port });
+}
 
 function requireValue(name: string, hint: string): string {
   const raw = process.env[name];
@@ -139,6 +172,7 @@ export function readE2eEnvironment(): E2eEnvironment {
     databaseUrl,
     headSha: resolveHeadSha(),
     artifactDir: E2E_ARTIFACT_DIR,
+    journeyArtifactDir: JOURNEY_ARTIFACT_DIR,
     browserStrategy: REQUIRED_BROWSER_STRATEGY,
     port,
     seedTenantSlug: process.env.SEED_TENANT_SLUG?.trim() || 'system-seed',

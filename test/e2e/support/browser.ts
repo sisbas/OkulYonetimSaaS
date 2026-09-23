@@ -66,6 +66,8 @@ export type UiSession = Readonly<{
   isVisible: (selector: string) => Promise<boolean>;
   bodyText: () => Promise<string>;
   activeElementId: () => Promise<string>;
+  /** Yüzey var mı? (Adım iskeleti hazırlık taraması; DOM'a yazmaz.) */
+  exists: (selector: string) => Promise<boolean>;
   storageSnapshot: () => Promise<StorageSnapshot>;
   typeInto: (selector: string, value: string) => Promise<void>;
   clickElement: (selector: string) => Promise<void>;
@@ -135,6 +137,10 @@ export async function createUiSession(input: Readonly<{
         return style.display !== 'none' && style.visibility !== 'hidden';
       }),
     bodyText: () => page.evaluate(() => document.body.innerText),
+    // Okuma amaçlı varlık denetimi: yalnız sorgular, DOM'a yazmaz.
+    exists: (selector: string) =>
+      page.$(selector).then((element) => element !== null),
+
     activeElementId: () =>
       page.evaluate(() => (document.activeElement as HTMLElement | null)?.id ?? ''),
     // Okuma amaçlı storage incelemesi (kural 14 istisnası).
@@ -227,6 +233,11 @@ export async function launchE2eBrowser(): Promise<Browser> {
 /**
  * PII/secret sızıntı taraması. Kabul artefaktları (DOM metni, report.json,
  * screenshot öncesi ekran) bu kurala uymak zorundadır.
+ *
+ * F1 genişletmesi: credential taşıyan bağlantı dizeleri, private key blokları,
+ * sağlayıcı jetonları ve secret-değişken atamaları da taranır. Tüm bulgular
+ * "kanıt bulgu=0" sözleşmesini bozar; hiçbir bulgu "bilinen istisna" olarak
+ * yutulmaz.
  */
 export function scanTextForLeaks(text: string): string[] {
   const value = String(text ?? '');
@@ -242,6 +253,22 @@ export function scanTextForLeaks(text: string): string[] {
   }
   if (/(?:\+90|0090|0)?\s?5\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}/.test(value)) {
     findings.push('phone-like-value');
+  }
+  // Credential taşıyan bağlantı dizesi (user:password@host).
+  if (/postgres(ql)?:\/\/[^\s"'/]+:[^\s"'@/]+@/i.test(value)) {
+    findings.push('connection-string-with-credentials');
+  }
+  // Private key / sağlayıcı jetonu / secret-değişken ataması.
+  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value)) {
+    findings.push('private-key-block');
+  }
+  if (/\b(?:gh[pousr]|AKIA)[A-Za-z0-9_]{12,}/.test(value)) {
+    findings.push('provider-credential');
+  }
+  if (
+    /\b(?:JWT_ACCESS_SECRET|JWT_REFRESH_SECRET|AUDIT_HMAC_KEY|DATABASE_URL)\s*[:=]\s*\S+/.test(value)
+  ) {
+    findings.push('secret-env-assignment');
   }
   for (const match of value.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)) {
     const email = match[0];

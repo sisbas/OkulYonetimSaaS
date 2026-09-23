@@ -3,7 +3,16 @@ import * as path from 'node:path';
 import type { Browser } from 'puppeteer-core';
 import { createUiSession, launchE2eBrowser, scanTextForLeaks, type UiSession } from './support/browser';
 import { scanArtifactDirectory } from './support/artifact-scan';
-import { readE2eEnvironment, type E2eEnvironment } from './support/env';
+import {
+  verifyArtifactManifest,
+  writeArtifactManifest,
+} from './support/artifact-manifest';
+import { JOB_OUTCOME_TABLES } from './support/acceptance-tables';
+import {
+  JOURNEY_ARTIFACT_PREFIX,
+  readE2eEnvironment,
+  type E2eEnvironment,
+} from './support/env';
 import { createPgClient, type PgClient } from './support/pg-client';
 import {
   describeFixtureError,
@@ -52,14 +61,7 @@ const screenshotIndex = { value: 0 };
 let jobOutcomeBefore: Record<string, number> = {};
 let jobOutcomeAfter: Record<string, number> = {};
 
-const JOB_OUTCOME_TABLES_FOR_EVIDENCE = [
-  'leave_requests',
-  'leave_substitution_assignments',
-  'schedule_events',
-  'attendance_records',
-  'notification_logs',
-  'leave_outbox_events',
-];
+const JOB_OUTCOME_TABLES_FOR_EVIDENCE = JOB_OUTCOME_TABLES;
 
 /** Okuma amaçlı sayım; iş sonucu tablosu henüz yoksa (42P01) 'absent' döner. */
 async function countJobOutcomeRows(
@@ -102,18 +104,8 @@ async function writeReport(verdict: ScenarioStatus): Promise<void> {
       nonEnumeratingErrorCopy: true,
     },
     referenceOnlyFixtures: {
-      seededTables: [
-        'branches',
-        'courses',
-        'rooms',
-        'student_groups',
-        'teacher_branches',
-        'teachers',
-        'tenant_memberships',
-        'user_roles',
-        'users',
-        'time_slots',
-      ],
+      // Seeder'ın GERÇEKTEN yazdığı tablolar (sözleşme listesi değil).
+      seededTables: fixture.seededTables,
       jobOutcomeRowsBefore: jobOutcomeBefore,
       jobOutcomeRowsAfter: jobOutcomeAfter,
       jobOutcomeRowsCreated: 0,
@@ -333,6 +325,43 @@ afterAll(async () => {
             selfScan.textFiles,
           )}`,
         );
+      }
+
+      // Artefakt sözleşmesi (#269 / §8): kanıt exact head SHA'ya bağlanır ve
+      // redaksiyon bulgusu 0 olmalıdır. Journey kendi dizininde kendi
+      // manifestosunu ürettiği için alt ağaç hariç tutulur.
+      const manifest = writeArtifactManifest({
+        root: environment.artifactDir,
+        slice: SLICE_ID,
+        headSha: environment.headSha,
+        excludedPrefixes: [JOURNEY_ARTIFACT_PREFIX],
+        roles: {
+          report: { status: 'present', files: ['report.json'] },
+          log: { status: 'present', files: ['backend.log'] },
+          screenshot: { status: 'present', files: screenshots },
+          dbAudit: { status: 'present', files: ['report.json'] },
+          trace: {
+            status: 'pending-slice',
+            reason: 'Tarayıcı trace kanıtı R11 (negatif matris + canary) diliminde açılır.',
+          },
+          video: {
+            status: 'pending-slice',
+            reason: 'Video artefaktı R11 diliminde açılır; bu koşu ekran görüntüsü üretir.',
+          },
+        },
+        dbAudit: { jobOutcomeRowsCreated: 0, perTable: jobOutcomeAfter },
+      });
+      if (manifest.redaction.findingCount > 0 && failure === undefined) {
+        failure = new Error(
+          `Artifact manifest redaction scan found ${manifest.redaction.findingCount} finding(s).`,
+        );
+      }
+
+      const violations = verifyArtifactManifest(environment.artifactDir, {
+        expectedHeadSha: environment.headSha,
+      });
+      if (violations.length > 0 && failure === undefined) {
+        failure = new Error(`Artifact manifest verification failed: ${violations.join(' | ')}`);
       }
     }
   } catch (error) {
