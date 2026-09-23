@@ -1,9 +1,9 @@
 # Evidence — R4 (#339) Sunucu-tek-kaynak güvenlik bağlamı + default-deny
 
 - Baz main: `15c5ab8d44f21b3165cf50658fadbc42b4bd68ae` · Branch: `p1b/security-context-default-deny` · Tarih: 2026-09-23
-- Doğrulanan kod head'i: **`69f1c0f`** (`feat(security): server-authoritative request context + protected endpoint default-deny`) —
-  aşağıdaki `tsc`/`jest` koşuları bu ağaçta (kod + test aynı commit) çalıştırıldı. Bu evidence dosyasının sürümünü
-  taşıyan commit docs-only'dir; yürütülebilir ağaç farkı yoktur.
+- Doğrulanan kod ağacı: bu dosyayı taşıyan commit'in ağacı (kod + test aynı commit) — aşağıdaki `tsc`/`jest`
+  koşuları commit'ten önce **aynı** ağaçta çalıştırıldı; çalıştırma sonrası tek fark bu evidence satırıdır.
+  Önceki ara koşu head'i: `69f1c0f` (ilk yeşil tur), son tur (DI kayıt + gözlemlenebilirlik eklemeleriyle) bu commit'in ağacıdır.
 - Sahiplik: `src/common/context/**`, `src/common/guards/**`, `src/common/tenant/**`, `src/rbac/**` (+ madde 7 gereği `test/rbac/controller-enforcement-consistency.spec.ts` genişletmesi).
 - Ortak dosya değişikliği: **YOK** — `src/app.module.ts`, `package.json`, `src/database/data-source.ts` dokunulmadı.
 - Şema değişikliği: **YOK** → `migration 1840*` üretilmedi. Fresh PostgreSQL kanıtı şema için gerekmez; DB'ye bağlı
@@ -17,7 +17,7 @@
 
 | # | Kanıt | Sonuç |
 |---|---|---|
-| 1 | Yerel tip + test | `npx tsc -p tsconfig.json --noEmit` → **exit 0, stdout boş**. `npx jest --runInBand src test/rbac test/kvkk test/database test/contracts` → **Test Suites: 8 skipped, 100 passed (100/108) · Tests: 32 skipped, 853 passed (885 total) · 42.9 s** |
+| 1 | Yerel tip + test | `npx tsc -p tsconfig.json --noEmit` → **exit 0, stdout boş**. `npx jest --runInBand src test/rbac test/kvkk test/database test/contracts` → **Test Suites: 8 skipped, 100 passed (100/108) · Tests: 32 skipped, 857 passed (889 total) · 57.1 s** |
 | 2 | DB (CI) | **Bekliyor**: yerel PostgreSQL kapalı → `test/database` suite'leri skip (8 suite / 32 test). **Yerel skip, CI kanıtı** PR açılıp DB Smoke çalıştığında bağlanır |
 | 3 | Kabul (CI) | **Bekliyor**: `P0 browser E2E and artifact evidence` run URL'i (PR açılmadı) |
 | 4 | Mutasyon kontrolü | **PASS** — aşağıdaki bölüm: default-deny satırı kaldırıldı → 2 negatif test KIRMIZI → geri alındı → yeşil |
@@ -30,7 +30,7 @@
 | Kapsam | Komut | Sonuç |
 |---|---|---|
 | Tip kapısı | `npx tsc -p tsconfig.json --noEmit` | exit **0**, `tsc.out` **boş** |
-| Zorunlu test seti | `npx jest --runInBand src test/rbac test/kvkk test/database test/contracts` | **100/108 suite**, **853/885 test PASS**, 8 suite (test/database) **PostgreSQL yok → skip** |
+| Zorunlu test seti | `npx jest --runInBand src test/rbac test/kvkk test/database test/contracts` | **100/108 suite**, **857/889 test PASS**, 8 suite (test/database) **PostgreSQL yok → skip** |
 | Regresyon deltası (rbac+kvkk+contracts) | `npx jest --runInBand test/rbac test/kvkk test/contracts` | Önce: **23 suite / 212 test PASS** → Sonra: **24 suite / 234 test PASS** (+1 suite: `test/rbac/security-context-default-deny.spec.ts`, +22 test) |
 
 > Not: 8 skip'in tamamı `test/database/**` (PostgreSQL gerektirir). Yerelde `DATABASE_URL` yok; kabul için **DB Smoke
@@ -77,6 +77,7 @@ Sonuç: default-deny kaldırıldığında ilgili negatif testler kırmızıya d�
 | N13 | Audit metadata allowlist + redaksiyon | `context-audit.ts` | allowlist dışı alanlar atılır, secret maskelenir | PASS — yalnız allowlist anahtarları; e-posta/bearer `[redacted]` | `security-context.spec.ts` › *drops every non-allowlisted field…* / *redacts secret-looking values…* |
 | N14 | Runtime ↔ statik public allowlist sapması | `public-route.ts` + statik tarama | tam eşitlik (bayat girdi yok) | PASS — `PUBLIC_ROUTE_KEYS` = `PUBLIC_ROUTES` | enforcement spec › *keeps the runtime public allowlist in sync…* |
 | N15 | Beyanı olmayan yeni route eklenirse | statik tarama (`collectFindings`) | KIRMIZI (default-deny ihlali) | PASS — `@Permissions` ya da allowlist'li `@ContextScoped` yoksa bulgu üretir | enforcement spec › *covers every protected route with… (default-deny violation)* |
+| N16 | DI kaydı/kablolaması koparsa (yetki çözümleyici enjekte edilmezse) | `rbac.module.ts` kaydı + guard gözlemlenebilirliği | modül kaydı sözleşmesi + gürültülü (loglanan) güvenli yedek | PASS — providers/exports + controller kaydı doğrulanır; guard `security.context.authority_resolver_absent` uyarısı yazıp yetkiyi yine sunucu-çözümlü kullanıcıdan alır (fail-closed kalır) | `security-context-services.spec.ts` › *RbacModule security-context wiring (module registry)* |
 
 ## AC eşlemesi (R4 brif)
 
@@ -122,8 +123,8 @@ Sonuç: default-deny kaldırıldığında ilgili negatif testler kırmızıya d�
 1. **CI kanıtı bekliyor:** PR talimat gereği **açılmadı** (A7 GO + ORCH onayı bekleniyor) → §8 satır 2 ve 3 (DB Smoke,
    P0 browser E2E) için run URL'i **yok**. Bu nedenle sınıflandırma **`internal`**; `runtime` beyanı CI URL'i
    bağlanmadan yapılmaz. Yerelde 8 `test/database` suite'i PostgreSQL kapalı olduğu için **skip**.
-2. **Dilim boyutu hedefin üstünde:** toplam **+2.422/−60** (20 dosya). Kırılım: üretim kodu **1.331 satır**
-   (hedefin altında), test/spec **1.003 satır**, doküman/artefakt 88 satır. Test payı yüksek çünkü brifin 7 kapsam
+2. **Dilim boyutu hedefin üstünde:** toplam **+2.511/−67** (20 dosya). Kırılım: üretim kodu **1.339 satır**
+   (hedefin altında), test/spec **1.084 satır**, doküman/artefakt 88 satır. Test payı yüksek çünkü brifin 7 kapsam
    maddesinin 6'sı test kanıtı zorunlu kılıyor, 7. madde **zaten** mevcut test dosyasının genişletilmesi
    (`test/rbac/controller-enforcement-consistency.spec.ts` +272) ve negatif matris + mutasyon kontrolü ayrı
    kanıt gerektiriyor. **ORCH kararı gerekirse bölme önerisi:** `/api/v1/context` katalog uç noktası

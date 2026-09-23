@@ -95,6 +95,12 @@ export class PermissionGuard implements CanActivate {
     // seçimi yoksa (izole birim spec'leri / DI'siz kullanım) karar senkron
     // verilir; yetki yine kimlik katmanının sunucudan çözdüğü `request.user`dır.
     if (!this.authority && !branchIdHeader) {
+      // Gözlemlenebilirlik: DI grafiğinde çözümleyici yoksa (beklenmeyen durum)
+      // yetki yine sunucu-çözümlü kullanıcıdan alınır ama önbellek/bağımsız
+      // doğrulama devre dışı kalır — bu sessiz kalmamalı.
+      this.logger.warn(
+        JSON.stringify({ event: 'security.context.authority_resolver_absent', requestId: this.baseContext(request).requestId }),
+      );
       return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission);
     }
     if (branchIdHeader && !this.branchScope) {

@@ -1,8 +1,14 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { Test } from '@nestjs/testing';
+import { getDataSourceToken } from '@nestjs/typeorm';
+
 import { AuthorizationContextError } from '../common/context/authorization-context';
 import { RequestContext } from '../common/context/request-context';
 import { AuthorityResolverService } from './authority-resolver.service';
 import { BranchScopeService } from './branch-scope.service';
-import { CONTEXT_CATALOG_VERSION, ContextCatalogService, roleLabel } from './context-catalog.service';
+import { ContextCatalogService, roleLabel } from './context-catalog.service';
+import { CONTEXT_CATALOG_VERSION } from './context-catalog.service';
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
@@ -239,4 +245,72 @@ describe('ContextCatalogService (versioned, human-readable catalog)', () => {
     expect(roleLabel(null)).toBeNull();
   });
 });
+
+
+/**
+ * DI kayıt kanıtı: güvenlik bağlamı bileşenleri RbacModule içinde sağlanır ve
+ * export edilir → AppModule'ün (RbacModule'ü import eden) APP_GUARD'ları bu
+ * sağlayıcıları enjekte edebilir; app.module.ts değişikliği gerekmez.
+ *
+ * Not: gerçek DI grafiğinin çözülmesi bir DataSource gerektirir (TypeORM), bu
+ * ortamda PostgreSQL kapalıdır → grafiğin gerçek çözümü CI'da uygulama açılışıyla
+ * (DB Smoke / P0 browser E2E, gerçek AppModule bootstrap) kanıtlanır. Burada
+ * modül kaydı statik olarak doğrulanır; kablolama koparsa guard senkron yedek
+ * yola düşer ve şube doğrulaması + önbellek devre dışı kalır (loglanır).
+ */
+describe('RbacModule security-context wiring (module registry)', () => {
+  const source = readFileSync(join(process.cwd(), 'src/rbac/rbac.module.ts'), 'utf8');
+
+  it('provides and exports the authority resolver, branch scope and catalog', () => {
+    const providers = source.slice(source.indexOf('providers: ['), source.indexOf('exports: ['));
+    const exportsBlock = source.slice(source.indexOf('exports: ['));
+    for (const token of [
+      'AuthorityResolverService',
+      'BranchScopeService',
+      'ContextCatalogService',
+    ]) {
+      expect(providers).toContain(token);
+      expect(exportsBlock).toContain(token);
+    }
+  });
+
+  it('registers the context catalog controller', () => {
+    expect(source).toContain('ContextCatalogController');
+    expect(source).toContain('controllers: [RbacController, ContextCatalogController]');
+  });
+
+  it('keeps AppModule free of shared-file changes (guard order unchanged)', () => {
+    const appModule = readFileSync(join(process.cwd(), 'src/app.module.ts'), 'utf8');
+    // Guard sıralaması korunur: önce kimlik doğrulama, sonra yetki.
+    expect(appModule.indexOf('useClass: PermissionAuthenticationGuard')).toBeLessThan(
+      appModule.indexOf('useClass: PermissionGuard'),
+    );
+    expect(appModule).toContain('RbacModule');
+  });
+
+  it('instantiates the context services with an injected data source (unit-level)', async () => {
+    const fakeDataSource = { query: jest.fn().mockResolvedValue([]) };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        { provide: getDataSourceToken(), useValue: fakeDataSource },
+        AuthorityResolverService,
+        BranchScopeService,
+        {
+          provide: ContextCatalogService,
+          useFactory: (dataSource: unknown, branchScope: BranchScopeService) =>
+            new ContextCatalogService(dataSource as never, branchScope),
+          inject: [getDataSourceToken(), BranchScopeService],
+        },
+      ],
+    }).compile();
+
+    const resolver = moduleRef.get(AuthorityResolverService);
+    await expect(
+      resolver.resolve({ userId: USER_ID, tenantId: TENANT_A, tokenVersion: 1 }),
+    ).rejects.toBeInstanceOf(AuthorizationContextError); // boş sonuç → fail-closed
+    expect(moduleRef.get(ContextCatalogService)).toBeInstanceOf(ContextCatalogService);
+    await moduleRef.close();
+  });
+});
+
 

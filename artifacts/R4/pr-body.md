@@ -39,6 +39,7 @@ hiçbir yolda yetki kaynağı değildir.
 | (c) cross-tenant/branch/escalation/missing-permission negatifleri | PASS (yerel) | `artifacts/R4/evidence.md` negatif matris N1–N15 |
 | (d) catalog yalnız erişilebilir kayıtları okunabilir adlarla döner | PASS (yerel) | `src/rbac/security-context-services.spec.ts` |
 | (e) mevcut regresyonlar (rbac/kvkk/database) yeşil | PASS | 100/108 suite; `test/database` 8 suite PostgreSQL kapalı → skip (CI DB Smoke bekliyor) |
+| (e+) güvenlik bağlamı bileşenlerinin modül kaydı/DI sözleşmesi | PASS (yerel, statik+unit) | `src/rbac/security-context-services.spec.ts` › *RbacModule security-context wiring (module registry)* — gerçek grafiğin çözümü CI uygulama açılışında kanıtlanır |
 | (f) şema değiştiyse fresh PostgreSQL kanıtı | N/A | Şema/migration değişmedi |
 
 ## Test çıktısı (yerel, main bazı `15c5ab8`)
@@ -49,7 +50,7 @@ npx tsc -p tsconfig.json --noEmit
 
 npx jest --runInBand src test/rbac test/kvkk test/database test/contracts
 → Test Suites: 8 skipped, 100 passed, 100 of 108 total
-→ Tests:       32 skipped, 853 passed, 885 total   (42.9 s)
+→ Tests:       32 skipped, 857 passed, 889 total   (57.1 s)
    (8 suite skip = test/database/** — yerel PostgreSQL kapalı: "yerel skip, CI kanıtı")
 
 npx jest --runInBand test/rbac test/kvkk test/contracts
@@ -90,5 +91,5 @@ npx jest --runInBand test/rbac test/kvkk test/contracts
 
 ## Boyut
 
-Toplam **+2.422/−60** (20 dosya): üretim kodu 1.331 · test/spec 1.003 · doküman/artefakt 88. Dilim hedefinin
+Toplam **+2.511/−67** (20 dosya): üretim kodu 1.339 · test/spec 1.084 · doküman/artefakt 88. Dilim hedefinin
 (~1.500) üstünde; gerekçe ve önerilen bölme planı `artifacts/R4/evidence.md` “Açık boşluklar” §2'de.
