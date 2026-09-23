@@ -3,11 +3,82 @@ import { EntityManager } from 'typeorm';
 
 import { PersistableAuditRecord, TenantScopedAuditQuery, TenantScopedAuditRow } from './transactional-audit.types';
 import { buildTenantScopedAuditQuery } from './audit-tenant-query.builder';
+import {
+  AUDIT_CHAIN_GENESIS_HASH,
+  AUDIT_CHAIN_LOCK_KEY,
+  AuditChainPayload,
+  computeAuditEntryHash,
+  resolveAuditHmacKey,
+  signAuditEntryHash,
+} from './audit-chain';
+
+/** Zincire eklenen kaydın denetlenebilir kimliği. */
+export type AuditChainWriteResult = Readonly<{
+  sequence: number;
+  prevHash: string;
+  entryHash: string;
+  signatureKeyId: string;
+}>;
 
 @Injectable()
 export class AuditLogRepository {
-  async insert(entityManager: EntityManager, record: PersistableAuditRecord): Promise<void> {
-    await entityManager.query(
+  constructor() {
+    // Fail-closed konfigürasyon kontrolü (#259): bu sağlayıcı uygulama
+    // bootstrap'ında (DI) oluşturulduğu için eksik/zayıf HMAC anahtarı süreci
+    // ilk audit yazımında değil, BAŞLANGIÇTA durdurur.
+    resolveAuditHmacKey();
+  }
+
+  /**
+   * Audit kaydını zincire ekler (#259).
+   *
+   * Çağıranın verdiği `entityManager` domain mutasyonuyla AYNI transaction'dır;
+   * yani audit kaydı domain değişikliğiyle birlikte commit/rollback olur
+   * (constitution Madde III).
+   *
+   * Zincir bütünlüğü: `pg_advisory_xact_lock` ile zincir başı serileştirilir,
+   * son kaydın `entry_hash`'i `prev_hash` olarak kullanılır ve özet HMAC ile
+   * imzalanır. Böylece eşzamanlı iki yazma çatallanmış zincir üretemez.
+   */
+  async insert(
+    entityManager: EntityManager,
+    record: PersistableAuditRecord,
+  ): Promise<AuditChainWriteResult> {
+    // `created_at` uygulama tarafında üretilir; hash'lenen değer ile DB'ye
+    // yazılan değer birebir aynı olmak zorundadır.
+    const createdAt = new Date();
+    const payload: AuditChainPayload = {
+      tenantId: record.tenantId,
+      actorUserId: record.actorUserId,
+      actorSessionId: record.actorSessionId,
+      action: record.action,
+      entityType: record.entityType,
+      entityId: record.entityId,
+      requestId: record.requestId,
+      metadataJson: record.metadataJson,
+      createdAt: createdAt.toISOString(),
+    };
+
+    await entityManager.query(`SELECT pg_advisory_xact_lock($1)`, [
+      AUDIT_CHAIN_LOCK_KEY,
+    ]);
+
+    // Zincir başı: en son audit satırı; tenant'ı tamamen kırpılmış (arşivlenmiş)
+    // bir zincirde ise son checkpoint'in `head_hash`'i. Böylece retention
+    // sonrası zincir sürekliliği korunur (genesis'e geri düşülmez).
+    const head = (await entityManager.query(
+      `SELECT COALESCE(
+         (SELECT "entry_hash" FROM "audit_logs" ORDER BY "seq" DESC LIMIT 1),
+         (SELECT "head_hash" FROM "audit_chain_checkpoints" ORDER BY "up_to_sequence" DESC LIMIT 1)
+       ) AS entry_hash`,
+    )) as Array<{ entry_hash: string | null }>;
+    const prevHash = head[0]?.entry_hash ?? AUDIT_CHAIN_GENESIS_HASH;
+
+    const entryHash = computeAuditEntryHash(prevHash, payload);
+    const { key, keyId } = resolveAuditHmacKey();
+    const signature = signAuditEntryHash(entryHash, key);
+
+    const inserted = (await entityManager.query(
       `
         INSERT INTO audit_logs (
           tenant_id,
@@ -17,9 +88,15 @@ export class AuditLogRepository {
           entity_type,
           entity_id,
           request_id,
-          metadata_json
+          metadata_json,
+          created_at,
+          prev_hash,
+          entry_hash,
+          signature,
+          signature_key_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13)
+        RETURNING "seq"
       `,
       [
         record.tenantId,
@@ -30,8 +107,20 @@ export class AuditLogRepository {
         record.entityId,
         record.requestId,
         JSON.stringify(record.metadataJson),
+        createdAt,
+        prevHash,
+        entryHash,
+        signature,
+        keyId,
       ],
-    );
+    )) as Array<{ seq: string | number }>;
+
+    return {
+      sequence: Number(inserted[0]?.seq ?? 0),
+      prevHash,
+      entryHash,
+      signatureKeyId: keyId,
+    };
   }
 
   /**

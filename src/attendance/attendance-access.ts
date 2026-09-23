@@ -37,6 +37,8 @@ export type AttendanceActor = {
   tenantId: string;
   roleIds: string[];
   teacherId: string | null;
+  /** Correlation ID: durable audit kayıtlarının request izi (#259). */
+  requestId: string;
 };
 
 export function hasAttendanceOversight(

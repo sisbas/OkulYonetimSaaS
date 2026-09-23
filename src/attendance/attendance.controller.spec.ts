@@ -18,6 +18,7 @@ describe('AttendanceSessionController list() (P1: users.id vs teachers.id)', () 
     tenantId: TENANT_ID,
     roleIds: ['teacher'],
     teacherId: TEACHERS_ID,
+    requestId: 'req-1',
     ...overrides,
   });
 

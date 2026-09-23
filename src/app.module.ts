@@ -3,6 +3,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppDataSource } from './database/data-source';
 import { AuthModule } from './auth/auth.module';
+import { AuditModule } from './common/audit/audit.module';
 import { SecurityAuditService } from './common/audit/security-audit.service';
 import { TenantContextMiddleware } from './common/context/tenant-context.middleware';
 // TenantScopeGuard: isteğin sınırında kiracı izolasyonunu zorunlu kılar.

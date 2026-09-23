@@ -32,6 +32,8 @@ export class AttendanceAccessService {
       tenantId: user.tenantId,
       roleIds: user.roleIds ?? [],
       teacherId: null,
+      // Audit correlation: guard'ın gördüğü request id (yoksa 'unknown').
+      requestId: requestId || 'unknown',
     };
 
     // Gözetim rolleri kiracı genelinde çalışır; öğretmen eşlemesine ihtiyaç yok.
