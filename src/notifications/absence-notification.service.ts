@@ -3,18 +3,17 @@ import { EntityManager } from 'typeorm';
 
 import { pseudonymize, resolvePseudonymKey } from '../kvkk/pseudonym';
 import {
+  CHANNEL_CONSENT_TYPE,
+  ConsentDecisionReason,
+  evaluateNotificationConsent,
+} from '../kvkk/consent-versioning';
+import {
   NotificationOutboxRepository,
   EnqueueOutboxRow,
 } from './notification-outbox.repository';
 
 export const ABSENCE_NOTIFICATION_EVENT_TYPE = 'attendance.absent.locked';
 export const DEFAULT_ABSENCE_NOTIFICATION_CHANNEL = 'sms';
-
-const CHANNEL_CONSENT_TYPES: Record<string, string> = {
-  sms: 'sms_notification',
-  whatsapp: 'whatsapp_notification',
-  email: 'email_notification',
-};
 
 export type AbsenceNotificationOutcome = Readonly<{
   sessionStatus: string | null;
@@ -32,10 +31,16 @@ export interface AbsenceNotificationInput {
   channel?: string;
 }
 
-type ConsentDecision = Readonly<{ approved: boolean; reason: string | null }>;
+/** Onay kararı + kararın dayandığı sürüm izi (outbox `consent_version`). */
+type ConsentDecision = Readonly<{
+  approved: boolean;
+  reason: ConsentDecisionReason | null;
+  consentVersion: number | null;
+}>;
 type AbsentRow = { student_id: string };
 type ConsentRow = {
   consent_type: string;
+  version: number;
   status: string;
   revoked_at: Date | null;
   expires_at: Date | null;
@@ -52,7 +57,12 @@ type ConsentRow = {
  *   çoğaltmaz (outbox `UNIQUE` + ON CONFLICT DO NOTHING).
  * - KVKK: `parent_notification` onayı **ve** kanal onayı (varsa) approved,
  *   iptal edilmemiş ve süresi dolmamış olmalı; aksi hâlde satır
- *   `blocked_consent` yazılır (gönderim yok, neden kayıtlı).
+ *   `blocked_consent` / `blocked_channel_consent` yazılır (gönderim yok, neden
+ *   kayıtlı).
+ * - KVKK (R5): karar **sürüm bazlıdır**; her onay tipinin yalnız en yüksek
+ *   `version` satırı yönetir → geri çekilen sürümden sonra eski onaylı sürüm
+ *   kanalı açamaz. Satır, kararın dayandığı sürümü `consent_version` olarak
+ *   taşır (izlenebilirlik).
  * - `payload_masked` **minimize edilmiş + pseudonymize** içerik taşır: olay türü,
  *   durum, kanal ve kiracıya kilitli deterministik referanslar (`studentRef`,
  *   `sessionRef`). Ham öğrenci/oturum UUID'si payload'a, log'a veya audit
@@ -151,6 +161,8 @@ export class AbsenceNotificationService {
           channel,
         },
         reason: decision.approved ? null : decision.reason,
+        // Sürüm izi (AC): satır, kararın dayandığı yöneten onay sürümünü taşır.
+        consentVersion: decision.consentVersion,
         createdById: input.actorUserId,
       });
     }
@@ -178,8 +190,10 @@ export class AbsenceNotificationService {
   }
 
   /**
-   * Onay kararı: `parent_notification` + kanala özel onay (varsa) `approved`,
-   * iptal edilmemiş ve süresi dolmamış olmalı.
+   * Onay kararı: `parent_notification` + kanala özel onay (**granüler**) `approved`,
+   * iptal edilmemiş ve süresi dolmamış olmalı. Karar **sürüm bazlıdır**: her tipin
+   * yalnız en yüksek `version` satırı yönetir, böylece geri çekme (revoked_at)
+   * sessizce etkisiz kalamaz (#266 R5, `src/kvkk/consent-versioning.ts`).
    */
   private async resolveConsent(
     entityManager: EntityManager,
@@ -187,9 +201,9 @@ export class AbsenceNotificationService {
     studentId: string,
     channel: string,
   ): Promise<ConsentDecision> {
-    const channelType = CHANNEL_CONSENT_TYPES[channel] ?? null;
+    const channelType = CHANNEL_CONSENT_TYPE[channel] ?? null;
     const rows = (await entityManager.query(
-      `SELECT c.consent_type, c.status, c.revoked_at, c.expires_at
+      `SELECT c.consent_type, c.version, c.status, c.revoked_at, c.expires_at
          FROM kvkk_consents c
          JOIN kvkk_consent_subjects s
            ON s.id = c.subject_id AND s.tenant_id = c.tenant_id
@@ -201,27 +215,21 @@ export class AbsenceNotificationService {
       [tenantId, studentId, channelType],
     )) as ConsentRow[];
 
-    const isActive = (row: ConsentRow): boolean =>
-      row.status === 'approved' &&
-      row.revoked_at === null &&
-      (row.expires_at === null ||
-        new Date(row.expires_at).getTime() > Date.now());
+    const decision = evaluateNotificationConsent({
+      rows: rows.map((row) => ({
+        consentType: row.consent_type,
+        version: Number(row.version),
+        status: row.status,
+        revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
+        expiresAt: row.expires_at ? new Date(row.expires_at) : null,
+      })),
+      channel,
+    });
 
-    const parentApproved = rows.some(
-      (row) => row.consent_type === 'parent_notification' && isActive(row),
-    );
-    if (!parentApproved) {
-      return { approved: false, reason: 'blocked_consent' };
-    }
-
-    if (channelType === null) {
-      return { approved: true, reason: null };
-    }
-    const channelApproved = rows.some(
-      (row) => row.consent_type === channelType && isActive(row),
-    );
-    return channelApproved
-      ? { approved: true, reason: null }
-      : { approved: false, reason: 'blocked_channel_consent' };
+    return {
+      approved: decision.allowed,
+      reason: decision.reason,
+      consentVersion: decision.consentVersion,
+    };
   }
 }

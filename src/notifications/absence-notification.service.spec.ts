@@ -44,12 +44,14 @@ describe('AbsenceNotificationService (#266)', () => {
   const approvedConsents = [
     {
       consent_type: 'parent_notification',
+      version: 4,
       status: 'approved',
       revoked_at: null,
       expires_at: null,
     },
     {
       consent_type: 'sms_notification',
+      version: 2,
       status: 'approved',
       revoked_at: null,
       expires_at: null,
@@ -116,6 +118,9 @@ describe('AbsenceNotificationService (#266)', () => {
       `attendance.absent:${SESSION_ID}:${STUDENT_B}`,
     ]);
     expect(rows.every((row) => row.status === 'pending')).toBe(true);
+    // #266 R5 AC — sürüm izlenebilirliği: satır, kararın dayandığı yöneten
+    // onay sürümünü taşır (parent_notification v4).
+    expect(rows.every((row) => row.consentVersion === 4)).toBe(true);
     // KVKK (#266 review P2): payload ham UUID taşımaz; kiracıya kilitli
     // deterministik pseudonym referansları taşır (isim/telefon/serbest metin yok).
     const serialized = JSON.stringify(rows.map((row) => row.payloadMasked));
@@ -176,6 +181,7 @@ describe('AbsenceNotificationService (#266)', () => {
       consents: [
         {
           consent_type: 'sms_notification',
+          version: 1,
           status: 'approved',
           revoked_at: null,
           expires_at: null,
@@ -195,6 +201,8 @@ describe('AbsenceNotificationService (#266)', () => {
     >;
     expect(rows[0].status).toBe('blocked_consent');
     expect(rows[0].reason).toBe('blocked_consent');
+    // Onay satırı yok → izlenecek sürüm de yok (fail-closed).
+    expect(rows[0].consentVersion).toBeNull();
   });
 
   it('blocks enqueue when the channel consent is revoked or expired', async () => {
@@ -204,12 +212,14 @@ describe('AbsenceNotificationService (#266)', () => {
       consents: [
         {
           consent_type: 'parent_notification',
+          version: 1,
           status: 'approved',
           revoked_at: null,
           expires_at: null,
         },
         {
           consent_type: 'sms_notification',
+          version: 3,
           status: 'approved',
           revoked_at: new Date('2026-01-01T00:00:00.000Z'),
           expires_at: null,
@@ -228,6 +238,52 @@ describe('AbsenceNotificationService (#266)', () => {
       Record<string, unknown>
     >;
     expect(rows[0].reason).toBe('blocked_channel_consent');
+    // Kanal kapısı kapandığı için iz kanal satırında tutulur (v3).
+    expect(rows[0].consentVersion).toBe(3);
+  });
+
+  it('keeps the channel blocked when the governing version is revoked even though an older version is approved', async () => {
+    const manager = makeManager({
+      sessionStatus: 'locked',
+      absent: [STUDENT_A],
+      consents: [
+        {
+          consent_type: 'parent_notification',
+          version: 1,
+          status: 'approved',
+          revoked_at: null,
+          expires_at: null,
+        },
+        {
+          consent_type: 'parent_notification',
+          version: 2,
+          status: 'revoked',
+          revoked_at: new Date('2026-09-20T00:00:00.000Z'),
+          expires_at: null,
+        },
+        {
+          consent_type: 'sms_notification',
+          version: 1,
+          status: 'approved',
+          revoked_at: null,
+          expires_at: null,
+        },
+      ],
+    });
+    const service = new AbsenceNotificationService(outbox);
+
+    const result = await service.enqueueLockedAbsenceNotifications(
+      manager as never,
+      { tenantId: TENANT_ID, sessionId: SESSION_ID, actorUserId: ACTOR_ID },
+    );
+
+    expect(result).toMatchObject({ intendedBlockedConsent: 1, intendedPending: 0 });
+    const rows = (outbox.enqueueMany as jest.Mock).mock.calls[0][1] as Array<
+      Record<string, unknown>
+    >;
+    expect(rows[0].status).toBe('blocked_consent');
+    expect(rows[0].reason).toBe('blocked_consent');
+    expect(rows[0].consentVersion).toBe(2);
   });
 
   it('reports duplicates as skipped (idempotent re-processing)', async () => {
