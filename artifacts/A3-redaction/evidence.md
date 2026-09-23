@@ -56,8 +56,20 @@ kabul edilmez, "yerel yeşil + CI bekliyor" olarak raporlanır.
 ### Rollback provası çıktısı
 
 ```text
-(commit sonrası dolduruldu — aşağıdaki bölüme bakınız)
+$ git checkout --detach 15c5ab8          # dilim öncesi baz (rollback)
+HEAD is now at 15c5ab8 docs(truth): reconcile Phase 1 truth matrix to main e823ebd (#354)
+$ npx tsc -p tsconfig.json --noEmit      -> exit=0, stdout: (boş)
+$ npx jest --runInBand src/notifications src/kvkk src/common/audit test/kvkk
+  Test Suites: 20 passed, 20 total
+  Tests:       268 passed, 268 total     -> exit=0
+
+$ git checkout p1b/notification-consent-versioned   # dilime geri dönüş
+$ git rev-parse --short HEAD -> 5208e8f ; git status --short -> (temiz)
 ```
+
+Gözlem: dilim geri alındığında depo **yeşil** duruma dönüyor (tip kapısı + testler);
+DDL/migration olmadığı için veri rollback'i gerekmiyor. Kod commit'i `5208e8f`
+üzerinden `git revert 5208e8f` aynı sonucu verir.
 
 ## 4) Bilinen boşluklar / devir notları
 
