@@ -9,6 +9,7 @@ import { TransactionalAbsenceNotificationAdapter } from './absence-notification.
 import { NotificationConsentController } from './notification-consent.controller';
 import { NotificationEligibilityService } from '../kvkk/notification-eligibility.service';
 import { ConsentLifecycleService } from '../kvkk/consent-lifecycle.service';
+import { AuditLogRepository } from '../common/audit/audit-log.repository';
 import { TypeOrmTransactionalAuditWriter } from '../common/audit/transactional-audit-writer';
 import { TRANSACTIONAL_AUDIT_WRITER } from '../common/audit/transactional-audit-writer';
 import { ATTENDANCE_ABSENCE_NOTIFICATION_PORT } from '../attendance/attendance-absence-notification.port';
@@ -33,6 +34,12 @@ import { ATTENDANCE_ABSENCE_NOTIFICATION_PORT } from '../attendance/attendance-a
     NotificationOutboxRepository,
     AbsenceNotificationService,
     TransactionalAbsenceNotificationAdapter,
+    // Audit zinciri yazıcısı için `AuditLogRepository` AYNI modülde kayıtlı
+    // olmalıdır: writer onu constructor'da ister ve entity manager çağrıdan
+    // gelir. Diğer domain modülleri de (attendance/leaves) bu deseni kullanır;
+    // eksik bırakılırsa DI çözümlemesi BOOT'ta başarısız olur (unit testler
+    // bunu yakalamaz).
+    AuditLogRepository,
     TypeOrmTransactionalAuditWriter,
     { provide: TRANSACTIONAL_AUDIT_WRITER, useExisting: TypeOrmTransactionalAuditWriter },
     {
