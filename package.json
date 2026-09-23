@@ -18,6 +18,7 @@
     "test:openclaw-canary": "node --test test-fixtures/openclaw-review-canary/*.test.js",
     "test:unit": "jest --runInBand src --passWithNoTests",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e:guard": "jest --config ./test/jest-acceptance-guard.json",
     "test:runtime-integration": "jest --runInBand test/runtime-integration",
     "typeorm": "typeorm-ts-node-commonjs",
     "db:migrate": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",

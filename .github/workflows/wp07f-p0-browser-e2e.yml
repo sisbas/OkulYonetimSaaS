@@ -115,30 +115,14 @@ jobs:
       - name: Build Nest backend and /runtime assets
         run: npm run build
 
-      - name: Start real Nest backend
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/wp07f-p0-browser-e2e
-          npx ts-node src/main.ts > artifacts/wp07f-p0-browser-e2e/backend.log 2>&1 &
-          echo $! > artifacts/wp07f-p0-browser-e2e/backend.pid
-          for i in {1..40}; do
-            if ! kill -0 "$(cat artifacts/wp07f-p0-browser-e2e/backend.pid)" 2>/dev/null; then
-              echo "Backend exited before /runtime became ready"
-              tail -n 80 artifacts/wp07f-p0-browser-e2e/backend.log || true
-              exit 1
-            fi
-            if curl -fsS http://127.0.0.1:3000/runtime/ >/dev/null; then
-              echo "Runtime is ready"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Backend did not expose /runtime in time"
-          tail -n 80 artifacts/wp07f-p0-browser-e2e/backend.log || true
-          exit 1
+      - name: Acceptance evidence static guard (fail-closed)
+        run: npm run test:e2e:guard
 
-      - name: Run P0 browser E2E matrix
-        run: node scripts/qa-p0-browser-e2e.js
+      # Kabul harness'ı gerçek Nest backend'ini (`src/main.ts`) kendisi başlatır
+      # ve `/api/v1/health` yeşil olana kadar bekler; bu yüzden elle backend
+      # başlatma adımı kaldırılmıştır (port tek sahipli olmalı).
+      - name: Run acceptance E2E harness (fresh DB, real backend, real browser)
+        run: npm run test:e2e
 
       - name: Upload P0 browser E2E artifacts
         if: always()
