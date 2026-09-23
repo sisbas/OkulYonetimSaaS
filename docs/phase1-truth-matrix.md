@@ -66,7 +66,7 @@ A tracker is merge-ready ONLY when every P0/P1 row above has `runtime` or
 Current state: **NOT merge-ready** (main `e823ebd`). Gerekçe:
 - `planning-only`: Parent notification (M6), Reporting/eokul (M7) — runtime iddiaları karantinada.
 - `internal`: Attendance session lifecycle (M5) — invariant/atomiklik/redaction/correction main'de, kalan AC'ler (locked-absence event, terminal verdict'ler) açık. Fresh-DB UI journey (#269) — harness + ilk journey yeşil, journey'in tamamı + negatif matris açık.
-- UX (#264): rol-farkındalıklı shell ve WCAG durumları üretilmedi.
+- UX (#264): rol-farkındalıklı Türkçe shell kaynağı **üretildi** — `frontend/app/` + `frontend/ux/` (+ `frontend/runtime/` build artefaktı) ve rol-farkındalıklı paneller `test/frontend-runtime/runtime-flow-a11y.spec.ts` ile doğrulanıyor. Eksik olan `frontend/src` üretim yüzeyi ile WCAG 2.1 AA durumları/kanıtı ve E2E kanıtı.
 - Ayrıca açık PR #352 (`#259` durable audit / notification outbox) main'e girmediği sürece NOTIFICATION satırı `planning-only` kalır.
 `runtime` veya `pilot-ready` olmayan bir P0/P1 satırı kaldığı sürece tracker kapanmaz.
 
