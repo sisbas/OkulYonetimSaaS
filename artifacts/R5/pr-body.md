@@ -39,9 +39,13 @@ ikinci bir savunma katmanı yoktu ve öğretmen rolünün bu yüzeye erişemedi�
   `kvkk_consents.version integer NOT NULL DEFAULT 1` + `CHECK (version >= 1)` +
   `(tenant_id, subject_id, consent_type, version DESC)` index; `down()` idempotent.
 - `src/notifications/notifications.module.ts`: consent controller + servis + transactional audit
-  writer kaydı.
+  writer kaydı. **Düzeltme (`27c6ad6`):** writer'ın bağımlılığı `AuditLogRepository` de kayıtlı
+  olmalıydı; eksikliği Nest DI çözümlemesini **uygulama BOOT'unda** düşürürdü (hiçbir unit test
+  yakalamaz). Sözleşme `src/notifications/notifications.module.spec.ts` ile sabitlendi.
 - Testler: `src/kvkk/consent-versioning.spec.ts`, `src/kvkk/consent-lifecycle.service.spec.ts`,
-  `src/notifications/notification-consent.controller.spec.ts`, `test/database/kvkk-consent-versioning.migration.spec.ts`
+  `src/notifications/notification-consent.controller.spec.ts`,
+  `src/notifications/notifications.module.spec.ts`,
+  `test/database/kvkk-consent-versioning.migration.spec.ts`
   (+ `absence-notification.service.spec.ts` güncellendi).
 - `docs/notifications/absence-outbox.md`: `consent_version` sözleşmesi + onay yaşam döngüsü yüzeyi.
 
@@ -64,6 +68,8 @@ ikinci bir savunma katmanı yoktu ve öğretmen rolünün bu yüzeye erişemedi�
 - [x] Teacher bu yüzeye erişemez (izin seti seed'den okunarak guard ile doğrulandı).
 - [x] Tenant/BOLA negatifleri yeşil (yabancı öğrenci → boş sonuç/`not_found`, gövdedeki `tenantId` yok sayılır).
 - [x] Audit, domain mutasyonuyla **aynı transaction'da**; eşzamanlı geri çekme tek geçiş üretir.
+- [x] Modül kablolaması BOOT'ta çözülebilir (transactional audit writer + `AuditLogRepository`
+  provider zinciri statik testle sabit; `27c6ad6`).
 - [ ] **CI:** DB Smoke (`test:database:required`) + P0 E2E — PR açılışında eklenecek.
 
 ## Test çıktısı
@@ -71,8 +77,8 @@ ikinci bir savunma katmanı yoktu ve öğretmen rolünün bu yüzeye erişemedi�
 ```text
 npx tsc -p tsconfig.json --noEmit                      -> exit=0, stdout: (0 satır)
 npx jest --runInBand src/notifications src/kvkk test/kvkk test/database
-  Test Suites: 8 skipped, 25 passed, 25 of 33 total
-  Tests:       32 skipped, 137 passed, 169 total       (exit=0; skip = yerelde PostgreSQL kapalı)
+  Test Suites: 8 skipped, 26 passed, 26 of 34 total
+  Tests:       32 skipped, 140 passed, 172 total       (exit=0; skip = yerelde PostgreSQL kapalı)
 npx jest --runInBand test/acceptance-guard             -> exit=0 (11 passed)
 npx jest --runInBand src/common/audit                  -> exit=0 (223 passed)
 Mutasyon (a): yöneten-sürüm kapısı kaldırıldı -> 2 suite/5 test KIRMIZI -> geri alındı

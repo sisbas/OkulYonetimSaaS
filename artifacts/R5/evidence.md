@@ -34,7 +34,7 @@
 
 | # | Kanıt | Sonuç (gerçek koşu) |
 |---|---|---|
-| 1 | **Yerel tip + test** | `npx tsc -p tsconfig.json --noEmit` → **exit=0**, stdout **0 satır** ✓ <br> `npx jest --runInBand src/notifications src/kvkk test/kvkk test/database` → **exit=0**, `Test Suites: 8 skipped, 25 passed, 25 of 33 total` / `Tests: 32 skipped, 137 passed, 169 total` (30.4 s) <br> `npx jest --runInBand test/acceptance-guard` → **exit=0**, `Test Suites: 1 passed` / `Tests: 11 passed, 11 total` (regresyon; bu dilim A4 kabul yüzeyine dokunmaz) <br> `npx jest --runInBand src/common/audit` → **exit=0**, `Tests: 223 passed, 223 total` |
+| 1 | **Yerel tip + test** | `npx tsc -p tsconfig.json --noEmit` → **exit=0**, stdout **0 satır** ✓ <br> `npx jest --runInBand src/notifications src/kvkk test/kvkk test/database` → **exit=0**, `Test Suites: 8 skipped, 26 passed, 26 of 34 total` / `Tests: 32 skipped, 140 passed, 172 total` (24.0 s; DI düzeltmesi `27c6ad6` sonrası yeniden koşuldu) <br> `npx jest --runInBand test/acceptance-guard` → **exit=0**, `Test Suites: 1 passed` / `Tests: 11 passed, 11 total` (regresyon; bu dilim A4 kabul yüzeyine dokunmaz) <br> `npx jest --runInBand src/common/audit` → **exit=0**, `Tests: 223 passed, 223 total` |
 | 2 | **DB (CI)** | **Yerel skip** (PostgreSQL 5432 kapalı): 8 suite / 32 test DB bağlı olduğu için skip. Gerçek-PostgreSQL kanıtı yalnız **DB Smoke** (`test:database:required`, skip yasak) ile alınır → **PR açılmadığı için run URL'i henüz yok**; PR açılışında eklenecek (A7 GO + ORCH onayı sonrası). Bu dilimde **DDL var** (migration `1835000000000`), bu yüzden CI DB kanıtı merge için zorunludur. |
 | 3 | **Kabul (CI)** | `P0 browser E2E and artifact evidence` run URL'i PR açılışında alınacak. Yüzey `/api/v1/notifications/consents` — E2E journey adımı (taslak yüzeyi) R7/A5 ile gelir; bu dilimde E2E adımı **kapsam dışı**, regresyon olarak statik guard (11/11) yeşil. |
 | 4 | **Mutasyon kontrolü** | Aşağıda §3 — iki mutasyon, ikisi de kırmızıya döndü, geri alındı. |
@@ -83,6 +83,31 @@ KIRMIZI testler:
 ```
 
 → Geri alındı; tam hedef suite tekrar **exit=0** (25 passed / 8 skipped, 137 passed test).
+
+### (c) Ek doğrulama taraması — bulunan ve düzeltilen kablolama hatası
+
+`BC2A47B` sonrası yapılan kablolama taramasında **gerçek bir BOOT hatası** bulundu ve düzeltildi (`27c6ad6`):
+
+`NotificationsModule`, `TypeOrmTransactionalAuditWriter`'ı kaydediyordu ama bağımlılığı
+`AuditLogRepository`'yi kaydetmiyordu (`@Injectable()` + no-arg constructor; entity manager
+çağrıdan gelir). Diğer domain modülleri (`attendance`, `leaves`) bu sağlayıcıyı **açıkça**
+kaydeder. Eksik kayıt Nest DI çözümlemesinde (uygulama BOOT'unda) hata verir ve **hiçbir unit
+test bunu yakalamaz** (Nest uygulaması testlerde ayağa kalkmıyor).
+
+Düzeltme: `AuditLogRepository` provider olarak eklendi + sözleşmeyi statik sabitleyen
+`src/notifications/notifications.module.spec.ts` (3 test: audit writer zinciri, consent servisi/outbox
+portu, controller kaydı). Bu, "yeşil unit test = çalışan DI" varsayımının fail-closed karşılığıdır.
+
+```text
+$ npx tsc -p tsconfig.json --noEmit                      -> exit=0, stdout: (boş)
+$ npx jest --runInBand src/notifications src/kvkk test/kvkk test/database
+  Test Suites: 8 skipped, 26 passed, 26 of 34 total
+  Tests:       32 skipped, 140 passed, 172 total          -> exit=0
+  PASS src/notifications/notifications.module.spec.ts
+```
+
+**Not:** §3(a)/(b) mutasyonları `bc2a47b` ağacında koşuldu (mutasyona uğratılan satırlar
+`27c6ad6`'da değişmedi); düzeltme sonrası tam suite yeniden yeşil olarak doğrulandı.
 
 ## 4) Redaction taraması (kanıt satırı 5)
 
@@ -133,40 +158,46 @@ Gözlem: dilim geri alındığında depo **yeşil**; R5 testleri/DDL'i devre dı
 ## 6) Değişen dosyalar ve boyut
 
 ```text
-$ git --no-pager diff --cached --stat   (commit bc2a47b)
+$ git --no-pager diff --stat 443d366 HEAD      # dilim öncesi uç -> HEAD (kanıt artefaktları dahil)
+ artifacts/R5/evidence.md                           | 227 +++++++++++++
+ artifacts/R5/pr-body.md                            | 112 ++++++
  docs/notifications/absence-outbox.md               |  60 +++-
- src/database/migrations/1835000000000-AddKvkkConsentVersioning.ts |  72 ++++
+ .../1835000000000-AddKvkkConsentVersioning.ts      |  72 ++++
  src/kvkk/consent-audit-reference.ts                |  50 +++
  src/kvkk/consent-lifecycle.service.spec.ts         | 351 +++++++++++++++++++
  src/kvkk/consent-lifecycle.service.ts              | 374 +++++++++++++++++++++
  src/kvkk/consent-versioning.spec.ts                | 245 ++++++++++++++
- src/kvkk/consent-versioning.ts                     | 224 ++++++++++++++
+ src/kvkk/consent-versioning.ts                     | 224 ++++++++++++
  src/kvkk/contact-masking.ts                        |  77 +++++
  src/kvkk/index.ts                                  |   4 +
  src/notifications/absence-notification.service.spec.ts |  56 +++
  src/notifications/absence-notification.service.ts  |  76 +++--
  src/notifications/notification-consent.controller.spec.ts | 168 +++++++++
  src/notifications/notification-consent.controller.ts | 117 +++++++
- src/notifications/notifications.module.ts          |  15 +-
+ src/notifications/notifications.module.spec.ts     |  57 ++++
+ src/notifications/notifications.module.ts          |  22 +-
  test/database/kvkk-consent-versioning.migration.spec.ts |  62 ++++
- 15 files changed, 1902 insertions(+), 49 deletions(-)
+ 18 files changed, 2305 insertions(+), 49 deletions(-)
+ (kanıt artefaktları hariç: 16 dosya, +1966/-49)
 ```
 
 | Grup | Satır |
 |---|---|
-| Üretim kodu (`src/kvkk` yeni 4 dosya + `index.ts`) | 729 |
-| Üretim kodu (`src/notifications` servis + controller + module) | 208 (+49 silme) |
+| Üretim kodu (`src/kvkk`: 4 yeni dosya + `index.ts`) | 729 |
+| Üretim kodu (`src/notifications`: servis + controller + module) | 179 (+36 silme) |
 | Migration (DDL) | 72 |
-| Doküman | 60 |
-| **Test (`src/**/*.spec.ts` 3 dosya)** | **820** |
-| Test (`test/database` 1 dosya) | 62 |
+| Doküman | 47 (+13 silme) |
+| **Test (`src/**/*.spec.ts` — 5 dosya)** | **877** |
+| Test (`test/database` — 1 dosya) | 62 |
+| Kanıt artefaktı (`artifacts/R5/*`) | 339 |
 
-**Boyut sapması (beyan):** toplam **1.902 eklenen satır**, brif'in "≤ ~1.500 satır" rehberinin üzerinde.
-Üretim+DDL kısmı **1.009 satır**, kalan **882 satır test** (bu dilimin AC'leri — geri çekme kapısı,
-sürüm izi, maskeleme, teacher reddi, BOLA — yalnız testle kanıtlanabildiği için kısılamadı).
+**Boyut sapması (beyan):** kod/test/doküman toplamı **1.966 eklenen satır**, brif'in "≤ ~1.500 satır"
+rehberinin üzerinde. Üretim+DDL kısmı **980 satır**, kalan **939 satır test** (bu dilimin AC'leri —
+geri çekme kapısı, sürüm izi, maskeleme, teacher reddi, BOLA, DI kablolaması — yalnız testle
+kanıtlanabildiği için kısılamadı).
 **Öneri (ORCH kararı):** PR'ı ikiye bölmek gerekirse sınır doğal olarak şurada:
 R5a = `consent-versioning` + migration + `absence-notification` sürüm izi;
-R5b = `consent-lifecycle` + `contact-masking` + `consent-audit-reference` + controller + module.
+R5b = `consent-lifecycle` + `contact-masking` + `consent-audit-reference` + controller + module (+ DI spec).
 Kapsamı sessizce küçültmek yerine bu sapma açıkça raporlanır.
 
 ## 7) Bilinen boşluklar / devir notları
@@ -191,17 +222,24 @@ Kapsamı sessizce küçültmek yerine bu sapma açıkça raporlanır.
 6. **Grant (onay verme) yüzeyi yok** ve `expires_at` toplu damgalama yok — bilinçli kapsam kararı (§1 not 1–2).
 7. **Ölçek notu:** `kvkk_consents` üzerinde `(tenant_id, subject_id, consent_type, version DESC)` index'i
    eklendi; karar sorgusu bu index'i kullanır. Gerçek plan kanıtı (EXPLAIN) DB Smoke'ta doğrulanabilir.
+8. **Bulunan ve düzeltilen hata (fixed:`27c6ad6`):** `NotificationsModule`, transactional audit writer'ı
+   bağımlılığı `AuditLogRepository` olmadan kaydediyordu → Nest DI çözümlemesi **uygulama BOOT'unda**
+   başarısız olurdu ve hiçbir unit test bunu yakalamazdı (Nest uygulaması testlerde ayağa kalkmıyor).
+   Düzeltildi + sözleşme `notifications.module.spec.ts` ile sabitlendi (bkz §3(c)). A7 için not:
+   **bu dilimde en yüksek değerli bulgu budur**; benzer kablolama hataları yalnız `tsc`+unit yeşiline
+   bakılarak görülemez.
 
 ## 8) Devir paketi (§6.2)
 
 ```text
-SLICE: R5 · ISSUE: #266 · BRANCH: p1b/notification-consent-versioned · HEAD: bc2a47b
-DEĞİŞEN DOSYALAR: 15 dosya (+1902/-49)
+SLICE: R5 · ISSUE: #266 · BRANCH: p1b/notification-consent-versioned · HEAD: 27c6ad6
+DEĞİŞEN DOSYALAR: 16 kod/test/doküman dosyası (+1966/-49) + 2 kanıt artefaktı (+339)
   src/kvkk/consent-versioning.ts (yeni), src/kvkk/consent-versioning.spec.ts (yeni),
   src/kvkk/consent-lifecycle.service.ts (yeni), src/kvkk/consent-lifecycle.service.spec.ts (yeni),
   src/kvkk/consent-audit-reference.ts (yeni), src/kvkk/contact-masking.ts (yeni),
   src/kvkk/index.ts, src/notifications/notification-consent.controller.ts (yeni),
   src/notifications/notification-consent.controller.spec.ts (yeni),
+  src/notifications/notifications.module.spec.ts (yeni),
   src/notifications/absence-notification.service.ts (+spec),
   src/notifications/notifications.module.ts,
   src/database/migrations/1835000000000-AddKvkkConsentVersioning.ts (yeni, DDL),
@@ -210,7 +248,7 @@ DEĞİŞEN DOSYALAR: 15 dosya (+1902/-49)
 KOMUTLAR:
   npx tsc -p tsconfig.json --noEmit -> exit=0, stdout 0 satır
   npx jest --runInBand src/notifications src/kvkk test/kvkk test/database -> exit=0
-    Test Suites: 8 skipped, 25 passed, 25 of 33 total | Tests: 32 skipped, 137 passed, 169 total
+    Test Suites: 8 skipped, 26 passed, 26 of 34 total | Tests: 32 skipped, 140 passed, 172 total
     (YEREL DB SKIP: PostgreSQL kapalı; DB kanıtı CI DB Smoke'ta alınacak)
   npx jest --runInBand test/acceptance-guard -> exit=0 (11/11)
   npx jest --runInBand src/common/audit -> exit=0 (223/223)
@@ -219,8 +257,8 @@ AC EŞLEMESİ: §1 tablosu (AC -> test yolu) — geri çekme kapısı, consent_v
 MUTASYON KONTROLÜ: (a) yöneten-sürüm kapısı kaldırıldı -> 2 suite / 5 test KIRMIZI -> geri alındı
   (b) consent_version izi kaldırıldı -> 1 suite / 3 test KIRMIZI -> geri alındı (detay §3)
 BİLİNEN BOŞLUKLAR: CI URL'leri yok (PR açılmadı); H1'e KVKK_PSEUDONYM_KEY eklenmeli (H5 rotasyon notu);
-  dilim boyutu 1.902 satır (rehberin üzerinde, §6'da beyan + bölme önerisi); PR sıralaması ORCH kararı (§7/3)
-ROLLBACK: git revert bc2a47b (kod) + npm run db:migrate:revert (DDL down, idempotent) — §5 provası yeşil
+  dilim boyutu 1.966 satır (rehberin üzerinde, §6'da beyan + bölme önerisi); PR sıralaması ORCH kararı (§7/3)
+ROLLBACK: git revert 27c6ad6 bc2a47b (kod) + npm run db:migrate:revert (DDL down, idempotent) — §5 provası yeşil
 İNSAN KAPISI GEREKİYOR MU: H1 (yeni zorunlu secret: KVKK_PSEUDONYM_KEY) + H5 (DPO/DPIA rotasyon notu) — "bekliyor"
 ```
 
