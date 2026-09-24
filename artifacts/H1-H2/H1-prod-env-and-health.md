@@ -20,12 +20,19 @@ geldiğinde bu satır `tamamlandı (insan)` yapılır ve kanıt URL'i işlenir.
 | `DATABASE_URL` | ✔ | PostgreSQL bağlantısı (prod runtime için zorunlu) |
 | `KVKK_PSEUDONYM_KEY` | ✔ | **>= 32 byte** · pseudonym/redaction anahtarı (A3 dilimi; #266) |
 | `KVKK_PSEUDONYM_KEY_VERSION` | opsiyonel | Pseudonym anahtar sürümü (key-id tabanlı doğrulama/rotasyon) |
-| `AUDIT_HMAC_PREVIOUS_KEYS` | opsiyonel | HMAC rotasyonu — eski checkpoints doğrulaması için geçmiş anahtarlar (key-id eşlemeli) |
 
 - `KVKK_PSEUDONYM_KEY` **zorunlu ve yeni**dir (A3 R5/redaction dilimiyle gelir); >= 32 byte entropi.
 - Anahtar değerleri yalnız ortamın secret store'unda tutulur; repoda `.env.example` **dahi** gerçek değer içermez.
-- Aynı anda `AUDIT_HMAC_KEY` rotasyonu yapılacaksa `AUDIT_HMAC_PREVIOUS_KEYS` ile eski key-id'ler korunmalı;
-  aksi hâlde mevcut audit checkpoint'leri doğrulanamaz hâle gelir.
+
+> **BİLİNEN BOŞLUK — `AUDIT_HMAC_KEY` rotasyonu şu an uçtan uca DESTEKLENMİYOR (kod bekliyor).**
+> `AuditQueryService.verify()` doğrulamada yalnız **tek güncel anahtarı** (`resolveAuditHmacKey()`) kullanır ve
+> `audit_chain_checkpoints.signature` kolonunu SELECT etmez (bkz. issue #358). Kodda `verifyAuditChain`
+> `resolveHmacKey` (key-id çözücü) seçeneğini destekler ama `AuditQueryService` bunu bağlamaz ve hiçbir
+> runtime kodu `AUDIT_HMAC_PREVIOUS_KEYS` benzeri bir değişkeni **okumaz**. Bu nedenle:
+> - Operatör **şu an** `AUDIT_HMAC_KEY` rotasyonu yapmamalıdır; yapılırsa rotasyon öncesi imzalı kayıtlar
+>   `signature mismatch` ile doğrulanamaz hâle gelir.
+> - Rotasyon desteği (key-id resolver + geçmiş anahtar env konfigürasyonu) ayrı bir kod dilimi olarak
+>   planlanmalıdır; bu pakette **iddia edilmez**. (Refs #259 #352 #358)
 
 ## 2. Doğrulama komutu (insan, prod'a karşı)
 

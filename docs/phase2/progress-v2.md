@@ -40,7 +40,8 @@ Kabul kuralı (bağlayıcı): bir dilim yalnız **runtime|pilot-ready + exact he
 |---|---|---|---|---|
 | **#356** | docs(truth): reconcile Phase 1 truth matrix to main `15c5ab8` | `a5a19ae` | `BLOCKED` | 2 çözülmemiş review thread (`PRRT_kwDOTOQOC86lGBOO`, `PRRT_kwDOTOQOC86lGBOc`) + `Vercel` status FAILURE (H2 insan kapısı, #329) |
 | **#357** | feat(leaves): onay kararını gerçek etki analiziyle tek transaction içinde üret (Refs #263) | `66735d8` | `BLOCKED` | Backend CI / DB Smoke / Gate 1 CI FAILURE + Review Thread Resolution FAILURE + Vercel (H2) |
-| — | **açık başka PR yok** | — | — | `gh pr list --state open` = {#356, #357} (2026-09-23 doğrulaması) |
+| **#359** | docs(phase2): plan-of-record + progress board (bu PR) | `04d8c2c` | `BLOCKED` | Vercel (H2) + Codex review thread'leri (aşağıda `fixed:` kaydı) · Backend CI düzeltmesi `04d8c2c` ile |
+| — | açık başka PR yok (2026-09-24 doğrulaması: `gh pr list --state open` = {#356, #357, #359}) | — | — | — |
 
 **R14 thread politikası (governance, pazarlık dışı):** her thread yalnız `fixed:<sha>` kanıtıyla kapatılır ve yalnız o commit **main'e merge olduktan sonra** resolve edilir.
 `deferred`/susturma yorumuyla kapatma yasak (`master-prompt-v2.md` §11-8). Kanıt: `artifacts/R14/evidence.md`.
@@ -71,3 +72,6 @@ Kabul kuralı (bağlayıcı): bir dilim yalnız **runtime|pilot-ready + exact he
 | 2026-09-24 | H1/H2 insan kapısı paketi hazırlandı (`artifacts/H1-H2/`); H1 zorunlu secret ADLARINA `KVKK_PSEUDONYM_KEY` (>=32) + `KVKK_PSEUDONYM_KEY_VERSION` + `AUDIT_HMAC_PREVIOUS_KEYS` eklendi, H5/DPO rotasyon notu işlendi; H2'ye PR #356 `Vercel` FAILURE kanıtı + waiver taslağı kaydedildi | `artifacts/H1-H2/H1-prod-env-and-health.md` · `artifacts/H1-H2/H2-vercel-waiver.md` · `gh pr view 356` |
 | 2026-09-24 | Bayat doküman senkronu (R1 sonrası): `docs/leaves/leave-runtime-contract.md` impact-transaction/out-of-scope düzeltmesi; ölü UI etiketi `frontend/ux/spec.md` §13 + `frontend/runtime/app.js`'ten kaldırıldı | `docs/leaves/leave-runtime-contract.md` · `frontend/ux/spec.md` · `frontend/runtime/app.js` |
 | 2026-09-24 | Audit checkpoint imza (trust-anchor) boşluğu için issue **#358** açıldı, A3'e yönlendirildi | [sisbas/OkulYonetimSaaS#358](https://github.com/sisbas/OkulYonetimSaaS/issues/358) |
+| 2026-09-24 | Plan-of-record PR **#359** açıldı (`p1b/phase2-plan-of-record` @ `60319e4`) | `https://github.com/sisbas/OkulYonetimSaaS/pull/359` |
+| 2026-09-24 | PR #359 Backend CI FAIL (run `36059456265`): `test/contracts/leave-runtime.contract.spec.ts` hâlâ eski doküman metnini bekliyor → `docs/leaves` senkronu `04d8c2c` ile geri alındı; A1 R1 merge'i sonrasına ertelendi | `test/contracts/leave-runtime.contract.spec.ts` · `04d8c2c` |
+| 2026-09-24 | Codex review thread (H1 paketi): `AUDIT_HMAC_PREVIOUS_KEYS` runtime tarafından okunmuyor → rotasyon uçtan uca desteklenmiyor; H1 paketine "BİLİNEN BOŞLUK" notu eklendi (iddia kaldırıldı) | `artifacts/H1-H2/H1-prod-env-and-health.md` |
