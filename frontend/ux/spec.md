@@ -113,7 +113,7 @@ Tüm örnek adlar Demo, iletişimler `example.invalid`; dış gönderim, analyti
 
 ## 13. Open Dependencies
 
-Auth login mevcut ama response yalnız token sağlar; `/me` veya UI context yok. Leave approve servisinde `LeaveImpactAnalysisNotReadyException` bulunur. Daily operations response'ları teknik referanslar içerir. Branch/teacher/group/student/attendance/notification API controller sözleşmeleri bulunmadı. Schedule read modeli/solver iş durumları onaylanmadı. Bu sınırlar client hesabıyla kapatılmadı.
+Auth login mevcut ama response yalnız token sağlar; `/me` veya UI context yok. Daily operations response'ları teknik referanslar içerir. Branch/teacher/group/student/attendance/notification API controller sözleşmeleri bulunmadı. Schedule read modeli/solver iş durumları onaylanmadı. Bu sınırlar client hesabıyla kapatılmadı.
 
 ## 14. Scope Guard
 
