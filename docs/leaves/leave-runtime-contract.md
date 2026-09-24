@@ -10,8 +10,8 @@ Refs #143. Ready/merge depends on #140, #141, #160 and #162 PASS.
 - Coverage: `not_required`, `unresolved`, `partially_covered`, `covered`
 
 Decision and coverage are separate state machines. Coverage does not silently imply
-approval. Approval computes the impacted lessons and candidate teachers server-side and
-persists decision + impact + open projections + audit + outbox in the same transaction.
+approval. Until Schedule impact analysis and Daily Operations work are persisted in
+the same transaction, approval fails closed with `IMPACT_ANALYSIS_NOT_READY`.
 
 ## API surface
 
@@ -21,7 +21,7 @@ persists decision + impact + open projections + audit + outbox in the same trans
 | GET | `/api/v1/leaves/me/:id` | `leave:own:read` | teacher own |
 | GET | `/api/v1/leaves` | `leave:read` | operations tenant/branch |
 | GET | `/api/v1/leaves/:id` | `leave:read` | operations tenant/branch |
-| PATCH | `/api/v1/leaves/:id/approve` | `leave:approve` | operations tenant/branch |
+| PATCH | `/api/v1/leaves/:id/approve` | `leave:approve` | operations tenant/branch; fail-closed until impact transaction |
 | PATCH | `/api/v1/leaves/:id/reject` | `leave:reject` | operations tenant/branch; bodyless decision command |
 
 Decision endpoints require exact resource-bound `If-Match: "leave:<id>:v<version>"`.
@@ -51,9 +51,11 @@ concurrent loser receives `412` rather than the winning mutation as success.
 - Audit and outbox payloads must not contain names, email, phone, free-text reason,
   health detail, raw DTO or raw entity.
 - Runtime is fail-closed until #141 provides the identity resolver.
+- Approval is fail-closed until #160 Schedule acceptance and transactional impact/
+  Daily Operations persistence are available.
 
 ## Out of scope
 
-Substitution assign/clear (R2), balance & timezone (R3), SMS/email delivery, frontend,
-demo fixture and automatic approval. These are not simulated by returning an approval
-success.
+Substitution assignment, replacement candidate calculation, Schedule impact write,
+Daily Operations projection, SMS/email delivery, frontend, demo fixture and automatic
+approval. These are not simulated by returning an approval success.
