@@ -191,6 +191,12 @@ docs/
 docs/*
 !docs/agents/
 !docs/agents/**
+# plan-of-record: docs/phase2/** is the Phase 1b execution set (v2 plan +
+# master prompt + progress board). It must stay tracked; the stale v1 files
+# (next-phase-plan.md, master-prompt.md) are tracked too and marked BAYAT in
+# docs/phase2/README.md.
+!docs/phase2/
+!docs/phase2/**
 
 # Assets
 assets/
