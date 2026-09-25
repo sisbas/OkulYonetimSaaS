@@ -1,5 +1,14 @@
+import { ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
+
+import { SecurityAuditService } from '../../src/common/audit/security-audit.service';
+import { AuthorizationContextError } from '../../src/common/context/authorization-context';
+import { CONTEXT_SCOPE_KEY } from '../../src/common/context/context-scope.decorator';
+import { PUBLIC_ROUTE_KEYS } from '../../src/common/context/public-route';
+import { PERMISSIONS_KEY } from '../../src/common/decorators/permissions.decorator';
+import { PermissionGuard } from '../../src/common/guards/permission.guard';
 
 /**
  * Controller enforcement consistency (AC-2, #265 / #339).
@@ -29,6 +38,16 @@ export const PUBLIC_ROUTES: ReadonlyArray<string> = [
   'src/auth/auth.controller.ts post refresh',
 ];
 
+/**
+ * `@ContextScoped()` beyanlı (iş izni gerektirmeyen oturum bağlamı) route'lar.
+ * Bu liste EXACT tutulur: yeni bir context-scoped route eklemek bilinçli bir
+ * güvenlik kararıdır ve bu testi güncellemeyi gerektirir (default-deny).
+ */
+export const CONTEXT_SCOPED_ROUTES: ReadonlyArray<string> = [
+  'src/rbac/context-catalog.controller.ts get ',
+  'src/rbac/context-catalog.controller.ts post branch',
+];
+
 const CLASS_DECLARATION = /export\s+class\s+\w+/g;
 
 // Nest route decorator'ları — Sse/Search dahil; hiçbir route formu sessizce
@@ -38,6 +57,7 @@ export const ROUTE_DECORATOR =
 const ROUTE_DECORATOR_LINE =
   /^\s*@(Get|Post|Put|Patch|Delete|All|Options|Head|Sse|Search)\s*\(/;
 const PERMISSIONS_DECORATOR = /@Permissions\s*\(([^)]*)\)/g;
+const CONTEXT_SCOPE_DECORATOR = /@ContextScoped\s*\(/;
 const DECORATOR_LINE = /^\s*@/;
 
 /**
@@ -134,6 +154,8 @@ export type RouteFinding = {
   routeKey: string;
   classHasPermissions: boolean;
   handlerHasPermissions: boolean;
+  classHasContextScope: boolean;
+  handlerHasContextScope: boolean;
   line: number;
 };
 
@@ -155,9 +177,9 @@ export function collectFindings(file: string, source: string): RouteFinding[] {
 
   return classes.flatMap((klass) => {
     // Sınıf düzeyi `@Permissions` tüm handler'ları kapsar (Nest semantiği).
-    const classHasPermissions = hasUsablePermissions(
-      decoratorBlockAbove(lines, klass.line).join('\n'),
-    );
+    const classDecorators = decoratorBlockAbove(lines, klass.line).join('\n');
+    const classHasPermissions = hasUsablePermissions(classDecorators);
+    const classHasContextScope = CONTEXT_SCOPE_DECORATOR.test(classDecorators);
     const body = clean.slice(klass.start, klass.end);
 
     return [...body.matchAll(ROUTE_DECORATOR)].map((match) => {
@@ -173,6 +195,8 @@ export function collectFindings(file: string, source: string): RouteFinding[] {
         routeKey: `${match[1].toLowerCase()} ${routePathFromArgs(match[2])}`,
         classHasPermissions,
         handlerHasPermissions: hasUsablePermissions(handlerBlock),
+        classHasContextScope,
+        handlerHasContextScope: CONTEXT_SCOPE_DECORATOR.test(handlerBlock),
         line: routeLine + 1,
       };
     });
@@ -211,20 +235,51 @@ describe('controller enforcement consistency (fail-closed @Permissions contract)
     expect(findings.length).toBeGreaterThan(20);
   });
 
-  it('covers every protected route with a usable @Permissions metadata', () => {
+  it('covers every protected route with a usable @Permissions metadata or an explicit context scope', () => {
+    const contextScoped = new Set(CONTEXT_SCOPED_ROUTES);
     const uncovered = findings
-      .filter(
-        (finding) =>
-          !finding.classHasPermissions &&
-          !finding.handlerHasPermissions &&
-          !allowed.has(`${finding.file} ${finding.routeKey}`),
-      )
+      .filter((finding) => {
+        const key = `${finding.file} ${finding.routeKey}`;
+        if (allowed.has(key)) return false;
+        if (finding.classHasPermissions || finding.handlerHasPermissions) return false;
+        const declared = finding.classHasContextScope || finding.handlerHasContextScope;
+        return !(declared && contextScoped.has(key));
+      })
       .map(
         (finding) =>
-          `${finding.file}:${finding.line} ${finding.routeKey} has no usable @Permissions metadata (fail-open)`,
+          `${finding.file}:${finding.line} ${finding.routeKey} has no usable @Permissions metadata or allowlisted @ContextScoped declaration (default-deny violation)`,
       );
 
     expect(uncovered).toEqual([]);
+  });
+
+  it('keeps the context-scope allowlist exact (no stale entries)', () => {
+    const seen = new Set(findings.map((finding) => `${finding.file} ${finding.routeKey}`));
+    expect(CONTEXT_SCOPED_ROUTES.filter((entry) => !seen.has(entry))).toEqual([]);
+  });
+
+  it('requires an actual @ContextScoped declaration for every allowlisted context-scoped route', () => {
+    const contextScoped = new Set(CONTEXT_SCOPED_ROUTES);
+    const missingDeclaration = findings
+      .filter((finding) => contextScoped.has(`${finding.file} ${finding.routeKey}`))
+      .filter((finding) => !finding.classHasContextScope && !finding.handlerHasContextScope)
+      .map((finding) => `${finding.file}:${finding.line} ${finding.routeKey}`);
+
+    expect(missingDeclaration).toEqual([]);
+  });
+
+  it('never mixes public and context-scoped declarations', () => {
+    const mixed = findings
+      .filter((finding) => allowed.has(`${finding.file} ${finding.routeKey}`))
+      .filter((finding) => finding.classHasContextScope || finding.handlerHasContextScope)
+      .map((finding) => `${finding.file} ${finding.routeKey}`);
+
+    expect(mixed).toEqual([]);
+  });
+
+  it('keeps the runtime public allowlist in sync with this static allowlist', () => {
+    // Çalışma zamanı (guard) allowlist'i ile statik sözleşme ayrışırsa bu test kırmızıya döner.
+    expect([...PUBLIC_ROUTE_KEYS].sort()).toEqual([...PUBLIC_ROUTES].sort());
   });
 
   it('keeps the public route allowlist exact (no stale entries)', () => {
@@ -315,3 +370,209 @@ describe('enforcement parser fail-closed behaviours', () => {
     expect(findings.every((finding) => finding.classHasPermissions)).toBe(true);
   });
 });
+
+/**
+ * Default-deny runtime sözleşmesi (#339 R4, madde 7).
+ *
+ * Statik tarama "metadata var mı" sorusunu yanıtlar; bu blok ise guard'ın
+ * runtime davranışını doğrular: bağlam/izin yoksa erişim YOKTUR (KIRMIZI) ve
+ * istemcinin gönderdiği tenant/şube/rol/izin değerleri yetki üretmez.
+ */
+describe('default-deny runtime contract (PermissionGuard)', () => {
+  class ProtectedController {}
+  class ContextScopedController {}
+  class HealthController {}
+
+  type Harness = {
+    guard: PermissionGuard;
+    audit: { emitAuthorizationDenied: jest.Mock };
+    resolve: jest.Mock;
+    resolveSelection: jest.Mock;
+  };
+
+  const harness = (options: {
+    permissions?: string[];
+    contextScoped?: boolean;
+    authority?: { roles: string[]; permissions: string[] } | Error;
+  }): Harness => {
+    const audit = { emitAuthorizationDenied: jest.fn() };
+    const resolve = jest.fn();
+    if (options.authority instanceof Error) resolve.mockRejectedValue(options.authority);
+    else
+      resolve.mockResolvedValue({
+        roles: options.authority?.roles ?? ['operations_manager'],
+        permissions: options.authority?.permissions ?? [],
+        tokenVersion: 1,
+        resolvedAt: '2026-09-23T00:00:00.000Z',
+        cache: 'miss',
+      });
+    const resolveSelection = jest.fn();
+    const reflector = {
+      getAllAndOverride: jest.fn((key: string) =>
+        key === PERMISSIONS_KEY ? options.permissions : options.contextScoped === true,
+      ),
+    } as unknown as Reflector;
+    return {
+      guard: new PermissionGuard(
+        reflector,
+        audit as unknown as SecurityAuditService,
+        { resolve } as never,
+        { resolveSelection } as never,
+      ),
+      audit,
+      resolve,
+      resolveSelection,
+    };
+  };
+
+  const context = (
+    request: Record<string, unknown>,
+    controller: unknown = ProtectedController,
+    handler: unknown = protectedHandler,
+  ) =>
+    ({
+      getHandler: () => handler,
+      getClass: () => controller,
+      switchToHttp: () => ({ getRequest: () => request }),
+    }) as unknown as ExecutionContext;
+
+  /** Handler adları public allowlist kimliğiyle eşleşmeli (`check`). */
+  function protectedHandler() {}
+  function check() {}
+
+  const user = (overrides: Record<string, unknown> = {}) => ({
+    userId: '66666666-6666-4666-8666-666666666666',
+    tenantId: '11111111-1111-4111-8111-111111111111',
+    roleIds: ['operations_manager'],
+    permissions: [],
+    authorizationVersion: 1,
+    ...overrides,
+  });
+
+
+  it('denies a metadata-less protected controller when no context is resolved (KIRMIZI)', async () => {
+    const { guard } = harness({ permissions: undefined });
+    await expect(Promise.resolve(guard.canActivate(context({ header: jest.fn(), user: undefined })))).resolves.toBe(
+      false,
+    );
+  });
+
+  it('denies a metadata-less protected controller even with an authenticated user', async () => {
+    const { guard } = harness({ permissions: undefined, contextScoped: false });
+    await expect(Promise.resolve(guard.canActivate(context({ header: jest.fn(), user: user() })))).resolves.toBe(false);
+  });
+
+  it('denies when the request has no authenticated user', async () => {
+    const { guard } = harness({ permissions: ['user:read'] });
+    await expect(Promise.resolve(guard.canActivate(context({ header: jest.fn() })))).resolves.toBe(false);
+  });
+
+  it('denies when authority cannot be resolved (fail-closed)', async () => {
+    const { guard } = harness({
+      permissions: ['user:read'],
+      authority: new AuthorizationContextError('unresolved_authority'),
+    });
+    await expect(Promise.resolve(guard.canActivate(context({ header: jest.fn(), user: user() })))).resolves.toBe(false);
+  });
+
+  it('denies when the token authority version is stale', async () => {
+    const { guard } = harness({
+      permissions: ['user:read'],
+      authority: new AuthorizationContextError('stale_authorization_version'),
+    });
+    await expect(Promise.resolve(guard.canActivate(context({ header: jest.fn(), user: user() })))).resolves.toBe(false);
+  });
+
+  it('client-supplied tenant, role and permission values never grant access', async () => {
+    const { guard, resolve } = harness({
+      permissions: ['user:read'],
+      authority: { roles: ['teacher'], permissions: [] },
+    });
+    const spoofed = {
+      header: jest.fn(),
+      user: user({
+        permissions: ['user:read', 'role:permission:update'],
+        roleIds: ['tenant_admin'],
+      }),
+      body: { tenantId: 'other', roles: ['tenant_admin'], permissions: ['user:read'] },
+      query: { tenantId: 'other' },
+    };
+    await expect(Promise.resolve(guard.canActivate(context(spoofed)))).resolves.toBe(false);
+    expect(resolve).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: '11111111-1111-4111-8111-111111111111' }),
+    );
+  });
+
+  it('denies a cross-tenant header that contradicts the token tenant', async () => {
+    const { guard } = harness({ permissions: ['user:read'] });
+    const crossTenant = {
+      header: jest.fn((name: string) =>
+        name === 'x-tenant-id' ? '22222222-2222-4222-8222-222222222222' : undefined,
+      ),
+      user: user({ permissions: ['user:read'] }),
+    };
+    await expect(Promise.resolve(guard.canActivate(context(crossTenant)))).resolves.toBe(false);
+  });
+
+  it('denies a client-supplied branch that is outside the server-side scope', async () => {
+    const { guard, resolveSelection } = harness({
+      permissions: ['user:read'],
+      authority: { roles: ['teacher'], permissions: ['user:read'] },
+    });
+    resolveSelection.mockRejectedValue(new AuthorizationContextError('unauthorized_branch'));
+    const crossBranch = {
+      header: jest.fn((name: string) =>
+        name === 'x-branch-id' ? '99999999-9999-4999-8999-999999999999' : undefined,
+      ),
+      user: user({ permissions: ['user:read'] }),
+    };
+    await expect(Promise.resolve(guard.canActivate(context(crossBranch)))).resolves.toBe(false);
+    expect(resolveSelection).toHaveBeenCalled();
+  });
+
+  it('allows a declared @ContextScoped route only with a resolved context', async () => {
+    const declared = harness({ permissions: undefined, contextScoped: true });
+    await expect(Promise.resolve(
+      declared.guard.canActivate(
+        context({ header: jest.fn(), user: user() }, ContextScopedController),
+      ),
+    )).resolves.toBe(true);
+    const anonymous = harness({ permissions: undefined, contextScoped: true });
+    await expect(Promise.resolve(
+      anonymous.guard.canActivate(context({ header: jest.fn() }, ContextScopedController)),
+    )).resolves.toBe(false);
+  });
+
+  it('keeps public routes reachable without any context', async () => {
+    const { guard } = harness({ permissions: undefined });
+    await expect(Promise.resolve(
+      guard.canActivate(context({ header: jest.fn() }, HealthController, check)),
+    )).resolves.toBe(true);
+  });
+
+  it('detects @ContextScoped declarations in the static scan', () => {
+    const findings = collectFindings(
+      'src/x/synthetic.controller.ts',
+      [
+        "import { Controller, Get } from '@nestjs/common';",
+        "import { ContextScoped } from '../common/context/context-scope.decorator';",
+        "@Controller('x')",
+        'export class SyntheticController {',
+        '  @Get()',
+        '  @ContextScoped()',
+        '  async current() {}',
+        "  @Get('undeclared')",
+        '  async undeclared() {}',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    expect(findings.find((finding) => finding.routeKey === 'get ')?.handlerHasContextScope).toBe(
+      true,
+    );
+    expect(
+      findings.find((finding) => finding.routeKey === 'get undeclared')?.handlerHasContextScope,
+    ).toBe(false);
+  });
+});
+
