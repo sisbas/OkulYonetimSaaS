@@ -7,7 +7,31 @@ import {
   TRANSACTIONAL_AUDIT_WRITER,
   TransactionalAuditWriter,
 } from '../common/audit/transactional-audit-writer';
+import { LeaveApprovalImpactPort } from '../leaves/leave-approval-impact.port';
 import { LeaveCoverageStatus, LeaveDecisionStatus } from '../leaves/leave-request.entity';
+import {
+  CANDIDATE_AVAILABLE_LABEL,
+  CANDIDATE_DECISION_SUPPORT_DETAIL,
+  CANDIDATE_GAP_DETAIL,
+  LeaveApprovalCandidate,
+  LeaveApprovalCandidates,
+  LeaveApprovalImpact,
+  LeaveApprovalImpactLesson,
+  LeaveApprovalImpactRequest,
+  LeaveApprovalImpactResult,
+  LeaveZeroImpactCode,
+  NO_BRANCH_LABEL_FALLBACK,
+  NO_GROUP_LABEL_FALLBACK,
+  NO_LESSON_LABEL_FALLBACK,
+  NO_ROOM_LABEL_FALLBACK,
+  NO_TEACHER_LABEL_FALLBACK,
+  composeLessonLabel,
+  coverageLabel,
+  formatOccurrenceLabel,
+  formatTimeLabel,
+  lessonStateLabel,
+  zeroImpactDetailFor,
+} from './leave-approval-impact';
 import {
   CandidateResponse,
   DailyOperationsQueueResponse,
@@ -47,6 +71,10 @@ type PublishedScheduleEventRow = {
   endTime: string;
   effectiveFrom: string;
   effectiveTo: string | null;
+  /** R1 (#263): onay yanıtı için okunabilir ad çözümlemesi (ham UUID değil). */
+  courseLabel: string | null;
+  groupLabel: string | null;
+  roomLabel: string | null;
 };
 
 type ImpactedScheduleEventRow = PublishedScheduleEventRow & EventOccurrence;
@@ -87,7 +115,7 @@ function assignmentKey(input: { scheduleEventId: string; scheduleVersionId: stri
 }
 
 @Injectable()
-export class DailyOperationsRepository {
+export class DailyOperationsRepository implements LeaveApprovalImpactPort {
   constructor(
     private readonly dataSource: DataSource,
     @Inject(TRANSACTIONAL_AUDIT_WRITER)
@@ -298,6 +326,149 @@ export class DailyOperationsRepository {
     });
   }
 
+  /**
+   * R1 (#263): onay kararının etki hesabı + açık projeksiyon yazımı.
+   *
+   * Çağıranın `EntityManager`'ı ile çalışır; kendi transaction'ını AÇMAZ. Böylece
+   * karar + etki + projeksiyon + audit + outbox tek PostgreSQL transaction'ında
+   * commit/rollback olur (constitution Madde III). Onay anında yedek
+   * görevlendirme bulunmadığından tüm etkilenen dersler `open` projeksiyonudur ve
+   * ders karşılığı `unresolved` başlar.
+   */
+  async prepareApprovalImpact(
+    manager: EntityManager,
+    ctx: RequestContext,
+    leave: LeaveApprovalImpactRequest,
+  ): Promise<LeaveApprovalImpactResult> {
+    assertTenantScope(ctx, 'daily_operations_leave_impact');
+    const published = await this.loadPublishedEvents(manager, leave);
+    const events = this.expandOccurrences(published, leave);
+    const coverage = computeCoverageStatus(events.length, 0);
+    await this.project(manager, leave, events, []);
+    const teacherLabel = await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId);
+    const candidates = await this.approvalCandidates(manager, leave, events);
+    return {
+      coverageStatus: coverage,
+      impact: this.toApprovalImpact(
+        events,
+        coverage,
+        teacherLabel,
+        candidates,
+        this.zeroImpactReasonFor(published.length, events.length),
+      ),
+    };
+  }
+
+  private async approvalCandidates(
+    manager: EntityManager,
+    leave: LeaveRow,
+    events: ImpactedScheduleEventRow[],
+  ): Promise<LeaveApprovalCandidates> {
+    const base = {
+      decisionSupportOnly: true as const,
+      decisionSupportDetail: CANDIDATE_DECISION_SUPPORT_DETAIL,
+    };
+    if (events.length === 0) {
+      return { ...base, finalized: true, gapDetail: null, items: [] };
+    }
+    if (!(await this.teacherCoursesReady(manager))) {
+      // Uygunluk kaynağı yokken boş liste "aday yok" DEMEK DEĞİLDİR: kesinleşmedi denir.
+      return { ...base, finalized: false, gapDetail: CANDIDATE_GAP_DETAIL, items: [] };
+    }
+    const eligible = await this.findEligibleCandidates(manager, leave, events);
+    return {
+      ...base,
+      finalized: true,
+      gapDetail: null,
+      items: await this.candidateLabels(manager, leave.tenantId, eligible),
+    };
+  }
+
+  private async candidateLabels(
+    manager: EntityManager,
+    tenantId: string,
+    eligible: CandidateResponse['candidates'],
+  ): Promise<LeaveApprovalCandidate[]> {
+    if (eligible.length === 0) return [];
+    const teacherRows: Array<{ teacherId: string; teacherLabel: string | null }> = await manager.query(
+      `SELECT teacher.id::text AS "teacherId",
+              NULLIF(BTRIM(COALESCE(teacher.first_name, '') || ' ' || COALESCE(teacher.last_name, '')), '') AS "teacherLabel"
+       FROM teachers teacher
+       WHERE teacher.tenant_id = $1 AND teacher.id = ANY($2::uuid[])`,
+      [tenantId, eligible.map((candidate) => candidate.teacherId)],
+    );
+    const branchIds = [...new Set(eligible.map((candidate) => candidate.teacherBranchId))];
+    const branchRows: Array<{ id: string; name: string | null }> = await manager.query(
+      `SELECT branch.id::text AS "id", branch.name AS "name"
+       FROM branches branch
+       WHERE branch.tenant_id = $1 AND branch.id = ANY($2::uuid[])`,
+      [tenantId, branchIds],
+    );
+    const teacherLabels = new Map(teacherRows.map((row) => [row.teacherId, row.teacherLabel]));
+    const branchLabels = new Map(branchRows.map((row) => [row.id, row.name]));
+    return eligible.map((candidate) => ({
+      teacherLabel: teacherLabels.get(candidate.teacherId) ?? NO_TEACHER_LABEL_FALLBACK,
+      branchLabel: branchLabels.get(candidate.teacherBranchId) ?? NO_BRANCH_LABEL_FALLBACK,
+      availabilityLabel: CANDIDATE_AVAILABLE_LABEL,
+    }));
+  }
+
+  private async loadTeacherLabel(manager: EntityManager, tenantId: string, teacherId: string): Promise<string> {
+    const rows: Array<{ teacherLabel: string | null }> = await manager.query(
+      `SELECT NULLIF(BTRIM(COALESCE(teacher.first_name, '') || ' ' || COALESCE(teacher.last_name, '')), '') AS "teacherLabel"
+       FROM teachers teacher
+       WHERE teacher.tenant_id = $1 AND teacher.id = $2`,
+      [tenantId, teacherId],
+    );
+    return rows[0]?.teacherLabel ?? NO_TEACHER_LABEL_FALLBACK;
+  }
+
+  private zeroImpactReasonFor(
+    publishedEventCount: number,
+    impactedEventCount: number,
+  ): LeaveZeroImpactCode | null {
+    if (impactedEventCount > 0) return null;
+    return publishedEventCount === 0 ? 'NO_PUBLISHED_SCHEDULE_EVENT' : 'NO_OVERLAPPING_OCCURRENCE';
+  }
+
+  private toApprovalImpact(
+    events: ImpactedScheduleEventRow[],
+    coverage: LeaveCoverageStatus,
+    teacherLabel: string,
+    candidates: LeaveApprovalCandidates,
+    zeroImpactReason: LeaveZeroImpactCode | null,
+  ): LeaveApprovalImpact {
+    const lessons: LeaveApprovalImpactLesson[] = events.map((event) => {
+      const courseLabel = event.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
+      const groupLabel = event.groupLabel ?? NO_GROUP_LABEL_FALLBACK;
+      const timeLabel = formatTimeLabel(event.startTime, event.endTime);
+      const occurrenceLabel = formatOccurrenceLabel(event.occurrenceDate);
+      return {
+        lessonLabel: composeLessonLabel({ courseLabel, groupLabel, timeLabel, occurrenceLabel }),
+        courseLabel,
+        groupLabel,
+        roomLabel: event.roomLabel ?? NO_ROOM_LABEL_FALLBACK,
+        timeLabel,
+        occurrenceLabel,
+        teacherLabel,
+        stateLabel: lessonStateLabel('open'),
+      };
+    });
+    // Sıfır etki sessizce geçilemez: gerekçe kodu ve okunabilir açıklama zorunlu.
+    return {
+      coverageStatus: coverage,
+      coverageLabel: coverageLabel(coverage),
+      impactedLessonCount: lessons.length,
+      resolvedLessonCount: 0,
+      openLessonCount: lessons.length,
+      zeroImpact: lessons.length === 0,
+      zeroImpactReason,
+      zeroImpactDetail: zeroImpactReason ? zeroImpactDetailFor(zeroImpactReason) : null,
+      lessons,
+      candidates,
+    };
+  }
+
   private async assertBranchOwnership(manager: EntityManager, tenantId: string, branchId: string): Promise<void> {
     const rows = await manager.query(
       `SELECT 1 FROM branches WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
@@ -319,15 +490,25 @@ export class DailyOperationsRepository {
     return rows[0] ?? null;
   }
 
-  private async loadImpactedEvents(manager: EntityManager, leave: LeaveRow): Promise<ImpactedScheduleEventRow[]> {
-    const rows = await manager.query(
+  private async loadPublishedEvents(manager: EntityManager, leave: LeaveRow): Promise<PublishedScheduleEventRow[]> {
+    return manager.query(
       `SELECT event.id AS "scheduleEventId", event.schedule_id AS "scheduleId",
               event.version_id AS "scheduleVersionId", event.teacher_id AS "teacherId",
               event.teacher_branch_id AS "teacherBranchId", event.student_group_id AS "studentGroupId",
               event.course_id AS "courseId", event.room_id AS "roomId", event.time_slot_id AS "timeSlotId",
               event.day_of_week AS "dayOfWeek", event.start_time::text AS "startTime", event.end_time::text AS "endTime",
-              schedule.effective_from::text AS "effectiveFrom", schedule.effective_to::text AS "effectiveTo"
+              schedule.effective_from::text AS "effectiveFrom", schedule.effective_to::text AS "effectiveTo",
+              course.name AS "courseLabel", student_group.name AS "groupLabel", room.name AS "roomLabel"
        FROM schedule_events event
+       LEFT JOIN courses course
+         ON course.id = event.course_id
+        AND course.tenant_id = event.tenant_id
+       LEFT JOIN student_groups student_group
+         ON student_group.id = event.student_group_id
+        AND student_group.tenant_id = event.tenant_id
+       LEFT JOIN rooms room
+         ON room.id = event.room_id
+        AND room.tenant_id = event.tenant_id
        JOIN schedule_versions version
          ON version.id = event.version_id
         AND version.tenant_id = event.tenant_id
@@ -347,9 +528,14 @@ export class DailyOperationsRepository {
          AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= $4::date`,
       [leave.tenantId, leave.branchId, leave.teacherId, leave.startsAt, leave.endsAt],
     );
+  }
 
+  private expandOccurrences(
+    rows: PublishedScheduleEventRow[],
+    leave: LeaveRow,
+  ): ImpactedScheduleEventRow[] {
     const impacted: ImpactedScheduleEventRow[] = [];
-    for (const row of rows as PublishedScheduleEventRow[]) {
+    for (const row of rows) {
       for (const occurrence of eventOccurrencesForRange({
         leaveStartsAt: leave.startsAt,
         leaveEndsAt: leave.endsAt,
@@ -363,6 +549,10 @@ export class DailyOperationsRepository {
       }
     }
     return impacted;
+  }
+
+  private async loadImpactedEvents(manager: EntityManager, leave: LeaveRow): Promise<ImpactedScheduleEventRow[]> {
+    return this.expandOccurrences(await this.loadPublishedEvents(manager, leave), leave);
   }
 
   private async loadAssignments(manager: EntityManager, leave: LeaveRow): Promise<AssignmentRow[]> {

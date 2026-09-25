@@ -4,6 +4,8 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import { RequestContext } from '../common/context/request-context';
 import { assertTenantScope } from '../common/tenant/assert-tenant-scope';
+import { LeaveApprovalImpact } from '../daily-operations/leave-approval-impact';
+import { LEAVE_APPROVAL_IMPACT_PORT, LeaveApprovalImpactPort } from './leave-approval-impact.port';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import {
   LeaveNotFoundException,
@@ -24,12 +26,22 @@ export type LeaveDecisionValues = {
   expectedVersion: number;
 };
 
+/**
+ * Karar sonucu. `impact` yalnız onayda dolu gelir; ret kararında etki
+ * uygulanmadığı için `null` (karar gerekçesi servis katmanında açıkça yazılır).
+ */
+export type LeaveDecisionOutcome = Readonly<{
+  leave: LeaveRequest;
+  impact: LeaveApprovalImpact | null;
+}>;
+
 @Injectable()
 export class LeaveRepository {
   constructor(
     @InjectRepository(LeaveRequest) private readonly repository: Repository<LeaveRequest>,
     private readonly dataSource: DataSource,
     @Inject(LEAVE_AUDIT_PORT) private readonly audit: LeaveAuditPort,
+    @Inject(LEAVE_APPROVAL_IMPACT_PORT) private readonly impact: LeaveApprovalImpactPort,
   ) {}
 
   async create(ctx: RequestContext, values: CreateLeaveRequestValues): Promise<LeaveRequest> {
@@ -87,7 +99,7 @@ export class LeaveRepository {
     return this.repository.findOne({ where: { id, tenantId: ctx.tenantId, teacherId, branchId } });
   }
 
-  async decide(ctx: RequestContext, id: string, values: LeaveDecisionValues): Promise<LeaveRequest | null> {
+  async decide(ctx: RequestContext, id: string, values: LeaveDecisionValues): Promise<LeaveDecisionOutcome | null> {
     assertTenantScope(ctx, 'leave_requests');
     return this.dataSource.transaction(async (manager) => {
       const existing = await manager.findOne(LeaveRequest, {
@@ -97,6 +109,16 @@ export class LeaveRepository {
       if (!existing) return null;
       if (existing.version !== values.expectedVersion) throw new LeaveStaleVersionException();
       if (existing.decisionStatus !== LeaveDecisionStatus.PENDING) throw new LeaveTerminalStateException();
+
+      // Onayda etki SUNUCUDA ve AYNI transaction'da hesaplanır; etkilenen derslerin
+      // açık projeksiyonları da burada yazılır. Etki hazırlanamazsa hata yukarı
+      // çıkar; karar, audit ve outbox dâhil hiçbir satır commit edilmez.
+      let impact: LeaveApprovalImpact | null = null;
+      if (values.decision === LeaveDecisionStatus.APPROVED) {
+        const prepared = await this.impact.prepareApprovalImpact(manager, ctx, existing);
+        impact = prepared.impact;
+        existing.coverageStatus = prepared.coverageStatus;
+      }
 
       existing.decisionStatus = values.decision;
       existing.decidedByUserId = values.decidedByUserId;
@@ -116,10 +138,13 @@ export class LeaveRepository {
         entityType: 'leave_request',
         entityId: saved.id,
         result: 'success',
-        changedFields: ['status', 'version'],
+        // KVKK: yalnız alan ADLARI; ad/iletişim/serbest metin audit'e girmez.
+        changedFields: impact
+          ? ['status', 'coverageStatus', 'dailyOperationsProjection', 'version']
+          : ['status', 'version'],
       });
-      await this.insertOutbox(manager, eventName, saved);
-      return saved;
+      await this.insertOutbox(manager, eventName, saved, impact);
+      return { leave: saved, impact };
     });
   }
 
@@ -141,7 +166,12 @@ export class LeaveRepository {
     return actorUserId;
   }
 
-  private async insertOutbox(manager: EntityManager, eventName: string, leave: LeaveRequest): Promise<void> {
+  private async insertOutbox(
+    manager: EntityManager,
+    eventName: string,
+    leave: LeaveRequest,
+    impact: LeaveApprovalImpact | null = null,
+  ): Promise<void> {
     const eventKey = `${eventName}:${leave.id}:v${leave.version}`;
     await manager.query(
       `INSERT INTO leave_outbox_events
@@ -160,6 +190,10 @@ export class LeaveRepository {
           decisionStatus: leave.decisionStatus,
           coverageStatus: leave.coverageStatus,
           version: leave.version,
+          // KVKK: yalnız sayaç/durum; ad, iletişim veya serbest metin taşınmaz.
+          impactedLessonCount: impact?.impactedLessonCount ?? null,
+          openLessonCount: impact?.openLessonCount ?? null,
+          projectionPersisted: impact !== null,
         },
       ],
     );
