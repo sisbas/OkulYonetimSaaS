@@ -16,7 +16,10 @@ geldiğinde bu satır `tamamlandı (insan)` yapılır ve kanıt URL'i işlenir.
 |---|---|---|
 | `JWT_ACCESS_SECRET` | ✔ | Erişim token imzası |
 | `JWT_REFRESH_SECRET` | ✔ | Refresh token imzası (refresh yalnız hash saklanır) |
+| `JWT_KEY_ID` | opsiyonel | Verilen token'ları secret sürümüyle eşlemek için (rotasyon korelasyonu) |
 | `AUDIT_HMAC_KEY` | ✔ | Audit zinciri HMAC anahtarı (#259/#352) |
+| `AUDIT_HMAC_KEY_ID` | ✔ | İmzalı satırların `signature_key_id` değeri (ör. `key-1`); doğrulama bu kimlikle anahtar seçer |
+| `AUDIT_HMAC_PREVIOUS_KEYS` | yalnız rotasyonda | Emekliye ayrılmış anahtarlar: `{"key-1":"<>=32 karakter>"}` — **rotasyon sırasında** eski satırların doğrulanabilmesi için |
 | `DATABASE_URL` | ✔ | PostgreSQL bağlantısı (prod runtime için zorunlu) |
 | `KVKK_PSEUDONYM_KEY` | ✔ | **>= 32 byte** · pseudonym/redaction anahtarı (A3 dilimi; #266) |
 | `KVKK_PSEUDONYM_KEY_VERSION` | opsiyonel | Pseudonym anahtar sürümü (key-id tabanlı doğrulama/rotasyon) |
@@ -24,15 +27,27 @@ geldiğinde bu satır `tamamlandı (insan)` yapılır ve kanıt URL'i işlenir.
 - `KVKK_PSEUDONYM_KEY` **zorunlu ve yeni**dir (A3 R5/redaction dilimiyle gelir); >= 32 byte entropi.
 - Anahtar değerleri yalnız ortamın secret store'unda tutulur; repoda `.env.example` **dahi** gerçek değer içermez.
 
-> **BİLİNEN BOŞLUK — `AUDIT_HMAC_KEY` rotasyonu şu an uçtan uca DESTEKLENMİYOR (kod bekliyor).**
-> `AuditQueryService.verify()` doğrulamada yalnız **tek güncel anahtarı** (`resolveAuditHmacKey()`) kullanır ve
-> `audit_chain_checkpoints.signature` kolonunu SELECT etmez (bkz. issue #358). Kodda `verifyAuditChain`
-> `resolveHmacKey` (key-id çözücü) seçeneğini destekler ama `AuditQueryService` bunu bağlamaz ve hiçbir
-> runtime kodu `AUDIT_HMAC_PREVIOUS_KEYS` benzeri bir değişkeni **okumaz**. Bu nedenle:
-> - Operatör **şu an** `AUDIT_HMAC_KEY` rotasyonu yapmamalıdır; yapılırsa rotasyon öncesi imzalı kayıtlar
->   `signature mismatch` ile doğrulanamaz hâle gelir.
-> - Rotasyon desteği (key-id resolver + geçmiş anahtar env konfigürasyonu) ayrı bir kod dilimi olarak
->   planlanmalıdır; bu pakette **iddia edilmez**. (Refs #259 #352 #358)
+## 1.1 Audit HMAC rotasyonu — **DESTEKLENİYOR** (güncellendi: #361 merge sonrası)
+
+`AuditQueryService.verify()` artık satırın **kendi `signature_key_id`'siyle** anahtar seçer
+(`resolveAuditHmacKeyRing()` + `auditHmacKeyResolver(ring)`); bilinmeyen/eksik key-id →
+`unknown-signature-key` ile **fail-closed** reddeder. Bu davranış #361 ile main'dedir
+(kanıt: `src/common/audit/audit-chain.spec.ts` — rotasyon + key-id NULL testleri; `.env.example`
+`AUDIT_HMAC_KEY_ID` / `AUDIT_HMAC_PREVIOUS_KEYS` sözleşmesi).
+
+**Desteklenen rotasyon prosedürü:**
+
+1. Yeni anahtarı üret (>= 32 karakter) ve `AUDIT_HMAC_KEY`'e koy; `AUDIT_HMAC_KEY_ID`'yi **yeni** kimliğe çevir (ör. `key-2`).
+2. Emekliye ayrılan anahtarı `AUDIT_HMAC_PREVIOUS_KEYS`'e ekle: `{"key-1":"<eski anahtar>"}`.
+   (Rotasyon öncesi imzalanmış satırlar bu anahtarla doğrulanmaya devam eder.)
+3. Bozuk/zayıf yapılandırma veya aktif kimliğin tekrarı → süreç **boot'ta FATAL** eder (fail-closed).
+4. Eski kimliği, saklama politikası izin verdiği sürece **ringde tut**; ringden çıkarılan anahtarın
+   satırları doğrulanamaz hâle gelir.
+
+> **KALAN GERÇEK BOŞLUK — checkpoint imzası (issue #358):** `AuditQueryService.lastCheckpoint()`
+> `audit_chain_checkpoints.signature` kolonunu SELECT etmiyor; yani checkpoint'in **kendi** HMAC imzası
+> doğrulanmıyor (kırpma senaryosunda trust-anchor kurcalanabilir kalır). Bu, rotasyon desteğinden
+> **bağımsız** ve hâlâ **açık** bir bulgudur (#358) — bir dilim kapsamında kapatılmalıdır.
 
 ## 2. Doğrulama komutu (insan, prod'a karşı)
 
