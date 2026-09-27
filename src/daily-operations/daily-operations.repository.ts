@@ -400,10 +400,17 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       [tenantId, eligible.map((candidate) => candidate.teacherId)],
     );
     const branchIds = [...new Set(eligible.map((candidate) => candidate.teacherBranchId))];
+    // #263 review P2 / DB Smoke: `teacherBranchId` alanı sözleşme gereği
+    // `teacher_branches.id`'dir (atama satırı), şube tablosunun id'si DEĞİL.
+    // Etiket bu yüzden atama üzerinden şubeye JOIN ile çözülür; aksi hâlde
+    // "Şube bilgisi çözümlenemedi" fallback'i dönerdi.
     const branchRows: Array<{ id: string; name: string | null }> = await manager.query(
-      `SELECT branch.id::text AS "id", branch.name AS "name"
-       FROM branches branch
-       WHERE branch.tenant_id = $1 AND branch.id = ANY($2::uuid[])`,
+      `SELECT assignment.id::text AS "id", branch.name AS "name"
+       FROM teacher_branches assignment
+       JOIN branches branch
+         ON branch.tenant_id = assignment.tenant_id
+        AND branch.id = assignment.branch_id
+       WHERE assignment.tenant_id = $1 AND assignment.id = ANY($2::uuid[])`,
       [tenantId, branchIds],
     );
     const teacherLabels = new Map(teacherRows.map((row) => [row.teacherId, row.teacherLabel]));
