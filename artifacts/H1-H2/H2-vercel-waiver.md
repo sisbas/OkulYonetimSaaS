@@ -1,8 +1,8 @@
 # H2 — Vercel GitHub App preview onarımı **veya** kayıtlı waiver (#329) (İNSAN KAPISI)
 
-**DURUM: bekliyor (insan)** · **Sahip:** İnsan sahibi/operatör (A6 yalnız hazırlar) · **Refs:** #329, plan §10/H2
-**Kural:** Gizleme/susturma YASAK. Bu dosya FAILURE kaydını **olduğu gibi** (run URL'i ile) taşır ve
-karar için iki yol sunar: (1) gerçek onarım, (2) **kayıtlı** waiver. İkisi de insan kararıdır.
+**DURUM: WAIVER KAYITLI (CTO, 2026-09-27)** · **Sahip:** İnsan sahibi/operatör · **Refs:** #329, plan §10/H2
+**Karar belgesi:** `docs/devops/vercel-h2-waiver-and-observation.md` (waiver + **gözlem alternatifi**).
+**Kural:** Gizleme/susturma YASAK. Bu dosya FAILURE kayıtlarını **olduğu gibi** (run URL'i ile) taşır.
 
 ---
 
@@ -51,5 +51,19 @@ VERCEL PREVIEW WAIVER (kayıtlı) — #329
 
 ---
 
-**İlişkili:** `artifacts/H1-H2/H1-prod-env-and-health.md` · `docs/phase2/progress-v2.md` §3 (H2)
-**Sahiplik:** paket A6; **karar/uygulama** insan sahibi (H2). Ajan waive **edemez**.
+## 5. KARAR KAYDI (CTO, 2026-09-27) — waive edildi + gözlem alternatifi
+
+| Alan | Değer |
+|---|---|
+| Karar | **Waiver KAYITLI** (gerçek onarım ertelendi) |
+| Kapsam | `Vercel` StatusContext FAILURE (preview deployment), tüm PR'lar |
+| Kapsam dışı | Zorunlu check'ler ve **H1** (prod `/api/v1/health` 200) — waive EDİLEMEZ |
+| Gözlem telafisi | `WP-07F Production Observation` (manuel dispatch, `expected_head_sha` ile exact commit'e bağlı) — **merge gate'i değil** |
+| Kanıt (waiver uygulanmış merge'ler) | #361 `9b20bb3`→`e794450`, #360 `8246222`→`82cfb41`, #357 `29eed7b`→`7f555c8` (üçünde de yalnız Vercel kırmızıydı) |
+| İptal | #329 giderilip `Vercel` SUCCESS dönünce veya Faz 1b kapanışında |
+| Karar belgesi | `docs/devops/vercel-h2-waiver-and-observation.md` |
+| Gözlem kaydı | `artifacts/H1-H2/observation-log.md` |
+
+> Bu kayıt, H2'nin "yapıldı" sayılması DEĞİLDİR: kök neden (`#329`) açıktır ve preview hâlâ kırmızıdır.
+> Kayıtlı waiver, yalnız **merge blokajını** kaldırır; görünürlük gözlem kanalıyla korunur.
+
