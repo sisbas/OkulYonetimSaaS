@@ -267,7 +267,10 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0].metadata_json).toMatchObject({
       schemaVersion: 1, result: 'success',
-      changedFields: ['status', 'coverageStatus', 'dailyOperationsProjection', 'version'],
+      // Audit metadata politikası `changedFields`'i tekilleştirip SIRALAR
+      // (`audit-metadata-policy.assertChangedFields` → `[...new Set(v)].sort()`);
+      // beklenen değer bu normalize edilmiş sıradır (alfabetik).
+      changedFields: ['coverageStatus', 'dailyOperationsProjection', 'status', 'version'],
     });
 
     const outboxRows = await dataSource.query('SELECT event_name, payload_json FROM leave_outbox_events WHERE leave_request_id = $1', [leave.id]);
