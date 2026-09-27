@@ -12,15 +12,20 @@ export const CONTEXT_CATALOG_VERSION = 'context-catalog:v1';
 export type ContextCatalog = {
   version: string;
   institution: { name: string };
-  role: { key: string; label: string } | null;
+  /**
+   * Rol YALNIZ insan-okur etiketle döner (#339 review P2 / F2): iç snake_case
+   * rol kodu (`operations_manager`) sözleşmeden kaldırılmıştır — iç
+   * isimlendirme sızıntısı yasak (madde 3: iç UUID/ETag/jargon dönmez).
+   */
+  role: { label: string } | null;
   branches: Array<{ name: string }>;
   activeBranch: { name: string } | null;
 };
 
 /**
- * Rol anahtarı → insan-okur etiket. Katalog yanıtı Türkçe etiket döner;
- * ham snake_case rol adı yalnızca `key` alanında (rol-farkındalıklı arayüz
- * için yayımlanmış sözleşme anahtarı) yer alır.
+ * Rol anahtarı → insan-okur etiket. Katalog yanıtı TÜRKÇE etiketi döner;
+ * ham snake_case rol adı yanıta HİÇBİR alanda konmaz (iç isimlendirme sızıntısı
+ * olarak değerlendirilir — bkz. `ContextCatalog.role` sözleşmesi).
  */
 const ROLE_LABELS: Readonly<Record<string, string>> = {
   tenant_admin: 'Kurum Yöneticisi',
@@ -76,16 +81,20 @@ export class ContextCatalogService {
     };
 
     const accessible = await this.branchScope.listAccessibleBranches(actor);
+    // Seçim, ZATEN YÜKLENMİŞ kümeden çözülür: çift sorgu yok ve `branches` ile
+    // `activeBranch` aynı anlık görüntüden gelir (#339 review P2).
     const activeBranch: RequestBranch | null = await this.branchScope.resolveSelection(
       actor,
       selection,
+      accessible,
     );
     const institutionName = await this.loadInstitutionName(tenantId);
 
     return {
       version: CONTEXT_CATALOG_VERSION,
       institution: { name: institutionName },
-      role: context.activeRole ? { key: context.activeRole, label: roleLabel(context.activeRole) as string } : null,
+      // İç rol kodu (snake_case) YAYIMLANMAZ; yalnız insan-okur etiket (#339 review P2 / F2).
+      role: context.activeRole ? { label: roleLabel(context.activeRole) as string } : null,
       branches: accessible.map((entry) => ({ name: entry.name })),
       activeBranch: activeBranch ? { name: activeBranch.branchName } : null,
     };

@@ -213,11 +213,32 @@ describe('ContextCatalogService (versioned, human-readable catalog)', () => {
     expect(response.institution.name).toBe('Atatürk Ortaokulu');
     expect(response.branches).toEqual([{ name: 'Merkez Kampüs' }]);
     expect(response.activeBranch).toEqual({ name: 'Merkez Kampüs' });
-    expect(response.role).toEqual({ key: 'operations_manager', label: 'Operasyon Yöneticisi' });
+    expect(response.role).toEqual({ label: 'Operasyon Yöneticisi' });
 
     const serialized = JSON.stringify(response);
     expect(serialized).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i); // iç UUID yok
     expect(serialized).not.toMatch(/etag|tenantId|branchId|permission/i); // iç anahtar/jargon yok
+    // #339 review P2 / F2: iç snake_case rol kodu yayımlanmaz; yalnız etiket döner.
+    expect(response.role).not.toHaveProperty('key');
+    expect(serialized).not.toMatch(/operations_manager|"[a-z]+_[a-z]+"\s*:/); // snake_case iç kod yok
+  });
+
+  it('resolves the active branch from the already loaded accessible set (single snapshot)', async () => {
+    const { service, branchScope } = catalog({
+      tenantName: 'Atatürk Ortaokulu',
+      branches: [{ branchId: BRANCH_A, name: 'Merkez Kampüs' }],
+      active: { branchId: BRANCH_A, branchName: 'Merkez Kampüs', source: 'membership_default' },
+    });
+    await service.build(context(), { branchId: BRANCH_A });
+
+    // Erişilebilir liste TEK kez sorgulanır ve seçim çözümüne AYNI küme verilir
+    // (çift sorgu + iki farklı anlık görüntü riski kapanır — #339 review P2).
+    expect(branchScope.listAccessibleBranches).toHaveBeenCalledTimes(1);
+    expect(branchScope.resolveSelection).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      [{ branchId: BRANCH_A, name: 'Merkez Kampüs' }],
+    );
   });
 
   it('returns no branches when the actor has no branch scope, without leaking others', async () => {

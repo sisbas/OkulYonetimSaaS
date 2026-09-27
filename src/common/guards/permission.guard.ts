@@ -11,12 +11,36 @@ import {
 } from '../context/authorization-context';
 import { emitContextAuditEvent, legacySecurityAuditReasonCode } from '../context/context-audit';
 import { CONTEXT_SCOPE_KEY } from '../context/context-scope.decorator';
-import { DenyReasonCode, denyReasonFromContextFailure } from '../context/deny-response';
+import {
+  DenyReasonCode,
+  denyReasonFromContextFailure,
+  toDenyException,
+} from '../context/deny-response';
 import { isPublicRouteHandler } from '../context/public-route';
 import { RequestBranch, RequestWithContext } from '../context/request-context';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
 const BRANCH_ID_HEADER = 'x-branch-id';
+
+/**
+ * Non-production oturum-fallback bayrağı (#339 R4, F1 onarımı).
+ *
+ * Fail-closed varsayılan: yetki/şube çözümleme hatası, bayrak OLMAKSIZIN her
+ * ortamda RED edilir. Yalnız non-production ortamda ve açıkça
+ * `SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK=true` iken gürültülü kayıtla
+ * sunucu-çözümlü oturum yetkisine düşülür (istemci beyanı yine yetki vermez).
+ */
+const SESSION_FALLBACK_ENV = 'SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK';
+
+/** production ortamı mı? (production'da fallback tümüyle kapalıdır.) */
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+/** Gürültülü oturum-fallback açıkça mı istendi? (varsayılan: kapalı) */
+function sessionFallbackExplicitlyEnabled(): boolean {
+  return process.env[SESSION_FALLBACK_ENV] === 'true';
+}
 
 /**
  * Global yetkilendirme guard'ı (#339 R4, madde 2 & 5).
@@ -105,7 +129,9 @@ export class PermissionGuard implements CanActivate {
     }
     if (branchIdHeader && !this.branchScope) {
       // Şube kapsamı doğrulanamıyorsa istemci seçimi kabul edilmez (fail-closed).
-      return this.deny(request, 'branch_not_authorized', requiredPermission);
+      // `false` dönmek Nest'in genel 403'ünü üretir; bu, "erişilemez şube" ile
+      // "bilinmeyen kaynak" ayrımını sızdırırdı. Sözleşme non-enumerating 404'tür.
+      this.denyAndThrow(request, 'branch_not_authorized', requiredPermission);
     }
     return this.resolveAndSettle(request, user, branchIdHeader, requiredPermission);
   }
@@ -140,26 +166,36 @@ export class PermissionGuard implements CanActivate {
       return this.settle(request, user, resolvedAuthority, branch, requiredPermission);
     } catch (error) {
       if (error instanceof AuthorizationContextError) {
-        return this.deny(
-          request,
-          denyReasonFromContextFailure(error.reasonCode),
-          requiredPermission,
-        );
+        const reasonCode = denyReasonFromContextFailure(error.reasonCode);
+        if (reasonCode === 'branch_not_authorized') {
+          // Şube yetkisiz: audit + non-enumerating 404 (403/404 ayrımı sızmaz).
+          this.denyAndThrow(request, reasonCode, requiredPermission);
+        }
+        return this.deny(request, reasonCode, requiredPermission);
       }
       // Altyapı hatası (ör. çözümleyicinin veri kaynağı geçici olarak erişilemez):
-      // istemci beyanı YETKİ ÜRETMEZ ama burada sunucu tarafında zaten doğrulanmış
-      // oturum yetkisine düşülür (kimlik katmanı DB oturum + token_version kontrolünü
-      // geçmiştir) ve durum GÜRÜLTÜLÜ şekilde loglanır. Şube seçimi uygulanmaz
-      // (kapsam daraltan seçim uygulanmadığı için yetki genişlemez).
-      this.logger.warn(
-        JSON.stringify({
-          event: 'security.context.authority_resolver_unavailable',
-          requestId: this.baseContext(request).requestId,
-          tenantId: user.tenantId,
-          actorId: user.userId,
-        }),
-      );
-      return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission);
+      // istemci beyanı YETKİ ÜRETMEZ. Fail-closed karar aşağıdaki sırayla verilir.
+      //  (a) İstek bir şube seçimi taşıyorsa doğrulanamayan seçim oturum yetkisiyle
+      //      ASLA baypas edilmez → HER ORTAMDA RED (non-enumerating 404).
+      if (branchIdHeader) {
+        this.denyAndThrow(request, 'branch_not_authorized', requiredPermission);
+      }
+      //  (b) production: her türlü yetki çözümleme hatası RED (fallback yok).
+      //  (c) Gürültülü oturum-fallback'i YALNIZ non-production + açık env bayrağı
+      //      (`SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK=true`) ile; default KAPALI.
+      if (!isProductionRuntime() && sessionFallbackExplicitlyEnabled()) {
+        // Şube seçimi uygulanmaz (kapsam daraltan seçim uygulanmadığı için yetki
+        // genişlemez) ve durum GÜRÜLTÜLÜ şekilde loglanır (sabit olay adı, PII yok).
+        this.logger.warn(
+          JSON.stringify({
+            event: 'security.context.session_fallback_used',
+            reason: 'authority_resolver_unavailable',
+            requestId: this.baseContext(request).requestId,
+          }),
+        );
+        return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission);
+      }
+      return this.deny(request, 'unresolved_context', requiredPermission);
     }
   }
 
@@ -241,5 +277,22 @@ export class PermissionGuard implements CanActivate {
       });
     }
     return false;
+  }
+
+  /**
+   * Deny kararını kaydeder VE eşlenmiş (non-enumerating) istisnayı fırlatır.
+   *
+   * `deny()` `false` döndürdüğünde Nest guard'ın GENEL 403'ünü üretir; bu,
+   * "erişilemez şube" (404) ile "bilinmeyen kaynak" ayrımını sızdırırdı
+   * (#339 review P2). Bu yol audit kaydını `deny()` ile AYNI kanaldan yazar ve
+   * sözleşmeye uygun gövdeyi (401/403/404 + non-enumerating mesaj) üretir.
+   */
+  private denyAndThrow(
+    request: RequestWithContext,
+    reasonCode: DenyReasonCode,
+    requiredPermission: ReadonlyArray<string>,
+  ): never {
+    this.deny(request, reasonCode, requiredPermission);
+    throw toDenyException(reasonCode);
   }
 }

@@ -198,5 +198,11 @@ describe('public route allowlist', () => {
     expect(isPublicRouteHandler('AuthController', 'refresh')).toBe(true);
     expect(isPublicRouteHandler('RbacController', 'roles')).toBe(false);
     expect(isPublicRouteHandler(undefined, undefined)).toBe(false);
+    // #339 review P2 (F3): eşleşme controller+HANDLER ÇİFTİ iledir; BAŞKA bir
+    // controller'daki aynı isimli handler public sayılmaz. Bu, "isim çakışması
+    // public route sızıntısına yol açar" iddiasının karşı-kanıtıdır.
+    expect(isPublicRouteHandler('OtherController', 'login')).toBe(false);
+    expect(isPublicRouteHandler('AuthController', 'check')).toBe(false);
+    expect(isPublicRouteHandler('HealthController', 'refresh')).toBe(false);
   });
 });

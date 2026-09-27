@@ -526,7 +526,9 @@ describe('default-deny runtime contract (PermissionGuard)', () => {
       ),
       user: user({ permissions: ['user:read'] }),
     };
-    await expect(Promise.resolve(guard.canActivate(context(crossBranch)))).resolves.toBe(false);
+    await expect(Promise.resolve(guard.canActivate(context(crossBranch)))).rejects.toMatchObject({
+      status: 404,
+    });
     expect(resolveSelection).toHaveBeenCalled();
   });
 

@@ -102,12 +102,18 @@ export class BranchScopeService {
    *   sıfır veya birden fazla şube varsa örtük seçim YAPILMAZ (null).
    * - Seçim var: yetkili kümede tam olarak bir eşleşme yoksa
    *   `unauthorized_branch` fırlatılır (belirsiz ad da reddedilir).
+   *
+   * `preloadedAccessible` verilirse yetkili küme YENİDEN sorgulanmaz: aynı
+   * istekte erişilebilir liste zaten yüklendiyse (ör. katalog uç noktası), hem
+   * çift sorgu önlenir hem de `branches` ile `activeBranch` AYNI anlık
+   * görüntüden gelir (eşzamanlı atama değişikliklerinde tutarsız yanıt olmaz).
    */
   async resolveSelection(
     actor: BranchScopeActor,
     selection: { branchId?: string | null; branchName?: string | null } = {},
+    preloadedAccessible?: ReadonlyArray<BranchScopeEntry>,
   ): Promise<RequestBranch | null> {
-    const accessible = await this.listAccessibleBranches(actor);
+    const accessible = preloadedAccessible ?? (await this.listAccessibleBranches(actor));
     const requestedId = selection.branchId?.trim();
     const requestedName = selection.branchName?.trim();
 

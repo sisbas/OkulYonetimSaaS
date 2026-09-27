@@ -162,7 +162,12 @@ describe('PermissionGuard', () => {
       ),
     };
     // Cross-branch/unknown şube: fail-closed (404 kanıtı için test/rbac negatif matrisi).
-    await expect(Promise.resolve(guard.canActivate(executionContext(withBranch)))).resolves.toBe(false);
+    await expect(
+      Promise.resolve(guard.canActivate(executionContext(withBranch))),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: 'Kayıt bulunamadı',
+    });
     expect(resolveSelection).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: 'tenant_a' }),
       { branchId: '22222222-2222-4222-8222-222222222222' },
@@ -175,23 +180,48 @@ describe('PermissionGuard', () => {
     expect(resolveSelection).not.toHaveBeenCalled();
   });
 
-  it('falls back to the session-resolved authority on a resolver infrastructure error (logged, no extra authority)', async () => {
+  it('fails closed by default on a resolver infrastructure error; session fallback only when explicitly enabled (non-production)', async () => {
     // Altyapı hatası senaryosu: sunucu-çözümlü oturum yetkisi kullanılır, istemci beyanı yine yetki vermez.
-    const allowed = harness({
+    // #339 F1 (ORCH kararı): VARSAYILAN FAIL-CLOSED'dir. Bayrak yoksa altyapı
+    // hatası yetki kararı ÜRETMEZ; production'da fallback tümüyle kapalıdır.
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousFallback = process.env.SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK;
+    delete process.env.SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK;
+    process.env.NODE_ENV = 'production';
+
+    const deniedInProduction = harness({
       permissions: ['user:read'],
       authority: new Error('driver not connected'),
     });
     await expect(
-      Promise.resolve(allowed.guard.canActivate(executionContext(request(['user:read'])))),
-    ).resolves.toBe(true);
-
-    const denied = harness({
-      permissions: ['tenant:branch:read'],
-      authority: new Error('driver not connected'),
-    });
-    await expect(
-      Promise.resolve(denied.guard.canActivate(executionContext(request(['user:read'])))),
+      Promise.resolve(deniedInProduction.guard.canActivate(executionContext(request(['user:read'])))),
     ).resolves.toBe(false);
+
+    // Gürültülü oturum-fallback'i YALNIZ non-production + AÇIK bayrak ile açılır.
+    process.env.NODE_ENV = 'test';
+    process.env.SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK = 'true';
+    try {
+      const allowed = harness({
+        permissions: ['user:read'],
+        authority: new Error('driver not connected'),
+      });
+      await expect(
+        Promise.resolve(allowed.guard.canActivate(executionContext(request(['user:read'])))),
+      ).resolves.toBe(true);
+
+      const insufficient = harness({
+        permissions: ['tenant:branch:read'],
+        authority: new Error('driver not connected'),
+      });
+      await expect(
+        Promise.resolve(insufficient.guard.canActivate(executionContext(request(['user:read'])))),
+      ).resolves.toBe(false);
+    } finally {
+      if (previousFallback === undefined) delete process.env.SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK;
+      else process.env.SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK = previousFallback;
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+    }
   });
 
   it('keeps public routes reachable without permissions metadata', async () => {
