@@ -259,9 +259,9 @@ describe('audit HMAC key ring / rotation (#259 review P1)', () => {
     expect(resolve('key-1')).toBe(RETIRED_KEY);
     // Yanlış/bilinmeyen key-id → undefined → doğrulama REDDEDİLİR.
     expect(resolve('key-9')).toBeUndefined();
-    // Kimlik izlemeyen legacy satır aktif anahtarla denenir.
-    expect(resolve(null)).toBe(ACTIVE_KEY);
-    expect(resolve(undefined)).toBe(ACTIVE_KEY);
+    // Kimlik izlemeyen (NULL/eksik) satır fail-closed: sessizce aktif anahtara DÜŞMEZ.
+    expect(resolve(null)).toBeUndefined();
+    expect(resolve(undefined)).toBeUndefined();
   });
 
   it('verifies a chain that spans a key rotation', () => {
@@ -316,6 +316,35 @@ describe('audit HMAC key ring / rotation (#259 review P1)', () => {
     expect(
       verifyAuditChain(records, { resolveHmacKey: auditHmacKeyResolver(withoutRetired) }),
     ).toMatchObject({ valid: false, brokenAtSequence: 1, reason: 'unknown-signature-key' });
+  });
+
+  it('fails closed when a signed row has its signature_key_id removed (review P2)', () => {
+    const ring = resolveAuditHmacKeyRing(productionEnv());
+    const base = chainOf(1)[0];
+    const signed = {
+      ...base,
+      signature: signAuditEntryHash(base.entryHash as string, ACTIVE_KEY),
+      signatureKeyId: 'key-2',
+    };
+
+    // Sağlam satır, aktif anahtarla (imza edildiği anahtar) doğrulanır.
+    expect(
+      verifyAuditChain([signed], { resolveHmacKey: auditHmacKeyResolver(ring) }).valid,
+    ).toBe(true);
+
+    // DB üzerinde `signature_key_id` NULL'a çekilirse satır ARTIK doğrulanamaz:
+    // sessizce aktif anahtara düşmek YASAK (fail-closed → unknown-signature-key).
+    // Bu, aksi hâlde DB kurcalamasının (key-id silme) zincir doğrulayıcıdan
+    // KAÇIRILMASINA yol açardı.
+    expect(
+      verifyAuditChain([{ ...signed, signatureKeyId: null }], {
+        resolveHmacKey: auditHmacKeyResolver(ring),
+      }),
+    ).toMatchObject({
+      valid: false,
+      brokenAtSequence: 1,
+      reason: 'unknown-signature-key',
+    });
   });
 
   it('has no retired keys when the variable is unset or blank', () => {

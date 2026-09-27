@@ -1,7 +1,8 @@
 # fix(audit,kvkk): key-id bazlı zincir doğrulaması + ham kimlik yerine pseudonym (Refs #266)
 
-> **Durum:** PR **açılmadı** (talimat: yalnız A7 GO + ORCH onayından sonra). Bu dosya
-> hazır PR gövdesidir; `gh pr create --body-file artifacts/A3-redaction/pr-body.md`.
+> **Durum:** A7 bağımsız verdict'i **GO — PR açılabilir** (`artifacts/verify/A3-redaction/verdict.md`;
+> 0 kod blocker, mutasyon ×2 bağımsız doğrulandı, pseudonym bağımsız test edildi). ORCH onayı verildi;
+> PR açıldı. Kapanış/`runtime` beyanı CI run URL'leri (DB Smoke + P0 E2E) bağlanmadan YAPILMAZ.
 
 ## Amaç
 PR #356 açık review thread'lerinde bağımsız doğrulanan **iki gerçek bulguyu** düzeltmek:
@@ -43,17 +44,19 @@ PR #356 açık review thread'lerinde bağımsız doğrulanan **iki gerçek bulgu
 - [x] Tüm yerel testler + tip kapısı yeşil; mutasyon kontrolü kırmızıya döndüğü gösterildi.
 
 ## Test çıktısı
+
+Yerel doğrulama (PostgreSQL kapalı, DB suite'leri skip — skip PASS sayılmadı):
 ```text
-npx tsc -p tsconfig.json --noEmit                      -> exit=0, stdout: (boş)
-npx jest --runInBand src/notifications src/kvkk test/kvkk test/database
-  Test Suites: 8 skipped, 21 passed, 21 of 29 total
-  Tests:       32 skipped, 96 passed, 128 total      (exit=0; skip = yerelde PostgreSQL kapalı)
-npx jest --runInBand src/common/audit
-  Test Suites: 9 passed, 9 total
-  Tests:       223 passed, 223 total                 (exit=0)
-Mutasyon (a): key-id seçimi kaldırıldı -> audit-query spec KIRMIZI (2 failed) -> geri alındı
-Mutasyon (b): pseudonym yerine ham student_id -> notifications spec KIRMIZI (1 failed) -> geri alındı
+PASS  npx tsc -p tsconfig.json --noEmit                -> exit=0, stdout boş
+PASS  npx jest --runInBand src/notifications src/kvkk test/kvkk test/database
+        Test Suites: 8 skipped, 21 passed, 21 of 29 total
+        Tests:       32 skipped, 96 passed, 128 total   (exit=0)
+PASS  npx jest --runInBand src/common/audit
+        Test Suites: 9 passed, 9 total / Tests: 223 passed, 223 total (exit=0)
+FAIL  Mutasyon (a) key-id seçimi kaldırıldı -> audit-query spec FAIL (2 failed)  [beklenen KIRMIZI] -> geri alındı -> PASS
+FAIL  Mutasyon (b) pseudonym yerine ham student_id -> notifications spec FAIL   [beklenen KIRMIZI] -> geri alındı -> PASS
 ```
+Mutasyon kontrolü bağımsız olarak A7 tarafından da yeniden üretildi (KIRMIZI -> geri alındı); worktree `443d366`'da temizdir. DDL/migration yok.
 
 ## KVKK/audit etkisi
 - Ham kişisel veri (öğrenci/oturum/veli UUID'si) artık **hiçbir log, payload, audit metadata veya
@@ -62,6 +65,12 @@ Mutasyon (b): pseudonym yerine ham student_id -> notifications spec KIRMIZI (1 f
   mümkün; bilinmeyen anahtar sessizce kabul edilmiyor.
 - Yeni zorunlu prod secret: `KVKK_PSEUDONYM_KEY` (>= 32 karakter) + `KVKK_PSEUDONYM_KEY_VERSION`.
   **H1 güncellemesi gerekir**; deploy sırası: önce env, sonra kod (yoksa boot fail-closed).
+- **H5 / DPO onayı gerekir (insan kapısı, ajan kapatamaz):** pseudonym anahtarı **rotasyona
+  uğratıldığında** yeni `keyVersion` üretilir ve eski pseudonym referansları **geri döndürülemez**
+  biçimde çözülemez hâle gelir. Bu, denetim/korelasyon amacıyla saklanan referansların retention
+  penceresini etkiler → DPIA/retention politikası ve rotasyon prosedürü DPO (H5) tarafından
+  onaylanmalıdır. Rotasyon çalıştırılmadan önce `AUDIT_HMAC_PREVIOUS_KEYS` deseniyle uyumlu bir
+  "eski pseudonym sürümünü arşivle" adımı planlanmalıdır.
 - Tenant izolasyonu: pseudonym `tenantId` ile kilitli (kiracılar arası eşleştirme yapılamaz);
   audit doğrulama sorguları değişmedi, `@Permissions` yüzeylerine dokunulmadı.
 
@@ -71,5 +80,14 @@ değişkeni eklenmeden deploy edilirse süreç boot etmez (fail-closed); bu duru
 dönülür. Detay + prova çıktısı: `artifacts/A3-redaction/evidence.md`.
 
 ## CI run referansı
-**Bekliyor (PR açılmadı).** PR açılışında eklenecek: `DB Smoke` (skip yasak) +
-`P0 browser E2E and artifact evidence` + `Backend CI` / `Sensitive Pattern Scanner`.
+
+PR #361 açılışıyla CI turları başladı (aşağıdaki run id'ler bu PR'ın head'ine bağlıdır):
+- Backend CI: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36302482092
+- DB Smoke (skip yasak): https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36302482209
+- Gate 1 CI: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36302482182
+- P0 browser E2E and artifact evidence: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36302482117
+- Sprint 1 Quality Gate: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36302482146
+- Sensitive Pattern Scanner: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36302482181
+- PR Governance: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36302482132
+
+`runtime`/kapanış beyanı YALNIZ bu zorunlu check'ler yeşil olduğunda yapılır; `skipped`/`cancelled`/`queued` PASS sayılmaz. Vercel (H2 insan kapısı) bu PR'da da kırmızıdır ve gizlenmemektedir.

@@ -187,12 +187,19 @@ export function resolveAuditHmacKeyRing(
  * kimlik `undefined` döner ve `verifyAuditChain` kaydı
  * `unknown-signature-key` ile REDDEDER (yanlış key-id → doğrulama başarısız).
  *
- * `null` kimlik (kimlik izlemeyen legacy satır) aktif anahtarla denenir; satır
- * başka bir anahtarla imzalanmışsa `signature-mismatch` ile yine reddedilir.
+ * `null`/`undefined` kimlik (imza anahtarını izlemeyen satır) artık `undefined`
+ * döner ve `unknown-signature-key` ile REDDEDİLİR (fail-closed). Sessizce aktif
+ * anahtara düşmek YASAKTIR: bu, DB üzerinde `signature_key_id` alanı
+ * `NULL`'a çekilen imzalı bir satırın kurcalama olarak KAÇIRILMASINA yol açar.
+ * Legacy (pre-chain) satırlar diğer zincir alanlarından yoksun olduğu için
+ * zaten `unchained-entry` ile reddedilir; istisna gerekmez.
  */
 export function auditHmacKeyResolver(ring: AuditHmacKeyRing): AuditHmacKeyResolver {
   return (keyId) => {
-    if (keyId === null || keyId === undefined || keyId === ring.current.keyId) {
+    if (keyId === null || keyId === undefined) {
+      return undefined;
+    }
+    if (keyId === ring.current.keyId) {
       return ring.current.key;
     }
     return ring.previous.get(keyId);
