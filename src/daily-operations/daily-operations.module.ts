@@ -18,5 +18,7 @@ import { DailyOperationsService } from './daily-operations.service';
     DailyOperationsRepository,
     DailyOperationsService,
   ],
+  // R1 (#263): onay transaction'ı etki motorunu AYNI EntityManager ile kullanır.
+  exports: [DailyOperationsRepository],
 })
 export class DailyOperationsModule {}

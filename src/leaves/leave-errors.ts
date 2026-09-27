@@ -32,21 +32,25 @@ export class LeaveSelfDecisionException extends ConflictException {
   }
 }
 
-export class LeaveImpactAnalysisNotReadyException extends HttpException {
-  constructor() {
-    super(
-      {
-        statusCode: 409,
-        code: 'IMPACT_ANALYSIS_NOT_READY',
-        message: 'Schedule impact and Daily Operations work must be persisted before approval',
-      },
-      409,
-    );
-  }
-}
-
 export class LeaveIdentityFoundationRequiredException extends HttpException {
   constructor() {
     super('Teacher identity foundation is required before leave own-scope runtime can be enabled', 424);
+  }
+}
+
+/**
+ * Onay etkisi için hesaplanacak occurrence sayısı üst sınırı aşıldı (#263 review P1).
+ *
+ * Sessiz kırpma YASAKTIR: çok büyük ama biçimsel olarak geçerli bir izin aralığı,
+ * açık-uçlu yayınlanmış programla birlikte yüz binlerce satır üretip event loop'u
+ * bloke edebilir ve transaction'ı uzatabilir. Bu durumda istek REDDEDİLİR ve
+ * çağıran, aralığı daraltması gerektiğini açıkça görür (fail-closed).
+ */
+export class LeaveImpactRangeTooLargeException extends HttpException {
+  constructor(readonly maxOccurrences: number) {
+    super(
+      `Leave period affects more than ${maxOccurrences} schedule occurrences; narrow the period or split the request`,
+      422,
+    );
   }
 }

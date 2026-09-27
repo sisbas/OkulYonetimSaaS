@@ -1,18 +1,32 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { RequestContext } from '../common/context/request-context';
+import {
+  LeaveApprovalImpact,
+  coverageLabel,
+} from '../daily-operations/leave-approval-impact';
+import { leaveEtag } from '../daily-operations/leave-impact.types';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
+import {
+  APPROVED_IMPACT_DETAIL,
+  REJECTED_IMPACT_DETAIL,
+  decisionStatusLabel,
+  decisionSummary,
+  durationLabel,
+  instantLabel,
+  periodLabel,
+  reasonLabel,
+} from './leave-decision-labels';
 import { LeaveIdentityService } from './leave-identity.service';
 import {
   LeaveExpectedVersionRequiredException,
-  LeaveImpactAnalysisNotReadyException,
   LeaveNotFoundException,
   LeaveSelfDecisionException,
   LeaveStaleVersionException,
   LeaveTerminalStateException,
 } from './leave-errors';
 import { LeaveCoverageStatus, LeaveDecisionStatus, LeaveRequest } from './leave-request.entity';
-import { LeaveRepository } from './leave.repository';
+import { LeaveDecisionOutcome, LeaveRepository } from './leave.repository';
 
 export type LeaveResponse = {
   id: string;
@@ -29,6 +43,30 @@ export type LeaveResponse = {
   createdAt: Date;
   updatedAt: Date;
 };
+
+/**
+ * R1 (#263) — karar (onay/ret) yanıtı.
+ *
+ * Ham UUID taşımaz: operatör dönem/süre/gerekçe ve etkilenen dersleri okunabilir
+ * adlarla görür. `etag` If-Match için sunucu üretimi opak sürüm jetonudur;
+ * kullanıcıya gösterilecek bir metin değildir. Sıfır etki sessiz geçilmez:
+ * `summary` + `impact.zeroImpactDetail` gerekçeyi açıkça yazar.
+ */
+export type LeaveDecisionResponse = Readonly<{
+  decisionStatus: LeaveDecisionStatus.APPROVED | LeaveDecisionStatus.REJECTED;
+  decisionLabel: string;
+  coverageStatus: LeaveCoverageStatus;
+  coverageLabel: string;
+  version: number;
+  etag: string;
+  summary: string;
+  impactDetail: string;
+  periodLabel: string;
+  durationLabel: string;
+  reasonLabel: string;
+  decidedAtLabel: string | null;
+  impact: LeaveApprovalImpact | null;
+}>;
 
 type LeaveDecisionInput = Readonly<{
   decision: LeaveDecisionStatus.APPROVED | LeaveDecisionStatus.REJECTED;
@@ -109,31 +147,57 @@ export class LeaveService {
     id: string,
     dto: LeaveDecisionInput,
     ifMatch: string | undefined,
-  ): Promise<LeaveResponse> {
+  ): Promise<LeaveDecisionResponse> {
     const expectedVersion = parseExpectedVersion(ifMatch, id);
     const current = await this.leaves.findTenantScoped(ctx, id);
     if (!current) throw new LeaveNotFoundException();
     if (current.decisionStatus !== LeaveDecisionStatus.PENDING) throw new LeaveTerminalStateException();
 
-    // Approval remains fail-closed until #160 Schedule acceptance and the
-    // same-transaction impact + Daily Operations persistence path are complete.
-    if (dto.decision === LeaveDecisionStatus.APPROVED) {
-      throw new LeaveImpactAnalysisNotReadyException();
-    }
-
+    // Deny-safe kapı: kendi talebini karara bağlayan aktör ve kimliği çözülemeyen
+    // aktör, hiçbir mutasyondan veya etki hesabından ÖNCE reddedilir (#340/#277).
     const decisionActorUserId = actorUserId(ctx);
     if (decisionActorUserId === current.requesterUserId) throw new LeaveSelfDecisionException();
 
     const actorTeacher = await this.safeActorTeacherId(ctx);
     if (actorTeacher && actorTeacher === current.teacherId) throw new LeaveSelfDecisionException();
 
-    const decided = await this.leaves.decide(ctx, id, {
+    // Onay/ret + etki + açık projeksiyonlar + durable audit + outbox tek
+    // PostgreSQL transaction'ında yazılır; hata hâlinde kısmi kayıt kalmaz.
+    const outcome = await this.leaves.decide(ctx, id, {
       decision: dto.decision,
       decidedByUserId: decisionActorUserId,
       expectedVersion,
     });
-    if (!decided) throw new LeaveNotFoundException();
-    return this.toResponse(decided);
+    if (!outcome) throw new LeaveNotFoundException();
+    return this.toDecisionResponse(outcome);
+  }
+
+  private toDecisionResponse(outcome: LeaveDecisionOutcome): LeaveDecisionResponse {
+    const { leave, impact } = outcome;
+    const decision = leave.decisionStatus === LeaveDecisionStatus.APPROVED ? 'approved' : 'rejected';
+    return {
+      decisionStatus:
+        decision === 'approved' ? LeaveDecisionStatus.APPROVED : LeaveDecisionStatus.REJECTED,
+      decisionLabel: decisionStatusLabel(decision),
+      coverageStatus: leave.coverageStatus,
+      coverageLabel: coverageLabel(leave.coverageStatus),
+      version: leave.version,
+      etag: leaveEtag(leave.id, leave.version),
+      summary: decisionSummary({
+        decision,
+        impactedLessonCount: impact?.impactedLessonCount ?? 0,
+        openLessonCount: impact?.openLessonCount ?? 0,
+        zeroImpactDetail: impact?.zeroImpactDetail ?? null,
+      }),
+      impactDetail: impact
+        ? impact.zeroImpactDetail ?? APPROVED_IMPACT_DETAIL
+        : REJECTED_IMPACT_DETAIL,
+      periodLabel: periodLabel(leave.startsAt, leave.endsAt),
+      durationLabel: durationLabel(leave.durationType),
+      reasonLabel: reasonLabel(leave.reasonCode),
+      decidedAtLabel: instantLabel(leave.decidedAt),
+      impact,
+    };
   }
 
   private async safeActorTeacherId(ctx: RequestContext): Promise<string | null> {

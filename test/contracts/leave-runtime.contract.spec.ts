@@ -6,6 +6,7 @@ const appModule = readFileSync(join(process.cwd(), 'src/app.module.ts'), 'utf8')
 const controller = readFileSync(join(process.cwd(), 'src/leaves/leave.controller.ts'), 'utf8');
 const repository = readFileSync(join(process.cwd(), 'src/leaves/leave.repository.ts'), 'utf8');
 const service = readFileSync(join(process.cwd(), 'src/leaves/leave.service.ts'), 'utf8');
+const errors = readFileSync(join(process.cwd(), 'src/leaves/leave-errors.ts'), 'utf8');
 const leavesModule = readFileSync(join(process.cwd(), 'src/leaves/leaves.module.ts'), 'utf8');
 const migration = readFileSync(
   join(process.cwd(), 'src/database/migrations/1802000000000-CreateLeaveRequestRuntime.ts'),
@@ -33,11 +34,14 @@ describe('Leave runtime contract skeleton', () => {
     expect(contract).toContain(value);
   });
 
-  it('keeps decision and coverage separate and quarantines approval until impact persistence exists', () => {
+  it('keeps decision and coverage separate and no longer quarantines approval', () => {
     expect(contract).toContain('Decision and coverage are separate state machines');
-    expect(contract).toContain('IMPACT_ANALYSIS_NOT_READY');
-    expect(service).toContain('LeaveImpactAnalysisNotReadyException');
-    expect(service).toContain('dto.decision === LeaveDecisionStatus.APPROVED');
+    // R1 (#263): koşulsuz IMPACT_ANALYSIS_NOT_READY yolu kaldırıldı; onay artık
+    // gerçek etkiyi aynı transaction'da üretir. Kalan sözleşme artık koddadır.
+    expect(errors).not.toContain('LeaveImpactAnalysisNotReadyException');
+    expect(service).not.toContain('LeaveImpactAnalysisNotReadyException');
+    expect(service).not.toContain('dto.decision === LeaveDecisionStatus.APPROVED');
+    expect(repository).toContain('await this.impact.prepareApprovalImpact(manager, ctx, existing)');
   });
 
   it('authenticates permission-bearing routes before the global permission guard', () => {
@@ -113,6 +117,8 @@ describe('Leave runtime contract skeleton', () => {
   it('keeps runtime gated by upstream foundations', () => {
     expect(contract).toContain('Ready/merge depends on #140, #141, #160 and #162 PASS');
     expect(contract).toContain('fail-closed until #141');
-    expect(contract).toContain('Approval is fail-closed until #160');
+    // R1 (#263) onay karantinasını kaldırdı; karar kapısı artık kodda pinlenir.
+    expect(service).toContain('Deny-safe kapı');
+    expect(repository).toContain('this.dataSource.transaction');
   });
 });
