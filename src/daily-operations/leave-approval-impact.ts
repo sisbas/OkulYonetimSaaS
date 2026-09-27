@@ -46,6 +46,15 @@ export const LEAVE_ZERO_IMPACT_CODES = [
 ] as const;
 export type LeaveZeroImpactCode = (typeof LEAVE_ZERO_IMPACT_CODES)[number];
 
+/**
+ * Onay etkisi için işlenecek AZAMI occurrence sayısı (#263 review P1).
+ *
+ * Aşılırsa `LeaveImpactRangeTooLargeException` (422) fırlatılır; SESSİZ KIRPMA
+ * yapılmaz. Sınır, açık-uçlu yayınlanmış program + çok geniş izin aralığının
+ * event loop'u bloke etmesini ve transaction'ın gereksiz büyümesini engeller.
+ */
+export const MAX_APPROVAL_OCCURRENCES = 500;
+
 export const NO_LESSON_LABEL_FALLBACK = 'Ders bilgisi çözümlenemedi';
 export const NO_GROUP_LABEL_FALLBACK = 'Sınıf bilgisi çözümlenemedi';
 export const NO_ROOM_LABEL_FALLBACK = 'Oda belirtilmedi';

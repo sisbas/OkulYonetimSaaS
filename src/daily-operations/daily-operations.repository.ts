@@ -8,6 +8,7 @@ import {
   TransactionalAuditWriter,
 } from '../common/audit/transactional-audit-writer';
 import { LeaveApprovalImpactPort } from '../leaves/leave-approval-impact.port';
+import { LeaveImpactRangeTooLargeException } from '../leaves/leave-errors';
 import { LeaveCoverageStatus, LeaveDecisionStatus } from '../leaves/leave-request.entity';
 import {
   CANDIDATE_AVAILABLE_LABEL,
@@ -20,6 +21,7 @@ import {
   LeaveApprovalImpactRequest,
   LeaveApprovalImpactResult,
   LeaveZeroImpactCode,
+  MAX_APPROVAL_OCCURRENCES,
   NO_BRANCH_LABEL_FALLBACK,
   NO_GROUP_LABEL_FALLBACK,
   NO_LESSON_LABEL_FALLBACK,
@@ -545,6 +547,11 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
         startTime: row.startTime,
         endTime: row.endTime,
       })) {
+        // #263 review P1: sınırsız genişleme YASAK. Sessiz kırpma yerine açık
+        // hata: aksi hâlde event loop bloke olur ve transaction gereksiz büyür.
+        if (impacted.length >= MAX_APPROVAL_OCCURRENCES) {
+          throw new LeaveImpactRangeTooLargeException(MAX_APPROVAL_OCCURRENCES);
+        }
         impacted.push({ ...row, dayOfWeek: Number(row.dayOfWeek), ...occurrence });
       }
     }
@@ -686,14 +693,23 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     );
     const candidates: CandidateResponse['candidates'] = [];
     for (const row of rows) {
-      try {
-        for (const event of events) {
+      // #263 review P2: aday, etkilenen olayların KESİŞİMİ değil BİRLEŞİMİdir.
+      // Yedek görevlendirme olay (ders) bazında yapılır; bir matematik ve başka
+      // bir fen yedeği ayrı ayrı geçerli olabilir. Kesişim kullanmak, tüm
+      // olaylara uygun olmayan geçerli adayları sessizce elerdi (boş liste).
+      let eligibleForAnyEvent = false;
+      for (const event of events) {
+        try {
           await this.assertEligibleCandidate(manager, leave, event, row.teacherId, event.startsAt, event.endsAt);
+          eligibleForAnyEvent = true;
+          break;
+        } catch (error) {
+          // Storage, schema and unknown failures are not evidence of ineligibility.
+          if (!(error instanceof SubstituteIneligibleError)) throw error;
         }
+      }
+      if (eligibleForAnyEvent) {
         candidates.push({ teacherId: row.teacherId, teacherBranchId: row.teacherBranchId, decisionSupportOnly: true, eligible: true });
-      } catch (error) {
-        // Storage, schema and unknown failures are not evidence of ineligibility.
-        if (!(error instanceof SubstituteIneligibleError)) throw error;
       }
     }
     return candidates;
