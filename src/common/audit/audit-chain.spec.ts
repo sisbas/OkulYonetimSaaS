@@ -247,6 +247,35 @@ describe('audit HMAC key ring / rotation (#259 review P1)', () => {
       ...overrides,
     }) as NodeJS.ProcessEnv;
 
+  /**
+   * Tek satırlık imzalı zincir kaydı (yerel yardımcı — first describe'daki
+   * `chainOf` bu blokta kapsam dışıdır). Verilen key-id ile imzalanır; amaç
+   * key-id/signature eşleşmesinin doğrulamaya nasıl girdiğini izole test etmek.
+   */
+  const signedRecord = (keyId: string | null, key: string) => {
+    // `payload` yardımcısı ilk describe'a özeldir; bu blokta literal kurulur.
+    const entryPayload: AuditChainPayload = {
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      actorUserId: '22222222-2222-4222-8222-222222222222',
+      actorSessionId: null,
+      action: 'attendance.record.marked',
+      entityType: 'attendance',
+      entityId: '33333333-3333-4333-8333-333333333333',
+      requestId: 'req-1',
+      metadataJson: { schemaVersion: 1, result: 'success', changedFields: ['status'] },
+      createdAt: '2026-09-22T12:00:00.000Z',
+    };
+    const entryHash = computeAuditEntryHash(AUDIT_CHAIN_GENESIS_HASH, entryPayload);
+    return {
+      sequence: 1,
+      prevHash: AUDIT_CHAIN_GENESIS_HASH,
+      entryHash,
+      signature: signAuditEntryHash(entryHash, key),
+      signatureKeyId: keyId,
+      payload: entryPayload,
+    };
+  };
+
   it('selects the active and the retired key by signature key id', () => {
     const ring = resolveAuditHmacKeyRing(
       productionEnv({
@@ -320,12 +349,7 @@ describe('audit HMAC key ring / rotation (#259 review P1)', () => {
 
   it('fails closed when a signed row has its signature_key_id removed (review P2)', () => {
     const ring = resolveAuditHmacKeyRing(productionEnv());
-    const base = chainOf(1)[0];
-    const signed = {
-      ...base,
-      signature: signAuditEntryHash(base.entryHash as string, ACTIVE_KEY),
-      signatureKeyId: 'key-2',
-    };
+    const signed = signedRecord('key-2', ACTIVE_KEY);
 
     // Sağlam satır, aktif anahtarla (imza edildiği anahtar) doğrulanır.
     expect(
