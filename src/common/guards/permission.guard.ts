@@ -1,43 +1,302 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Logger, Optional } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { SecurityAuditService, resourceFromPermission } from '../audit/security-audit.service';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
-import { RequestWithContext } from '../context/request-context';
 
+import { AuthorityResolverService } from '../../rbac/authority-resolver.service';
+import { BranchScopeService } from '../../rbac/branch-scope.service';
+import { SecurityAuditService, resourceFromPermission } from '../audit/security-audit.service';
+import {
+  AuthorizationContextError,
+  ServerResolvedAuthority,
+  buildAuthorizedContext,
+} from '../context/authorization-context';
+import { emitContextAuditEvent, legacySecurityAuditReasonCode } from '../context/context-audit';
+import { CONTEXT_SCOPE_KEY } from '../context/context-scope.decorator';
+import {
+  DenyReasonCode,
+  decideDeny,
+  denyReasonFromContextFailure,
+  toDenyException,
+} from '../context/deny-response';
+import { isPublicRouteHandler } from '../context/public-route';
+import { RequestBranch, RequestWithContext } from '../context/request-context';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+
+const BRANCH_ID_HEADER = 'x-branch-id';
+
+/**
+ * Non-production oturum-fallback bayrağı (#339 R4, F1 onarımı).
+ *
+ * Fail-closed varsayılan: yetki/şube çözümleme hatası, bayrak OLMAKSIZIN her
+ * ortamda RED edilir. Yalnız non-production ortamda ve açıkça
+ * `SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK=true` iken gürültülü kayıtla
+ * sunucu-çözümlü oturum yetkisine düşülür (istemci beyanı yine yetki vermez).
+ */
+const SESSION_FALLBACK_ENV = 'SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK';
+
+/** production ortamı mı? (production'da fallback tümüyle kapalıdır.) */
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+/** Gürültülü oturum-fallback açıkça mı istendi? (varsayılan: kapalı) */
+function sessionFallbackExplicitlyEnabled(): boolean {
+  return process.env[SESSION_FALLBACK_ENV] === 'true';
+}
+
+/**
+ * Global yetkilendirme guard'ı (#339 R4, madde 2 & 5).
+ *
+ * Default-deny sözleşmesi (fail-closed):
+ *  1. Public allowlist dışındaki her route korumalıdır; erişim sınıfı ya
+ *     `@Permissions(...)` ya da açık `@ContextScoped()` beyanıyla belirlenir.
+ *     Beyan yoksa erişim REDDEDİLİR (sessiz fail-open yok).
+ *  2. Kimliği doğrulanmış kullanıcı yoksa reddedilir.
+ *  3. İstemcinin gönderdiği tenant/şube/rol/izin değerleri ASLA yetki kaynağı
+ *     değildir: başlıkta gelen tenant token tenant'ıyla uyuşmuyorsa reddedilir,
+ *     şube seçimi sunucunun yetkili şube kümesiyle doğrulanır.
+ *  4. Efektif izinler sunucudan (`AuthorityResolverService`, token_version
+ *     uyumlu) çözülür; token gövdesindeki beyanlar yetki üretmez.
+ *  5. Bağlam/izin çözülemezse erişim yoktur (hata → red).
+ */
 @Injectable()
 export class PermissionGuard implements CanActivate {
+  private readonly logger = new Logger(PermissionGuard.name);
+
   constructor(
     private readonly reflector: Reflector,
     private readonly audit: SecurityAuditService,
+    /**
+     * Sunucu-tek-kaynak yetki çözümleyici (önbellek + token_version uyumu).
+     * Runtime'da daima enjekte edilir (RbacModule tarafından export edilir).
+     * Enjekte edilmediği dar durumda (izole birim/controller spec'i) yetki,
+     * kimlik doğrulama katmanının SUNUCUDAN çözdüğü `request.user` üzerinden
+     * alınır; istemci beyanı hiçbir durumda yetki kaynağı değildir.
+     */
+    @Optional()
+    private readonly authority?: AuthorityResolverService,
+    /** Şube kapsamı; enjekte edilmemişse istemci şube seçimi reddedilir. */
+    @Optional()
+    private readonly branchScope?: BranchScopeService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
-    const required = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
-    if (!required?.length) return true;
+  canActivate(context: ExecutionContext): boolean | Promise<boolean> {
+    const handler = context.getHandler();
+    const controller = context.getClass();
+    if (isPublicRouteHandler(controller?.name, handler?.name)) return true;
+
     const request = context.switchToHttp().getRequest<RequestWithContext>();
-    if (request.user) {
-      const headerTenantId = request.header('x-tenant-id') ?? undefined;
-      if (headerTenantId && headerTenantId !== request.user.tenantId) {
-        const ctx = { ...(request.context ?? { requestId: request.header('x-request-id') ?? 'unknown' }), tenantId: request.user.tenantId, user: request.user };
-        request.context = ctx;
-        this.audit.emitAuthorizationDenied(ctx, {
-          requiredPermission: required,
-          resource: resourceFromPermission(required[0]),
-          reasonCode: 'tenant_header_mismatch',
-        });
-        return false;
-      }
-      request.context = { ...(request.context ?? { requestId: request.header('x-request-id') ?? 'unknown' }), tenantId: request.user.tenantId, user: request.user };
+    const required = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
+      handler,
+      controller,
+    ]);
+    const requiredPermission = required ?? [];
+    const contextScoped =
+      this.reflector.getAllAndOverride<boolean>(CONTEXT_SCOPE_KEY, [handler, controller]) === true;
+
+    const user = request.user;
+    if (!user?.userId || !user.tenantId) {
+      return this.deny(request, 'missing_authenticated_context', requiredPermission);
     }
-    const userPermissions = request.user?.permissions ?? request.context?.user?.permissions ?? [];
-    const allowed = required.every((permission) => userPermissions.includes(permission));
-    if (!allowed) {
+
+    const headerTenantId = request.header?.('x-tenant-id') ?? undefined;
+    if (headerTenantId && headerTenantId !== user.tenantId) {
+      request.context = {
+        ...this.baseContext(request),
+        tenantId: user.tenantId,
+        userId: user.userId,
+        user,
+      };
+      return this.deny(request, 'client_authority_rejected', requiredPermission);
+    }
+
+    if (requiredPermission.length === 0 && !contextScoped) {
+      // Beyan edilmemiş korumalı route → default-deny.
+      return this.deny(request, 'undeclared_protected_route', requiredPermission);
+    }
+
+    const branchIdHeader = request.header?.(BRANCH_ID_HEADER) ?? undefined;
+
+    // Tamamen senkron yol: yetki çözümleyici enjekte edilmemiş ve istemci şube
+    // seçimi yoksa (izole birim spec'leri / DI'siz kullanım) karar senkron
+    // verilir; yetki yine kimlik katmanının sunucudan çözdüğü `request.user`dır.
+    if (!this.authority && !branchIdHeader) {
+      // Gözlemlenebilirlik: DI grafiğinde çözümleyici yoksa (beklenmeyen durum)
+      // yetki yine sunucu-çözümlü kullanıcıdan alınır ama önbellek/bağımsız
+      // doğrulama devre dışı kalır — bu sessiz kalmamalı.
+      this.logger.warn(
+        JSON.stringify({ event: 'security.context.authority_resolver_absent', requestId: this.baseContext(request).requestId }),
+      );
+      return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission);
+    }
+    if (branchIdHeader && !this.branchScope) {
+      // Şube kapsamı doğrulanamıyorsa istemci seçimi kabul edilmez (fail-closed).
+      // `false` dönmek Nest'in genel 403'ünü üretir; bu, "erişilemez şube" ile
+      // "bilinmeyen kaynak" ayrımını sızdırırdı. Sözleşme non-enumerating 404'tür.
+      this.denyAndThrow(request, 'branch_not_authorized', requiredPermission);
+    }
+    return this.resolveAndSettle(request, user, branchIdHeader, requiredPermission);
+  }
+
+  /** Yetki çözümleyici ile (önbellekli, token_version uyumlu) karar yolu. */
+  private async resolveAndSettle(
+    request: RequestWithContext,
+    user: NonNullable<RequestWithContext['user']>,
+    branchIdHeader: string | undefined,
+    requiredPermission: ReadonlyArray<string>,
+  ): Promise<boolean> {
+    try {
+      const resolvedAuthority: ServerResolvedAuthority = this.authority
+        ? await this.authority.resolve({
+            userId: user.userId,
+            tenantId: user.tenantId,
+            tokenVersion: Number(user.authorizationVersion ?? 0),
+          })
+        : this.sessionAuthority(user);
+      const branch =
+        branchIdHeader && this.branchScope
+          ? await this.branchScope.resolveSelection(
+              {
+                tenantId: user.tenantId,
+                userId: user.userId,
+                roles: resolvedAuthority.roles as string[],
+                permissions: resolvedAuthority.permissions as string[],
+              },
+              { branchId: branchIdHeader },
+            )
+          : null;
+      return this.settle(request, user, resolvedAuthority, branch, requiredPermission);
+    } catch (error) {
+      if (error instanceof AuthorizationContextError) {
+        const reasonCode = denyReasonFromContextFailure(error.reasonCode);
+        // #339 review P2: 401/404'e eşlenen redler, guard'ın `false` dönüşüyle
+        // Nest'in GENEL 403'üne dönüşüyordu ve sözleşmeyle ÇELİŞİYORDU; bu
+        // yüzden eşlenmiş istisna fırlatılır (audit `deny()` içinde yazılır).
+        // 403'e eşlenen redler `false` ile devam eder (durum kodu zaten 403).
+        if (decideDeny(reasonCode).status !== 403) {
+          this.denyAndThrow(request, reasonCode, requiredPermission);
+        }
+        return this.deny(request, reasonCode, requiredPermission);
+      }
+      // Altyapı hatası (ör. çözümleyicinin veri kaynağı geçici olarak erişilemez):
+      // istemci beyanı YETKİ ÜRETMEZ. Fail-closed karar aşağıdaki sırayla verilir.
+      //  (a) İstek bir şube seçimi taşıyorsa doğrulanamayan seçim oturum yetkisiyle
+      //      ASLA baypas edilmez → HER ORTAMDA RED (non-enumerating 404).
+      if (branchIdHeader) {
+        this.denyAndThrow(request, 'branch_not_authorized', requiredPermission);
+      }
+      //  (b) production: her türlü yetki çözümleme hatası RED (fallback yok).
+      //  (c) Gürültülü oturum-fallback'i YALNIZ non-production + açık env bayrağı
+      //      (`SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK=true`) ile; default KAPALI.
+      if (!isProductionRuntime() && sessionFallbackExplicitlyEnabled()) {
+        // Şube seçimi uygulanmaz (kapsam daraltan seçim uygulanmadığı için yetki
+        // genişlemez) ve durum GÜRÜLTÜLÜ şekilde loglanır (sabit olay adı, PII yok).
+        this.logger.warn(
+          JSON.stringify({
+            event: 'security.context.session_fallback_used',
+            reason: 'authority_resolver_unavailable',
+            requestId: this.baseContext(request).requestId,
+          }),
+        );
+        return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission);
+      }
+      return this.deny(request, 'unresolved_context', requiredPermission);
+    }
+  }
+
+  /**
+   * Kimlik katmanının sunucudan çözdüğü yetki (fallback). `request.user`
+   * JWT doğrulaması + DB oturum/token_version kontrolünden geçmiş veridir;
+   * istemci beyanı değildir.
+   */
+  private sessionAuthority(user: NonNullable<RequestWithContext['user']>): ServerResolvedAuthority {
+    return {
+      roles: user.roleIds,
+      permissions: user.permissions,
+      tokenVersion: Number(user.authorizationVersion ?? 0),
+      resolvedAt: new Date().toISOString(),
+      cache: 'disabled',
+    };
+  }
+
+  /** Bağlamı kurar ve yetki kararını verir (fail-closed). */
+  private settle(
+    request: RequestWithContext,
+    user: NonNullable<RequestWithContext['user']>,
+    authority: ServerResolvedAuthority,
+    branch: RequestBranch | null,
+    requiredPermission: ReadonlyArray<string>,
+  ): boolean {
+    try {
+      request.context = buildAuthorizedContext({
+        requestId: this.baseContext(request).requestId,
+        user,
+        authority,
+        branch,
+      });
+    } catch (error) {
+      if (error instanceof AuthorizationContextError) {
+        return this.deny(request, denyReasonFromContextFailure(error.reasonCode), requiredPermission);
+      }
+      throw error;
+    }
+
+    // `@ContextScoped()` route'ları yalnızca bağlam gerektirir (iş izni yok).
+    if (requiredPermission.length === 0) return true;
+
+    const effective = request.context?.permissions ?? [];
+    if (!requiredPermission.every((permission) => effective.includes(permission))) {
+      return this.deny(request, 'missing_permission', requiredPermission);
+    }
+    return true;
+  }
+
+  private baseContext(request: RequestWithContext) {
+    return request.context ?? { requestId: request.header?.('x-request-id') ?? 'unknown' };
+  }
+
+  /**
+   * Reddi kaydeder ve `false` döner. Mevcut güvenlik audit kanalı yalnızca
+   * desteklediği sebep kodları için çağrılır; diğer kodlar allowlist tabanlı
+   * redakte edilmiş bağlam olayıyla kaydedilir (tek olay/red).
+   */
+  private deny(
+    request: RequestWithContext,
+    reasonCode: DenyReasonCode,
+    requiredPermission: ReadonlyArray<string>,
+  ): false {
+    const legacy = legacySecurityAuditReasonCode(reasonCode);
+    if (legacy) {
       this.audit.emitAuthorizationDenied(request.context, {
-        requiredPermission: required,
-        resource: resourceFromPermission(required[0]),
-        reasonCode: 'missing_permission',
+        requiredPermission: [...requiredPermission],
+        resource: resourceFromPermission(requiredPermission[0] ?? 'unknown'),
+        reasonCode: legacy,
+      });
+    } else {
+      emitContextAuditEvent(this.logger, {
+        reasonCode,
+        context: request.context,
+        requiredPermission,
+        resource: resourceFromPermission(requiredPermission[0] ?? 'unknown'),
+        branchScoped: reasonCode === 'branch_not_authorized',
       });
     }
-    return allowed;
+    return false;
+  }
+
+  /**
+   * Deny kararını kaydeder VE eşlenmiş (non-enumerating) istisnayı fırlatır.
+   *
+   * `deny()` `false` döndürdüğünde Nest guard'ın GENEL 403'ünü üretir; bu,
+   * "erişilemez şube" (404) ile "bilinmeyen kaynak" ayrımını sızdırırdı
+   * (#339 review P2). Bu yol audit kaydını `deny()` ile AYNI kanaldan yazar ve
+   * sözleşmeye uygun gövdeyi (401/403/404 + non-enumerating mesaj) üretir.
+   */
+  private denyAndThrow(
+    request: RequestWithContext,
+    reasonCode: DenyReasonCode,
+    requiredPermission: ReadonlyArray<string>,
+  ): never {
+    this.deny(request, reasonCode, requiredPermission);
+    throw toDenyException(reasonCode);
   }
 }
