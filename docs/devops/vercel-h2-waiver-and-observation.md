@@ -59,29 +59,45 @@ runtime/API gözlem artefaktı üretir (artifact, exact SHA'ya bağlıdır).
 ### 3.1 Çalıştırma (her `main` merge'i / prod deploy sonrası)
 
 ```bash
-gh workflow run "WP-07F Production Observation" \
+# 1) Exact SHA'yı TAZE remote'tan türet (stale origin/main ile gözlem sözleşmesi kırılır)
+git fetch origin --prune
+FULL_SHA="$(git rev-parse origin/main)"          # 40 karakterlik tam SHA
+
+# 2) Gözlemi çalıştır (workflow uzak varsayılan daldan dispatch edilir → --ref main açıkça verilir)
+gh workflow run "WP-07F Production Observation" --ref main \
   -f target_base_url="https://<prod-alias>/api/v1" \
   -f production_alias="https://<prod-alias>" \
   -f production_deployment_url="https://<deployment-url>" \
   -f production_deployment_id="<dpl_...>" \
-  -f expected_head_sha="$(git rev-parse origin/main)"
+  -f expected_head_sha="$FULL_SHA"
 
-# sonuç + artefakt
+# 3) Sonuç + artefakt
 gh run list --workflow "WP-07F Production Observation" --limit 3
 gh run view <run-id>
 ```
 
+**Zorunlu girdiler (script sözleşmesi):**
+
+- `expected_head_sha`: **tam 40 karakter** SHA (workflow `report.commitSha`/`deploymentCommitSha` ile **birebir string** karşılaştırır; kısa SHA gözlemi FAIL ettirir).
+- **Deployment kimliği zorunludur:** `production_deployment_url` **veya** `production_deployment_id`'den **en az biri** verilmelidir;
+  ikisi de boşsa `scripts/observe-production-runtime.js` → `MISSING_DEPLOYMENT_IDENTITY` ile run'ı reddeder.
+  (Yalnız alias'a sahipseniz `production_deployment_url` alanını doldurun.)
 - `self_test_unreachable_api: true` yalnız **negatif prova** içindir (erişilemez API → `overallStatus=FAIL`
   + `API_UNREACHABLE` beklenir); normal gözlemde kullanılmaz.
-- Artefakt: observation raporu (JSON) + runtime/API çıktıları; `expected_head_sha` ile **exact commit**'e bağlıdır.
 
 ### 3.2 Tamamlayıcı yüzeyler (mevcut)
 
-| Workflow | Ne yapar | Gate mi? |
+| Workflow | Ne yapar | Zorunlu merge gate'i mi? |
 |---|---|---|
-| `WP-07F Production Observation` | Prod runtime + `/api/v1` gözlemi, exact SHA artefaktı | **Hayır** |
-| `WP-07F P0 Browser E2E` | Fresh DB + gerçek backend + gerçek tarayıcı kabulü | **Evet** (zorunlu) |
+| `WP-07F Production Observation` | Prod runtime + `/api/v1` gözlemi, exact SHA artefaktı | **Hayır** (manuel, gözlem kanalı) |
+| `WP-07F P0 Browser E2E` | Fresh DB + gerçek backend + gerçek tarayıcı kabulü | **Hayır — mevcut ruleset'te zorunlu status check DEĞİL** |
 | `demo-frontend-smoke` / `full-vision-demo-smoke` | Statik/demo yüzey dumanı | Hayır |
+
+**Düzeltme (review P2):** `P0 browser E2E and artifact evidence`, `.github/rulesets/main-merge-governance.json`
+içindeki 10 zorunlu context arasında **yer almaz** (o liste: Sprint 1 Quality Gate · Backend CI · DB Smoke ·
+Gate 1 CI · Sensitive Pattern Scanner · GitGuardian scan · PR Governance / Body Validation · Issue Reference ·
+Rollback Plan · Acceptance Criteria). Bu workflow **kabul yüzeyi** olarak koşar ve kanıt üretir, ancak bugünkü
+ruleset'e göre merge'i **bloklamaz**. Onu zorunlu hâle getirmek ayrı bir governance değişikliğidir (ruleset + `docs/devops/required-checks.md` güncellemesi) ve bu belgenin kapsamında değildir.
 
 ### 3.3 Gözlem kaydı kuralı
 

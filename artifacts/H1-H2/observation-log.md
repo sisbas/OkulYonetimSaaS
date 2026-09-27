@@ -23,10 +23,19 @@ gh workflow run "WP-07F Production Observation" \
 
 ## İlk tur için gerekli insan girdileri (H1 ile ortak)
 
+```bash
+# Exact SHA'yı taze remote'tan al (stale origin/main sözleşmeyi kırar)
+git fetch origin --prune
+FULL_SHA="$(git rev-parse origin/main)"   # bu turda: 7f555c8c30b207fb2500e09335d387858b096566
+```
+
 - `target_base_url`: prod API tabanı (ör. `https://<prod-alias>/api/v1`)
 - `production_alias`: kullanıcıların gördüğü genel alias
-- `production_deployment_id`: Vercel deployment kimliği (`dpl_...`) — varsa
-- `expected_head_sha`: `7f555c8` (bu turda)
+- **Deployment kimliği — ZORUNLU (biri yeterli):** `production_deployment_url` **veya** `production_deployment_id` (`dpl_...`).
+  İkisi de boş verilirse `scripts/observe-production-runtime.js` → **`MISSING_DEPLOYMENT_IDENTITY`** ile run'ı reddeder.
+  Yalnız alias'a sahipseniz bu alana deployment URL'ini yazın.
+- `expected_head_sha`: **tam 40 karakter** SHA → bu turda `7f555c8c30b207fb2500e09335d387858b096566`
+  (workflow tam string karşılaştırması yapar; **kısa SHA kullanılamaz**).
 
 > Not: Prod secret kurulumu **H1** kapsamındadır (`KVKK_PSEUDONYM_KEY`, `JWT_*`, `AUDIT_HMAC_KEY`, `DATABASE_URL`).
 > H1 tamamlanmadan prod gözlemi yeşil dönmeyebilir; sıra: **H1 env → deploy → observation**.
