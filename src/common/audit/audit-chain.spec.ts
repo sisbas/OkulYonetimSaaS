@@ -1,11 +1,16 @@
 import {
   AUDIT_CHAIN_GENESIS_HASH,
+  AUDIT_HMAC_KEY_ENV,
+  AUDIT_HMAC_KEY_ID_ENV,
+  AUDIT_HMAC_PREVIOUS_KEYS_ENV,
   AuditChainPayload,
   MIN_AUDIT_HMAC_KEY_BYTES,
   TEST_AUDIT_HMAC_KEY,
+  auditHmacKeyResolver,
   canonicalAuditPayload,
   computeAuditEntryHash,
   resolveAuditHmacKey,
+  resolveAuditHmacKeyRing,
   signAuditEntryHash,
   verifyAuditChain,
 } from './audit-chain';
@@ -227,5 +232,181 @@ describe('audit HMAC key contract (#259)', () => {
   it('falls back to the isolated test key outside production only', () => {
     const key = resolveAuditHmacKey({ NODE_ENV: 'test' } as NodeJS.ProcessEnv);
     expect(key).toEqual({ key: TEST_AUDIT_HMAC_KEY, keyId: 'local-test-key' });
+  });
+});
+
+describe('audit HMAC key ring / rotation (#259 review P1)', () => {
+  const ACTIVE_KEY = 'active-audit-hmac-key-with-32-chars-mini';
+  const RETIRED_KEY = 'retired-audit-hmac-key-with-32-chars-min';
+
+  const productionEnv = (overrides: Record<string, string> = {}): NodeJS.ProcessEnv =>
+    ({
+      NODE_ENV: 'production',
+      [AUDIT_HMAC_KEY_ENV]: ACTIVE_KEY,
+      [AUDIT_HMAC_KEY_ID_ENV]: 'key-2',
+      ...overrides,
+    }) as NodeJS.ProcessEnv;
+
+  /**
+   * Tek satırlık imzalı zincir kaydı (yerel yardımcı — first describe'daki
+   * `chainOf` bu blokta kapsam dışıdır). Verilen key-id ile imzalanır; amaç
+   * key-id/signature eşleşmesinin doğrulamaya nasıl girdiğini izole test etmek.
+   */
+  const signedRecord = (keyId: string | null, key: string) => {
+    // `payload` yardımcısı ilk describe'a özeldir; bu blokta literal kurulur.
+    const entryPayload: AuditChainPayload = {
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      actorUserId: '22222222-2222-4222-8222-222222222222',
+      actorSessionId: null,
+      action: 'attendance.record.marked',
+      entityType: 'attendance',
+      entityId: '33333333-3333-4333-8333-333333333333',
+      requestId: 'req-1',
+      metadataJson: { schemaVersion: 1, result: 'success', changedFields: ['status'] },
+      createdAt: '2026-09-22T12:00:00.000Z',
+    };
+    const entryHash = computeAuditEntryHash(AUDIT_CHAIN_GENESIS_HASH, entryPayload);
+    return {
+      sequence: 1,
+      prevHash: AUDIT_CHAIN_GENESIS_HASH,
+      entryHash,
+      signature: signAuditEntryHash(entryHash, key),
+      signatureKeyId: keyId,
+      payload: entryPayload,
+    };
+  };
+
+  it('selects the active and the retired key by signature key id', () => {
+    const ring = resolveAuditHmacKeyRing(
+      productionEnv({
+        [AUDIT_HMAC_PREVIOUS_KEYS_ENV]: JSON.stringify({ 'key-1': RETIRED_KEY }),
+      }),
+    );
+    const resolve = auditHmacKeyResolver(ring);
+
+    expect(resolve('key-2')).toBe(ACTIVE_KEY);
+    expect(resolve('key-1')).toBe(RETIRED_KEY);
+    // Yanlış/bilinmeyen key-id → undefined → doğrulama REDDEDİLİR.
+    expect(resolve('key-9')).toBeUndefined();
+    // Kimlik izlemeyen (NULL/eksik) satır fail-closed: sessizce aktif anahtara DÜŞMEZ.
+    expect(resolve(null)).toBeUndefined();
+    expect(resolve(undefined)).toBeUndefined();
+  });
+
+  it('verifies a chain that spans a key rotation', () => {
+    const retiredPayload: AuditChainPayload = {
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      actorUserId: null,
+      actorSessionId: null,
+      action: 'attendance.session.closed',
+      entityType: 'attendance',
+      entityId: null,
+      requestId: 'req-retired',
+      metadataJson: null,
+      createdAt: '2026-01-05T08:00:00.000Z',
+    };
+    const activePayload: AuditChainPayload = {
+      ...retiredPayload,
+      requestId: 'req-active',
+      createdAt: '2026-09-22T08:00:00.000Z',
+    };
+    const retiredHash = computeAuditEntryHash(AUDIT_CHAIN_GENESIS_HASH, retiredPayload);
+    const activeHash = computeAuditEntryHash(retiredHash, activePayload);
+    const records = [
+      {
+        sequence: 1,
+        prevHash: AUDIT_CHAIN_GENESIS_HASH,
+        entryHash: retiredHash,
+        signature: signAuditEntryHash(retiredHash, RETIRED_KEY),
+        signatureKeyId: 'key-1',
+        payload: retiredPayload,
+      },
+      {
+        sequence: 2,
+        prevHash: retiredHash,
+        entryHash: activeHash,
+        signature: signAuditEntryHash(activeHash, ACTIVE_KEY),
+        signatureKeyId: 'key-2',
+        payload: activePayload,
+      },
+    ];
+
+    const keyRing = resolveAuditHmacKeyRing(
+      productionEnv({
+        [AUDIT_HMAC_PREVIOUS_KEYS_ENV]: JSON.stringify({ 'key-1': RETIRED_KEY }),
+      }),
+    );
+    expect(
+      verifyAuditChain(records, { resolveHmacKey: auditHmacKeyResolver(keyRing) }),
+    ).toEqual({ valid: true, brokenAtSequence: null, reason: null });
+
+    // Emekliye ayrılmış anahtar elde tutulmazsa rotasyon öncesi satır doğrulanamaz.
+    const withoutRetired = resolveAuditHmacKeyRing(productionEnv());
+    expect(
+      verifyAuditChain(records, { resolveHmacKey: auditHmacKeyResolver(withoutRetired) }),
+    ).toMatchObject({ valid: false, brokenAtSequence: 1, reason: 'unknown-signature-key' });
+  });
+
+  it('fails closed when a signed row has its signature_key_id removed (review P2)', () => {
+    const ring = resolveAuditHmacKeyRing(productionEnv());
+    const signed = signedRecord('key-2', ACTIVE_KEY);
+
+    // Sağlam satır, aktif anahtarla (imza edildiği anahtar) doğrulanır.
+    expect(
+      verifyAuditChain([signed], { resolveHmacKey: auditHmacKeyResolver(ring) }).valid,
+    ).toBe(true);
+
+    // DB üzerinde `signature_key_id` NULL'a çekilirse satır ARTIK doğrulanamaz:
+    // sessizce aktif anahtara düşmek YASAK (fail-closed → unknown-signature-key).
+    // Bu, aksi hâlde DB kurcalamasının (key-id silme) zincir doğrulayıcıdan
+    // KAÇIRILMASINA yol açardı.
+    expect(
+      verifyAuditChain([{ ...signed, signatureKeyId: null }], {
+        resolveHmacKey: auditHmacKeyResolver(ring),
+      }),
+    ).toMatchObject({
+      valid: false,
+      brokenAtSequence: 1,
+      reason: 'unknown-signature-key',
+    });
+  });
+
+  it('has no retired keys when the variable is unset or blank', () => {
+    expect(resolveAuditHmacKeyRing(productionEnv()).previous.size).toBe(0);
+    expect(
+      resolveAuditHmacKeyRing(
+        productionEnv({ [AUDIT_HMAC_PREVIOUS_KEYS_ENV]: '   ' }),
+      ).previous.size,
+    ).toBe(0);
+  });
+
+  it('fails closed on malformed, weak or self-referencing retired keys', () => {
+    expect(() =>
+      resolveAuditHmacKeyRing(
+        productionEnv({ [AUDIT_HMAC_PREVIOUS_KEYS_ENV]: 'not-json' }),
+      ),
+    ).toThrow(/must be a JSON object/);
+
+    expect(() =>
+      resolveAuditHmacKeyRing(
+        productionEnv({ [AUDIT_HMAC_PREVIOUS_KEYS_ENV]: '["key-1"]' }),
+      ),
+    ).toThrow(/must be a JSON object/);
+
+    expect(() =>
+      resolveAuditHmacKeyRing(
+        productionEnv({
+          [AUDIT_HMAC_PREVIOUS_KEYS_ENV]: JSON.stringify({ 'key-1': 'too-short' }),
+        }),
+      ),
+    ).toThrow(/too weak/);
+
+    expect(() =>
+      resolveAuditHmacKeyRing(
+        productionEnv({
+          [AUDIT_HMAC_PREVIOUS_KEYS_ENV]: JSON.stringify({ 'key-2': RETIRED_KEY }),
+        }),
+      ),
+    ).toThrow(/repeats the active key id/);
   });
 });

@@ -1,10 +1,12 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Logger } from '@nestjs/common';
 import { ParentNotificationService, SendToParentInput } from './parent-notification.service';
 import { NotificationLog } from './notification-log.entity';
 import { NotificationEligibilityService } from '../kvkk/notification-eligibility.service';
 import { ProviderJob, ProviderJobQueue } from '../kvkk/types';
 import { redactNotificationPayload } from '../kvkk/notification-payload-redaction';
+import { pseudonymize } from '../kvkk/pseudonym';
 
 // Mock provider kuyruğu — enqueue çağrısını yakalar.
 class MockQueue implements ProviderJobQueue {
@@ -142,5 +144,43 @@ describe('ParentNotificationService (OKUL-08)', () => {
       channel: 'sms',
     }) as { messageBody: string };
     expect(out.messageBody).toBe('[REDACTED]');
+  });
+
+  it('logs no raw subject identifier, only a tenant-scoped pseudonym (KVKK)', async () => {
+    const logged: string[] = [];
+    const spy = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation((...args: unknown[]) => {
+        logged.push(args.map((value) => String(value)).join(' '));
+      });
+    const tenantId = 't-11111111-1111-1111-1111-111111111111';
+    const subjectId = 's-11111111-1111-1111-1111-111111111111';
+    try {
+      await service.sendToParent({
+        tenantId,
+        notificationId: 'n-log-1',
+        subjectId,
+        channel: 'sms',
+        status: 'approved',
+        messageBody: 'Veli bilgilendirme metni',
+        eligibility: {
+          consent: { status: 'approved' },
+          phone: { exists: true, verified: true },
+          channel: { allowed: true, channel: 'sms' },
+          messageBody: 'Veli bilgilendirme metni',
+        },
+        queue,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    const output = logged.join('\n');
+    expect(output).toContain('parent_notification.processed');
+    expect(output).toContain('subjectRef');
+    expect(output).not.toContain(subjectId);
+    expect(output).toContain(
+      pseudonymize({ tenantId, scope: 'guardian', rawId: subjectId }),
+    );
   });
 });

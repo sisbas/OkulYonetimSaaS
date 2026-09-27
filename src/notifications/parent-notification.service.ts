@@ -10,6 +10,7 @@ import {
 } from '../kvkk/types';
 import { NotificationEligibilityService } from '../kvkk/notification-eligibility.service';
 import { redactNotificationPayload } from '../kvkk/notification-payload-redaction';
+import { pseudonymize, resolvePseudonymKey } from '../kvkk/pseudonym';
 import { NotificationLog } from './notification-log.entity';
 
 /** Veliye bildirim gönderme girdi sözleşmesi (OKUL-08). */
@@ -39,9 +40,10 @@ export interface SendToParentInput {
  *  2. Onaylıysa: messageBody'yi redactNotificationPayload ile maskele (KVKK).
  *  3. ProviderJobQueue'ya enqueue et (mock queue test'te).
  *  4. NotificationLog kaydı oluştur (masked payload).
- *  5. Audit: struktured log (tenantId + subjectId).
+ *  5. Audit: struktured log (tenantId + pseudonymize edilmiş subject referansı).
  *
- * Tüm PII ham halde saklanmaz; log yalnızca maskelenmiş gövde taşır.
+ * Tüm PII ham halde saklanmaz; log yalnızca maskelenmiş gövde ve pseudonym
+ * referansı taşır (ham subject UUID'si log'a yazılmaz).
  */
 @Injectable()
 export class ParentNotificationService {
@@ -51,7 +53,11 @@ export class ParentNotificationService {
     @InjectRepository(NotificationLog)
     private readonly repo: Repository<NotificationLog>,
     private readonly eligibilityService: NotificationEligibilityService,
-  ) {}
+  ) {
+    // Fail-closed konfigürasyon kontrolü: eksik/zayıf pseudonym anahtarı süreci
+    // ilk bildirimde değil BAŞLANGIÇTA durdurur (bkz. src/kvkk/pseudonym.ts).
+    resolvePseudonymKey();
+  }
 
   async sendToParent(input: SendToParentInput): Promise<NotificationStatus> {
     const { tenantId, subjectId, channel, notificationId } = input;
@@ -151,7 +157,7 @@ export class ParentNotificationService {
     );
   }
 
-  /** KVKK/audit: tenantId + subjectId içeren struktured log. */
+  /** KVKK/audit: tenantId + **pseudonymize** subject referansı içeren struktured log. */
   private audit(
     tenantId: string,
     subjectId: string,
@@ -162,7 +168,13 @@ export class ParentNotificationService {
       JSON.stringify({
         event: 'parent_notification.processed',
         tenantId,
-        subjectId,
+        // KVKK: ham veli/öğrenci subject kimliği log'a yazılmaz (deterministik,
+        // kiracıya kilitli pseudonym referansı — src/kvkk/pseudonym.ts).
+        subjectRef: pseudonymize({
+          tenantId,
+          scope: 'guardian',
+          rawId: subjectId,
+        }),
         status,
         outcome,
       }),
