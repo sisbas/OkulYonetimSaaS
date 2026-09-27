@@ -472,7 +472,10 @@ describe('default-deny runtime contract (PermissionGuard)', () => {
       permissions: ['user:read'],
       authority: new AuthorizationContextError('unresolved_authority'),
     });
-    await expect(Promise.resolve(guard.canActivate(context({ header: jest.fn(), user: user() })))).resolves.toBe(false);
+    // #339 review P2: 401'e eşlenen bağlam hatası eşlenmiş istisnayı FIRLATIR.
+    await expect(
+      Promise.resolve(guard.canActivate(context({ header: jest.fn(), user: user() }))),
+    ).rejects.toMatchObject({ status: 401 });
   });
 
   it('denies when the token authority version is stale', async () => {
@@ -480,7 +483,10 @@ describe('default-deny runtime contract (PermissionGuard)', () => {
       permissions: ['user:read'],
       authority: new AuthorizationContextError('stale_authorization_version'),
     });
-    await expect(Promise.resolve(guard.canActivate(context({ header: jest.fn(), user: user() })))).resolves.toBe(false);
+    // #339 review P2: stale sürüm 401'e eşlenir → eşlenmiş istisna fırlatılır.
+    await expect(
+      Promise.resolve(guard.canActivate(context({ header: jest.fn(), user: user() }))),
+    ).rejects.toMatchObject({ status: 401 });
   });
 
   it('client-supplied tenant, role and permission values never grant access', async () => {

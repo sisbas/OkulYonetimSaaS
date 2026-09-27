@@ -13,6 +13,7 @@ import { emitContextAuditEvent, legacySecurityAuditReasonCode } from '../context
 import { CONTEXT_SCOPE_KEY } from '../context/context-scope.decorator';
 import {
   DenyReasonCode,
+  decideDeny,
   denyReasonFromContextFailure,
   toDenyException,
 } from '../context/deny-response';
@@ -167,8 +168,11 @@ export class PermissionGuard implements CanActivate {
     } catch (error) {
       if (error instanceof AuthorizationContextError) {
         const reasonCode = denyReasonFromContextFailure(error.reasonCode);
-        if (reasonCode === 'branch_not_authorized') {
-          // Şube yetkisiz: audit + non-enumerating 404 (403/404 ayrımı sızmaz).
+        // #339 review P2: 401/404'e eşlenen redler, guard'ın `false` dönüşüyle
+        // Nest'in GENEL 403'üne dönüşüyordu ve sözleşmeyle ÇELİŞİYORDU; bu
+        // yüzden eşlenmiş istisna fırlatılır (audit `deny()` içinde yazılır).
+        // 403'e eşlenen redler `false` ile devam eder (durum kodu zaten 403).
+        if (decideDeny(reasonCode).status !== 403) {
           this.denyAndThrow(request, reasonCode, requiredPermission);
         }
         return this.deny(request, reasonCode, requiredPermission);

@@ -123,7 +123,11 @@ describe('PermissionGuard', () => {
       permissions: ['user:read'],
       authority: new AuthorizationContextError('unresolved_authority'),
     });
-    await expect(Promise.resolve(guard.canActivate(executionContext(request(['user:read']))))).resolves.toBe(false);
+    // #339 review P2: 401'e eşlenen bağlam hatası artık EŞLENMİŞ istisnayı
+    // fırlatır (Nest'in genel 403'ü non-enumerating sözleşmeyle çelişirdi).
+    await expect(
+      Promise.resolve(guard.canActivate(executionContext(request(['user:read'])))),
+    ).rejects.toMatchObject({ status: 401, message: 'Oturum bağlamı doğrulanamadı' });
   });
 
   it('rejects a client-supplied tenant header that does not match the token tenant', async () => {

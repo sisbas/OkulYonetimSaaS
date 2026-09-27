@@ -26,7 +26,22 @@ export class TenantScopeGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<RequestWithContext>();
     try {
       const resolved = resolveTenantContext(req);
-      req.context = buildRequestContextFromResolution(resolved);
+      const validated = buildRequestContextFromResolution(resolved);
+      // #339 review P2: global PermissionGuard'ın kurduğu yetkili bağlam
+      // (branch/roles/permissions/activeRole/authorization) KORUNUR; bu guard
+      // yalnız KİRACI'yı katı çözümleyiciyle yeniden doğrular. Aksi hâlde
+      // TenantScopeGuard'lı controller'larda (courses/rooms/schedules/attendance/
+      // audit) doğrulanmış `x-branch-id` ve izinler downstream'e HİÇ ulaşmazdı.
+      const authoritative = req.context;
+      req.context = authoritative
+        ? {
+            ...validated,
+            ...authoritative,
+            // Kiracı, katı çözümleyicinin doğruladığı değerdir (tek doğruluk kaynağı).
+            tenantId: validated.tenantId,
+            requestId: authoritative.requestId ?? validated.requestId,
+          }
+        : validated;
       return true;
     } catch (error) {
       if (error instanceof TenantResolutionError) {
