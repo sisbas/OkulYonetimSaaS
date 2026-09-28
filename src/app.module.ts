@@ -58,6 +58,12 @@ if (process.env.ENABLE_REPORTS === 'true') {
     AttendanceModule,
     NotificationsModule,
     ScheduleModule,
+    // #259/#352/#361 regresyon düzeltmesi: AuditModule yalnız `import` ediliyordu
+    // ama `imports` dizisinde YER ALMIYORDU → `/api/v1/audit/*` route'ları
+    // kayıtsız kalıyor ve `AuditQueryService` constructor'ındaki anahtar halkası
+    // (`AUDIT_HMAC_PREVIOUS_KEYS`) fail-closed doğrulaması boot'ta HİÇ
+    // çalışmıyordu. Regresyon koruması: `src/app.module.spec.ts`.
+    AuditModule,
 
     ...QUARANTINED_MODULES,
   ],
