@@ -16,7 +16,7 @@ geldiğinde bu satır `tamamlandı (insan)` yapılır ve kanıt URL'i işlenir.
 |---|---|---|
 | `JWT_ACCESS_SECRET` | ✔ | Erişim token imzası |
 | `JWT_REFRESH_SECRET` | ✔ | Refresh token imzası (refresh yalnız hash saklanır) |
-| `JWT_KEY_ID` | opsiyonel | Verilen token'ları secret sürümüyle eşlemek için (rotasyon korelasyonu) |
+| `JWT_KEY_ID` | opsiyonel | **Desteklenmiyor (dokümante edilen boşluk):** `src/` altında hiçbir kod bu değişkeni OKUMUYOR ve `AuthService.issueTokenPair()` `signAsync`'e `keyid`/`kid` vermiyor → izlenebilirlik SAĞLAMAZ. Rotasyon izlenebilirliği ayrı bir kod dilimi gerektirir (Refs #332) |
 | `AUDIT_HMAC_KEY` | ✔ | Audit zinciri HMAC anahtarı (#259/#352) |
 | `AUDIT_HMAC_KEY_ID` | ✔ | İmzalı satırların `signature_key_id` değeri (ör. `key-1`); doğrulama bu kimlikle anahtar seçer |
 | `AUDIT_HMAC_PREVIOUS_KEYS` | yalnız rotasyonda | Emekliye ayrılmış anahtarlar: `{"key-1":"<>=32 karakter>"}` — **rotasyon sırasında** eski satırların doğrulanabilmesi için |
