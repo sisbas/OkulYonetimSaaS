@@ -22,10 +22,10 @@ karar paketini hazırlamak. **Uygulama insan onayına bağlıdır** (plan §9/H6
 | 2 | M1 | closed | 0 | 1 | yok | — |
 | 3 | M2 | **open** | **0** | 2 | yok | **kapatılabilir** (açık issue yok) |
 | 4 | M3 | **open** | **0** | 5 | yok | **kapatılabilir** (açık issue yok) |
-| 5 | M4 | open | 1 | 1 | **yok** | 263 (leave — R1 merge, R2/R3 açık) |
-| 6 | M5 | open | 1 | 1 | **yok** | 265 (attendance) |
-| 7 | M6 | open | 1 | 2 | **yok** | 266 (notification — R5 branch merge edilmedi) |
-| 8 | M7 | open | 3 | 1 | **yok** | 268, 269, 264 |
+| 5 | M4 | open | 1 | 1 | **yok** | 263 (leave — R1 merge, R2/R3 açık; v2 F1 bitimi ≈ 10-14) |
+| 6 | M5 | open | 1 | 1 | **yok** | 265 (attendance — verdict R10/R15'e bağlı; v2 F2 bitimi ≈ 10-28) |
+| 7 | M6 | open | 1 | 2 | **yok** | 266 (notification — R5 branch merge edilmedi; R7 F2'de) |
+| 8 | M7 | open | 3 | 1 | **yok** | 268, 269, 264 (F2: R7–R11; **v2 bitiş ≈ 10-28**) |
 
 **Kritik bulgu:** 8 milestone'un **hiçbirinde `due_on` yok** (plan KPI hedefi: 8/8) ve **M2/M3 sıfır açık issue'ya rağmen `open`**.
 
@@ -56,12 +56,27 @@ karar paketini hazırlamak. **Uygulama insan onayına bağlıdır** (plan §9/H6
 
 ## 5. H6 karar paketi — **uygulama insan onayına bağlı** (ajan uygulamaz)
 
-### 5.1 Kapanış yorumu önerisi (issue #339)
+### 5.1 Kapanış yorumu önerisi (issue #339 — AC bazlı eşleme ile)
 
 > **Kapanış kanıtı:** PR #360 (`feat(security): server-authoritative request context and protected endpoint default-deny`) `82cfb41` ile merge edildi.
-> Zorunlu check'ler: DB Smoke `36101998379`, Backend CI `36101998392`, Gate 1 `36101998454`, P0 browser E2E `36101998541` — hepsi PASS; A7 bağımsız verdict'i **GO (0 blocker)**.
-> F1/F2/F3 bulguları `fixed:93cb68d` / `fixed:8246222` ile kapatıldı; 7 review thread'i kanıtlı resolve edildi.
+>
+> AC eşlemesi (her satır `fixed:<sha>` ile):
+> 1. Context yokken protected controller fail-closed → `src/common/guards/permission.guard.ts` default-deny bloğu + `test/rbac/controller-enforcement-consistency.spec.ts` · `fixed:69f1c0f`, `fixed:8246222`
+> 2. Enforcement'sız protected controller mimari testle yakalanır → aynı spec (metadata'sız controller testi) · `fixed:69f1c0f`
+> 3. Tenant/branch/rol/permission sunucudan çözülür → `src/common/context/*` + `authority-resolver.service.ts` + `branch-scope.service.ts` · `fixed:69f1c0f`
+> 4. Client değerleri yetki veremez/genişletemez → DTO+ValidationPipe 400 + guard yalnız sunucu-verisi · `fixed:69f1c0f`
+> 5. Cross-tenant/branch/escalation/missing-permission negatifleri → `test/rbac/security-context-default-deny.spec.ts` (N1–N17) · `fixed:69f1c0f`
+> 6. Non-enumerating red (403/404 ayrımı sızmaz) → `deny-response.ts` + `denyAndThrow` (mapped 404/401) · `fixed:8246222`
+> 7. Catalog yalnız erişilebilir kayıtları okunabilir adlarla döner → `context-catalog.service.ts` + catalog spec'leri · `fixed:69f1c0f`, `fixed:93cb68d`
+> 8. Effective role/permission sözleşmesi versioned + testli → `authority-resolver.service.ts` + resolution testleri · `fixed:69f1c0f`
+> 9. Audit metadata redacted + allowlist → `context-audit.ts` + redaction taraması (bulgu 0) · `fixed:69f1c0f`
+> 10. Regresyonlar + fresh DB → Backend CI `36101998392`, DB Smoke `36101998379`, Gate 1 `36101998454`, runtime-integration 52/52; migration yok (şema kanıtı tetiklenmedi)
+> 11. Rol verdict'leri → A7 `artifacts/verify/R4/verdict.md` (HEAD `3a901f9` için GO; `8246222` için re-verify kuyrukta) — **bu AC, re-verify bitmeden kapatılamaz**
+> 12. Rollback + observation → `artifacts/R4/pr-body.md` Rollback bölümü + `artifacts/H1-H2/observation-log.md`
+>
 > Tasarım boşlukları issue **#362**'ye devredildi. Vercel preview kırmızıdır → **H2 kayıtlı waiver** (#363).
+>
+> **Not (AC-11 kaydı):** A7 re-verify PR açıldıktan SONRA üretilecek; bu kapanış önerisi, AC-11'in `8246222`'ye yeniden bağlanmasına şartlıdır. Şartsız kapatma YOK.
 
 ### 5.2 Önerilen komutlar (H6 onayı sonrası)
 
@@ -70,8 +85,14 @@ karar paketini hazırlamak. **Uygulama insan onayına bağlıdır** (plan §9/H6
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/3 -f state=closed   # M2
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/4 -f state=closed   # M3
 
-# (b) Due date ekle (öneri: M0/M4->10-17, M5/M6->10-24, M7->10-31)
+# (b) 8 mevcut milestone'un TAMAMINA due date ekle (KPI: 8/8)
+#     M1 zaten kapalı (2026-08-11) → gerçek kapanış tarihi kaydedilir.
+#     M2/M3 bu paketle kapatılıyor → due date = kapanış günü.
+#     M0/M4→10-17, M5/M6→10-24, M7→10-31 (v2 faz takvimiyle tutarlı: R7-R11 v2 F2'de).
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/1 -f due_on=2026-10-17T00:00:00Z   # M0
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/2 -f due_on=2026-08-11T00:00:00Z   # M1 (gerçek kapanış)
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/3 -f due_on=2026-09-28T00:00:00Z   # M2 (kapanış günü)
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/4 -f due_on=2026-09-28T00:00:00Z   # M3 (kapanış günü)
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/5 -f due_on=2026-10-17T00:00:00Z   # M4
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/6 -f due_on=2026-10-24T00:00:00Z   # M5
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/7 -f due_on=2026-10-24T00:00:00Z   # M6
@@ -98,7 +119,7 @@ Oneri: kanit/kapanis varsa kapatilir; yoksa `documentation` etiketiyle yeni mile
 | KPI | Hedef | Bugun |
 |---|---|---|
 | Acik `p0` issue | 0 | **6** |
-| Milestone `due_on` | 8/8 | **0/8** |
+| Milestone `due_on` | 8/8 | **0/8 bugün → paket uygulanınca 8/8** (M0–M7 due date + M2/M3 kapanış; yeni milestone'lar tarihlerle oluşturulur) |
 | Truth matrix `runtime`+`pilot-ready` | 13/13 | reconcile bekliyor (`58bad0e`) |
 | Acik PR | 0 | 1 (#364) |
 
