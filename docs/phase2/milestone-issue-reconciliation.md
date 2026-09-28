@@ -77,6 +77,15 @@ karar paketini hazırlamak. **Uygulama insan onayına bağlıdır** (plan §9/H6
 > Tasarım boşlukları issue **#362**'ye devredildi. Vercel preview kırmızıdır → **H2 kayıtlı waiver** (#363).
 >
 > **Not (AC-11 kaydı):** A7 re-verify PR açıldıktan SONRA üretilecek; bu kapanış önerisi, AC-11'in `8246222`'ye yeniden bağlanmasına şartlıdır. Şartsız kapatma YOK.
+>
+> **Check kapsamı (review P2 düzeltmesi — "complete required-check set"):** Yukarıdaki satırlar bilinçli bir
+> **evidans alt kümesidir**, tam liste değildir. Tam **zorunlu set = 10 context**
+> (`.github/rulesets/main-merge-governance.json`): Sprint 1 Quality Gate · Backend CI · DB Smoke ·
+> Gate 1 CI · Sensitive Pattern Scanner · GitGuardian scan · PR Governance / Body Validation ·
+> Issue Reference · Rollback Plan · Acceptance Criteria. PR #360'ın check özeti: **24 PASS / 1 FAIL
+> (yalnız `Vercel`)** → tüm on zorunlu context SUCCESS. `P0 browser E2E and artifact evidence` bu sette
+> **YOK** (zorunlu status check değildir; kabul yüzeyi olarak koşar). `Review Thread Resolution` ayrı bir
+> ruleset parametresidir (`required_review_thread_resolution=true`; context listesinde değil).
 
 ### 5.2 Önerilen komutlar (H6 onayı sonrası)
 
@@ -88,7 +97,10 @@ gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/4 -f state=closed   # M3
 # (b) 8 mevcut milestone'un TAMAMINA due date ekle (KPI: 8/8)
 #     M1 zaten kapalı (2026-08-11) → gerçek kapanış tarihi kaydedilir.
 #     M2/M3 bu paketle kapatılıyor → due date = kapanış günü.
-#     M0/M4→10-17, M5/M6→10-24, M7→10-31 (v2 faz takvimiyle tutarlı: R7-R11 v2 F2'de).
+#     M0/M4→10-17, M5/M6→10-24, M7→10-31 (AKTİF plan remaining-plan-v2.md'nin faz takvimi:
+#     F1=hafta1-3, F2=hafta3-6 bitimi ≈ 2026-10-28 → M7=10-31. v1 next-phase-plan.md'deki
+#     2026-12-04 tarihi BAYAT'TIR — docs/phase2/README.md: "next-phase-plan.md … BAYAT —
+#     yerini remaining-plan-v2.md aldı". v1 tarihi tekrarlanmaz.)
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/1 -f due_on=2026-10-17T00:00:00Z   # M0
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/2 -f due_on=2026-08-11T00:00:00Z   # M1 (gerçek kapanış)
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/3 -f due_on=2026-09-28T00:00:00Z   # M2 (kapanış günü)
@@ -104,8 +116,8 @@ gh api -X POST repos/sisbas/OkulYonetimSaaS/milestones -f title="Phase 1b Closur
 # (d) Milestone siz Faz 1b kalemlerini yeni milestone a ata (Phase-2 epic HARIC)
 for n in 358 329 332 362; do gh issue edit $n --milestone "Phase 1b Closure"; done
 
-# (e) Phase-2 epic kalemleri icin ayri milestone (istege bagli)
-gh api -X POST repos/sisbas/OkulYonetimSaaS/milestones -f title="Phase 2 - Commercial Release"
+# (e) Phase-2 epic kalemleri icin ayri milestone (istege bagli) — due_on ile (tum milestone'lar tarihli kalsin)
+gh api -X POST repos/sisbas/OkulYonetimSaaS/milestones -f title="Phase 2 - Commercial Release" -f due_on=2027-01-15T00:00:00Z
 for n in 344 345; do gh issue edit $n --milestone "Phase 2 - Commercial Release"; done
 ```
 
