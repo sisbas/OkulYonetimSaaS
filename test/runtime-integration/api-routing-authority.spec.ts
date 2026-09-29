@@ -189,7 +189,11 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
     }
   });
 
-  it.each(['{invalid-json', JSON.stringify({ retired: 'weak' })])(
+  it.each([
+    '{invalid-json',
+    JSON.stringify({ retired: 'weak' }),
+    JSON.stringify({ [process.env.AUDIT_HMAC_KEY_ID ?? 'local-test-key']: 'synthetic-history-key-for-boot-probe-only' }),
+  ])(
     'rejects invalid historical HMAC configuration during real AppModule compilation',
     async (configuration) => {
       const previous = process.env.AUDIT_HMAC_PREVIOUS_KEYS;
