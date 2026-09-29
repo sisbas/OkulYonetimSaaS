@@ -27,20 +27,40 @@ geldiğinde bu satır `tamamlandı (insan)` yapılır ve kanıt URL'i işlenir.
 - `KVKK_PSEUDONYM_KEY` **zorunlu ve yeni**dir (A3 R5/redaction dilimiyle gelir); >= 32 byte entropi.
 - Anahtar değerleri yalnız ortamın secret store'unda tutulur; repoda `.env.example` **dahi** gerçek değer içermez.
 
-## 1.1 Audit HMAC rotasyonu — **DESTEKLENİYOR** (güncellendi: #361 merge sonrası)
+## 1.1 Audit HMAC rotasyonu — **runtime desteği BLOKLU** (#367 / PR #366)
 
-`AuditQueryService.verify()` artık satırın **kendi `signature_key_id`'siyle** anahtar seçer
+**Kaynak anlık görüntüsü:** main `9bd8d5dc333cdfe575e2500ff6e2828673edcc84`, 2026-09-29.
+`src/app.module.ts:6` `AuditModule` sembolünü import eder, fakat `@Module.imports`
+(`src/app.module.ts:44–63`) içinde kaydetmez. `AuditQueryService` yalnız bu bağlantısız
+modülde sağlanır (`src/common/audit/audit.module.ts:24`). Bu nedenle main runtime'da
+`/api/v1/audit/verify` kayıtlı değildir ve servis constructor'ındaki
+`resolveAuditHmacKeyRing()` (`audit-query.service.ts:89`) bootstrap sırasında çalışmaz.
+Bozuk/zayıf/aktif kimlikle çakışan `AUDIT_HMAC_PREVIOUS_KEYS` için **boot'ta FATAL
+garantisi yoktur**. Aktif anahtarın writer tarafından doğrulanması bütün ring'in
+doğrulanması değildir; `/api/v1/health` 200 de bu boşluğu kapatmaz.
+
+**Kod düzeyindeki yetenek:** #361 ile gelen `AuditQueryService.verify()` satırın
+**kendi `signature_key_id`'siyle** anahtar seçer
 (`resolveAuditHmacKeyRing()` + `auditHmacKeyResolver(ring)`); bilinmeyen/eksik key-id →
-`unknown-signature-key` ile **fail-closed** reddeder. Bu davranış #361 ile main'dedir
+`unknown-signature-key` ile **fail-closed** reddeder. Bu servis/yardımcı davranışı main'dedir
 (kanıt: `src/common/audit/audit-chain.spec.ts` — rotasyon + key-id NULL testleri; `.env.example`
-`AUDIT_HMAC_KEY_ID` / `AUDIT_HMAC_PREVIOUS_KEYS` sözleşmesi).
+`AUDIT_HMAC_KEY_ID` / `AUDIT_HMAC_PREVIOUS_KEYS` sözleşmesi); birim kanıtı çalışan
+uygulama kaydı veya production rotasyon kabulü yerine geçmez.
 
-**Desteklenen rotasyon prosedürü:**
+**Önkoşul (henüz sağlanmadı):** #367 / PR #366 güvenli wiring düzeltmesi main'e merge
+edilmeli; kayıtlı verify route'u ve bozuk ring ile gerçek bootstrap fail-closed kanıtı
+exact head'e bağlanmalıdır. Wiring, #367'deki cross-tenant retention sınırını da korumalıdır.
+Bu paket retention endpoint'lerini açmayı/çalıştırmayı önermez ve retention erişilebilirliği
+veya güvenliği iddia etmez. PR #366'nın açık olması düzeltmenin main'de olduğu anlamına gelmez.
+**Operatör şu an bu pakete dayanarak `AUDIT_HMAC_KEY` rotasyonu yapmamalıdır.**
+
+**Önkoşullar kabul edildikten sonra uygulanabilecek taslak (şu an yürürlükte değil):**
 
 1. Yeni anahtarı üret (>= 32 karakter) ve `AUDIT_HMAC_KEY`'e koy; `AUDIT_HMAC_KEY_ID`'yi **yeni** kimliğe çevir (ör. `key-2`).
 2. Emekliye ayrılan anahtarı `AUDIT_HMAC_PREVIOUS_KEYS`'e ekle: `{"key-1":"<eski anahtar>"}`.
-   (Rotasyon öncesi imzalanmış satırlar bu anahtarla doğrulanmaya devam eder.)
-3. Bozuk/zayıf yapılandırma veya aktif kimliğin tekrarı → süreç **boot'ta FATAL** eder (fail-closed).
+   (Kayıtlı ve doğrulanmış verifier'da eski satırların anahtar seçimi korunmalıdır.)
+3. Bozuk/zayıf yapılandırma veya aktif kimliğin tekrarı ile bootstrap'ın **FATAL** olduğunu
+   prerequisite kanıtında doğrula; mevcut main için bunu olmuş sayma.
 4. Eski kimliği, saklama politikası izin verdiği sürece **ringde tut**; ringden çıkarılan anahtarın
    satırları doğrulanamaz hâle gelir.
 
@@ -48,6 +68,12 @@ geldiğinde bu satır `tamamlandı (insan)` yapılır ve kanıt URL'i işlenir.
 > `audit_chain_checkpoints.signature` kolonunu SELECT etmiyor; yani checkpoint'in **kendi** HMAC imzası
 > doğrulanmıyor (kırpma senaryosunda trust-anchor kurcalanabilir kalır). Bu, rotasyon desteğinden
 > **bağımsız** ve hâlâ **açık** bir bulgudur (#358) — bir dilim kapsamında kapatılmalıdır.
+
+**Governance engeli:** `POLICY_DEADLOCK #368` **OPEN**. Mevcut main'deki
+`docs/phase2/progress-v2.md:46–47` fix main'e merge edildikten sonra resolve ister;
+aktif [ruleset 19052349](https://github.com/sisbas/OkulYonetimSaaS/rules/19052349)
+ise merge öncesi thread resolution ister. Owner kararı olmadan bu paket policy'yi
+değiştirmez veya thread resolve yetkisi vermez. Test PASS bu engeli kaldırmaz.
 
 ## 2. Doğrulama komutu (insan, prod'a karşı)
 
