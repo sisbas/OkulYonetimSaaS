@@ -257,6 +257,7 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       [otherTenantId],
     );
     let app: INestApplication | undefined;
+    let fixturePermissionId: string | undefined;
     const runtimeDataSource = new DataSource(dataSource.options);
     try {
       const credential = randomUUID();
@@ -273,6 +274,18 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
         `INSERT INTO user_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3)`,
         [TENANT_ID, ACTOR_ID, roles[0].id],
       );
+      // Migration-cycle jobs deliberately do not run the permission seed.
+      // This reference fixture must establish its own legacy DB grant.
+      const existingPermission = await dataSource.query(
+        `SELECT id FROM permissions WHERE code = 'audit_log:retention:run'`,
+      );
+      if (existingPermission.length === 0) {
+        const inserted = await dataSource.query(
+          `INSERT INTO permissions (code, description)
+           VALUES ('audit_log:retention:run', 'Synthetic legacy retention grant') RETURNING id`,
+        );
+        fixturePermissionId = inserted[0].id as string;
+      }
       await dataSource.query(
         `INSERT INTO role_permissions (role_id, permission_id)
          SELECT $1, id FROM permissions WHERE code = 'audit_log:retention:run'`,
@@ -327,6 +340,7 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
         await dataSource.query('DELETE FROM tenant_memberships WHERE user_id = $1', [ACTOR_ID]);
         await dataSource.query('DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE tenant_id = $1)', [TENANT_ID]);
         await dataSource.query('DELETE FROM roles WHERE tenant_id = $1', [TENANT_ID]);
+        if (fixturePermissionId) await dataSource.query('DELETE FROM permissions WHERE id = $1', [fixturePermissionId]);
         await dataSource.query('DELETE FROM tenants WHERE id = $1', [otherTenantId]);
       }
     }

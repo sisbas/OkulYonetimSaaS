@@ -22,13 +22,15 @@ HTTP retention requires a separately reviewed platform-authority contract.
   audit routes return 401 without authentication and 403 without permission;
   removed retention routes return application-controlled 404 even for an
   authenticated tenant-admin holding the legacy grant, and do not invoke the
-  retention service; malformed/weak historical key configuration rejects boot.
+  retention service; malformed/weak/duplicate historical key configuration rejects boot.
   This test uses a stub data source/auth session, not PostgreSQL acceptance.
 - `test/database/audit-retention.db.spec.ts`: PostgreSQL service semantics plus
-  HTTP quarantine probe proving two tenants' audit rows and checkpoint count
-  remain unchanged. This is security integration evidence, not a business UI
+  authenticated HTTP quarantine probe using real login and persisted tenant-admin
+  role/legacy permission grants, proving two tenants' audit rows and checkpoint
+  count remain unchanged. Reference permission setup works with and without the
+  permission seed. This is security integration evidence, not a business UI
   journey. Local PostgreSQL was unavailable; require exact-head CI execution.
-- Existing audit-chain key-ring unit tests cover duplicate active key IDs.
+- Existing audit-chain key-ring unit tests also cover duplicate active key IDs.
 
 Registration is not checkpoint trust-anchor acceptance (#358). No full-chain,
 truncation-detection, production-health or pilot-readiness claim follows from
