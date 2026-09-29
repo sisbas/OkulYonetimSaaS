@@ -85,8 +85,35 @@ anahtarları değiştirmek rollback değildir.
 
 ## CI run referansı
 
-Draft PR açıldıktan sonra live run URL ve sonuçları bu dosyada kaydedilecektir.
-Şimdilik PostgreSQL/runtime acceptance PENDING; merge-ready beyanı yoktur.
+Draft PR: https://github.com/sisbas/OkulYonetimSaaS/pull/369 (base main).
+Test edilen implementation SHA: `f0c6306028f99b614230c86c167d9211d821ad6f`.
+Bu kanıt güncellemesi docs-only; implementation değişmez.
+
+- DB Smoke **PASS**: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36623627731
+  PostgreSQL 16; migration/verify/seed, tenant guard 8 PASS, required database
+  18 suite / 68 test PASS (skip yok), KVKK 43 PASS, build PASS. Log'da
+  `PASS test/database/audit-retention.db.spec.ts` ve `QA DB smoke tests passed`
+  doğrulandı. Yeni checkpoint DB testi bu suite içindedir.
+- Backend CI **PASS**: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36623627682
+- Gate 1 **PASS**: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36623627841
+- Sprint 1 quality gate **PASS**: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36623627749
+- PR Governance **PASS**: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36623627674
+- Sensitive scanner **PASS**: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36623627727
+- GitGuardian **PASS**: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36623627992
+- P0 browser workflow **PASS**: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36623627700
+  Bu workflow sonucu checkpoint route runtime/pilot acceptance değildir.
+- Vercel deployment **FAIL**:
+  https://vercel.com/sisbas-projects-d3c081cb/okulyonetimsaas/4gpoVDuJrRZB9ij758egVNqXHmch
+  Deployment failure gözlendi; kök neden bu dilimde teşhis edilmedi. #363
+  preview-waiver bağlamı mevcut olsa da burada PASS'e çevrilmez.
+- CodeRabbit Draft nedeniyle review SKIP; external Codex review istendi:
+  https://github.com/sisbas/OkulYonetimSaaS/pull/369#issuecomment-5897717551
+  Evidence capture sırasında review yanıtı henüz yok.
+
+Sonraki adım: docs-only head kontrollerini doğrula, Codex bulgularını değerlendir;
+owner #368 policy kararı ve #367 / PR #366 manuel wiring merge sonrası ayrı
+runtime/pilot kanıtı üretir. Draft ve bounded/partial durum korunur. CI/product
+repair denemesi 0/3; Vercel/policy/wiring için kapsam dışı değişiklik yapılmadı.
 
 ## Issue reference
 
