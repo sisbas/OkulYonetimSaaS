@@ -3,6 +3,12 @@
 **Amaç:** Faz 1b kapanışı için issue/milestone durumunu kanıtla kayda geçirmek ve **H6 (milestone hijyeni)**
 karar paketini hazırlamak. **Uygulama insan onayına bağlıdır** (plan §9/H6: ajan öneriyi ve komutları hazırlar).
 
+**Review düzeltmesi (2026-09-29):** kaynak main
+`9bd8d5dc333cdfe575e2500ff6e2828673edcc84`. Aşağıdaki 2026-09-27 sayıları tarihsel
+snapshot'tır, güncel toplam değildir (2026-09-29 API: 19 açık issue). Milestone API
+aynı gün 8 mevcut milestone için `due_on=null`, M2/M3 için `open` / 0 açık issue doğruladı.
+Bu belge issue kapatma veya milestone değişikliği uygulamaz; H6 owner onayı bekler.
+
 ## 1. Sayısal anlık görüntü (GitHub API, 2026-09-27)
 
 | Metrik | Değer | Kaynak |
@@ -25,7 +31,7 @@ karar paketini hazırlamak. **Uygulama insan onayına bağlıdır** (plan §9/H6
 | 5 | M4 | open | 1 | 1 | **yok** | 263 (leave — R1 merge, R2/R3 açık; v2 F1 bitimi ≈ 10-14) |
 | 6 | M5 | open | 1 | 1 | **yok** | 265 (attendance — verdict R10/R15'e bağlı; v2 F2 bitimi ≈ 10-28) |
 | 7 | M6 | open | 1 | 2 | **yok** | 266 (notification — R5 branch merge edilmedi; R7 F2'de) |
-| 8 | M7 | open | 3 | 1 | **yok** | 268, 269, 264 (F2: R7–R11; **v2 bitiş ≈ 10-28**) |
+| 8 | M7 | open | 3 | 1 | **yok** | 268, 269, 264; #264/#269 F2, **#268 R12 F3**; owner onayına sunulan tarih 2026-11-18 (§5.2) |
 
 **Kritik bulgu:** 8 milestone'un **hiçbirinde `due_on` yok** (plan KPI hedefi: 8/8) ve **M2/M3 sıfır açık issue'ya rağmen `open`**.
 
@@ -44,10 +50,10 @@ karar paketini hazırlamak. **Uygulama insan onayına bağlıdır** (plan §9/H6
 
 | Issue | Bu turda ne oldu | Öneri |
 |---|---|---|
-| **#339** SECURITY-CONTEXT | PR **#360** merge (`82cfb41`); tüm AC'ler işaretli; DB Smoke/Backend CI/Gate 1/P0 E2E yeşil; A7 GO | **KAPATILABİLİR** (kapanış yorumu §5.1) |
+| **#339** SECURITY-CONTEXT | PR **#360** merge (`82cfb41`); issue API'deki 12 AC hâlâ unchecked; named specialist exact-head verdict kanıtı eksik | **AÇIK / BLOCKED**; merge veya seçilmiş CI ile kapatılamaz (§5.1) |
 | **#263** LEAVE-OPS | R1/PR **#357** merge (`7f555c8`); R2 (assign/clear), R3 (bakiye/timezone) açık | açık kalır; due date |
 | **#266** NOTIFICATION | redaction/PR **#361** merge (`e794450`); **R5 dalı (`2dcdb49`) PR'sız**; R6/R7 açık | açık kalır; R5 PR'ı açılmalı |
-| **#259** SECURITY/AUDIT | key-ring rotasyon desteği main'de (#361); checkpoint imzası **#358** açık | açık kalır |
+| **#259** SECURITY/AUDIT | key-ring yardımcı kodu main'de (#361), fakat AuditModule runtime wiring **#367 / PR #366** bekler; checkpoint imzası **#358** açık | açık kalır; uçtan uca rotasyon kabulü yok |
 | **#258** TRUTH | matrix #356 ile merge; **`58bad0e`'e reconcile edilmedi** | açık kalır; reconcile dilimi |
 | **#269** ACCEPTANCE | kabul harness'ı landı (#353); journey/negatif matris açık | açık kalır |
 | **#329 / #332** | H2 **waiver kayıtlı** (#363) / H1 env bekliyor (**insan**) | açık kalır; gözlem H1 sonrası |
@@ -56,11 +62,13 @@ karar paketini hazırlamak. **Uygulama insan onayına bağlıdır** (plan §9/H6
 
 ## 5. H6 karar paketi — **uygulama insan onayına bağlı** (ajan uygulamaz)
 
-### 5.1 Kapanış yorumu önerisi (issue #339 — AC bazlı eşleme ile)
+### 5.1 Kanıt envanteri (issue #339 — kapanış yetkisi değildir)
 
-> **Kapanış kanıtı:** PR #360 (`feat(security): server-authoritative request context and protected endpoint default-deny`) `82cfb41` ile merge edildi.
+> **Teslimat kaydı:** PR #360 (`feat(security): server-authoritative request context and protected endpoint default-deny`) merge SHA `82cfb41313fc40ef2a85aaa4e7458ab4bfde3b9d`; son PR head `8246222c010001bb4a3f5349cd37d01fd06fdcf9`.
 >
-> AC eşlemesi (her satır `fixed:<sha>` ile):
+> AC-1–9 için aşağıdaki `fixed:` kaynakları önceki dilimin kod referanslarıdır;
+> bu docs review'ında yeniden runtime kabulü yapılmadı. AC-10–12 bağımsız kanıt ister;
+> hiçbir satır issue checkbox'ını veya specialist verdict'ünü otomatik tamamlamaz.
 > 1. Context yokken protected controller fail-closed → `src/common/guards/permission.guard.ts` default-deny bloğu + `test/rbac/controller-enforcement-consistency.spec.ts` · `fixed:69f1c0f`, `fixed:8246222`
 > 2. Enforcement'sız protected controller mimari testle yakalanır → aynı spec (metadata'sız controller testi) · `fixed:69f1c0f`
 > 3. Tenant/branch/rol/permission sunucudan çözülür → `src/common/context/*` + `authority-resolver.service.ts` + `branch-scope.service.ts` · `fixed:69f1c0f`
@@ -71,23 +79,52 @@ karar paketini hazırlamak. **Uygulama insan onayına bağlıdır** (plan §9/H6
 > 8. Effective role/permission sözleşmesi versioned + testli → `authority-resolver.service.ts` + resolution testleri · `fixed:69f1c0f`
 > 9. Audit metadata redacted + allowlist → `context-audit.ts` + redaction taraması (bulgu 0) · `fixed:69f1c0f`
 > 10. Regresyonlar + fresh DB → Backend CI `36101998392`, DB Smoke `36101998379`, Gate 1 `36101998454`, runtime-integration 52/52; migration yok (şema kanıtı tetiklenmedi)
-> 11. Rol verdict'leri → A7 `artifacts/verify/R4/verdict.md` (HEAD `3a901f9` için GO; `8246222` için re-verify kuyrukta) — **bu AC, re-verify bitmeden kapatılamaz**
+> 11. **BLOCKED — Architecture, Security, KVKK, Data/DB, QA** rollerinin her biri
+>    `8246222c010001bb4a3f5349cd37d01fd06fdcf9` için gerçek bağımsız verdict,
+>    reviewer kimliği ve kanıt URL/path sağlamalıdır. Önceki A7/`3a901f9` GO iddiası
+>    bu beş verdict'ün yerine geçmez. `artifacts/verify/R4/verdict.md` current main'de
+>    yok; PR #360 reviews API `COMMENTED` kayıtları ve #339 routing yorumu gerçek
+>    beş exact-head specialist verdict sağlamaz. "Re-verify kuyrukta" kanıt değildir.
 > 12. Rollback + observation → `artifacts/R4/pr-body.md` Rollback bölümü + `artifacts/H1-H2/observation-log.md`
 >
 > Tasarım boşlukları issue **#362**'ye devredildi. Vercel preview kırmızıdır → **H2 kayıtlı waiver** (#363).
 >
-> **Not (AC-11 kaydı):** A7 re-verify PR açıldıktan SONRA üretilecek; bu kapanış önerisi, AC-11'in `8246222`'ye yeniden bağlanmasına şartlıdır. Şartsız kapatma YOK.
+> **Kapanış kararı: BLOCKED.** #339 açık kalır. AC-11 için eksik named verdict'ler,
+> AC-10 exact-head tam check eşlemesi ve Definition of Done post-merge observation
+> kanıtı tamamlanmadan owner'a kapanış önerilmez. Bu PR tam ürün kabulü değildir.
 >
 > **Check kapsamı (review P2 düzeltmesi — "complete required-check set"):** Yukarıdaki satırlar bilinçli bir
 > **evidans alt kümesidir**, tam liste değildir. Tam **zorunlu set = 10 context**
 > (`.github/rulesets/main-merge-governance.json`): Sprint 1 Quality Gate · Backend CI · DB Smoke ·
 > Gate 1 CI · Sensitive Pattern Scanner · GitGuardian scan · PR Governance / Body Validation ·
-> Issue Reference · Rollback Plan · Acceptance Criteria. PR #360'ın check özeti: **24 PASS / 1 FAIL
-> (yalnız `Vercel`)** → tüm on zorunlu context SUCCESS. `P0 browser E2E and artifact evidence` bu sette
+> PR Governance / Issue Reference · PR Governance / Rollback Plan · PR Governance / Acceptance Criteria.
+> Toplam PASS sayısı veya seçilmiş workflow run'ları bu on context'in exact-head
+> SUCCESS eşlemesinin yerine geçmez; bu belge #360 için yeni tam-set PASS iddia etmez.
+> `P0 browser E2E and artifact evidence` bu sette
 > **YOK** (zorunlu status check değildir; kabul yüzeyi olarak koşar). `Review Thread Resolution` ayrı bir
 > ruleset parametresidir (`required_review_thread_resolution=true`; context listesinde değil).
 
+**Güncel governance kaynağı:** [aktif ruleset 19052349](https://github.com/sisbas/OkulYonetimSaaS/rules/19052349),
+2026-09-29 API: **10 required context**, `required_approving_review_count=0`.
+Formal approval sayısının sıfır olması, #339'un bağımsız Architecture/Security/KVKK/Data/QA
+review gereksinimini kaldırmaz; v2 §10'daki "1 approval" ifadesi live ruleset değeri değildir.
+**POLICY_DEADLOCK #368 OPEN:** current main `progress-v2.md:46–47` AFTER merge resolve,
+live ruleset BEFORE merge resolve ister. Owner kararı bekler; bu belge governance policy'sini
+yeniden yazmaz. Testler PASS olsa da resolve/merge yetkisi doğmaz.
+
 ### 5.2 Önerilen komutlar (H6 onayı sonrası)
+
+**Tarih gerekçesi / owner kararı:** `docs/phase2/README.md:9` v1'i bayat sayar.
+Ancak v2 `remaining-plan-v2.md:105–106` yalnız #264/#269'u F2 (hafta 3–6) içinde,
+**#268 R12'yi F3 (hafta 6–8)** içinde planlar; R12 eşlemesi `:129`'dadır.
+Bu yüzden M7'yi F2 bitişine bağlayan önceki **2026-10-31 gerekçesi eksiktir**.
+Planın `:3` tarihini (2026-09-23) başlangıç varsayarsak +8 hafta = **2026-11-18**;
+bu tarih v2'nin açık milestone deadline'ı değil, **H6 owner onayına sunulan hesaplı öneri**dir.
+v1 `next-phase-plan.md:62` S5'i 2026-12-04'te bitirir ve `:213` aynı tarihi önerir,
+fakat o komut `/milestones/7`'yi "M7" diye etiketler: live API'de **M7 number=8,
+number=7 M6**. Owner başlangıcı/tarihi onaylamadan aşağıdaki hiçbir komut uygulanmaz.
+M1'in `closed_at` tarihi bir due date kanıtı değildir; M2/M3 hâlâ açık olduğundan
+2026-09-28 "gerçek kapanış günü" değildir. Aşağıdaki tarihlerin tamamı öneridir.
 
 ```bash
 # (a) M2 ve M3'ü kapat (sıfır açık issue)
@@ -95,23 +132,21 @@ gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/3 -f state=closed   # M2
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/4 -f state=closed   # M3
 
 # (b) 8 mevcut milestone'un TAMAMINA due date ekle (KPI: 8/8)
-#     M1 zaten kapalı (2026-08-11) → gerçek kapanış tarihi kaydedilir.
-#     M2/M3 bu paketle kapatılıyor → due date = kapanış günü.
-#     M0/M4→10-17, M5/M6→10-24, M7→10-31 (AKTİF plan remaining-plan-v2.md'nin faz takvimi:
-#     F1=hafta1-3, F2=hafta3-6 bitimi ≈ 2026-10-28 → M7=10-31. v1 next-phase-plan.md'deki
-#     2026-12-04 tarihi BAYAT'TIR — docs/phase2/README.md: "next-phase-plan.md … BAYAT —
-#     yerini remaining-plan-v2.md aldı". v1 tarihi tekrarlanmaz.)
+#     Yalnız H6 owner onayından sonra; gerçek deadline veya kapanış kaydı DEĞİLDİR.
+#     M1 closed_at=2026-08-11 bir kaynak bilgisi; due_on için ayrıca onay gerekir.
+#     M2/M3 için 2026-09-28 geçmiş tarih önerisidir, gerçek kapanış günü değildir.
+#     M7 F3/R12'yi içerir: 2026-09-23 + 8 hafta = 2026-11-18 (başlangıç varsayımı).
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/1 -f due_on=2026-10-17T00:00:00Z   # M0
-gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/2 -f due_on=2026-08-11T00:00:00Z   # M1 (gerçek kapanış)
-gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/3 -f due_on=2026-09-28T00:00:00Z   # M2 (kapanış günü)
-gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/4 -f due_on=2026-09-28T00:00:00Z   # M3 (kapanış günü)
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/2 -f due_on=2026-08-11T00:00:00Z   # M1 öneri
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/3 -f due_on=2026-09-28T00:00:00Z   # M2 öneri
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/4 -f due_on=2026-09-28T00:00:00Z   # M3 öneri
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/5 -f due_on=2026-10-17T00:00:00Z   # M4
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/6 -f due_on=2026-10-24T00:00:00Z   # M5
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/7 -f due_on=2026-10-24T00:00:00Z   # M6
-gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/8 -f due_on=2026-10-31T00:00:00Z   # M7
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/8 -f due_on=2026-11-18T00:00:00Z   # M7 öneri (F3 dahil)
 
 # (c) Faz 1b kapanis milestone u olustur (plan 10/H6)
-gh api -X POST repos/sisbas/OkulYonetimSaaS/milestones -f title="Phase 1b Closure" -f due_on=2026-11-14T00:00:00Z
+gh api -X POST repos/sisbas/OkulYonetimSaaS/milestones -f title="Phase 1b Closure" -f due_on=2026-11-18T00:00:00Z  # öneri: M7/F3'ten önce kapanış tarihi verilmez
 
 # (d) Milestone siz Faz 1b kalemlerini yeni milestone a ata (Phase-2 epic HARIC)
 for n in 358 329 332 362; do gh issue edit $n --milestone "Phase 1b Closure"; done
@@ -131,7 +166,7 @@ Oneri: kanit/kapanis varsa kapatilir; yoksa `documentation` etiketiyle yeni mile
 | KPI | Hedef | Bugun |
 |---|---|---|
 | Acik `p0` issue | 0 | **6** |
-| Milestone `due_on` | 8/8 | **0/8 bugün → paket uygulanınca 8/8** (M0–M7 due date + M2/M3 kapanış; yeni milestone'lar tarihlerle oluşturulur) |
+| Milestone `due_on` | 8/8 mevcut | **0/8 doğrulandı (2026-09-29)** → yalnız owner onaylı 8 PATCH uygulanırsa 8/8; yeni tarihli Phase 1b ile 9/9, opsiyonel Phase 2 ile 10/10. Uygulanmadı. |
 | Truth matrix `runtime`+`pilot-ready` | 13/13 | reconcile bekliyor (`58bad0e`) |
 | Acik PR | 0 | 1 (#364) |
 
