@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { timingSafeEqual } from 'crypto';
 
 import { AuditLogRepository } from './audit-log.repository';
 import {
@@ -9,6 +10,7 @@ import {
   AuditChainVerification,
   auditHmacKeyResolver,
   resolveAuditHmacKeyRing,
+  signAuditEntryHash,
   verifyAuditChain,
 } from './audit-chain';
 import { redactAuditRowsForExport } from './audit-tenant-query.builder';
@@ -48,6 +50,8 @@ export type AuditVerificationResult = AuditChainVerification &
     checkedRows: number;
     lastCheckpoint: AuditChainCheckpointRow | null;
     startedFromCheckpoint: boolean;
+    verificationScope: 'bounded-segment';
+    limitReached: boolean;
   }>;
 
 type AuditLogRow = {
@@ -161,29 +165,63 @@ export class AuditQueryService {
       checkedRows: rows.length,
       lastCheckpoint: checkpoint,
       startedFromCheckpoint: checkpoint !== null,
+      verificationScope: 'bounded-segment',
+      limitReached: rows.length >= limit,
     };
   }
 
   /** En son retention checkpoint'i (yoksa null: zincir genesis'ten başlar). */
   async lastCheckpoint(): Promise<AuditChainCheckpointRow | null> {
     const rows = (await this.dataSource.query(
-      `SELECT up_to_sequence, head_hash, signature_key_id, created_at
+      `SELECT up_to_sequence, head_hash, signature, signature_key_id, created_at
          FROM audit_chain_checkpoints
         ORDER BY up_to_sequence DESC
         LIMIT 1`,
     )) as Array<{
       up_to_sequence: string | number;
       head_hash: string;
+      signature: string;
       signature_key_id: string;
       created_at: Date;
     }>;
     const row = rows[0];
     if (!row) return null;
+    // Retention signs ONLY head_hash. Other fields are shape-checked, not
+    // cryptographically authenticated by the existing persistence format.
+    const sequence = Number(row.up_to_sequence);
+    const date = new Date(row.created_at);
+    if (
+      !/^[1-9][0-9]*$/.test(String(row.up_to_sequence)) ||
+      !Number.isSafeInteger(sequence) ||
+      typeof row.head_hash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(row.head_hash) ||
+      row.created_at == null ||
+      !Number.isFinite(date.getTime()) ||
+      typeof row.signature_key_id !== 'string' ||
+      row.signature_key_id.trim() === '' ||
+      row.signature_key_id.length > 40 ||
+      typeof row.signature !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(row.signature)
+    ) {
+      throw new Error('Audit checkpoint rejected: invalid fields');
+    }
+    const key = auditHmacKeyResolver(resolveAuditHmacKeyRing())(
+      row.signature_key_id,
+    );
+    if (key === undefined) {
+      throw new Error('Audit checkpoint rejected: unknown signature key');
+    }
+    if (!timingSafeEqual(
+      Buffer.from(row.signature, 'hex'),
+      Buffer.from(signAuditEntryHash(row.head_hash, key), 'hex'),
+    )) {
+      throw new Error('Audit checkpoint rejected: signature mismatch');
+    }
     return {
-      upToSequence: Number(row.up_to_sequence),
+      upToSequence: sequence,
       headHash: row.head_hash,
       signatureKeyId: row.signature_key_id,
-      createdAt: new Date(row.created_at).toISOString(),
+      createdAt: date.toISOString(),
     };
   }
 }

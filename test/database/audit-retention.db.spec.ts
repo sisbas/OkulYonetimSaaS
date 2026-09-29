@@ -2,8 +2,10 @@ import { DataSource } from 'typeorm';
 
 import { AuditLogRepository } from '../../src/common/audit/audit-log.repository';
 import { AuditRetentionService } from '../../src/common/audit/audit-retention.service';
+import { AuditQueryService } from '../../src/common/audit/audit-query.service';
 import {
   TEST_AUDIT_HMAC_KEY,
+  resolveAuditHmacKey,
   verifyAuditChain,
 } from '../../src/common/audit/audit-chain';
 import { TypeOrmTransactionalAuditWriter } from '../../src/common/audit/transactional-audit-writer';
@@ -219,6 +221,51 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
         startPrevHash: headAtPrune,
       }),
     ).toMatchObject({ valid: true, reason: null });
+  });
+
+  it('authenticates the persisted retention anchor and rejects DB tampering (#358)', async () => {
+    await seedAgedChain(2);
+    await service.prune(pruneInput());
+    const queryService = new AuditQueryService(dataSource, repository,
+      new TypeOrmTransactionalAuditWriter(repository));
+    await expect(queryService.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({
+      valid: true, startedFromCheckpoint: true, checkedRows: 1,
+      verificationScope: 'bounded-segment',
+    });
+    const [original] = await dataSource.query('SELECT * FROM audit_chain_checkpoints');
+    for (const [column, value] of [
+      ['head_hash', 'b'.repeat(64)], ['signature', 'b'.repeat(64)],
+      ['signature', 'z'.repeat(64)], ['signature_key_id', 'unknown'],
+    ]) {
+      // Column names are fixed test literals; values remain parameterized.
+      await dataSource.query(`UPDATE audit_chain_checkpoints SET ${column} = $1`, [value]);
+      await expect(queryService.verify({ tenantId: TENANT_ID })).rejects.toThrow(/Audit checkpoint rejected/);
+      await dataSource.query(`UPDATE audit_chain_checkpoints SET ${column} = $1`, [original[column]]);
+    }
+
+    const envKeys = ['AUDIT_HMAC_KEY', 'AUDIT_HMAC_KEY_ID', 'AUDIT_HMAC_PREVIOUS_KEYS'] as const;
+    const backup = envKeys.map((key) => process.env[key]);
+    const oldKey = resolveAuditHmacKey();
+    try {
+      process.env.AUDIT_HMAC_KEY = 'new-checkpoint-key-at-least-32-characters';
+      process.env.AUDIT_HMAC_KEY_ID = 'checkpoint-rotated';
+      process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({ [oldKey.keyId]: oldKey.key });
+      await dataSource.transaction((manager) => repository.insert(manager, record(100)));
+      await expect(queryService.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({ valid: true, checkedRows: 2 });
+      delete process.env.AUDIT_HMAC_PREVIOUS_KEYS;
+      await expect(queryService.verify({ tenantId: TENANT_ID })).rejects.toThrow(/unknown signature key/);
+    } finally {
+      envKeys.forEach((key, index) => {
+        if (backup[index] === undefined) delete process.env[key];
+        else process.env[key] = backup[index];
+      });
+    }
+    const chain = await readChain();
+    await dataSource.query('DELETE FROM audit_logs');
+    await expect(queryService.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({ valid: true, verificationScope: 'bounded-segment' });
+    await expect(queryService.verify({ tenantId: TENANT_ID,
+      expectedHeadHash: chain[chain.length - 1].entry_hash as string,
+    })).resolves.toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
   });
 
   it('does not prune a fresh chain (retention not reached) and still audits the run', async () => {
