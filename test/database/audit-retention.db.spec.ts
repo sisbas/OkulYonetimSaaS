@@ -1,4 +1,9 @@
 import { DataSource } from 'typeorm';
+import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
+import { getDataSourceToken } from '@nestjs/typeorm';
+import { AddressInfo } from 'node:net';
+import { AppModule } from '../../src/app.module';
 
 import { AuditLogRepository } from '../../src/common/audit/audit-log.repository';
 import { AuditRetentionService } from '../../src/common/audit/audit-retention.service';
@@ -239,5 +244,48 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
     await expect(
       service.prune(pruneInput({ dryRun: true, reason: 'BAD REASON!' })),
     ).rejects.toThrow(/reason must match/);
+  });
+
+  it('does not expose global retention HTTP operations or modify either tenant chain (#367)', async () => {
+    const otherTenantId = '10000000-0000-4000-8000-000000000269';
+    await dataSource.query(
+      `INSERT INTO tenants (id, name, slug, status, timezone)
+       VALUES ($1, 'Other Audit Tenant', 'other-audit-retention', 'active', 'Europe/Istanbul')`,
+      [otherTenantId],
+    );
+    let app: INestApplication | undefined;
+    const runtimeDataSource = new DataSource(dataSource.options);
+    try {
+      await seedAgedChain(2);
+      await dataSource.transaction((manager) => repository.insert(manager, {
+        ...record(3), tenantId: otherTenantId,
+      }));
+      const before = await readChain();
+      await runtimeDataSource.initialize();
+      const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(getDataSourceToken()).useValue(runtimeDataSource).compile();
+      app = moduleRef.createNestApplication({ logger: false });
+      app.setGlobalPrefix('api/v1');
+      await app.listen(0, '127.0.0.1');
+      const port = (app.getHttpServer().address() as AddressInfo).port;
+      for (const route of ['plan', 'run']) {
+        const response = await fetch(`http://127.0.0.1:${port}/api/v1/audit/retention/${route}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ dryRun: false, reason: 'security.probe' }),
+        });
+        expect(response.status).toBe(404);
+        const body = await response.json();
+        expect(body).not.toHaveProperty('actions');
+        expect(body).not.toHaveProperty('eligibleRows');
+      }
+      expect(await readChain()).toEqual(before);
+      expect((await dataSource.query('SELECT COUNT(*)::int AS c FROM audit_chain_checkpoints'))[0].c).toBe(0);
+    } finally {
+      await app?.close();
+      if (runtimeDataSource.isInitialized) await runtimeDataSource.destroy();
+      await resetChain();
+      await dataSource.query('DELETE FROM tenants WHERE id = $1', [otherTenantId]);
+    }
   });
 });

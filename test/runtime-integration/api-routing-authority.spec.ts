@@ -17,6 +17,7 @@ import handler, {
 import { AppModule } from '../../src/app.module';
 import { AuthService, AUTH_ACCESS_TOKEN_AUDIENCE, AUTH_TOKEN_ISSUER } from '../../src/auth/auth.service';
 import type { RequestUser } from '../../src/common/context/request-context';
+import { AuditRetentionService } from '../../src/common/audit/audit-retention.service';
 
 jest.setTimeout(120_000);
 
@@ -151,6 +152,56 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
     expect(typeof body.timestamp).toBe('string');
     expect(typeof body.uptimeSeconds).toBe('number');
   });
+
+  it.each(['logs', 'verify'])('registers audit/%s with authentication enforced', async (route) => {
+    assertNestJson(await requestJson(`/api/v1/audit/${route}`), 401);
+    assertNestJson(await requestJson(`/api/v1/audit/${route}`, {
+      headers: { authorization: `Bearer ${accessToken as string}` },
+    }), 403); // Authenticated user has no audit read permission.
+  });
+
+  it.each(['plan', 'run'])('quarantines global retention/%s even with legacy DB permissions', async (route) => {
+    const retention = bootedApp!.get(AuditRetentionService);
+    const plan = jest.spyOn(retention, 'plan');
+    const prune = jest.spyOn(retention, 'prune');
+    const permissions = authenticatedUser.permissions;
+    const roles = authenticatedUser.roleIds;
+    authenticatedUser.permissions = ['audit_log:retention:run'];
+    authenticatedUser.roleIds = ['tenant_admin'];
+    try {
+      for (const method of ['GET', 'POST']) {
+        assertNestJson(await requestJson(`/api/v1/audit/retention/${route}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${accessToken as string}`,
+            'content-type': 'application/json',
+          },
+          ...(method === 'POST' ? { body: JSON.stringify({ dryRun: false, reason: 'security.probe' }) } : {}),
+        }), 404);
+      }
+      expect(plan).not.toHaveBeenCalled();
+      expect(prune).not.toHaveBeenCalled();
+    } finally {
+      authenticatedUser.permissions = permissions;
+      authenticatedUser.roleIds = roles;
+      plan.mockRestore();
+      prune.mockRestore();
+    }
+  });
+
+  it.each(['{invalid-json', JSON.stringify({ retired: 'weak' })])(
+    'rejects invalid historical HMAC configuration during real AppModule compilation',
+    async (configuration) => {
+      const previous = process.env.AUDIT_HMAC_PREVIOUS_KEYS;
+      process.env.AUDIT_HMAC_PREVIOUS_KEYS = configuration;
+      try {
+        await expect(bootNestApp()).rejects.toThrow('FATAL: AUDIT_HMAC_PREVIOUS_KEYS');
+      } finally {
+        if (previous === undefined) delete process.env.AUDIT_HMAC_PREVIOUS_KEYS;
+        else process.env.AUDIT_HMAC_PREVIOUS_KEYS = previous;
+      }
+    },
+  );
 
   it('routes /api/v1/daily-operations/today to Nest and returns a controlled 401 instead of platform NOT_FOUND', async () => {
     const branchId = randomUUID();
