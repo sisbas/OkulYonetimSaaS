@@ -21,6 +21,8 @@ describe('readable branch discriminator', () => {
     { branchName: 'Merkez', branchCode: 'OTHER-TENANT' },
     { branchName: 'Other', branchCode: 'ANKARA' },
     { branchId: 'b', branchCode: 'ANKARA' },
+    { branchName: '   ', branchCode: 'ANKARA' },
+    { branchName: 'Merkez', branchCode: '   ' },
   ])('rejects ambiguous or inconsistent selectors %j', async (selection) => {
     await expect(service.resolveSelection(actor, selection, entries))
       .rejects.toBeInstanceOf(AuthorizationContextError);

@@ -124,6 +124,11 @@ export class BranchScopeService {
     const requestedId = selection.branchId?.trim();
     const requestedName = selection.branchName?.trim();
     const requestedCode = selection.branchCode?.trim();
+    if ((selection.branchName != null && !requestedName) ||
+        (selection.branchCode != null && !requestedCode) ||
+        (selection.branchId != null && !requestedId)) {
+      throw new AuthorizationContextError('unauthorized_branch');
+    }
 
     if (!requestedId && !requestedName && !requestedCode) {
       if (accessible.length !== 1) return null;
@@ -159,7 +164,8 @@ export class BranchScopeService {
    */
   async sessionContext(
     user: RequestUser,
-    options: { selection?: BranchSelection; requireSelection?: boolean; branchIdHeader?: string; recoverSelection?: boolean } = {},
+    options: { selection?: BranchSelection; requireSelection?: boolean; branchIdHeader?: string; recoverSelection?: boolean;
+      resources?: ReadonlyArray<{ table: 'leave_requests' | 'schedule_events' | 'schedules' | 'attendance_sessions'; id: string }> } = {},
   ): Promise<SessionBranchContext> {
     if (!user.sessionId || user.authorizationVersion == null) {
       throw new AuthorizationContextError('missing_authenticated_user');
@@ -228,6 +234,14 @@ export class BranchScopeService {
       }
       if (options.branchIdHeader && options.branchIdHeader !== branch?.branchId) {
         throw new AuthorizationContextError('unauthorized_branch');
+      }
+      for (const resource of options.resources ?? []) {
+        if (!branch) throw new AuthorizationContextError('unauthorized_branch');
+        // Tables originate exclusively from the guard's closed route map.
+        const matches = await manager.query(`SELECT id FROM ${resource.table}
+          WHERE id = $1::uuid AND tenant_id = $2::uuid AND branch_id = $3::uuid`,
+        [resource.id, user.tenantId, branch.branchId]);
+        if (matches.length !== 1) throw new AuthorizationContextError('unauthorized_branch');
       }
       return { accessible, branch, authority: {
         roles, permissions, tokenVersion: Number(session.tokenVersion),

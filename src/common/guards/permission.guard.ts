@@ -11,6 +11,7 @@ import {
 } from '../context/authorization-context';
 import { emitContextAuditEvent, legacySecurityAuditReasonCode } from '../context/context-audit';
 import { CONTEXT_SCOPE_KEY } from '../context/context-scope.decorator';
+import { branchResources } from '../context/branch-resource-scope';
 import {
   DenyReasonCode,
   decideDeny,
@@ -135,7 +136,7 @@ export class PermissionGuard implements CanActivate {
       this.denyAndThrow(request, 'branch_not_authorized', requiredPermission);
     }
     const recoverSelection = controller?.name === 'ContextCatalogController' && handler?.name === 'selectBranch';
-    return this.resolveAndSettle(request, user, branchIdHeader, requiredPermission, recoverSelection);
+    return this.resolveAndSettle(request, user, branchIdHeader, requiredPermission, recoverSelection, controller?.name);
   }
 
   /** Yetki çözümleyici ile (önbellekli, token_version uyumlu) karar yolu. */
@@ -145,6 +146,7 @@ export class PermissionGuard implements CanActivate {
     branchIdHeader: string | undefined,
     requiredPermission: ReadonlyArray<string>,
     recoverSelection = false,
+    controllerName = '',
   ): Promise<boolean> {
     try {
       if (user.sessionId) {
@@ -155,10 +157,14 @@ export class PermissionGuard implements CanActivate {
           requireSelection: requiredPermission.length > 0,
           branchIdHeader,
           recoverSelection,
+          resources: branchResources(controllerName, request.params),
         });
         const selectedCode = resolved.accessible.find((entry) => entry.branchId === resolved.branch?.branchId)?.code;
         const codeHeader = request.header?.('x-branch-code');
         if (codeHeader && codeHeader !== selectedCode) throw new AuthorizationContextError('unauthorized_branch');
+        if (controllerName === 'LeaveController' && !request.params?.id && request.method === 'GET' && resolved.branch) {
+          request.query.branchId ??= resolved.branch.branchId;
+        }
         // Legacy business DTOs require branchId. Forward a validated readable
         // code to that internal field only after resolving the session selection.
         // Client values never choose a different branch or authorize a request.

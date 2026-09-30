@@ -58,6 +58,11 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
       CREATE TABLE teachers (id uuid, tenant_id uuid, user_id uuid, status text, deleted_at timestamptz);
       CREATE TABLE teacher_branches (teacher_id uuid, tenant_id uuid, branch_id uuid, status text,
         deleted_at timestamptz, deactivated_at timestamptz, effective_from date, effective_to date);
+      -- Read-only SQL scope fixtures derived from reference rows, not domain outcomes.
+      CREATE VIEW leave_requests AS SELECT id, tenant_id, id AS branch_id FROM branches;
+      CREATE VIEW schedule_events AS SELECT id, tenant_id, id AS branch_id FROM branches;
+      CREATE VIEW schedules AS SELECT id, tenant_id, id AS branch_id FROM branches;
+      CREATE VIEW attendance_sessions AS SELECT id, tenant_id, id AS branch_id FROM branches;
     `);
     const runner = ds.createQueryRunner();
     try { await migration.up(runner); } finally { await runner.release(); }
@@ -93,14 +98,14 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
 
   const select = () => scope.sessionContext(actor, { selection: { branchName: 'Merkez', branchCode: 'IZMIR' } });
 
-  function request(permission = 'user:read', headerCode?: string) {
+  function request(permission = 'user:read', headerCode?: string, params = {}, controller = class Probe {}) {
     const reflector = new Reflector();
     jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: unknown) => key === PERMISSIONS_KEY ? [permission] : false);
     const guard = new PermissionGuard(reflector,
       { emitAuthorizationDenied: jest.fn() } as unknown as SecurityAuditService, undefined, scope);
-    const req = { user: actor, query: { branchId: 'IZMIR' }, body: {},
+    const req = { user: actor, query: { branchId: 'IZMIR' }, body: {}, params,
       header: (name: string) => name === 'x-branch-code' ? headerCode : undefined } as unknown as RequestWithContext;
-    const context = { getHandler: () => function protectedRoute() {}, getClass: () => class Probe {},
+    const context = { getHandler: () => function protectedRoute() {}, getClass: () => controller,
       switchToHttp: () => ({ getRequest: () => req }) } as unknown as ExecutionContext;
     return { guard, req, context };
   }
@@ -185,6 +190,31 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
     await ds.query(`UPDATE users SET token_version = 2`);
     await expect(scope.sessionContext({ ...actor, authorizationVersion: 2 }))
       .rejects.toThrow('stale_authorization_version');
+  });
+
+  it.each(['leave:impact:read', 'daily_operations:update'])('rejects cross-branch ID-addressed read/mutation despite valid selected header: %s', async (permission) => {
+    await select();
+    await ds.query(`INSERT INTO permissions VALUES ($1, $2)`, [branchA, permission]);
+    await ds.query(`INSERT INTO role_permissions VALUES ($1, $2)`, [roleId, branchA]);
+    class DailyOperationsController {}
+    const crossBranch = request(permission, 'IZMIR', { leaveId: branchA, scheduleEventId: branchB }, DailyOperationsController);
+    await expect(crossBranch.guard.canActivate(crossBranch.context)).rejects.toMatchObject({ status: 404 });
+    const sameBranch = request(permission, 'IZMIR', { leaveId: branchB, scheduleEventId: branchB }, DailyOperationsController);
+    await expect(sameBranch.guard.canActivate(sameBranch.context)).resolves.toBe(true);
+    const crossEvent = request(permission, 'IZMIR', { leaveId: branchB, scheduleEventId: branchA }, DailyOperationsController);
+    await expect(crossEvent.guard.canActivate(crossEvent.context)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it.each([
+    { controller: class LeaveController {}, table: 'leave_requests' },
+    { controller: class ScheduleController {}, table: 'schedules' },
+    { controller: class AttendanceSessionController {}, table: 'attendance_sessions' },
+  ])('narrows ID-addressed $table to the persisted branch (read-only SQL fixture)', async ({ controller }) => {
+    await select();
+    const denied = request('user:read', 'IZMIR', { id: branchA }, controller);
+    await expect(denied.guard.canActivate(denied.context)).rejects.toMatchObject({ status: 404 });
+    const allowed = request('user:read', 'IZMIR', { id: branchB }, controller);
+    await expect(allowed.guard.canActivate(allowed.context)).resolves.toBe(true);
   });
 
   it('does not save selection after concurrent session revocation wins the row lock', async () => {

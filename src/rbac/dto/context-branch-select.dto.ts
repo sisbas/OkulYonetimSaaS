@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 /**
  * Şube seçimi isteği (#339 R4).
@@ -12,11 +12,13 @@ export class ContextBranchSelectDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
+  @Matches(/\S/)
   branchName!: string;
 
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
+  @Matches(/\S/)
   branchCode?: string;
 }

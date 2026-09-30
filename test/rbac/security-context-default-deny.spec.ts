@@ -66,6 +66,17 @@ describe('client-supplied authority values cannot grant access', () => {
   });
 });
 
+describe('selector component validation', () => {
+  const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true });
+  it.each([
+    { branchName: '   ', branchCode: 'ANKARA' },
+    { branchName: 'Merkez', branchCode: '   ' },
+  ])('rejects supplied whitespace-only selector components %j', async (body) => {
+    await expect(pipe.transform(body, { type: 'body', metatype: ContextBranchSelectDto }))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
 describe('catalog endpoint error contract (non-enumerating)', () => {
   it('returns the caller-scoped catalog with human-readable names only', async () => {
     const { controller: ctrl, catalog } = controller();
