@@ -5,6 +5,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { AuthorizationContextError } from '../common/context/authorization-context';
 import { RequestBranch, RequestUser } from '../common/context/request-context';
 import { ServerResolvedAuthority } from '../common/context/authorization-context';
+import { BranchResourceTable } from '../common/context/branch-resource-scope';
 
 /** Yetki girdisi: yalnızca sunucudan çözülmüş aktör bilgisi. */
 export type BranchScopeActor = {
@@ -165,7 +166,7 @@ export class BranchScopeService {
   async sessionContext(
     user: RequestUser,
     options: { selection?: BranchSelection; requireSelection?: boolean; branchIdHeader?: string; recoverSelection?: boolean;
-      resources?: ReadonlyArray<{ table: 'leave_requests' | 'schedule_events' | 'schedules' | 'attendance_sessions'; id: string }> } = {},
+      resources?: ReadonlyArray<{ table: BranchResourceTable; id: string }> } = {},
   ): Promise<SessionBranchContext> {
     if (!user.sessionId || user.authorizationVersion == null) {
       throw new AuthorizationContextError('missing_authenticated_user');

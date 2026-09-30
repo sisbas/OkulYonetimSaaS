@@ -37,6 +37,7 @@ const authorizedUser: RequestUser = {
   sessionId: randomUUID(),
   authorizationVersion: 1,
 };
+const routingBranch = randomUUID();
 
 const stubAuthService = {
   validateAccessTokenSession: jest.fn().mockResolvedValue(authorizedUser),
@@ -65,7 +66,8 @@ async function bootNestApp() {
     // HTTP routing probe only; live authority is covered by the PostgreSQL suite.
     .overrideProvider(BranchScopeService)
     .useValue({ sessionContext: jest.fn().mockResolvedValue({
-      accessible: [], branch: null, authority: {
+      accessible: [{ branchId: routingBranch, name: 'Routing', code: 'ROUTING' }],
+      branch: { branchId: routingBranch, branchName: 'Routing', source: 'membership_default' }, authority: {
         roles: authorizedUser.roleIds, permissions: authorizedUser.permissions,
         tokenVersion: 1, resolvedAt: new Date().toISOString(), cache: 'disabled',
       },
@@ -185,7 +187,7 @@ describe('Schedules controller HTTP-layer RBAC + tenant isolation (P1B-05 slice 
     const result = await requestJson('/api/v1/schedules', {
       method: 'POST',
       headers: { authorization: `Bearer ${authorizedToken as string}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ branchId: randomUUID(), effectiveFrom: '2026-09-01' }),
+      body: JSON.stringify({ branchId: routingBranch, effectiveFrom: '2026-09-01' }),
     });
     expect(result.status).not.toBe(401);
     expect(result.status).not.toBe(403);

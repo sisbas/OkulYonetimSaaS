@@ -11,6 +11,12 @@ import { SecurityAuditService } from '../../src/common/audit/security-audit.serv
 import { RequestUser, RequestWithContext } from '../../src/common/context/request-context';
 import { PERMISSIONS_KEY } from '../../src/common/decorators/permissions.decorator';
 import { AddSessionBranchSelection1841000000000 } from '../../src/database/migrations/1841000000000-AddSessionBranchSelection';
+import { Room } from '../../src/rooms/room.entity';
+import { RoomRepository } from '../../src/rooms/room.repository';
+import { RoomController } from '../../src/rooms/room.controller';
+import { TimeSlot } from '../../src/time-slots/time-slot.entity';
+import { TimeSlotRepository } from '../../src/time-slots/time-slot.repository';
+import { TimeSlotController } from '../../src/time-slots/time-slot.controller';
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -41,7 +47,7 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
   beforeAll(async () => {
     admin = await new DataSource({ type: 'postgres', url, entities: [], synchronize: false }).initialize();
     await admin.query(`CREATE SCHEMA "${schema}"`);
-    ds = await new DataSource({ type: 'postgres', url, entities: [], synchronize: false,
+    ds = await new DataSource({ type: 'postgres', url, entities: [Room, TimeSlot], synchronize: false,
       extra: { options: `-c search_path=${schema},public` } }).initialize();
     await ds.query(`
       CREATE TABLE tenants (id uuid PRIMARY KEY, name text, status text, deleted_at timestamptz);
@@ -63,6 +69,12 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
       CREATE VIEW schedule_events AS SELECT id, tenant_id, id AS branch_id FROM branches;
       CREATE VIEW schedules AS SELECT id, tenant_id, id AS branch_id FROM branches;
       CREATE VIEW attendance_sessions AS SELECT id, tenant_id, id AS branch_id FROM branches;
+      CREATE TABLE rooms (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, name text, code text,
+        capacity integer, description text, status text, created_at timestamptz DEFAULT now(),
+        updated_at timestamptz DEFAULT now(), deactivated_at timestamptz);
+      CREATE TABLE time_slots (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, name text,
+        day_of_week smallint, start_time time, end_time time, order_index integer, status text,
+        created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), archived_at timestamptz);
     `);
     const runner = ds.createQueryRunner();
     try { await migration.up(runner); } finally { await runner.release(); }
@@ -80,7 +92,7 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
 
   beforeEach(async () => {
     await ds.query(`TRUNCATE user_sessions, user_roles, role_permissions, roles, permissions,
-      teachers, teacher_branches, branches, tenant_memberships, users, tenants CASCADE`);
+      teachers, teacher_branches, branches, tenant_memberships, users, tenants, rooms, time_slots CASCADE`);
     await ds.query(`INSERT INTO tenants VALUES ($1, 'Okul', 'active', NULL), ($2, 'Diğer', 'active', NULL)`, [tenant, otherTenant]);
     await ds.query(`INSERT INTO users VALUES ($1, 1, 'active', NULL), ($2, 1, 'active', NULL)`, [userId, otherUser]);
     await ds.query(`INSERT INTO tenant_memberships VALUES ($1, $2, 'active', NULL)`, [userId, tenant]);
@@ -94,11 +106,16 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
     await ds.query(`INSERT INTO user_roles VALUES ($1, $2, $3)`, [userId, tenant, roleId]);
     await ds.query(`INSERT INTO permissions VALUES ($1, 'user:read')`, [roleId]);
     await ds.query(`INSERT INTO role_permissions VALUES ($1, $1)`, [roleId]);
+    await ds.query(`INSERT INTO rooms (id, tenant_id, branch_id, name, code, status)
+      VALUES ($1, $3, $1, 'Room A', 'A', 'active'), ($2, $3, $2, 'Room B', 'B', 'active')`, [branchA, branchB, tenant]);
+    await ds.query(`INSERT INTO time_slots (id, tenant_id, branch_id, name, day_of_week, start_time, end_time, status)
+      VALUES ($1, $3, $1, 'Slot A', 1, '09:00', '10:00', 'active'),
+      ($2, $3, $2, 'Slot B', 1, '09:00', '10:00', 'active')`, [branchA, branchB, tenant]);
   });
 
   const select = () => scope.sessionContext(actor, { selection: { branchName: 'Merkez', branchCode: 'IZMIR' } });
 
-  function request(permission = 'user:read', headerCode?: string, params = {}, controller = class Probe {}) {
+  function request(permission = 'user:read', headerCode?: string, params = {}, controller: { name: string } = class Probe {}) {
     const reflector = new Reflector();
     jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: unknown) => key === PERMISSIONS_KEY ? [permission] : false);
     const guard = new PermissionGuard(reflector,
@@ -245,6 +262,106 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
       await runner.release();
       if (pending) await pending;
     }
+  });
+
+  async function grant(permission: string) {
+    const id = randomUUID();
+    await ds.query(`INSERT INTO permissions VALUES ($1, $2)`, [id, permission]);
+    await ds.query(`INSERT INTO role_permissions VALUES ($1, $2)`, [roleId, id]);
+  }
+
+  const branchOwnedActions = [
+    { controller: RoomController, permission: 'room:read', method: 'GET', action: 'read' },
+    { controller: RoomController, permission: 'room:update', method: 'PATCH', action: 'update' },
+    { controller: RoomController, permission: 'room:archive', method: 'POST', action: 'archive' },
+    { controller: RoomController, permission: 'room:archive', method: 'POST', action: 'reactivate' },
+    { controller: TimeSlotController, permission: 'time_slot:read', method: 'GET', action: 'read' },
+    { controller: TimeSlotController, permission: 'time_slot:update', method: 'PATCH', action: 'update' },
+    { controller: TimeSlotController, permission: 'time_slot:delete', method: 'POST', action: 'archive' },
+    { controller: TimeSlotController, permission: 'time_slot:update', method: 'POST', action: 'reactivate' },
+  ];
+
+  it.each(branchOwnedActions)('selected A denies other-branch $permission / $action before read or mutation', async ({ controller, permission, method, action }) => {
+    await scope.sessionContext(actor, { selection: { branchName: 'Merkez', branchCode: 'ANKARA' } });
+    await grant(permission);
+    if (action === 'reactivate') {
+      await ds.query(`UPDATE rooms SET status = 'inactive' WHERE id = $1`, [branchB]);
+      await ds.query(`UPDATE time_slots SET status = 'inactive' WHERE id = $1`, [branchB]);
+    }
+    const denied = request(permission, 'ANKARA', { id: branchB }, controller);
+    denied.req.query = {};
+    denied.req.method = method;
+    await expect(denied.guard.canActivate(denied.context)).rejects.toMatchObject({ status: 404 });
+    const allowed = request(permission, 'ANKARA', { id: branchA }, controller);
+    allowed.req.query = {};
+    allowed.req.method = method;
+    await expect(allowed.guard.canActivate(allowed.context)).resolves.toBe(true);
+  });
+
+  it.each([
+    { controller: RoomController, permission: 'room:read', kind: 'room' },
+    { controller: TimeSlotController, permission: 'time_slot:read', kind: 'slot' },
+    { controller: TimeSlotController, permission: 'time_slot:calendar:read', kind: 'calendar' },
+  ])('GET $kind list receives selected A scope and repository returns only A rows', async ({ controller, permission, kind }) => {
+    await scope.sessionContext(actor, { selection: { branchName: 'Merkez', branchCode: 'ANKARA' } });
+    await grant(permission);
+    const next = request(permission, 'ANKARA', {}, controller);
+    next.req.method = 'GET';
+    next.req.query = {};
+    await expect(next.guard.canActivate(next.context)).resolves.toBe(true);
+    expect(next.req.query.branchId).toBe(branchA);
+    const rows = kind === 'room'
+      ? (await new RoomRepository(ds.getRepository(Room)).list(next.req.context!, { branchId: next.req.query.branchId as string })).data
+      : kind === 'calendar'
+        ? await new TimeSlotRepository(ds.getRepository(TimeSlot)).calendar(next.req.context!, next.req.query.branchId as string)
+        : (await new TimeSlotRepository(ds.getRepository(TimeSlot)).list(next.req.context!, { branchId: next.req.query.branchId as string })).data;
+    expect(rows.map((row) => row.id)).toEqual([branchA]);
+    const tampered = request(permission, 'ANKARA', {}, controller);
+    tampered.req.method = 'GET';
+    tampered.req.query = { branchId: branchB };
+    await expect(tampered.guard.canActivate(tampered.context)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it.each(['body', 'query'] as const)('assignment removal cannot authorize a supplied same-tenant UUID through %s with no selected branch', async (input) => {
+    await grant('room:create');
+    await ds.query(`UPDATE roles SET name = 'teacher'`);
+    await ds.query(`INSERT INTO teachers VALUES ($1, $2, $3, 'active', NULL)`, [roleId, tenant, userId]);
+    await ds.query(`INSERT INTO teacher_branches VALUES ($1, $2, $3, 'active', NULL, NULL, CURRENT_DATE, NULL)`, [roleId, tenant, branchA]);
+    const before = request('room:create', undefined, {}, RoomController);
+    before.req.query = {};
+    before.req.body = { branchId: branchA };
+    await expect(before.guard.canActivate(before.context)).resolves.toBe(true);
+    await ds.query(`DELETE FROM teacher_branches WHERE teacher_id = $1`, [roleId]);
+    const next = request('room:create', undefined, {}, RoomController);
+    next.req.query = {};
+    next.req.body = {};
+    next.req[input] = { branchId: branchA };
+    await expect(next.guard.canActivate(next.context)).rejects.toMatchObject({ status: 404 });
+    const global = request('user:read');
+    global.req.query = {};
+    await expect(global.guard.canActivate(global.context)).resolves.toBe(true);
+    const globalSelector = request('user:read');
+    globalSelector.req.query = { branchId: branchA };
+    await expect(globalSelector.guard.canActivate(globalSelector.context)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('fails closed for a newly introduced branch-permission controller omitted from the scope map', async () => {
+    await select();
+    await grant('room:read');
+    class FutureRoomController {}
+    const omitted = request('room:read', 'IZMIR', {}, FutureRoomController);
+    await expect(omitted.guard.canActivate(omitted.context)).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('keeps a truly tenant-wide route accessible without branch selection, while room lists fail closed', async () => {
+    const global = request('user:read');
+    global.req.query = {};
+    await expect(global.guard.canActivate(global.context)).resolves.toBe(true);
+    await grant('room:read');
+    const scoped = request('room:read', undefined, {}, RoomController);
+    scoped.req.method = 'GET';
+    scoped.req.query = {};
+    await expect(scoped.guard.canActivate(scoped.context)).rejects.toMatchObject({ status: 404 });
   });
 
   it('upgrades existing sessions, enforces tenant-bound FK, rolls back without losing hashes, then upgrades again', async () => {

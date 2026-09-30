@@ -11,7 +11,7 @@ import {
 } from '../context/authorization-context';
 import { emitContextAuditEvent, legacySecurityAuditReasonCode } from '../context/context-audit';
 import { CONTEXT_SCOPE_KEY } from '../context/context-scope.decorator';
-import { branchResources } from '../context/branch-resource-scope';
+import { branchResources, hasBranchListFilter, isBranchScopedController, isBranchScopedPermission } from '../context/branch-resource-scope';
 import {
   DenyReasonCode,
   decideDeny,
@@ -150,26 +150,33 @@ export class PermissionGuard implements CanActivate {
   ): Promise<boolean> {
     try {
       if (user.sessionId) {
+        if (requiredPermission.some(isBranchScopedPermission) && !isBranchScopedController(controllerName)) {
+          throw new AuthorizationContextError('unresolved_authority');
+        }
         // Runtime JWT authentication supplies a signed, database-verified session.
         // Do not let cached roles or a client header override its persisted choice.
         if (!this.branchScope) throw new AuthorizationContextError('unresolved_authority');
         const resolved = await this.branchScope.sessionContext(user, {
-          requireSelection: requiredPermission.length > 0,
+          requireSelection: isBranchScopedController(controllerName),
           branchIdHeader,
           recoverSelection,
           resources: branchResources(controllerName, request.params),
         });
         const selectedCode = resolved.accessible.find((entry) => entry.branchId === resolved.branch?.branchId)?.code;
+        if (isBranchScopedController(controllerName) && !resolved.branch && !recoverSelection) {
+          throw new AuthorizationContextError('unauthorized_branch');
+        }
         const codeHeader = request.header?.('x-branch-code');
         if (codeHeader && codeHeader !== selectedCode) throw new AuthorizationContextError('unauthorized_branch');
-        if (controllerName === 'LeaveController' && !request.params?.id && request.method === 'GET' && resolved.branch) {
+        if (hasBranchListFilter(controllerName) && !request.params?.id && request.method === 'GET' && resolved.branch) {
           request.query.branchId ??= resolved.branch.branchId;
         }
         // Legacy business DTOs require branchId. Forward a validated readable
         // code to that internal field only after resolving the session selection.
         // Client values never choose a different branch or authorize a request.
         for (const input of [request.query, request.body]) {
-          if (input?.branchId != null && resolved.branch) {
+          if (input?.branchId != null) {
+            if (!resolved.branch) throw new AuthorizationContextError('unauthorized_branch');
             if (input.branchId !== selectedCode && input.branchId !== resolved.branch.branchId) {
               throw new AuthorizationContextError('unauthorized_branch');
             }

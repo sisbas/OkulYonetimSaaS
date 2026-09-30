@@ -36,6 +36,7 @@ const authenticatedUser: RequestUser = {
   sessionId: randomUUID(),
   authorizationVersion: 1,
 };
+const routingBranch = randomUUID();
 
 const stubAuthService = {
   validateAccessTokenSession: jest.fn().mockResolvedValue(authenticatedUser),
@@ -64,7 +65,8 @@ async function bootNestApp() {
     // Routing/validation probe only: no PostgreSQL authority acceptance claim.
     .overrideProvider(BranchScopeService)
     .useValue({ sessionContext: jest.fn().mockResolvedValue({
-      accessible: [], branch: null, authority: {
+      accessible: [{ branchId: routingBranch, name: 'Routing', code: 'ROUTING' }],
+      branch: { branchId: routingBranch, branchName: 'Routing', source: 'membership_default' }, authority: {
         roles: authenticatedUser.roleIds, permissions: authenticatedUser.permissions,
         tokenVersion: 1, resolvedAt: new Date().toISOString(), cache: 'disabled',
       },
@@ -212,14 +214,14 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
           authorization: `Bearer ${accessToken as string}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ branchId: 'not-a-uuid', durationType: 'weekly', reasonCode: 'administrative' }),
+        body: JSON.stringify({ branchId: routingBranch, durationType: 'weekly', reasonCode: 'administrative' }),
       }),
       400,
     );
 
     expect(body.statusCode).toBe(400);
     const messages = Array.isArray(body.message) ? (body.message as string[]) : [];
-    expect(messages.some((message) => message.includes('branchId must be a UUID'))).toBe(true);
+    expect(messages.some((message) => message.includes('startsAt'))).toBe(true);
     expect(messages.some((message) => message.includes('durationType must be one of the following values'))).toBe(true);
   });
 
