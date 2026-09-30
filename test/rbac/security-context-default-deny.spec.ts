@@ -24,6 +24,8 @@ const context = (overrides: Partial<RequestContext> = {}): RequestContext => ({
   roles: ['operations_manager'],
   permissions: ['tenant:branch:read'],
   activeRole: 'operations_manager',
+  user: { userId: '55555555-5555-4555-8555-555555555555', tenantId: TENANT_A,
+    sessionId: '66666666-6666-4666-8666-666666666666', roleIds: ['operations_manager'], permissions: [] },
   ...overrides,
 });
 
@@ -80,14 +82,21 @@ describe('catalog endpoint error contract (non-enumerating)', () => {
     });
 
     await expect(
-      ctrl.selectBranch({ context: context() } as never, { branchName: 'Gizli Şube' }),
+      ctrl.selectBranch({ context: context(), user: context().user } as never, { branchName: 'Gizli Şube' }),
     ).rejects.toBeInstanceOf(NotFoundException);
     await expect(
-      ctrl.selectBranch({ context: context() } as never, { branchName: 'Gizli Şube' }),
+      ctrl.selectBranch({ context: context(), user: context().user } as never, { branchName: 'Gizli Şube' }),
     ).rejects.toMatchObject({
       message: decideDeny('cross_tenant_or_unknown_resource').message,
       status: 404,
     });
+  });
+
+  it('requires a signed authenticated session before selecting, regardless of body claims', async () => {
+    const { controller: ctrl, catalog } = controller();
+    await expect(ctrl.selectBranch({ context: context() } as never, { branchName: 'Merkez' }))
+      .rejects.toBeInstanceOf(UnauthorizedException);
+    expect(catalog.build).not.toHaveBeenCalled();
   });
 
   it('maps an unresolvable context to a generic 401 without resource details', async () => {

@@ -67,7 +67,7 @@ export class BranchScopeService {
           WHERE b.tenant_id = $1::uuid
             AND b.status = 'active'
             AND b.deleted_at IS NULL
-          ORDER BY b.name ASC, b.id ASC
+          ORDER BY "name" ASC, "code" ASC, "branchId" ASC
         `,
         [actor.tenantId],
       )) as BranchScopeEntry[];
@@ -95,7 +95,7 @@ export class BranchScopeService {
           AND tb.deactivated_at IS NULL
           AND tb.effective_from <= CURRENT_DATE
           AND (tb.effective_to IS NULL OR tb.effective_to >= CURRENT_DATE)
-        ORDER BY b.name ASC, b.id ASC
+        ORDER BY "name" ASC, "code" ASC, "branchId" ASC
       `,
       [actor.tenantId, actor.userId],
     )) as BranchScopeEntry[];

@@ -17,6 +17,7 @@ import handler, {
 import { AppModule } from '../../src/app.module';
 import { AuthService, AUTH_ACCESS_TOKEN_AUDIENCE, AUTH_TOKEN_ISSUER } from '../../src/auth/auth.service';
 import type { RequestUser } from '../../src/common/context/request-context';
+import { BranchScopeService } from '../../src/rbac/branch-scope.service';
 
 jest.setTimeout(120_000);
 
@@ -60,6 +61,14 @@ async function bootNestApp() {
     .useValue(createStubDataSource() as unknown as DataSource)
     .overrideProvider(AuthService)
     .useValue(stubAuthService)
+    // Routing/validation probe only: no PostgreSQL authority acceptance claim.
+    .overrideProvider(BranchScopeService)
+    .useValue({ sessionContext: jest.fn().mockResolvedValue({
+      accessible: [], branch: null, authority: {
+        roles: authenticatedUser.roleIds, permissions: authenticatedUser.permissions,
+        tokenVersion: 1, resolvedAt: new Date().toISOString(), cache: 'disabled',
+      },
+    }) })
     .compile();
 
   const app = moduleRef.createNestApplication(new ExpressAdapter(), {
