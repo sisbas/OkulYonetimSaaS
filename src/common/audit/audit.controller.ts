@@ -149,33 +149,15 @@ export class AuditController {
     return this.query.list(query, actorOf(context));
   }
 
-  /** Zincir doğrulama: kurcalama/kırpma tespiti (varsa checkpoint'ten başlar). */
+  /** Global chain verification requires platform authority, not tenant grants. */
   @Get('verify')
   @Permissions('audit_log:operations:read')
-  verify(
-    @Req() request: RequestWithContext,
-    @Query('expectedHeadHash') expectedHeadHash?: string,
-    @Query('expectedLastSequence') expectedLastSequence?: string,
-    @Query('limit') limit?: string,
-  ) {
-    const context = contextOf(request);
-    if (expectedHeadHash && !/^[0-9a-f]{64}$/i.test(expectedHeadHash)) {
-      throw new BadRequestException('expectedHeadHash must be a 64-char hex hash');
-    }
-    const parsedSequence = parseOptionalInteger(
-      expectedLastSequence,
-      'expectedLastSequence',
-      0,
-      Number.MAX_SAFE_INTEGER,
-    );
-    const parsedLimit = parseOptionalInteger(limit, 'limit', 1, 50_000);
-
-    return this.query.verify({
-      tenantId: context.tenantId as string,
-      ...(expectedHeadHash ? { expectedHeadHash } : {}),
-      ...(parsedSequence !== undefined ? { expectedLastSequence: parsedSequence } : {}),
-      ...(parsedLimit !== undefined ? { limit: parsedLimit } : {}),
-    });
+  verify(@Req() request: RequestWithContext) {
+    contextOf(request);
+    // The global hash chain cannot be tenant-filtered. Existing tenant DB grants
+    // must not expose other tenants' counts/checkpoints or trigger global scans.
+    // Keep a registered, controlled denial until platform authority is approved.
+    throw new ForbiddenException('Audit verification is unavailable');
   }
 
   // #367: retention is platform-global, not a tenant operation. No HTTP

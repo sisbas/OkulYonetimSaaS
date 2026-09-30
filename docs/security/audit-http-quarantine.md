@@ -1,7 +1,11 @@
 # Audit HTTP boundary — #367 / PR #366
 
 The pilot runtime registers `AuditModule`, including authenticated and
-permission-protected `GET /api/v1/audit/logs` and `GET /api/v1/audit/verify`.
+permission-protected `GET /api/v1/audit/logs`. `GET /api/v1/audit/verify`
+is registered but returns a controlled 403 even with a legacy operations grant:
+global chain verification is not tenant authority. It performs no scan and
+publishes no cross-tenant counts/checkpoints. A usable platform verification
+surface requires an owner-approved authority model and separate runtime evidence.
 `AuditQueryService` validates the HMAC key ring during Nest provider construction.
 
 Global retention is **out of the tenant-facing HTTP release scope**. Neither
@@ -32,6 +36,9 @@ HTTP retention requires a separately reviewed platform-authority contract.
   journey. Local PostgreSQL was unavailable; require exact-head CI execution.
 - Existing audit-chain key-ring unit tests also cover duplicate active key IDs.
 
+This fail-closed security repair changes the originally requested usable verify
+contract. #367 verifier runtime acceptance remains BLOCKED pending owner decision;
+do not check it complete merely because the denial route is registered.
 Registration is not checkpoint trust-anchor acceptance (#358). No full-chain,
 truncation-detection, production-health or pilot-readiness claim follows from
 this bounded repair.

@@ -257,7 +257,7 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       [otherTenantId],
     );
     let app: INestApplication | undefined;
-    let fixturePermissionId: string | undefined;
+    const fixturePermissionIds: string[] = [];
     const runtimeDataSource = new DataSource(dataSource.options);
     try {
       const credential = randomUUID();
@@ -276,19 +276,21 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       );
       // Migration-cycle jobs deliberately do not run the permission seed.
       // This reference fixture must establish its own legacy DB grant.
-      const existingPermission = await dataSource.query(
-        `SELECT id FROM permissions WHERE code = 'audit_log:retention:run'`,
-      );
-      if (existingPermission.length === 0) {
-        const inserted = await dataSource.query(
-          `INSERT INTO permissions (code, description)
-           VALUES ('audit_log:retention:run', 'Synthetic legacy retention grant') RETURNING id`,
+      for (const code of ['audit_log:retention:run', 'audit_log:operations:read']) {
+        const existingPermission = await dataSource.query(
+          'SELECT id FROM permissions WHERE code = $1', [code],
         );
-        fixturePermissionId = inserted[0].id as string;
+        if (existingPermission.length === 0) {
+          const inserted = await dataSource.query(
+            `INSERT INTO permissions (code, description)
+             VALUES ($1, 'Synthetic legacy audit grant') RETURNING id`, [code],
+          );
+          fixturePermissionIds.push(inserted[0].id as string);
+        }
       }
       await dataSource.query(
         `INSERT INTO role_permissions (role_id, permission_id)
-         SELECT $1, id FROM permissions WHERE code = 'audit_log:retention:run'`,
+         SELECT $1, id FROM permissions WHERE code IN ('audit_log:retention:run', 'audit_log:operations:read')`,
         [roles[0].id],
       );
       await seedAgedChain(2);
@@ -315,7 +317,13 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       });
       expect(actor.roleIds).toContain('tenant_admin');
       expect(actor.permissions).toContain('audit_log:retention:run');
+      expect(actor.permissions).toContain('audit_log:operations:read');
       const before = await readChain(); // Login may append an audited auth event.
+      const verification = await fetch(`http://127.0.0.1:${port}/api/v1/audit/verify`, {
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      expect(verification.status).toBe(403);
+      expect(await verification.json()).not.toHaveProperty('lastCheckpoint');
       for (const route of ['plan', 'run']) {
         const response = await fetch(`http://127.0.0.1:${port}/api/v1/audit/retention/${route}`, {
           method: 'POST',
@@ -340,7 +348,7 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
         await dataSource.query('DELETE FROM tenant_memberships WHERE user_id = $1', [ACTOR_ID]);
         await dataSource.query('DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE tenant_id = $1)', [TENANT_ID]);
         await dataSource.query('DELETE FROM roles WHERE tenant_id = $1', [TENANT_ID]);
-        if (fixturePermissionId) await dataSource.query('DELETE FROM permissions WHERE id = $1', [fixturePermissionId]);
+        for (const id of fixturePermissionIds) await dataSource.query('DELETE FROM permissions WHERE id = $1', [id]);
         await dataSource.query('DELETE FROM tenants WHERE id = $1', [otherTenantId]);
       }
     }

@@ -18,6 +18,7 @@ import { AppModule } from '../../src/app.module';
 import { AuthService, AUTH_ACCESS_TOKEN_AUDIENCE, AUTH_TOKEN_ISSUER } from '../../src/auth/auth.service';
 import type { RequestUser } from '../../src/common/context/request-context';
 import { AuditRetentionService } from '../../src/common/audit/audit-retention.service';
+import { AuditQueryService } from '../../src/common/audit/audit-query.service';
 
 jest.setTimeout(120_000);
 
@@ -186,6 +187,23 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
       authenticatedUser.roleIds = roles;
       plan.mockRestore();
       prune.mockRestore();
+    }
+  });
+
+  it('denies global verification even with legacy tenant operations permission without scanning', async () => {
+    const verify = jest.spyOn(bootedApp!.get(AuditQueryService), 'verify');
+    const permissions = authenticatedUser.permissions;
+    authenticatedUser.permissions = ['audit_log:operations:read'];
+    try {
+      const body = assertNestJson(await requestJson('/api/v1/audit/verify?limit=50000', {
+        headers: { authorization: `Bearer ${accessToken as string}` },
+      }), 403);
+      expect(body).not.toHaveProperty('checkedRows');
+      expect(body).not.toHaveProperty('lastCheckpoint');
+      expect(verify).not.toHaveBeenCalled();
+    } finally {
+      authenticatedUser.permissions = permissions;
+      verify.mockRestore();
     }
   });
 
