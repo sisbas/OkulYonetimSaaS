@@ -12,7 +12,7 @@ const ROUTE_RESOURCES: Readonly<Record<string, ReadonlyArray<readonly [string, B
 export function branchResources(controller: string, params: Record<string, unknown> = {}) {
   return (ROUTE_RESOURCES[controller] ?? []).flatMap(([parameter, table]) => {
     const id = params[parameter];
-    return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+    return typeof id === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)
       ? [{ table, id }] : [];
   });
 }
