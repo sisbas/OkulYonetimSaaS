@@ -5,6 +5,8 @@ const state = {
   accessToken: '',
   tenantId: '',
   branchId: '',
+  branches: [],
+  branchLabel: '',
   date: '',
   activeLeaveId: '',
   activeScheduleEventId: '',
@@ -106,7 +108,7 @@ function summaryText(value, fallback) {
 
 function recommendedAction() {
   if (!state.accessToken) return 'Önce oturum açın.';
-  if (!state.branchId && !$('#branch-id')?.value.trim()) return 'İşlem kapsamı için şube ve tarihi seçin.';
+  if (!state.branchId) return 'İşlem kapsamı için şube ve tarihi seçin.';
   if (!state.activeLeaveId) return 'Öğretmen izni oluşturun veya günlük iş listesinden etkilenen talebi açın.';
   if (!state.activeScheduleEventId) return 'Etki listesinden ders seçip adayları getirin.';
   if (!state.activeAssignmentId && !state.candidateCount) return 'Uygun yedek öğretmen adaylarını getirin.';
@@ -115,10 +117,10 @@ function recommendedAction() {
 }
 
 function updateOperationalSnapshot() {
-  const branchId = state.branchId || $('#branch-id')?.value.trim();
+  const branchId = state.branchId;
   const date = state.date || $('#operation-date')?.value;
   $('#summary-session').textContent = state.accessToken ? 'Aktif' : 'Bekleniyor';
-  $('#summary-scope').textContent = branchId ? `${branchId}${date ? ` · ${date}` : ''}` : 'Şube seçilmedi';
+  $('#summary-scope').textContent = branchId ? `${state.branchLabel}${date ? ` · ${date}` : ''}` : 'Şube seçilmedi';
   $('#summary-leave').textContent = summaryText(state.activeLeaveId, 'Talep seçilmedi');
   $('#summary-assignment').textContent = state.activeAssignmentId
     ? 'Görevlendirme tamamlandı'
@@ -138,7 +140,7 @@ function updateWorkflowProgress(blockedStep = '', blockedMessage = '') {
   const steps = ['session', 'context', 'leave', 'impact', 'assignment'];
   let current = 'session';
   if (state.accessToken) current = 'context';
-  if (state.branchId || $('#branch-id')?.value.trim()) current = 'leave';
+  if (state.branchId) current = 'leave';
   if (state.activeLeaveId) current = 'impact';
   if (state.activeScheduleEventId) current = 'assignment';
   if (state.activeAssignmentId) current = '';
@@ -176,6 +178,9 @@ function pick(value, keys, fallback = '') {
 async function apiRequest(path, options = {}) {
   const headers = { Accept: 'application/json', ...(options.headers || {}) };
   if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
+  if (state.branchId && !path.startsWith('/context') && !path.startsWith('/auth/')) {
+    headers['x-branch-code'] = state.branchId;
+  }
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   const response = await fetch(`${API_ROOT}${path}`, {
     method: options.method || 'GET',
@@ -274,9 +279,33 @@ function requireSession() {
 }
 
 function getBranchId() {
-  const branchId = state.branchId || $('#branch-id').value.trim();
-  if (branchId) state.branchId = branchId;
-  return branchId;
+  // This is a readable code; the server forwards its persisted choice to the
+  // internal business DTO only after checking current session authority.
+  return state.branchId;
+}
+
+function clearBranchWork() {
+  state.activeLeaveId = '';
+  state.activeScheduleEventId = '';
+  state.activeLeaveEtag = '';
+  state.activeAssignmentId = '';
+  state.activeLessonLabel = '';
+  state.queueCount = state.impactCount = state.candidateCount = 0;
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output']) {
+    $(id).innerHTML = '';
+  }
+}
+
+function applyCatalog(catalog) {
+  state.branches = asArray(catalog, ['branches']);
+  const selector = $('#branch-id');
+  selector.innerHTML = '<option value="">Şube seçin</option>' + state.branches.map((branch) =>
+    `<option value="${escapeHtml(branch.code)}">${escapeHtml(branch.name)} · ${escapeHtml(branch.code)}</option>`).join('');
+  selector.disabled = !state.branches.length;
+  state.branchId = catalog.activeBranch?.code || '';
+  state.branchLabel = catalog.activeBranch ? `${catalog.activeBranch.name} · ${catalog.activeBranch.code}` : '';
+  selector.value = state.branchId;
+  updateWorkflowProgress();
 }
 
 function toIso8601(value) {
@@ -285,6 +314,13 @@ function toIso8601(value) {
 
 async function login(event) {
   event.preventDefault();
+  state.accessToken = '';
+  state.branchId = '';
+  state.branchLabel = '';
+  state.branches = [];
+  clearBranchWork();
+  $('#branch-id').disabled = true;
+  $('#branch-id').innerHTML = '<option value="">Önce oturum açın</option>';
   const body = {
     email: $('#email').value.trim(),
     password: $('#password').value,
@@ -298,6 +334,8 @@ async function login(event) {
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
     announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
     updateWorkflowProgress();
+    const { body: catalog } = await apiRequest('/context');
+    applyCatalog(catalog);
   } catch (error) {
     state.accessToken = '';
     setStatus('Oturum başarısız', 'danger');
@@ -308,10 +346,23 @@ async function login(event) {
 
 async function updateContext(event) {
   event.preventDefault();
-  state.branchId = $('#branch-id').value.trim();
+  if (!requireSession()) return;
+  const branch = state.branches.find((entry) => entry.code === $('#branch-id').value);
+  if (!branch) return announce('Şube seçin.', 'warning');
+  state.branchId = '';
+  state.branchLabel = '';
+  clearBranchWork();
   state.date = $('#operation-date').value;
-  updateWorkflowProgress(state.branchId ? '' : 'context', state.branchId ? '' : 'Şube seçimi gerekiyor');
-  await loadQueue();
+  try {
+    const { body: catalog } = await apiRequest('/context/branch', {
+      method: 'POST', body: { branchName: branch.name, branchCode: branch.code },
+    });
+    applyCatalog(catalog);
+    await loadQueue();
+  } catch (error) {
+    updateWorkflowProgress('context', 'Şube seçimi doğrulanamadı');
+    renderError($('#queue-output'), error);
+  }
 }
 
 function activateTab(name) {

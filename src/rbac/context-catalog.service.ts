@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { AuthorizationContextError } from '../common/context/authorization-context';
+import { AuthorizationContextError, selectActiveRole } from '../common/context/authorization-context';
 import { RequestBranch, RequestContext } from '../common/context/request-context';
-import { BranchScopeActor, BranchScopeService } from './branch-scope.service';
+import { BranchScopeActor, BranchScopeService, BranchSelection } from './branch-scope.service';
 
 /** Versioned context/catalog sözleşme sürümü (#339 R4, madde 3). */
 export const CONTEXT_CATALOG_VERSION = 'context-catalog:v1';
@@ -66,7 +66,7 @@ export class ContextCatalogService {
 
   async build(
     context: RequestContext,
-    selection: { branchId?: string | null; branchName?: string | null; branchCode?: string | null } = {},
+    selection: BranchSelection = {},
   ): Promise<ContextCatalog> {
     const tenantId = context.tenantId;
     const userId = context.userId ?? context.user?.userId;
@@ -80,22 +80,28 @@ export class ContextCatalogService {
       permissions: context.permissions ?? context.user?.permissions ?? [],
     };
 
-    const accessible = await this.branchScope.listAccessibleBranches(actor);
+    const persisted = context.user?.sessionId
+      ? await this.branchScope.sessionContext(context.user, {
+          ...(Object.keys(selection).length ? { selection } : {}),
+        })
+      : null;
+    const accessible = persisted?.accessible ?? await this.branchScope.listAccessibleBranches(actor);
     // Seçim, ZATEN YÜKLENMİŞ kümeden çözülür: çift sorgu yok ve `branches` ile
     // `activeBranch` aynı anlık görüntüden gelir (#339 review P2).
-    const activeBranch: RequestBranch | null = await this.branchScope.resolveSelection(
+    const activeBranch: RequestBranch | null = persisted ? persisted.branch : await this.branchScope.resolveSelection(
       actor,
       selection,
       accessible,
     );
     const institutionName = await this.loadInstitutionName(tenantId);
     const activeCode = accessible.find((entry) => entry.branchId === activeBranch?.branchId)?.code;
+    const activeRole = persisted ? selectActiveRole(persisted.authority.roles as string[]) : context.activeRole;
 
     return {
       version: CONTEXT_CATALOG_VERSION,
       institution: { name: institutionName },
       // İç rol kodu (snake_case) YAYIMLANMAZ; yalnız insan-okur etiket (#339 review P2 / F2).
-      role: context.activeRole ? { label: roleLabel(context.activeRole) as string } : null,
+      role: activeRole ? { label: roleLabel(activeRole) as string } : null,
       branches: accessible.map((entry) => ({ name: entry.name, ...(entry.code ? { code: entry.code } : {}) })),
       activeBranch: activeBranch ? {
         name: activeBranch.branchName,

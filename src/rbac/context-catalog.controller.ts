@@ -39,6 +39,7 @@ export class ContextCatalogController {
     @Req() req: RequestWithContext,
     @Body() body: ContextBranchSelectDto,
   ): Promise<ContextCatalog> {
+    if (!req.user?.sessionId) throw toDenyException('missing_authenticated_context');
     return this.run(req, { branchName: body?.branchName, branchCode: body?.branchCode });
   }
 

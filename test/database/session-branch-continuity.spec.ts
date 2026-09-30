@@ -1,0 +1,237 @@
+import { randomUUID } from 'crypto';
+import { DataSource } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
+import { ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { AuthService, AccessTokenPayload } from '../../src/auth/auth.service';
+import { BranchScopeService } from '../../src/rbac/branch-scope.service';
+import { ContextCatalogService } from '../../src/rbac/context-catalog.service';
+import { PermissionGuard } from '../../src/common/guards/permission.guard';
+import { SecurityAuditService } from '../../src/common/audit/security-audit.service';
+import { RequestUser, RequestWithContext } from '../../src/common/context/request-context';
+import { PERMISSIONS_KEY } from '../../src/common/decorators/permissions.decorator';
+import { AddSessionBranchSelection1841000000000 } from '../../src/database/migrations/1841000000000-AddSessionBranchSelection';
+
+const url = process.env.TEST_DATABASE_URL;
+const postgres = url ? describe : describe.skip;
+const tenant = '10000000-0000-4000-8000-000000000362';
+const otherTenant = '10000000-0000-4000-8000-000000000363';
+const userId = '20000000-0000-4000-8000-000000000362';
+const otherUser = '20000000-0000-4000-8000-000000000363';
+const sessionId = '30000000-0000-4000-8000-000000000362';
+const otherSession = '30000000-0000-4000-8000-000000000363';
+const branchA = '40000000-0000-4000-8000-000000000362';
+const branchB = '40000000-0000-4000-8000-000000000363';
+const roleId = '50000000-0000-4000-8000-000000000362';
+const actor: RequestUser = { userId, tenantId: tenant, sessionId, authorizationVersion: 1,
+  roleIds: ['tenant_admin'], permissions: ['user:read'] };
+const payload: AccessTokenPayload = { sub: userId, tenant_id: tenant, session_id: sessionId,
+  jti: sessionId, authorization_version: 1 };
+
+// Real PostgreSQL SQL + transactional/session tests, not browser acceptance.
+// Isolated reference tables keep fixtures independent of concurrent suites.
+postgres('session-bound branch continuity and PostgreSQL migration rollback', () => {
+  let ds: DataSource;
+  let admin: DataSource;
+  let scope: BranchScopeService;
+  let auth: AuthService;
+  const schema = `branch_362_${randomUUID().replace(/-/g, '')}`;
+  const migration = new AddSessionBranchSelection1841000000000();
+
+  beforeAll(async () => {
+    admin = await new DataSource({ type: 'postgres', url, entities: [], synchronize: false }).initialize();
+    await admin.query(`CREATE SCHEMA "${schema}"`);
+    ds = await new DataSource({ type: 'postgres', url, entities: [], synchronize: false,
+      extra: { options: `-c search_path=${schema},public` } }).initialize();
+    await ds.query(`
+      CREATE TABLE tenants (id uuid PRIMARY KEY, name text, status text, deleted_at timestamptz);
+      CREATE TABLE users (id uuid PRIMARY KEY, token_version integer, status text, deleted_at timestamptz);
+      CREATE TABLE tenant_memberships (user_id uuid, tenant_id uuid, status text, deleted_at timestamptz);
+      CREATE TABLE branches (id uuid PRIMARY KEY, tenant_id uuid, name text, code text, status text,
+        deleted_at timestamptz, UNIQUE(tenant_id, id), UNIQUE(tenant_id, code));
+      CREATE TABLE user_sessions (id uuid PRIMARY KEY, tenant_id uuid, user_id uuid, refresh_secret_hash text,
+        status text, expires_at timestamptz, revoked_at timestamptz);
+      CREATE TABLE roles (id uuid PRIMARY KEY, tenant_id uuid, name text, deleted_at timestamptz);
+      CREATE TABLE user_roles (user_id uuid, tenant_id uuid, role_id uuid);
+      CREATE TABLE permissions (id uuid PRIMARY KEY, code text);
+      CREATE TABLE role_permissions (role_id uuid, permission_id uuid);
+      CREATE TABLE teachers (id uuid, tenant_id uuid, user_id uuid, status text, deleted_at timestamptz);
+      CREATE TABLE teacher_branches (teacher_id uuid, tenant_id uuid, branch_id uuid, status text,
+        deleted_at timestamptz, deactivated_at timestamptz, effective_from date, effective_to date);
+    `);
+    const runner = ds.createQueryRunner();
+    try { await migration.up(runner); } finally { await runner.release(); }
+    scope = new BranchScopeService(ds);
+    auth = new AuthService({} as JwtService, ds);
+  });
+
+  afterAll(async () => {
+    if (ds?.isInitialized) await ds.destroy();
+    if (admin?.isInitialized) {
+      await admin.query(`DROP SCHEMA "${schema}" CASCADE`);
+      await admin.destroy();
+    }
+  });
+
+  beforeEach(async () => {
+    await ds.query(`TRUNCATE user_sessions, user_roles, role_permissions, roles, permissions,
+      teachers, teacher_branches, branches, tenant_memberships, users, tenants CASCADE`);
+    await ds.query(`INSERT INTO tenants VALUES ($1, 'Okul', 'active', NULL), ($2, 'Diğer', 'active', NULL)`, [tenant, otherTenant]);
+    await ds.query(`INSERT INTO users VALUES ($1, 1, 'active', NULL), ($2, 1, 'active', NULL)`, [userId, otherUser]);
+    await ds.query(`INSERT INTO tenant_memberships VALUES ($1, $2, 'active', NULL)`, [userId, tenant]);
+    await ds.query(`INSERT INTO branches VALUES ($1, $3, 'Merkez', 'ANKARA', 'active', NULL),
+      ($2, $3, 'Merkez', 'IZMIR', 'active', NULL)`, [branchA, branchB, tenant]);
+    await ds.query(`INSERT INTO user_sessions (id, tenant_id, user_id, refresh_secret_hash, status, expires_at)
+      VALUES ($1, $3, $4, 'hash-preserved', 'active', now() + interval '1 day'),
+        ($2, $3, $4, 'other-hash', 'active', now() + interval '1 day')`, [sessionId, otherSession, tenant, userId]);
+    await ds.query(`INSERT INTO roles VALUES ($1, $2, 'tenant_admin', NULL);
+    `, [roleId, tenant]);
+    await ds.query(`INSERT INTO user_roles VALUES ($1, $2, $3)`, [userId, tenant, roleId]);
+    await ds.query(`INSERT INTO permissions VALUES ($1, 'user:read')`, [roleId]);
+    await ds.query(`INSERT INTO role_permissions VALUES ($1, $1)`, [roleId]);
+  });
+
+  const select = () => scope.sessionContext(actor, { selection: { branchName: 'Merkez', branchCode: 'IZMIR' } });
+
+  function request(permission = 'user:read', headerCode?: string) {
+    const reflector = new Reflector();
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: unknown) => key === PERMISSIONS_KEY ? [permission] : false);
+    const guard = new PermissionGuard(reflector,
+      { emitAuthorizationDenied: jest.fn() } as unknown as SecurityAuditService, undefined, scope);
+    const req = { user: actor, query: { branchId: 'IZMIR' }, body: {},
+      header: (name: string) => name === 'x-branch-code' ? headerCode : undefined } as unknown as RequestWithContext;
+    const context = { getHandler: () => function protectedRoute() {}, getClass: () => class Probe {},
+      switchToHttp: () => ({ getRequest: () => req }) } as unknown as ExecutionContext;
+    return { guard, req, context };
+  }
+
+  it('persists one session, restores GET catalog, and forwards the choice into the next protected request', async () => {
+    await expect(scope.sessionContext(actor, { requireSelection: true })).rejects.toThrow('unauthorized_branch');
+    await select();
+    const authenticated = await auth.validateAccessTokenSession(payload);
+    const catalog = new ContextCatalogService(ds, scope);
+    const result = await catalog.build({ requestId: 'test', tenantId: tenant, user: authenticated });
+    expect(result.activeBranch).toEqual({ name: 'Merkez', code: 'IZMIR' });
+    expect(JSON.stringify(result)).not.toContain(branchB);
+    const next = request('user:read', 'IZMIR');
+    await expect(next.guard.canActivate(next.context)).resolves.toBe(true);
+    expect(next.req.context?.branchId).toBe(branchB);
+    expect(next.req.query.branchId).toBe(branchB);
+    await expect(scope.sessionContext({ ...actor, sessionId: otherSession }, { requireSelection: true }))
+      .rejects.toThrow('unauthorized_branch');
+  });
+
+  it.each([
+    { ...actor, tenantId: otherTenant },
+    { ...actor, userId: otherUser },
+    { ...actor, sessionId: randomUUID() },
+    { ...actor, authorizationVersion: 0 },
+  ])('rejects invalid binding or token version %j on both reads and writes', async (invalid) => {
+    await expect(scope.sessionContext(invalid)).rejects.toThrow();
+    await expect(scope.sessionContext(invalid, { selection: { branchName: 'Merkez', branchCode: 'IZMIR' } })).rejects.toThrow();
+  });
+
+  it.each([
+    `UPDATE tenant_memberships SET status = 'inactive'`,
+    `UPDATE user_sessions SET status = 'revoked', revoked_at = now()`,
+    `UPDATE user_sessions SET expires_at = now() - interval '1 second'`,
+    `UPDATE users SET token_version = 2`,
+  ])('rejects current membership/session invalidation in auth and context: %s', async (sql) => {
+    await select();
+    await ds.query(sql);
+    await expect(auth.validateAccessTokenSession(payload)).rejects.toMatchObject({ status: 401 });
+    const next = request();
+    await expect(next.guard.canActivate(next.context)).rejects.toMatchObject({ status: 401 });
+    await expect(select()).rejects.toThrow();
+  });
+
+  it('rejects a revoked selected branch rather than falling back to the only remaining branch', async () => {
+    await select();
+    await ds.query(`UPDATE branches SET status = 'inactive' WHERE id = $1`, [branchB]);
+    const next = request();
+    await expect(next.guard.canActivate(next.context)).rejects.toMatchObject({ status: 404 });
+    await expect(scope.sessionContext(actor)).rejects.toThrow('unauthorized_branch');
+  });
+
+  it('ignores cached/claimed admin role after downgrade, including changed branch assignments', async () => {
+    await select();
+    await ds.query(`UPDATE roles SET name = 'teacher'`);
+    await ds.query(`INSERT INTO teachers VALUES ($1, $2, $3, 'active', NULL)`, [roleId, tenant, userId]);
+    await ds.query(`INSERT INTO teacher_branches VALUES ($1, $2, $3, 'active', NULL, NULL, CURRENT_DATE, NULL)`, [roleId, tenant, branchA]);
+    const next = request();
+    await expect(next.guard.canActivate(next.context)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('rechecks permissions without token-version/cache invalidation', async () => {
+    await select();
+    await ds.query(`DELETE FROM role_permissions`);
+    const next = request();
+    await expect(next.guard.canActivate(next.context)).resolves.toBe(false);
+  });
+
+  it('rejects readable request/header tampering and ambiguous names without changing persistence', async () => {
+    await select();
+    await expect(scope.sessionContext(actor, { selection: { branchName: 'Merkez' } })).rejects.toThrow('unauthorized_branch');
+    const next = request('user:read', 'ANKARA');
+    await expect(next.guard.canActivate(next.context)).rejects.toMatchObject({ status: 404 });
+    const altered = request();
+    altered.req.query.branchId = branchA;
+    await expect(altered.guard.canActivate(altered.context)).rejects.toMatchObject({ status: 404 });
+    expect((await scope.sessionContext(actor)).branch?.branchId).toBe(branchB);
+  });
+
+  it('rejects stale selection version even when a new token version is supplied', async () => {
+    await select();
+    await ds.query(`UPDATE users SET token_version = 2`);
+    await expect(scope.sessionContext({ ...actor, authorizationVersion: 2 }))
+      .rejects.toThrow('stale_authorization_version');
+  });
+
+  it('does not save selection after concurrent session revocation wins the row lock', async () => {
+    const runner = ds.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    let pending: Promise<unknown> | undefined;
+    try {
+      await runner.query(`UPDATE user_sessions SET status = 'revoked', revoked_at = now() WHERE id = $1`, [sessionId]);
+      // Observe the actual lock wait instead of relying on an arbitrary sleep.
+      pending = select().then(() => ({ allowed: true }), (error: unknown) => ({ error }));
+      let blocked = false;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const rows = await admin.query(`SELECT 1 FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock' AND query LIKE '%FOR UPDATE OF s%'`);
+        if (rows.length) { blocked = true; break; }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(blocked).toBe(true);
+      await runner.commitTransaction();
+      const outcome = await pending;
+      expect(outcome).toHaveProperty('error');
+      expect(outcome).not.toHaveProperty('allowed');
+      const rows = await ds.query(`SELECT selected_branch_id FROM user_sessions WHERE id = $1`, [sessionId]);
+      expect(rows[0].selected_branch_id).toBeNull();
+    } finally {
+      if (runner.isTransactionActive) await runner.rollbackTransaction();
+      await runner.release();
+      if (pending) await pending;
+    }
+  });
+
+  it('upgrades existing sessions, enforces tenant-bound FK, rolls back without losing hashes, then upgrades again', async () => {
+    await select();
+    const runner = ds.createQueryRunner();
+    try {
+      await migration.down(runner);
+      const old = await runner.query(`SELECT refresh_secret_hash FROM user_sessions WHERE id = $1`, [sessionId]);
+      expect(old[0].refresh_secret_hash).toBe('hash-preserved');
+      await migration.up(runner);
+      const upgraded = await runner.query(`SELECT selected_branch_id, selected_branch_version FROM user_sessions WHERE id = $1`, [sessionId]);
+      expect(upgraded[0]).toEqual({ selected_branch_id: null, selected_branch_version: null });
+      await runner.query(`INSERT INTO branches VALUES ($1, $2, 'Other', 'OTHER', 'active', NULL)`, [randomUUID(), otherTenant]);
+      await expect(runner.query(`UPDATE user_sessions SET selected_branch_id =
+        (SELECT id FROM branches WHERE tenant_id = $1), selected_branch_version = 1 WHERE id = $2`, [otherTenant, sessionId]))
+        .rejects.toMatchObject({ driverError: { code: '23503' } });
+      await select();
+    } finally { await runner.release(); }
+  });
+});
