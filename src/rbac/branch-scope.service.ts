@@ -13,7 +13,7 @@ export type BranchScopeActor = {
   permissions: ReadonlyArray<string>;
 };
 
-export type BranchScopeEntry = { branchId: string; name: string };
+export type BranchScopeEntry = { branchId: string; name: string; code?: string };
 
 const OVERSIGHT_ROLES: ReadonlyArray<string> = ['tenant_admin', 'operations_manager'];
 const BRANCH_READ_PERMISSION = 'tenant:branch:read';
@@ -55,7 +55,7 @@ export class BranchScopeService {
     if (this.hasOversight(actor)) {
       const rows = (await this.dataSource.query(
         `
-          SELECT b.id::text AS "branchId", b.name AS "name"
+          SELECT b.id::text AS "branchId", b.name AS "name", b.code AS "code"
           FROM branches b
           WHERE b.tenant_id = $1::uuid
             AND b.status = 'active'
@@ -69,7 +69,7 @@ export class BranchScopeService {
 
     const rows = (await this.dataSource.query(
       `
-        SELECT DISTINCT b.id::text AS "branchId", b.name AS "name"
+        SELECT DISTINCT b.id::text AS "branchId", b.name AS "name", b.code AS "code"
         FROM branches b
         JOIN teacher_branches tb
           ON tb.branch_id = b.id
@@ -110,14 +110,15 @@ export class BranchScopeService {
    */
   async resolveSelection(
     actor: BranchScopeActor,
-    selection: { branchId?: string | null; branchName?: string | null } = {},
+    selection: { branchId?: string | null; branchName?: string | null; branchCode?: string | null } = {},
     preloadedAccessible?: ReadonlyArray<BranchScopeEntry>,
   ): Promise<RequestBranch | null> {
     const accessible = preloadedAccessible ?? (await this.listAccessibleBranches(actor));
     const requestedId = selection.branchId?.trim();
     const requestedName = selection.branchName?.trim();
+    const requestedCode = selection.branchCode?.trim();
 
-    if (!requestedId && !requestedName) {
+    if (!requestedId && !requestedName && !requestedCode) {
       if (accessible.length !== 1) return null;
       return {
         branchId: accessible[0].branchId,
@@ -127,7 +128,9 @@ export class BranchScopeService {
     }
 
     const matches = accessible.filter((entry) => {
+      if (requestedCode && entry.code !== requestedCode) return false;
       if (requestedId) return entry.branchId === requestedId;
+      if (!requestedName) return Boolean(requestedCode);
       return normalizeBranchName(entry.name) === normalizeBranchName(requestedName as string);
     });
     if (matches.length !== 1) {

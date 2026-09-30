@@ -18,8 +18,8 @@ export type ContextCatalog = {
    * isimlendirme sızıntısı yasak (madde 3: iç UUID/ETag/jargon dönmez).
    */
   role: { label: string } | null;
-  branches: Array<{ name: string }>;
-  activeBranch: { name: string } | null;
+  branches: Array<{ name: string; code?: string }>;
+  activeBranch: { name: string; code?: string } | null;
 };
 
 /**
@@ -66,7 +66,7 @@ export class ContextCatalogService {
 
   async build(
     context: RequestContext,
-    selection: { branchId?: string | null; branchName?: string | null } = {},
+    selection: { branchId?: string | null; branchName?: string | null; branchCode?: string | null } = {},
   ): Promise<ContextCatalog> {
     const tenantId = context.tenantId;
     const userId = context.userId ?? context.user?.userId;
@@ -89,14 +89,18 @@ export class ContextCatalogService {
       accessible,
     );
     const institutionName = await this.loadInstitutionName(tenantId);
+    const activeCode = accessible.find((entry) => entry.branchId === activeBranch?.branchId)?.code;
 
     return {
       version: CONTEXT_CATALOG_VERSION,
       institution: { name: institutionName },
       // İç rol kodu (snake_case) YAYIMLANMAZ; yalnız insan-okur etiket (#339 review P2 / F2).
       role: context.activeRole ? { label: roleLabel(context.activeRole) as string } : null,
-      branches: accessible.map((entry) => ({ name: entry.name })),
-      activeBranch: activeBranch ? { name: activeBranch.branchName } : null,
+      branches: accessible.map((entry) => ({ name: entry.name, ...(entry.code ? { code: entry.code } : {}) })),
+      activeBranch: activeBranch ? {
+        name: activeBranch.branchName,
+        ...(activeCode ? { code: activeCode } : {}),
+      } : null,
     };
   }
 
