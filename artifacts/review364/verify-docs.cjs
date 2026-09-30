@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { execFileSync, spawnSync } = require('node:child_process');
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 const main = '9bd8d5dc333cdfe575e2500ff6e2828673edcc84';
-const base = '90804855a3b952631d257b307bf96542d4bdb4e9';
+const base = main;
 const docPath = 'artifacts/H1-H2/H1-prod-env-and-health.md';
 const source = (path) => git('show', `${main}:${path}`);
 assert.equal(git('rev-parse', 'origin/main'), main, 'Refresh source snapshot if main changes');
@@ -44,8 +44,16 @@ function validate(doc) {
   assert.doesNotMatch(doc, /rotasyonu — \*\*DESTEKLENİYOR\*\*/);
 }
 const doc = fs.readFileSync(docPath, 'utf8');
+assert.doesNotMatch(doc, /^(<<<<<<<|=======|>>>>>>>)/m, 'Unresolved merge marker');
 validate(doc);
 assert.throws(() => validate(doc.replace('runtime desteği BLOKLU', 'DESTEKLENİYOR')));
 assert.throws(() => validate(doc.replace("garantisi yoktur", 'garantisi vardır')));
 assert.throws(() => validate(doc.replace('Desteklenmiyor', 'Destekleniyor')));
+const body = fs.readFileSync('artifacts/review364/pr-body.md', 'utf8').replace(/\r\n/g, '\n');
+for (const heading of ['Amaç', 'Kapsam', 'Kapsam dışı', 'Acceptance criteria', 'Test çıktısı', 'KVKK/audit etkisi', 'Rollback', 'CI run referansı', 'Issue reference']) {
+  assert.ok(body.includes(`## ${heading}\n`), `Missing PR body heading: ${heading}`);
+}
+assert.match(body, /yeni Draft correction PR/);
+assert.match(body, /Post-merge/);
+assert.match(body, /Refs #332 #259 #358 #367 #368/);
 console.log('PASS: docs scope, current-main disconnected wiring/key-ring/checkpoint/JWT source, live 10-context/0-approval ruleset, OPEN #368; 3 negative documentation mutations rejected. No runtime acceptance inferred.');
