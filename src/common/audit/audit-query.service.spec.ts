@@ -86,6 +86,12 @@ describe('AuditQueryService (#259)', () => {
       { actorUserId: ACTOR_ID, actorSessionId: null, requestId: 'req-read' },
     );
 
+    expect(repository.findTenantScoped).toHaveBeenCalledWith(
+      dataSource.manager,
+      { tenantId: TENANT_ID },
+      ACTOR_ID,
+    );
+
     // KVKK: PII alanı maskelendi, maskeleme kanıtı üretildi.
     expect(result.rows[0].metadataJson).toEqual({
       notes: '[REDACTED]',

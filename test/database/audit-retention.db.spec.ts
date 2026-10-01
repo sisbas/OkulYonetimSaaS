@@ -1,4 +1,12 @@
 import { DataSource } from 'typeorm';
+import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
+import { getDataSourceToken } from '@nestjs/typeorm';
+import { AddressInfo } from 'node:net';
+import { randomUUID } from 'node:crypto';
+import { hashSync } from 'bcryptjs';
+import { AppModule } from '../../src/app.module';
+import { AuthService } from '../../src/auth/auth.service';
 
 import { AuditLogRepository } from '../../src/common/audit/audit-log.repository';
 import { AuditRetentionService } from '../../src/common/audit/audit-retention.service';
@@ -239,5 +247,110 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
     await expect(
       service.prune(pruneInput({ dryRun: true, reason: 'BAD REASON!' })),
     ).rejects.toThrow(/reason must match/);
+  });
+
+  it('does not expose global retention HTTP operations or modify either tenant chain (#367)', async () => {
+    const otherTenantId = '10000000-0000-4000-8000-000000000269';
+    await dataSource.query(
+      `INSERT INTO tenants (id, name, slug, status, timezone)
+       VALUES ($1, 'Other Audit Tenant', 'other-audit-retention', 'active', 'Europe/Istanbul')`,
+      [otherTenantId],
+    );
+    let app: INestApplication | undefined;
+    const fixturePermissionIds: string[] = [];
+    const runtimeDataSource = new DataSource(dataSource.options);
+    try {
+      const credential = randomUUID();
+      await dataSource.query('UPDATE users SET credential_hash = $2 WHERE id = $1', [ACTOR_ID, hashSync(credential, 10)]);
+      await dataSource.query(
+        `INSERT INTO tenant_memberships (tenant_id, user_id, status) VALUES ($1, $2, 'active')`,
+        [TENANT_ID, ACTOR_ID],
+      );
+      const roles = await dataSource.query(
+        `INSERT INTO roles (tenant_id, name, is_system_role) VALUES ($1, 'tenant_admin', true) RETURNING id`,
+        [TENANT_ID],
+      );
+      await dataSource.query(
+        `INSERT INTO user_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3)`,
+        [TENANT_ID, ACTOR_ID, roles[0].id],
+      );
+      // Migration-cycle jobs deliberately do not run the permission seed.
+      // This reference fixture must establish its own legacy DB grant.
+      for (const code of ['audit_log:retention:run', 'audit_log:operations:read']) {
+        const existingPermission = await dataSource.query(
+          'SELECT id FROM permissions WHERE code = $1', [code],
+        );
+        if (existingPermission.length === 0) {
+          const inserted = await dataSource.query(
+            `INSERT INTO permissions (code, description)
+             VALUES ($1, 'Synthetic legacy audit grant') RETURNING id`, [code],
+          );
+          fixturePermissionIds.push(inserted[0].id as string);
+        }
+      }
+      await dataSource.query(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1, id FROM permissions WHERE code IN ('audit_log:retention:run', 'audit_log:operations:read')`,
+        [roles[0].id],
+      );
+      await seedAgedChain(2);
+      await dataSource.transaction((manager) => repository.insert(manager, {
+        ...record(3), tenantId: otherTenantId,
+      }));
+      await runtimeDataSource.initialize();
+      const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(getDataSourceToken()).useValue(runtimeDataSource).compile();
+      app = moduleRef.createNestApplication({ logger: false });
+      app.setGlobalPrefix('api/v1');
+      await app.listen(0, '127.0.0.1');
+      const port = (app.getHttpServer().address() as AddressInfo).port;
+      const login = await fetch(`http://127.0.0.1:${port}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'audit-retention@example.test', password: credential, tenantId: TENANT_ID }),
+      });
+      expect(login.status).toBe(201);
+      const { accessToken } = await login.json() as { accessToken: string };
+      expect(typeof accessToken).toBe('string');
+      const actor = await app.get(AuthService).validateAccessTokenSession({
+        ...JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString()),
+      });
+      expect(actor.roleIds).toContain('tenant_admin');
+      expect(actor.permissions).toContain('audit_log:retention:run');
+      expect(actor.permissions).toContain('audit_log:operations:read');
+      const before = await readChain(); // Login may append an audited auth event.
+      const verification = await fetch(`http://127.0.0.1:${port}/api/v1/audit/verify`, {
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      expect(verification.status).toBe(403);
+      expect(await verification.json()).not.toHaveProperty('lastCheckpoint');
+      for (const route of ['plan', 'run']) {
+        const response = await fetch(`http://127.0.0.1:${port}/api/v1/audit/retention/${route}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ dryRun: false, reason: 'security.probe' }),
+        });
+        expect(response.status).toBe(404);
+        const body = await response.json();
+        expect(body).not.toHaveProperty('actions');
+        expect(body).not.toHaveProperty('eligibleRows');
+      }
+      expect(await readChain()).toEqual(before);
+      expect((await dataSource.query('SELECT COUNT(*)::int AS c FROM audit_chain_checkpoints'))[0].c).toBe(0);
+    } finally {
+      try {
+        await app?.close();
+      } finally {
+        if (runtimeDataSource.isInitialized) await runtimeDataSource.destroy();
+        await resetChain();
+        await dataSource.query('DELETE FROM user_sessions WHERE user_id = $1', [ACTOR_ID]);
+        await dataSource.query('DELETE FROM user_roles WHERE user_id = $1', [ACTOR_ID]);
+        await dataSource.query('DELETE FROM tenant_memberships WHERE user_id = $1', [ACTOR_ID]);
+        await dataSource.query('DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE tenant_id = $1)', [TENANT_ID]);
+        await dataSource.query('DELETE FROM roles WHERE tenant_id = $1', [TENANT_ID]);
+        for (const id of fixturePermissionIds) await dataSource.query('DELETE FROM permissions WHERE id = $1', [id]);
+        await dataSource.query('DELETE FROM tenants WHERE id = $1', [otherTenantId]);
+      }
+    }
   });
 });

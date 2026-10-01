@@ -34,6 +34,14 @@ describe('okul-03-audit-scope: tenant-scoped audit filtreleme', () => {
     expect(params[0]).toBe(TENANT_A);
   });
 
+  it('excludes the current actor’s export receipts from their offset pages', () => {
+    const actorId = '30000000-0000-4000-8000-0000000000ff';
+    const { sql, params } = buildTenantScopedAuditQuery({ tenantId: TENANT_A }, actorId);
+
+    expect(sql).toContain('(action <> $2 OR actor_user_id IS DISTINCT FROM $3)');
+    expect(params).toEqual([TENANT_A, 'dataprotection.export.redacted', actorId]);
+  });
+
   it('tenantId boşsa hata fırlatır', () => {
     expect(() => buildTenantScopedAuditQuery({ tenantId: '' })).toThrow(/tenant isolation/);
   });

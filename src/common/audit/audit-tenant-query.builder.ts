@@ -57,7 +57,10 @@ function assertTenantScopedQuery(query: TenantScopedAuditQuery): void {
  * dışına asla sızamaz. Joker action filtreleri (`auth.*`) `LIKE` ile, tam adlar
  * `IN` ile çevrilir. Tüm değerler parametreli olduğundan SQL enjeksiyonuna kapalıdır.
  */
-export function buildTenantScopedAuditQuery(query: TenantScopedAuditQuery): BuiltAuditQuery {
+export function buildTenantScopedAuditQuery(
+  query: TenantScopedAuditQuery,
+  excludeExportReceiptActorUserId?: string,
+): BuiltAuditQuery {
   assertTenantScopedQuery(query);
 
   const clauses: string[] = ['tenant_id = $1'];
@@ -114,6 +117,12 @@ export function buildTenantScopedAuditQuery(query: TenantScopedAuditQuery): Buil
     clauses.push(`created_at <= $${p}`);
     params.push(query.toCreatedAt);
     p += 1;
+  }
+
+  if (excludeExportReceiptActorUserId !== undefined) {
+    clauses.push(`(action <> $${p} OR actor_user_id IS DISTINCT FROM $${p + 1})`);
+    params.push('dataprotection.export.redacted', excludeExportReceiptActorUserId);
+    p += 2;
   }
 
   const rawLimit = query.limit ?? DEFAULT_LIMIT;
