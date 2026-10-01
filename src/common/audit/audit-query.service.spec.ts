@@ -5,6 +5,7 @@ import {
   AuditChainPayload,
   computeAuditEntryHash,
   signAuditEntryHash,
+  resolveAuditHmacKey,
 } from './audit-chain';
 
 /**
@@ -115,13 +116,15 @@ describe('AuditQueryService (#259)', () => {
   });
 
   it('verifies the chain starting from the last retention checkpoint', async () => {
+    const { key, keyId } = resolveAuditHmacKey();
     const dataSource = makeDataSource((sql) => {
       if (sql.includes('FROM audit_chain_checkpoints')) {
         return [
           {
             up_to_sequence: '10',
             head_hash: 'a'.repeat(64),
-            signature_key_id: 'key-1',
+            signature_key_id: keyId,
+            signature: signAuditEntryHash('a'.repeat(64), key),
             created_at: new Date('2026-09-22T00:00:00.000Z'),
           },
         ];
@@ -140,6 +143,61 @@ describe('AuditQueryService (#259)', () => {
     expect(result.lastCheckpoint).toMatchObject({ upToSequence: 10, headHash: 'a'.repeat(64) });
     expect(result.checkedRows).toBe(0);
     expect(result.valid).toBe(true);
+    expect(result.verificationScope).toBe('bounded-segment');
+  });
+
+  function checkpointRow() {
+    const { key, keyId } = resolveAuditHmacKey();
+    return {
+      up_to_sequence: '10', head_hash: 'a'.repeat(64),
+      signature: signAuditEntryHash('a'.repeat(64), key),
+      signature_key_id: keyId, created_at: new Date('2026-09-22T00:00:00Z'),
+    };
+  }
+
+  it.each([
+    { signature: null }, { signature: '' }, { signature: 'z'.repeat(64) },
+    { signature: 'a'.repeat(63) }, { signature: 'b'.repeat(64) },
+    { head_hash: 'b'.repeat(64) }, { head_hash: 'invalid' },
+    { signature_key_id: null }, { signature_key_id: '' },
+    { signature_key_id: 'unknown' }, { up_to_sequence: '-1' },
+    { up_to_sequence: '1.5' }, { up_to_sequence: '9007199254740993' },
+    { up_to_sequence: '0' }, { created_at: null }, { created_at: 'invalid' },
+  ])('rejects corrupted checkpoint before querying the segment: %j', async (mutation) => {
+    const dataSource = makeDataSource(() => [{ ...checkpointRow(), ...mutation }]);
+    const service = new AuditQueryService(dataSource as never, repository, auditWriter as never);
+    await expect(service.verify({ tenantId: TENANT_ID })).rejects.toThrow(/Audit checkpoint rejected/);
+    expect(dataSource.query).toHaveBeenCalledTimes(1);
+    expect(dataSource.query.mock.calls[0][0]).toContain('head_hash, signature, signature_key_id');
+    await expect(service.lastCheckpoint()).rejects.toThrow(/Audit checkpoint rejected/);
+  });
+
+  it('authenticates a retired checkpoint and verifies the active-key suffix', async () => {
+    process.env.AUDIT_HMAC_KEY = ACTIVE_KEY;
+    process.env.AUDIT_HMAC_KEY_ID = ACTIVE_KEY_ID;
+    process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({ [RETIRED_KEY_ID]: RETIRED_KEY });
+    const checkpoint = { ...checkpointRow(), up_to_sequence: '1',
+      signature_key_id: RETIRED_KEY_ID,
+      signature: signAuditEntryHash('a'.repeat(64), RETIRED_KEY) };
+    const row = auditRow({ seq: 2, prevHash: checkpoint.head_hash,
+      signatureKeyId: ACTIVE_KEY_ID, signatureKey: ACTIVE_KEY });
+    const dataSource = makeDataSource((sql) => sql.includes('audit_chain_checkpoints') ? [checkpoint] : [row]);
+    const service = new AuditQueryService(dataSource as never, repository, auditWriter as never);
+    await expect(service.verify({ tenantId: TENANT_ID, limit: 1 })).resolves.toMatchObject({
+      valid: true, checkedRows: 1, limitReached: true, verificationScope: 'bounded-segment',
+    });
+    expect(dataSource.query).toHaveBeenLastCalledWith(expect.any(String), [1, 1]);
+    delete process.env.AUDIT_HMAC_PREVIOUS_KEYS;
+    await expect(service.verify({ tenantId: TENANT_ID })).rejects.toThrow(/unknown signature key/);
+  });
+
+  it('does not claim unsigned sequence/timestamp mutations or unanchored tail deletion are detectable', async () => {
+    const checkpoint = { ...checkpointRow(), up_to_sequence: '11', created_at: new Date('2026-09-23T00:00:00Z') };
+    const dataSource = makeDataSource((sql) => sql.includes('audit_chain_checkpoints') ? [checkpoint] : []);
+    const service = new AuditQueryService(dataSource as never, repository, auditWriter as never);
+    await expect(service.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({ valid: true, verificationScope: 'bounded-segment' });
+    await expect(service.verify({ tenantId: TENANT_ID, expectedHeadHash: 'b'.repeat(64) })).resolves.toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
+    await expect(service.verify({ tenantId: TENANT_ID, expectedLastSequence: 12 })).resolves.toMatchObject({ valid: false, reason: 'truncated-chain' });
   });
 
   it('reports an empty chain as valid when no checkpoint exists', async () => {
