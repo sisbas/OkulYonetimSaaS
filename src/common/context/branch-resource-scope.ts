@@ -13,6 +13,9 @@ const ROUTE_RESOURCES: Readonly<Record<string, ReadonlyArray<readonly [string, B
   TimeSlotController: [['id', 'time_slots']],
   DailyOperationsQueueController: [],
 };
+const BODY_RESOURCES: Readonly<Record<string, ReadonlyArray<readonly [string, BranchResourceTable]>>> = {
+  AttendanceSessionController: [['scheduleEventId', 'schedule_events']],
+};
 
 export function isBranchScopedController(controller: string): boolean {
   return Object.prototype.hasOwnProperty.call(ROUTE_RESOURCES, controller);
@@ -26,7 +29,11 @@ export function hasBranchListFilter(controller: string): boolean {
   return ['LeaveController', 'RoomController', 'TimeSlotController'].includes(controller);
 }
 
-export function branchResources(controller: string, params: Record<string, unknown> = {}) {
+export function branchResources(
+  controller: string,
+  params: Record<string, unknown> = {},
+  body: Record<string, unknown> = {},
+) {
   if (isBranchScopedController(controller)) {
     const allowed = ROUTE_RESOURCES[controller].map(([parameter]) => parameter);
     // Student ownership is checked by the attendance domain guard, after the
@@ -36,9 +43,12 @@ export function branchResources(controller: string, params: Record<string, unkno
       throw new AuthorizationContextError('unresolved_authority');
     }
   }
-  return (ROUTE_RESOURCES[controller] ?? []).flatMap(([parameter, table]) => {
-    const id = params[parameter];
-    return typeof id === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)
-      ? [{ table, id }] : [];
-  });
+  const isUuid = (id: unknown): id is string =>
+    typeof id === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id);
+  return [
+    ...(ROUTE_RESOURCES[controller] ?? []).flatMap(([parameter, table]) =>
+      isUuid(params[parameter]) ? [{ table, id: params[parameter] }] : []),
+    ...(BODY_RESOURCES[controller] ?? []).flatMap(([parameter, table]) =>
+      isUuid(body[parameter]) ? [{ table, id: body[parameter] }] : []),
+  ];
 }

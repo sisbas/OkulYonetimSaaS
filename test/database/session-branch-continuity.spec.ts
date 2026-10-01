@@ -14,6 +14,7 @@ import { AddSessionBranchSelection1841000000000 } from '../../src/database/migra
 import { Room } from '../../src/rooms/room.entity';
 import { RoomRepository } from '../../src/rooms/room.repository';
 import { RoomController } from '../../src/rooms/room.controller';
+import { AttendanceSessionController } from '../../src/attendance/attendance.controller';
 import { TimeSlot } from '../../src/time-slots/time-slot.entity';
 import { TimeSlotRepository } from '../../src/time-slots/time-slot.repository';
 import { TimeSlotController } from '../../src/time-slots/time-slot.controller';
@@ -231,6 +232,18 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
     const denied = request('user:read', 'IZMIR', { id: branchA }, controller);
     await expect(denied.guard.canActivate(denied.context)).rejects.toMatchObject({ status: 404 });
     const allowed = request('user:read', 'IZMIR', { id: branchB }, controller);
+    await expect(allowed.guard.canActivate(allowed.context)).resolves.toBe(true);
+  });
+
+  it('rejects attendance creation from a schedule event outside the persisted branch', async () => {
+    await select();
+    await grant('attendance:generate');
+    const denied = request('attendance:generate', 'IZMIR', {}, AttendanceSessionController);
+    denied.req.body = { scheduleEventId: branchA };
+    await expect(denied.guard.canActivate(denied.context)).rejects.toMatchObject({ status: 404 });
+
+    const allowed = request('attendance:generate', 'IZMIR', {}, AttendanceSessionController);
+    allowed.req.body = { scheduleEventId: branchB };
     await expect(allowed.guard.canActivate(allowed.context)).resolves.toBe(true);
   });
 

@@ -10,6 +10,7 @@ describe('AttendanceSessionController list() (P1: users.id vs teachers.id)', () 
   const USERS_ID = '11111111-1111-4111-8111-111111111111';
   const TEACHERS_ID = '22222222-2222-4222-8222-222222222222';
   const TENANT_ID = '33333333-3333-4333-8333-333333333333';
+  const BRANCH_ID = '88888888-8888-4888-8888-888888888888';
 
   const makeActor = (
     overrides: Partial<AttendanceActor> = {},
@@ -80,7 +81,7 @@ describe('AttendanceSessionController list() (P1: users.id vs teachers.id)', () 
     const result = await controller.list(req);
 
     // BOLA: users.id ile sorgu boş liste döndürür; doğru anahtar teachers.id.
-    expect(listByTeacher).toHaveBeenCalledWith(TENANT_ID, TEACHERS_ID);
+    expect(listByTeacher).toHaveBeenCalledWith(TENANT_ID, TEACHERS_ID, undefined);
     expect(listByTeacher).not.toHaveBeenCalledWith(TENANT_ID, USERS_ID);
     expect(listByTenant).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
@@ -100,7 +101,7 @@ describe('AttendanceSessionController list() (P1: users.id vs teachers.id)', () 
 
     const result = await controller.list(req);
 
-    expect(listByTenant).toHaveBeenCalledWith(TENANT_ID);
+    expect(listByTenant).toHaveBeenCalledWith(TENANT_ID, undefined);
     expect(listByTeacher).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
   });
@@ -115,6 +116,29 @@ describe('AttendanceSessionController list() (P1: users.id vs teachers.id)', () 
 
     expect(result).toEqual([]);
     expect(listByTeacher).not.toHaveBeenCalled();
+  });
+
+  it('passes the selected branch to attendance list queries', async () => {
+    const listByTeacher = jest.fn(async () => [makeSession()]);
+    const { controller, req } = setup(makeActor(), { listByTeacher });
+    req.context!.branchId = BRANCH_ID;
+
+    await controller.list(req);
+
+    expect(listByTeacher).toHaveBeenCalledWith(TENANT_ID, TEACHERS_ID, BRANCH_ID);
+  });
+
+  it('passes the selected branch to oversight attendance list queries', async () => {
+    const listByTenant = jest.fn(async () => [makeSession()]);
+    const { controller, req } = setup(
+      makeActor({ roleIds: ['operations_manager'], teacherId: null }),
+      { listByTenant },
+    );
+    req.context!.branchId = BRANCH_ID;
+
+    await controller.list(req);
+
+    expect(listByTenant).toHaveBeenCalledWith(TENANT_ID, BRANCH_ID);
   });
 
   it('delegates controlled correction with the server-resolved actor and body fields (AC-4)', async () => {

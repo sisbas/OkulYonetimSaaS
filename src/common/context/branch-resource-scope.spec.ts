@@ -13,6 +13,13 @@ describe('ID-addressed branch resource scope', () => {
     ]);
   });
 
+  it('checks the schedule event supplied when creating an attendance session', () => {
+    const scheduleEventId = '11111111-1111-4111-8111-111111111111';
+    expect(branchResources('AttendanceSessionController', {}, { scheduleEventId })).toEqual([
+      { table: 'schedule_events', id: scheduleEventId },
+    ]);
+  });
+
   it('leaves malformed IDs to existing request validation', () => {
     expect(branchResources('LeaveController', { id: 'not-a-uuid' })).toEqual([]);
   });

@@ -160,7 +160,7 @@ export class PermissionGuard implements CanActivate {
           requireSelection: isBranchScopedController(controllerName),
           branchIdHeader,
           recoverSelection,
-          resources: branchResources(controllerName, request.params),
+          resources: branchResources(controllerName, request.params, request.body),
         });
         const selectedCode = resolved.accessible.find((entry) => entry.branchId === resolved.branch?.branchId)?.code;
         if (isBranchScopedController(controllerName) && !resolved.branch && !recoverSelection) {
