@@ -49,7 +49,8 @@ async function main() {
   if (localConfig && !/^[a-zA-Z0-9:\\/_\.~-]+$/.test(localConfig)) throw new Error('DIAGNOSTIC_UNAVAILABLE');
   const team = process.env.VERCEL_TEAM_ID ?? (localConfig ? 'team_TdQwmVs9Kt3dkxEAla4vr76w' : undefined);
   const project = 'prj_T3niSmmEo4038jwEHEYIjtHXuVZz';
-  const previewId = 'dpl_Fpxrha4wkHH4dvAkroi8MKdJvtUk';
+  const previewId = process.env.VERCEL_DIAGNOSTIC_PREVIEW_ID ?? 'dpl_Fpxrha4wkHH4dvAkroi8MKdJvtUk';
+  if (!/^dpl_[a-zA-Z0-9]+$/.test(previewId)) throw new Error('DIAGNOSTIC_UNAVAILABLE');
   if (!token && !localConfig) throw new Error('VERCEL_TOKEN_UNAVAILABLE');
   function runCli(args) {
     const cliArgs = ['--yes', 'vercel@62.1.0', ...args,
