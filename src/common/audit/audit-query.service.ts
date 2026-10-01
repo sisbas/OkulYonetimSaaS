@@ -96,6 +96,7 @@ export class AuditQueryService {
     const rows = await this.repository.findTenantScoped(
       this.dataSource.manager,
       query,
+      actor.actorUserId,
     );
     const redacted = redactAuditRowsForExport(rows);
     const receipt = combineReceipts(redacted.map((item) => item.receipt));

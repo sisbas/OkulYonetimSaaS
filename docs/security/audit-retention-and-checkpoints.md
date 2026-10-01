@@ -75,7 +75,9 @@ Sözleşme notları:
   bu yüzden `test/rbac/controller-enforcement-consistency.spec.ts` ile zorunlu).
 - `logs` tenant sınırının dışına çıkamaz; PII alanları maskelenir ve okuma
   işlemi `dataprotection.export.redacted` olarak **redactionReceipt** ile
-  audit'lenir (KVKK madde 12 teknik tedbir kanıtı).
+  audit'lenir (KVKK madde 12 teknik tedbir kanıtı). Okumayı yapan aktörün kendi
+  receipt satırları, offset sayfalarını kaydırmamak için kendi sonuçlarından
+  gizlenir; kalıcı audit kaydı diğer yetkili tenant okuyucularına görünür.
 - Önceki tenant-admin retention HTTP sözleşmesi #367 güvenlik onarımıyla
   **superseded**: `docs/security/audit-http-quarantine.md` bağlayıcıdır.
   Retention service/prune/dry-run semantiği iç kullanım için korunur; HTTP
@@ -86,4 +88,3 @@ Sözleşme notları:
   #358 trust-anchor servis kanıtı bu HTTP denial'ı pilot verification PASS yapmaz.
 - Parametreler fail-closed doğrulanır (UUID/hash/ISO tarih/aralık); geçersiz
   girdi `400` döner.
-

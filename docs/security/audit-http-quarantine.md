@@ -7,6 +7,10 @@ global chain verification is not tenant authority. It performs no scan and
 publishes no cross-tenant counts/checkpoints. A usable platform verification
 surface requires an owner-approved authority model and separate runtime evidence.
 `AuditQueryService` validates the HMAC key ring during Nest provider construction.
+To keep offset pages stable across a reader's own requests, `logs` omits that
+reader's `dataprotection.export.redacted` receipts from their own result set.
+The receipts remain durable audit events and are visible to other authorized
+readers in the same tenant.
 
 Global retention is **out of the tenant-facing HTTP release scope**. Neither
 `retention/plan` nor `retention/run` is a controller route (GET or POST). There
@@ -28,6 +32,9 @@ HTTP retention requires a separately reviewed platform-authority contract.
   authenticated tenant-admin holding the legacy grant, and do not invoke the
   retention service; malformed/weak/duplicate historical key configuration rejects boot.
   This test uses a stub data source/auth session, not PostgreSQL acceptance.
+- `src/common/audit/audit-tenant-query.spec.ts` and
+  `src/common/audit/audit-query.service.spec.ts`: own read receipts are filtered
+  from the requesting actor's offset window while remaining persisted.
 - `test/database/audit-retention.db.spec.ts`: PostgreSQL service semantics plus
   authenticated HTTP quarantine probe using real login and persisted tenant-admin
   role/legacy permission grants, proving two tenants' audit rows and checkpoint
