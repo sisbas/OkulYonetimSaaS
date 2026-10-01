@@ -1,69 +1,91 @@
 ## Amaç
 
-Merged #364 sonrası H1 paketindeki operasyonel HMAC rotasyon iddiasını current main
-gerçeğine göre düzelten **yeni Draft correction PR**.
-Current correction PR head: `{{HEAD}}`. **PR #364 tarihsel olarak MERGED**; kayıtlı eski PR head
-`90804855a3b952631d257b307bf96542d4bdb4e9`, merge/main
-`9bd8d5dc333cdfe575e2500ff6e2828673edcc84` (2026-09-29T19:46:29Z).
-`origin/main` bu branch'e normal merge ile alındı; yalnız H1 rehberindeki çelişkili
-rotasyon iddiası conflict üretti ve kaynakla doğrulanan BLOKLU rehber korunarak çözüldü.
-Bu yeni PR düzeltmeyi main'e taşımak için açılır; henüz main'e merge edilmedi.
+<!-- Bu PR neden açıldı? Hangi problemi, kullanıcı hikâyesini veya teknik borcu kapatıyor? -->
+
+Merged #364 sonrası H1 rehberini güncel main ve kabul edilmiş audit güvenlik sınırlarıyla eşleştiren Draft correction PR.
+Main snapshot: `b3e1a359c6f5b7dbf27d88daac5fd5395c5ebf48`.
 
 ## Kapsam
 
-- `artifacts/H1-H2/H1-prod-env-and-health.md`: bağlantısız AuditModule, kayıtlı olmayan verifier ve çalışmayan ring bootstrap kontrolü açıkça belgelenir.
-- #367 / PR #366 güvenli wiring + exact-head runtime kanıtı önkoşuldur; rotasyon adımları yürürlükte olmayan taslaktır. Retention exposure/güvenlik kabulü iddia edilmez.
-- JWT_KEY_ID mevcut unsupported düzeltmesi main kaynaklarıyla doğrulandı; #358 checkpoint boşluğu açık tutuldu.
-- `artifacts/review364/verify-docs.cjs`: salt-okunur scope/source/ruleset guard ve üç negatif mutasyon.
-- Bu body şablonunda HEAD/CI alanları yayın sırasında API ile doldurulur.
+<!-- Bu PR içinde yapılan değişiklikleri maddeleyin. -->
+
+- `artifacts/H1-H2/H1-prod-env-and-health.md`: #366 AuditModule wiring/retention quarantine ve #369 bounded checkpoint doğrulamasını yansıtır; eski “module kayıtlı değil” ve “checkpoint imzası doğrulanmıyor” ifadelerini düzeltir.
+- Üretim H1 kanıtı ve kullanılabilir verifier için tamamlanmayan insan/owner kapılarını açıkça korur (#373, #368).
+- `artifacts/review364/verify-docs.cjs`: kaynak snapshot, scope, güncel HTTP güven sınırı, JWT_KEY_ID, checkpoint doğrulaması ve açık owner kararlarını salt-okunur doğrular.
 
 ## Kapsam dışı
 
-Runtime wiring, retention veya checkpoint kodu; production rotasyon/deploy; governance policy değişikliği; issue closure ve merge.
+<!-- Bu PR'ın bilinçli olarak kapsamadığı işleri yazın. -->
+
+- Runtime kodu, production deploy/rotasyon/health gözlemi, platform verify authority kararı, governance/ruleset/thread değişikliği, issue closure ve merge.
 
 ## Acceptance criteria
 
-- [x] H1 rehberi main runtime limitation ve #367 / PR #366 güvenli wiring önkoşulunu açıkça belirtir.
-- [x] JWT_KEY_ID unsupported davranışı kaynak assertion ile doğrulanır; retention exposure iddiası yoktur.
-- [x] Scope/source guard ve negatif mutasyonlar PASS; acceptance guard 11/11 PASS.
-- [ ] Production H1 kanıtı ve güvenli wiring runtime kabulü (insan / ayrı kod dilimi).
+<!-- Ölçülebilir kabul kriterlerini checklist olarak yazın. -->
+
+- [x] H1 rehberi current main'deki #366/#369 düzeltmelerini, kayıtlı AuditModule'ü, fail-closed ring boot kontrolünü ve bounded checkpoint sınırını doğru belgeler.
+- [x] JWT_KEY_ID desteğinin bulunmadığı ve mevcut verify/retention HTTP güven sınırı kaynak assertion'larıyla doğrulanır.
+- [x] Scope/source guard ile negatif belge mutasyonları PASS.
+- [ ] Production H1 kanıtı ve güvenli wiring runtime kabulü: code wiring #366/#369 ile main'e merge edilmiştir; production `/api/v1/health` 200 kanıtı yoktur ve tenant verify endpoint'i owner kararı gelene kadar kontrollü 403 döndürür.
 - [ ] Bağımsız exact-head review ve H3 owner kararı.
 - [ ] POLICY_DEADLOCK #368 owner kararı; governance acceptance.
 - [ ] Bu correction PR'ın H3 owner review/merge ile main'e teslimi.
 
 ## Test çıktısı
 
-- **Post-merge** planning-only scope guard: PASS — `node artifacts/review364/verify-docs.cjs`; scope baz main `9bd8d5dc333cdfe575e2500ff6e2828673edcc84`, current-main kaynakları + live 10 contexts / 0 formal approvals + OPEN #368; üç negatif doküman mutasyonu reddedildi, conflict marker yok.
+<!--
+Zorunlu kanıt alanıdır. Gerçek PASS/FAIL, SUCCESS/FAILURE veya GitHub Actions run kanıtı içermelidir.
+Belirsiz ifadeler kabul edilmez: Pending, sonra güncellenecek, çalıştırılmadı, N/A.
+
+Planning-only / documentation-only PR için kabul edilebilir minimum format:
+- Planning-only scope guard: PASS.
+- Changed files: `docs/...` veya `.github/...` ile sınırlı.
+- Runtime code: none.
+- Migration: none.
+- Ruleset change: none.
+- Evidence: dosya kapsamı, commit/head SHA veya GitHub Actions run id/URL.
+-->
+
+- Planning-only scope/source guard: `node artifacts/review364/verify-docs.cjs` — PASS (4 negative mutations rejected).
 - Changed files: yalnız `artifacts/H1-H2/H1-prod-env-and-health.md` ve `artifacts/review364/{verify-docs.cjs,pr-body.md}`.
-- Runtime code: none. Migration: none. Ruleset change: none.
-- Bağımlılıklar mevcut H1 worktree'de önceki `npm ci` ile kurulmuştu (tarihsel 600 packages / exit 0); merge sonrası lockfile değişmedi, bu devam turunda install tekrar edilmedi.
-- **Post-merge** `npm run lint`: PASS (`tsc --noEmit`, exit 0).
-- **Post-merge** `npm run test:e2e:guard -- --runInBand`: PASS, 1 suite / 11 tests (3.895s).
-- **Post-merge** `npm test -- --runInBand`: exit 0; 112 suites / 1002 tests PASS, **9 suites / 37 tests skipped** (36.041s). Live asset probes ayrıca erken SKIP döndü; bunlar production/DB kabulü değildir.
-- **Post-merge** `npm run build`: PASS (TypeScript + runtime asset copy, exit 0).
-- Eski branch `862780f94f0d1be7466cd54d2b6a75cd289ef8f2` CI/local sonuçları tarihsel kanıttır; yeni current-head CI yerine kullanılmaz.
-- Kanıt bu docs dilimine aittir; ürün kabulü değildir. PASS, #368 engelini kaldırmaz.
+- Runtime code: none.
+- Migration: none.
+- Ruleset change: none.
+- `git diff --check`: PASS.
+- `node --check artifacts/review364/verify-docs.cjs`: PASS.
+- Merged-source snapshot asserted by the guard: main `b3e1a359c6f5b7dbf27d88daac5fd5395c5ebf48`; no production/runtime acceptance inferred.
+- `npm` product/runtime tests were not run for this docs-only correction.
 
 ## KVKK/audit etkisi
 
-Secret değerleri veya PII eklenmedi. Audit rehberi gerçekleşmemiş bootstrap/route/rotation güvence iddialarını kaldırır; production veya retention işlemi yürütülmedi.
+<!-- Kişisel veri, veli iletişim bilgisi, öğrenci bilgisi, rehberlik notu, audit log veya notification payload etkisini yazın. Etki yoksa neden yok yazın. -->
+
+- KVKK etkisi: yeni PII veya secret yok.
+- Audit etkisi: rehber current-main quarantine/verification boundaries'ni açıklar; runtime policy değişikliği yok.
+- Redaction ihtiyacı: yok.
 
 ## Rollback
 
-`git revert <bu-PR-merge-sha>`; yalnız rehber ve verification artifacts geri alınır. Şema/veri dönüşümü yok.
+<!-- Revert, migration revert, feature flag kapatma, restore veya hotfix adımlarını yazın. -->
+
+- `git revert <bu-PR-merge-sha>`; yalnız doküman ve doğrulama artifact'ı geri alınır.
+- Şema/veri dönüşümü ve runtime kod değişikliği yoktur.
 
 ## CI run referansı
 
-{{CI}}
+<!--
+Kabul edilen formatlar:
+- GitHub Actions URL: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/<run_id>
+- Run id: <run_id>
+- Açık workflow adı + run id: Backend CI run <run_id>: SUCCESS
+
+Pending/sonra güncellenecek kabul edilmez. Workflow henüz oluşmadıysa PR Draft kalmalı veya Test çıktısı altında planning-only scope guard PASS kanıtı yazılmalıdır.
+-->
+
+Main'e merge edilen kaynak kod CI kanıtı: [#366 DB Smoke](https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36873447959) ve [#369 DB Smoke](https://github.com/sisbas/OkulYonetimSaaS/actions/runs/36695971712). Bu run'lar merged code dilimlerini kanıtlar; production H1 kabulü veya bu correction PR'ın exact-head review'ü değildir.
 
 ## Issue reference
 
-Refs #332 #259 #358 #367 #368.
+<!-- Fixes #123 veya Refs #123 yazın. -->
 
-## İnsan kapısı / PR durumu
-
-**Yeni correction PR: Draft / merge-ready değil.** #364 merged tarihsel PR'dır,
-bu correction PR'ın readiness'ini göstermez. **POLICY_DEADLOCK #368 OPEN**: `progress-v2.md:46–47` AFTER merge resolve ister,
-aktif ruleset 19052349 BEFORE merge ister. Policy değişmedi. Bu çalışmada thread resolve edilmedi.
-Eski #364'ün 2 thread'i önceki API gözleminde zaten resolved idi; bu state yeni PR için
-owner kararı veya bağımsız kabul kanıtı değildir. Retention veya H1 production kabulü yapılmadı.
+Refs #332 #259 #358 #367 #368 #373.
