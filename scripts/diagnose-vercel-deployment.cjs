@@ -35,6 +35,7 @@ function classifyLogs(text) {
 }
 
 function productionEnvironmentNames(rows) {
+  if (!Array.isArray(rows)) throw new Error('DIAGNOSTIC_SCHEMA_INVALID');
   return ENV_NAMES.filter((name) => rows.some((row) => row.key === name &&
     (Array.isArray(row.target) ? row.target.includes('production') : row.target === 'production')));
 }
@@ -87,6 +88,7 @@ async function main() {
   }
   const projectMetadata = await api(`/v9/projects/${project}`);
   const preview = await api(`/v13/deployments/${previewId}`);
+  if (projectMetadata.id !== project || preview.projectId !== project) throw new Error('DIAGNOSTIC_IDENTITY_MISMATCH');
   let productionId = projectMetadata.targets?.production?.id;
   if (!productionId) {
     const deployments = await api(`/v6/deployments?projectId=${project}&target=production&limit=1`);
@@ -94,9 +96,11 @@ async function main() {
   }
   if (!/^dpl_[a-zA-Z0-9]+$/.test(productionId ?? '')) throw new Error('PRODUCTION_ID_UNAVAILABLE');
   const production = await api(`/v13/deployments/${productionId}`);
+  if (production.projectId !== project) throw new Error('DIAGNOSTIC_IDENTITY_MISMATCH');
   const environment = await api(`/v9/projects/${project}/env`);
   const installations = await api('/v1/integrations/configurations?view=account');
-  const installationRows = Array.isArray(installations) ? installations : installations.configurations ?? [];
+  const installationRows = Array.isArray(installations) ? installations : installations.configurations;
+  if (!Array.isArray(installationRows)) throw new Error('DIAGNOSTIC_SCHEMA_INVALID');
   const linked = installationRows.filter((item) => item.projects == null || item.projects.includes(project));
   const resourceReports = [];
   for (const item of linked) {
@@ -104,7 +108,8 @@ async function main() {
     let details;
     try {
       const resourceResponse = await api(`/v1/installations/${item.id}/resources`);
-      const resources = Array.isArray(resourceResponse) ? resourceResponse : resourceResponse.resources ?? [];
+      const resources = Array.isArray(resourceResponse) ? resourceResponse : resourceResponse.resources;
+      if (!Array.isArray(resources)) throw new Error('DIAGNOSTIC_SCHEMA_INVALID');
       details = { readable: true, resources: resources.map((resource) => ({
         id: /^[a-zA-Z0-9_]{1,100}$/.test(resource.id ?? '') ? resource.id : null,
         state: ['ready', 'pending', 'error', 'active', 'suspended', 'failed'].includes(resource.status)
@@ -116,7 +121,8 @@ async function main() {
   let buildEvents;
   try {
     const events = await api(`/v3/deployments/${previewId}/events?follow=0`);
-    const rows = Array.isArray(events) ? events : events.events ?? [];
+    const rows = Array.isArray(events) ? events : events.events;
+    if (!Array.isArray(rows)) throw new Error('DIAGNOSTIC_SCHEMA_INVALID');
     buildEvents = { readable: true, count: rows.length, classifications: classifyLogs(JSON.stringify(rows)) };
   } catch { buildEvents = { readable: false }; }
   const report = {
@@ -125,7 +131,7 @@ async function main() {
     checkoutSha: process.env.GITHUB_SHA ?? null,
     preview: deploymentIdentity(preview),
     production: deploymentIdentity(production),
-    productionEnvironmentNamesPresent: productionEnvironmentNames(environment.envs ?? []),
+    productionEnvironmentNamesPresent: productionEnvironmentNames(environment.envs),
     projectContract: {
       frameworkOther: projectMetadata.framework == null,
       installMatchesRepo: projectMetadata.installCommand === 'npm ci',

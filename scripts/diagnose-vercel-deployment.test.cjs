@@ -26,6 +26,10 @@ test('environment evidence is production-scoped names only', () => {
   assert.deepEqual(result, ['JWT_ACCESS_SECRET']);
   assert.ok(!JSON.stringify(result).includes('PRIVATE_VALUE'));
 });
+test('malformed environment schema is not treated as absence of required keys', () => {
+  assert.throws(() => productionEnvironmentNames(undefined), /DIAGNOSTIC_SCHEMA_INVALID/);
+  assert.throws(() => productionEnvironmentNames({}), /DIAGNOSTIC_SCHEMA_INVALID/);
+});
 test('Windows command preserves a full API query as one argument', { skip: process.platform !== 'win32' }, () => {
   const query = '/v6/deployments?projectId=fixture&target=preview&limit=3';
   const command = 'node ' + windowsArguments(['-e', 'process.stdout.write(process.argv[1])', query]);
