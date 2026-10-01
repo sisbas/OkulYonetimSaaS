@@ -87,6 +87,41 @@ describe('candidate lookup across multiple impacted events (union, #263 review P
     // 1 (math-only kısa devre) + 2 (ineligible, tüm olaylar) = 3
     expect(check).toHaveBeenCalledTimes(3);
   });
+
+  it('event-specific candidates must qualify for every occurrence covered by assignment', async () => {
+    const { repository, manager, check } = setup();
+    check.mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new SubstituteIneligibleError('SUBSTITUTE_TIME_CONFLICT'))
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+    const result = await (repository as any).findEligibleCandidates(manager, leave, events, 'all');
+    expect(result.map((x: any) => x.teacherId)).toEqual(['ineligible']);
+    expect(check).toHaveBeenCalledTimes(4);
+  });
+
+  it('propagates a later occurrence database failure in event-specific lookup', async () => {
+    const { repository, manager, check } = setup();
+    const failure = new Error('Connection lost on second occurrence');
+    check.mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure);
+    await expect((repository as any).findEligibleCandidates(manager, leave, events, 'all')).rejects.toBe(failure);
+  });
+
+  it('public event candidates reject a teacher unavailable for a later occurrence', async () => {
+    const { repository, manager, check } = setup();
+    (repository as any).dataSource.manager = manager;
+    jest.spyOn(repository as any, 'findApprovedLeave').mockResolvedValue(leave);
+    jest.spyOn(repository as any, 'loadImpactedEvents').mockResolvedValue(
+      events.map((event) => ({ ...event, scheduleEventId: 'lesson', courseId: 'course' })),
+    );
+    jest.spyOn(repository as any, 'teacherCoursesReady').mockResolvedValue(true);
+    check.mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new SubstituteIneligibleError('SUBSTITUTE_TIME_CONFLICT'))
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+    const result = await repository.candidates(
+      { tenantId: 'tenant', requestId: 'candidate-boundary' }, 'leave', 'lesson',
+    );
+    expect(result.eligibilityFinalized).toBe(true);
+    expect(result.candidates.map((candidate) => candidate.teacherId)).toEqual(['ineligible']);
+  });
 });
 
 // #263 review P1: sınırsız occurrence genişlemesi YASAK (sessiz kırpma yok).

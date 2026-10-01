@@ -225,7 +225,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
         candidates: [],
       };
     }
-    const candidates = await this.findEligibleCandidates(this.dataSource.manager, leave, matchingEvents);
+    const candidates = await this.findEligibleCandidates(this.dataSource.manager, leave, matchingEvents, 'all');
     return {
       leaveRequestId: leave.id,
       scheduleEventId,
@@ -685,7 +685,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     if (substitutionConflict.length > 0) throw new SubstituteIneligibleError('SUBSTITUTE_TIME_CONFLICT');
   }
 
-  private async findEligibleCandidates(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[]): Promise<CandidateResponse['candidates']> {
+  private async findEligibleCandidates(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[], occurrencePolicy: 'any' | 'all' = 'any'): Promise<CandidateResponse['candidates']> {
     const firstEvent = events[0];
     const rows = await manager.query(
       `SELECT teacher.id AS "teacherId", branch.id AS "teacherBranchId"
@@ -705,17 +705,20 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       // bir fen yedeği ayrı ayrı geçerli olabilir. Kesişim kullanmak, tüm
       // olaylara uygun olmayan geçerli adayları sessizce elerdi (boş liste).
       let eligibleForAnyEvent = false;
+      let eligibleForAllEvents = true;
       for (const event of events) {
         try {
           await this.assertEligibleCandidate(manager, leave, event, row.teacherId, event.startsAt, event.endsAt);
           eligibleForAnyEvent = true;
-          break;
+          if (occurrencePolicy === 'any') break;
         } catch (error) {
           // Storage, schema and unknown failures are not evidence of ineligibility.
           if (!(error instanceof SubstituteIneligibleError)) throw error;
+          eligibleForAllEvents = false;
+          if (occurrencePolicy === 'all') break;
         }
       }
-      if (eligibleForAnyEvent) {
+      if (eligibleForAnyEvent && (occurrencePolicy === 'any' || eligibleForAllEvents)) {
         candidates.push({ teacherId: row.teacherId, teacherBranchId: row.teacherBranchId, decisionSupportOnly: true, eligible: true });
       }
     }
