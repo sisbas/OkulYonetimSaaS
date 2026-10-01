@@ -27,27 +27,59 @@ geldiğinde bu satır `tamamlandı (insan)` yapılır ve kanıt URL'i işlenir.
 - `KVKK_PSEUDONYM_KEY` **zorunlu ve yeni**dir (A3 R5/redaction dilimiyle gelir); >= 32 byte entropi.
 - Anahtar değerleri yalnız ortamın secret store'unda tutulur; repoda `.env.example` **dahi** gerçek değer içermez.
 
-## 1.1 Audit HMAC rotasyonu — **DESTEKLENİYOR** (güncellendi: #361 merge sonrası)
+## 1.1 Audit HMAC rotasyonu — **kod wiring'i main'de; operasyonel kabul BLOKLU** (#366 / #369 / #367 / #373)
 
-`AuditQueryService.verify()` artık satırın **kendi `signature_key_id`'siyle** anahtar seçer
-(`resolveAuditHmacKeyRing()` + `auditHmacKeyResolver(ring)`); bilinmeyen/eksik key-id →
-`unknown-signature-key` ile **fail-closed** reddeder. Bu davranış #361 ile main'dedir
-(kanıt: `src/common/audit/audit-chain.spec.ts` — rotasyon + key-id NULL testleri; `.env.example`
-`AUDIT_HMAC_KEY_ID` / `AUDIT_HMAC_PREVIOUS_KEYS` sözleşmesi).
+**Kaynak anlık görüntüsü:** main `b3e1a359c6f5b7dbf27d88daac5fd5395c5ebf48`, 2026-10-01.
+#366 main'e merge edilmiş; `AuditModule` main runtime'ında kayıtlıdır ve
+`src/app.module.ts` içindeki `@Module.imports` dizisinde yer alır.
+`AuditQueryService` modülde sağlanır; constructor'daki
+`resolveAuditHmacKeyRing()` Nest provider oluşturulurken çalışır. Geçersiz, zayıf veya
+yinelenen key-id halkasının bootstrap'ta reddedilmesi kaynak/test düzeyinde bağlanmıştır
+(`src/app.module.spec.ts`, `test/runtime-integration/api-routing-authority.spec.ts`).
+Bu, main kodundaki wiring ve fail-closed boot davranışıdır; production host'ta H1
+kabul kanıtı değildir.
 
-**Desteklenen rotasyon prosedürü:**
+**Güncel HTTP güven sınırı:** `GET /api/v1/audit/verify` artık kayıtlıdır, ancak tenant
+yetkisi global audit zincirini tarama yetkisi olmadığından kontrollü **403** döndürür;
+legacy `audit_log:operations:read` izni de tarama başlatmaz veya başka tenant
+metaverisini açığa çıkarmaz. Global verification için platform yetki modeli #373'te
+owner kararı beklemektedir. #366 ile `retention/plan` ve `retention/run` HTTP route'ları
+kaldırılmıştır; retention servisi dahili kalır. Bu paket retention endpoint'lerini
+açmayı/çalıştırmayı önermez ve retention HTTP erişilebilirliği iddia etmez.
+
+**Checkpoint ve satır doğrulaması:** #369 main'e merge edilmiştir. `verify()` satırın
+kendi `signature_key_id`'siyle anahtar seçer; `lastCheckpoint()` checkpoint imzasını
+doğrular ve başarısızlıkta checkpoint'i kullanmaz. Bu, bounded segment doğrulaması ve
+mevcut checkpoint formatı sınırları içindedir; bağımsız dış trust anchor, bütün-zincir
+veya production kabulü iddiası değildir
+(`docs/security/checkpoint-trust-anchor-358-evidence.md`).
+
+**Operasyonel kabul (henüz tamamlanmadı):** `/api/v1/health` için production 200 kanıtı
+ve secret'lar maskelenmiş exact-head operatör kaydı bu pakette yoktur. Ayrıca verify
+endpoint'i owner authority kararı gelene kadar tenant için kullanılabilir değildir
+(#373 OPEN). Unit/integration/CI kanıtı bu iki kapının yerine geçmez. **Operatör şu an
+bu pakete dayanarak `AUDIT_HMAC_KEY` rotasyonu yapmamalıdır.**
+
+**Yalnız H1 ve #373 kapıları kabul edildikten sonra uygulanabilecek taslak:**
 
 1. Yeni anahtarı üret (>= 32 karakter) ve `AUDIT_HMAC_KEY`'e koy; `AUDIT_HMAC_KEY_ID`'yi **yeni** kimliğe çevir (ör. `key-2`).
 2. Emekliye ayrılan anahtarı `AUDIT_HMAC_PREVIOUS_KEYS`'e ekle: `{"key-1":"<eski anahtar>"}`.
-   (Rotasyon öncesi imzalanmış satırlar bu anahtarla doğrulanmaya devam eder.)
-3. Bozuk/zayıf yapılandırma veya aktif kimliğin tekrarı → süreç **boot'ta FATAL** eder (fail-closed).
+   (Kayıtlı ve doğrulanmış verifier'da eski satırların anahtar seçimi korunmalıdır.)
+3. Bozuk/zayıf yapılandırma veya aktif kimliğin tekrarıyla bootstrap'ın **FATAL**
+   olduğunu test edilmiş fail-closed sözleşmesine göre doğrula; production kanıtını
+   ayrı kaydet.
 4. Eski kimliği, saklama politikası izin verdiği sürece **ringde tut**; ringden çıkarılan anahtarın
    satırları doğrulanamaz hâle gelir.
 
-> **KALAN GERÇEK BOŞLUK — checkpoint imzası (issue #358):** `AuditQueryService.lastCheckpoint()`
-> `audit_chain_checkpoints.signature` kolonunu SELECT etmiyor; yani checkpoint'in **kendi** HMAC imzası
-> doğrulanmıyor (kırpma senaryosunda trust-anchor kurcalanabilir kalır). Bu, rotasyon desteğinden
-> **bağımsız** ve hâlâ **açık** bir bulgudur (#358) — bir dilim kapsamında kapatılmalıdır.
+> **Sınır (#358):** Checkpoint imza doğrulaması main'de uygulanmıştır, ancak bu
+> checkpoint'i bağımsız dış trust anchor yapmaz ve sınırsız whole-chain/truncation
+> kabulü sağlamaz. Bu sınırlar için `docs/security/checkpoint-trust-anchor-358-evidence.md`'ye bakın.
+
+**Governance engeli:** `POLICY_DEADLOCK #368` **OPEN**. Mevcut main'deki
+`docs/phase2/progress-v2.md:46–47` fix main'e merge edildikten sonra resolve ister;
+aktif [ruleset 19052349](https://github.com/sisbas/OkulYonetimSaaS/rules/19052349)
+ise merge öncesi thread resolution ister. Owner kararı olmadan bu paket policy'yi
+değiştirmez veya thread resolve yetkisi vermez. Test PASS bu engeli kaldırmaz.
 
 ## 2. Doğrulama komutu (insan, prod'a karşı)
 
