@@ -28,12 +28,44 @@ on:
         required: false
         type: boolean
         default: false
+      diagnostic_only:
+        description: Read-only redacted Vercel deployment diagnosis; not production acceptance
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
+  deployment-diagnosis:
+    if: ${{ inputs.diagnostic_only == true }}
+    name: Read-only Vercel deployment diagnosis
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Verify diagnostic redaction
+        run: node --test scripts/diagnose-vercel-deployment.test.cjs
+      - name: Read deployment metadata and classify logs
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+        run: node scripts/diagnose-vercel-deployment.cjs
+      - name: Upload redacted diagnostic evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: vercel-deployment-diagnosis-${{ github.sha }}
+          path: artifacts/vercel-deployment-diagnosis/report.json
+          if-no-files-found: error
+          retention-days: 7
   production-observation:
+    if: ${{ inputs.diagnostic_only != true }}
     name: Production runtime and API observation
     runs-on: ubuntu-latest
     timeout-minutes: 15
