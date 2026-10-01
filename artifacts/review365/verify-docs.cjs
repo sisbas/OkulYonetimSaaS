@@ -14,6 +14,9 @@ assert.match(pr.base.sha, /^[a-f0-9]{40}$/);
 if (git('rev-parse', '--is-shallow-repository') === 'true') {
   git('fetch', '--no-tags', '--unshallow', 'origin');
 }
+if (spawnSync('git', ['rev-parse', '--verify', 'origin/main']).status !== 0) {
+  git('fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main');
+}
 if (spawnSync('git', ['cat-file', '-e', `${pr.base.sha}^{commit}`]).status !== 0) {
   git('fetch', '--no-tags', 'origin', pr.base.sha);
 }
