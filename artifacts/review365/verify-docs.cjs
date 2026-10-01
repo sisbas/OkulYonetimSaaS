@@ -4,12 +4,29 @@ const fs = require('node:fs');
 const { execFileSync, spawnSync } = require('node:child_process');
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 const main = '9bd8d5dc333cdfe575e2500ff6e2828673edcc84';
-const base = '99407dba453e5ed02b87a54aca3b29ad027a1d5c';
 const source = (path) => git('show', `${main}:${path}`);
 const api = (path) => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8' }));
+const pr = api('repos/sisbas/OkulYonetimSaaS/pulls/365');
+assert.equal(pr.base.ref, 'main');
+assert.match(pr.base.sha, /^[a-f0-9]{40}$/);
+// A fresh Actions checkout can be shallow. Restore ancestry, not an arbitrary
+// intermediate review revision, before determining the actual PR merge-base.
+if (git('rev-parse', '--is-shallow-repository') === 'true') {
+  git('fetch', '--no-tags', '--unshallow', 'origin');
+}
+if (spawnSync('git', ['cat-file', '-e', `${pr.base.sha}^{commit}`]).status !== 0) {
+  git('fetch', '--no-tags', 'origin', pr.base.sha);
+}
+const base = git('merge-base', 'HEAD', pr.base.sha);
 assert.equal(git('rev-parse', 'origin/main'), main);
 const changed = new Set([...git('diff', '--name-only', base).split('\n'), ...git('ls-files', '--others', '--exclude-standard').split('\n')].filter(Boolean));
-for (const path of changed) assert.match(path, /^(docs\/phase2\/milestone-issue-reconciliation\.md|artifacts\/review365\/)/);
+function validateScope(paths) {
+  for (const path of paths) assert.match(path, /^(docs\/phase2\/milestone-issue-reconciliation\.md|artifacts\/review365\/)/);
+}
+validateScope(changed);
+assert.ok(changed.has('docs/phase2/milestone-issue-reconciliation.md'), 'Entire PR document must be in scope');
+assert.throws(() => validateScope([...changed, 'src/out-of-scope.ts']));
+console.log(`Scope merge-base: ${base}; live PR base: ${pr.base.sha}; full PR paths: ${changed.size}`);
 assert.match(source('docs/phase2/README.md'), /next-phase-plan.md[^\n]*BAYAT/);
 const plan = source('docs/phase2/remaining-plan-v2.md');
 assert.match(plan, /F3[^\n]*Hafta 6–8[^\n]*R12–R15/);
