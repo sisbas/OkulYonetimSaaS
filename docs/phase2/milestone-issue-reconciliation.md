@@ -29,7 +29,7 @@ Bu belge issue kapatma veya milestone değişikliği uygulamaz; H6 owner onayı 
 | 3 | M2 | **open** | **0** | 2 | yok | **kapatılabilir** (açık issue yok) |
 | 4 | M3 | **open** | **0** | 5 | yok | **kapatılabilir** (açık issue yok) |
 | 5 | M4 | open | 1 | 1 | **yok** | 263 (leave — R1 merge, R2/R3 açık; v2 F1 bitimi ≈ 10-14) |
-| 6 | M5 | open | 1 | 1 | **yok** | 265 (attendance — verdict R10/R15'e bağlı; v2 F2 bitimi ≈ 10-28) |
+| 6 | M5 | open | 1 | 1 | **yok** | 265 (attendance — verdict R15 F3'e bağlı; öneri 2026-11-18) |
 | 7 | M6 | open | 1 | 2 | **yok** | 266 (notification — R5 branch merge edilmedi; R7 F2'de) |
 | 8 | M7 | open | 3 | 1 | **yok** | 268, 269, 264; #264/#269 F2, **#268 R12 F3**; owner onayına sunulan tarih 2026-11-18 (§5.2) |
 
@@ -126,8 +126,15 @@ number=7 M6**. Owner başlangıcı/tarihi onaylamadan aşağıdaki hiçbir komut
 M1'in `closed_at` tarihi bir due date kanıtı değildir; M2/M3 hâlâ açık olduğundan
 2026-09-28 "gerçek kapanış günü" değildir. Aşağıdaki tarihlerin tamamı öneridir.
 
+Milestone tarihleri en geç bağımlı fazın bitişinden önce olamaz: M0 R13/R14 ve
+M5 R15 F3'te olduğundan +8 hafta = 2026-11-18; M6 R7 F2'ye uzandığından
++6 hafta = 2026-11-04. Bu hesap başlangıç varsayımıdır; canlı CI/review kapasitesi
+ve owner takvim kararı olmadan deadline sayılmaz. #345 Faz 1b kapanış tracker'ıdır;
+Phase 2 milestone'una yalnız sonraki ticari aşama epic'i #344 önerilir.
+
 ```bash
-# (a) M2 ve M3'ü kapat (sıfır açık issue)
+# (a) M2/M3 teslimatları doğrulanıp owner onayladıktan sonra kapat;
+#     sıfır açık issue tek başına semantic kapanış kanıtı değildir.
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/3 -f state=closed   # M2
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/4 -f state=closed   # M3
 
@@ -136,24 +143,24 @@ gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/4 -f state=closed   # M3
 #     M1 closed_at=2026-08-11 bir kaynak bilgisi; due_on için ayrıca onay gerekir.
 #     M2/M3 için 2026-09-28 geçmiş tarih önerisidir, gerçek kapanış günü değildir.
 #     M7 F3/R12'yi içerir: 2026-09-23 + 8 hafta = 2026-11-18 (başlangıç varsayımı).
-gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/1 -f due_on=2026-10-17T00:00:00Z   # M0
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/1 -f due_on=2026-11-18T00:00:00Z   # M0 öneri (R13/R14 F3)
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/2 -f due_on=2026-08-11T00:00:00Z   # M1 öneri
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/3 -f due_on=2026-09-28T00:00:00Z   # M2 öneri
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/4 -f due_on=2026-09-28T00:00:00Z   # M3 öneri
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/5 -f due_on=2026-10-17T00:00:00Z   # M4
-gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/6 -f due_on=2026-10-24T00:00:00Z   # M5
-gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/7 -f due_on=2026-10-24T00:00:00Z   # M6
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/6 -f due_on=2026-11-18T00:00:00Z   # M5 öneri (R15 F3)
+gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/7 -f due_on=2026-11-04T00:00:00Z   # M6 öneri (R7 F2)
 gh api -X PATCH repos/sisbas/OkulYonetimSaaS/milestones/8 -f due_on=2026-11-18T00:00:00Z   # M7 öneri (F3 dahil)
 
 # (c) Faz 1b kapanis milestone u olustur (plan 10/H6)
 gh api -X POST repos/sisbas/OkulYonetimSaaS/milestones -f title="Phase 1b Closure" -f due_on=2026-11-18T00:00:00Z  # öneri: M7/F3'ten önce kapanış tarihi verilmez
 
 # (d) Milestone siz Faz 1b kalemlerini yeni milestone a ata (Phase-2 epic HARIC)
-for n in 358 329 332 362; do gh issue edit $n --milestone "Phase 1b Closure"; done
+for n in 358 329 332 362 345; do gh issue edit $n --milestone "Phase 1b Closure"; done
 
 # (e) Phase-2 epic kalemleri icin ayri milestone (istege bagli) — due_on ile (tum milestone'lar tarihli kalsin)
 gh api -X POST repos/sisbas/OkulYonetimSaaS/milestones -f title="Phase 2 - Commercial Release" -f due_on=2027-01-15T00:00:00Z
-for n in 344 345; do gh issue edit $n --milestone "Phase 2 - Commercial Release"; done
+for n in 344; do gh issue edit $n --milestone "Phase 2 - Commercial Release"; done
 ```
 
 ### 5.3 #336 (Governance Incident) icin karar gerekiyor

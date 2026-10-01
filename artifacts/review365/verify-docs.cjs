@@ -50,6 +50,13 @@ function validate(doc) {
   const dates = [...commands.matchAll(/milestones\/(\d+) -f due_on=([^\s]+)/g)];
   assert.deepEqual(dates.map((m) => Number(m[1])).sort(), [1, 2, 3, 4, 5, 6, 7, 8]);
   assert.equal(dates.find((m) => m[1] === '8')[2], '2026-11-18T00:00:00Z');
+  for (const number of ['1', '6']) {
+    assert.equal(dates.find((m) => m[1] === number)[2], '2026-11-18T00:00:00Z');
+  }
+  assert.equal(dates.find((m) => m[1] === '7')[2], '2026-11-04T00:00:00Z');
+  assert.match(commands, /for n in 358 329 332 362 345;[^\n]*"Phase 1b Closure"/);
+  assert.match(commands, /for n in 344;[^\n]*"Phase 2 - Commercial Release"/);
+  assert.doesNotMatch(commands, /for n in [^;]*345;[^\n]*"Phase 2 - Commercial Release"/);
   assert.equal((commands.match(/-X POST[^\n]*-f due_on=/g) || []).length, 2);
   assert.match(doc, /9\/9[^\n]*10\/10/);
 }
@@ -58,4 +65,6 @@ validate(doc);
 assert.throws(() => validate(doc.replace('AÇIK / BLOCKED', 'KAPATILABİLİR')));
 assert.throws(() => validate(doc.replace('milestones/8 -f due_on=2026-11-18', 'milestones/8 -f due_on=2026-10-31')));
 assert.throws(() => validate(doc.replace('milestones/2 -f due_on=', 'milestones/99 -f due_on=')));
-console.log('PASS: docs-only scope; live 10 contexts/0 approvals; #339 12 unchecked ACs; missing verdict artifact; M7 F3 source/date and 8/8,9/9,10/10 command arithmetic; OPEN #368; 3 negative mutations rejected. Remote milestones/issues unchanged.');
+assert.throws(() => validate(doc.replace('milestones/6 -f due_on=2026-11-18', 'milestones/6 -f due_on=2026-10-24')));
+assert.throws(() => validate(doc.replace('for n in 344;', 'for n in 344 345;')));
+console.log('PASS: docs-only scope; live 10 contexts/0 approvals; #339 12 unchecked ACs; missing verdict artifact; milestone dependent-phase dates and 8/8,9/9,10/10 command arithmetic; #345 Phase 1b ownership; OPEN #368; 5 negative mutations rejected. Remote milestones/issues unchanged.');
