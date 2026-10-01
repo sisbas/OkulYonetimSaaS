@@ -16,6 +16,9 @@ function deploymentIdentity(value) {
       ? value.readyState ?? value.state : 'UNKNOWN',
     errorCode: /^[A-Z_0-9]{1,80}$/.test(value.errorCode ?? '') ? value.errorCode : null,
     resourceProvisioningFailure: /resource provisioning failed/i.test(value.errorMessage ?? ''),
+    integrationState: ['error', 'pending', 'ready', 'skipped', 'timeout'].includes(value.integrations?.status)
+      ? value.integrations.status : null,
+    buildPhaseTimestampPresent: Boolean(value.buildingAt || value.duration?.startTime),
   };
 }
 
@@ -36,15 +39,37 @@ function productionEnvironmentNames(rows) {
     (Array.isArray(row.target) ? row.target.includes('production') : row.target === 'production')));
 }
 
+function windowsArguments(args) {
+  return args.map((arg) => '"' + arg.replace(/"/g, '""') + '"').join(' ');
+}
+
 async function main() {
   const token = process.env.VERCEL_TOKEN;
-  const team = process.env.VERCEL_TEAM_ID;
+  const localConfig = process.env.LOCAL_VERCEL_AUTH_CONFIG;
+  if (localConfig && !/^[a-zA-Z0-9:\\/_\.~-]+$/.test(localConfig)) throw new Error('DIAGNOSTIC_UNAVAILABLE');
+  const team = process.env.VERCEL_TEAM_ID ?? (localConfig ? 'team_TdQwmVs9Kt3dkxEAla4vr76w' : undefined);
   const project = 'prj_T3niSmmEo4038jwEHEYIjtHXuVZz';
   const previewId = 'dpl_Fpxrha4wkHH4dvAkroi8MKdJvtUk';
-  if (!token) throw new Error('VERCEL_TOKEN_UNAVAILABLE');
+  if (!token && !localConfig) throw new Error('VERCEL_TOKEN_UNAVAILABLE');
+  function runCli(args) {
+    const cliArgs = ['--yes', 'vercel@62.1.0', ...args,
+        ...(token ? ['--token', token] : ['--global-config', localConfig]),
+        ...(team ? ['--scope', team] : [])];
+    const windowsCommand = 'npx.cmd ' + windowsArguments(cliArgs);
+    return spawnSync(process.platform === 'win32' ? 'cmd.exe' : 'npx',
+      process.platform === 'win32' ? ['/d', '/s', '/c', windowsCommand] : cliArgs, {
+        windowsVerbatimArguments: process.platform === 'win32',
+        encoding: 'utf8', timeout: 60000, maxBuffer: 2 * 1024 * 1024,
+      });
+  }
   async function api(path) {
     const url = new URL(path, 'https://api.vercel.com');
     if (team) url.searchParams.set('teamId', team);
+    if (localConfig && !token) {
+      const result = runCli(['api', url.pathname + url.search, '--method', 'GET', '--raw']);
+      if (result.status !== 0) throw new Error('DIAGNOSTIC_UNAVAILABLE');
+      return JSON.parse(result.stdout);
+    }
     const response = await fetch(url, {
       headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000),
     });
@@ -52,10 +77,7 @@ async function main() {
     return response.json();
   }
   function cli(args) {
-    const result = spawnSync('npx', ['--yes', 'vercel@62.1.0', ...args,
-      '--token', token, ...(team ? ['--scope', team] : [])], {
-      encoding: 'utf8', timeout: 60000, maxBuffer: 2 * 1024 * 1024,
-    });
+    const result = runCli(args);
     return {
       exitCode: result.status,
       timedOut: result.error?.code === 'ETIMEDOUT',
@@ -72,6 +94,30 @@ async function main() {
   if (!/^dpl_[a-zA-Z0-9]+$/.test(productionId ?? '')) throw new Error('PRODUCTION_ID_UNAVAILABLE');
   const production = await api(`/v13/deployments/${productionId}`);
   const environment = await api(`/v9/projects/${project}/env`);
+  const installations = await api('/v1/integrations/configurations?view=account');
+  const installationRows = Array.isArray(installations) ? installations : installations.configurations ?? [];
+  const linked = installationRows.filter((item) => item.projects == null || item.projects.includes(project));
+  const resourceReports = [];
+  for (const item of linked) {
+    if (!/^icfg_[a-zA-Z0-9]+$/.test(item.id ?? '')) continue;
+    let details;
+    try {
+      const resourceResponse = await api(`/v1/installations/${item.id}/resources`);
+      const resources = Array.isArray(resourceResponse) ? resourceResponse : resourceResponse.resources ?? [];
+      details = { readable: true, resources: resources.map((resource) => ({
+        id: /^[a-zA-Z0-9_]{1,100}$/.test(resource.id ?? '') ? resource.id : null,
+        state: ['ready', 'pending', 'error', 'active', 'suspended', 'failed'].includes(resource.status)
+          ? resource.status : 'unknown',
+      })) };
+    } catch { details = { readable: false }; }
+    resourceReports.push({ configurationId: item.id, ...details });
+  }
+  let buildEvents;
+  try {
+    const events = await api(`/v3/deployments/${previewId}/events?follow=0`);
+    const rows = Array.isArray(events) ? events : events.events ?? [];
+    buildEvents = { readable: true, count: rows.length, classifications: classifyLogs(JSON.stringify(rows)) };
+  } catch { buildEvents = { readable: false }; }
   const report = {
     mode: 'READ_ONLY_DIAGNOSTIC_NOT_ACCEPTANCE',
     observedAt: new Date().toISOString(),
@@ -79,6 +125,28 @@ async function main() {
     preview: deploymentIdentity(preview),
     production: deploymentIdentity(production),
     productionEnvironmentNamesPresent: productionEnvironmentNames(environment.envs ?? []),
+    projectContract: {
+      frameworkOther: projectMetadata.framework == null,
+      installMatchesRepo: projectMetadata.installCommand === 'npm ci',
+      buildMatchesRepo: projectMetadata.buildCommand === 'npm run build',
+      outputMatchesRepo: projectMetadata.outputDirectory === 'dist/runtime',
+      rootMatchesRepo: [null, undefined, '', '.'].includes(projectMetadata.rootDirectory),
+      gitCredentialPresent: Boolean(projectMetadata.link?.gitCredentialId),
+      repositoryIdMatches: String(projectMetadata.link?.repoId) === '1290014219',
+      repositoryNameMatches: projectMetadata.link?.repo === 'OkulYonetimSaaS',
+      productionBranchMain: projectMetadata.link?.productionBranch === 'main',
+      nodeVersion: /^\d{1,2}\.x$/.test(projectMetadata.nodeVersion ?? '') ? projectMetadata.nodeVersion : null,
+    },
+    integrationResponseIsArray: Array.isArray(installations),
+    linkedIntegrationConfigurations: linked.map((item) => ({
+        id: /^icfg_[a-zA-Z0-9]+$/.test(item.id ?? '') ? item.id : null,
+        provider: ['neon', 'upstash', 'supabase'].includes(item.slug ?? item.integration?.slug) ? item.slug ?? item.integration.slug : 'other',
+        disabled: Boolean(item.disabled),
+        needsFinalization: Boolean(item.needsFinalization),
+        projectAccess: item.projects == null ? 'all' : 'selected',
+      })),
+    integrationResources: resourceReports,
+    previewBuildEvents: buildEvents,
     previewBuildLogDiagnosis: cli(['inspect', previewId, '--logs']),
     productionRuntimeLogDiagnosis: cli(['logs', '--project', project, '--deployment', productionId,
       '--status-code', '500', '--since', '24h', '--limit', '20', '--json']),
@@ -89,7 +157,7 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
 }
 
-module.exports = { deploymentIdentity, classifyLogs, productionEnvironmentNames };
+module.exports = { deploymentIdentity, classifyLogs, productionEnvironmentNames, windowsArguments };
 if (require.main === module) main().catch((error) => {
   const code = /^(VERCEL_API_HTTP_\d{3}|VERCEL_TOKEN_UNAVAILABLE|PRODUCTION_ID_UNAVAILABLE)$/.test(error.message)
     ? error.message : 'DIAGNOSTIC_UNAVAILABLE';

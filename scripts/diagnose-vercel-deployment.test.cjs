@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { deploymentIdentity, classifyLogs, productionEnvironmentNames } = require('./diagnose-vercel-deployment.cjs');
+const { deploymentIdentity, classifyLogs, productionEnvironmentNames, windowsArguments } = require('./diagnose-vercel-deployment.cjs');
+const { spawnSync } = require('node:child_process');
 
 test('deployment output never includes raw metadata, errors or environment values', () => {
   const result = deploymentIdentity({ id: 'dpl_abc', url: 'app-abc.vercel.app', readyState: 'ERROR',
@@ -24,4 +25,13 @@ test('environment evidence is production-scoped names only', () => {
   ]);
   assert.deepEqual(result, ['JWT_ACCESS_SECRET']);
   assert.ok(!JSON.stringify(result).includes('PRIVATE_VALUE'));
+});
+test('Windows command preserves a full API query as one argument', { skip: process.platform !== 'win32' }, () => {
+  const query = '/v6/deployments?projectId=fixture&target=preview&limit=3';
+  const command = 'node ' + windowsArguments(['-e', 'process.stdout.write(process.argv[1])', query]);
+  const result = spawnSync('cmd.exe', ['/d', '/s', '/c', command], {
+    windowsVerbatimArguments: true, encoding: 'utf8', timeout: 10000,
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, query);
 });
