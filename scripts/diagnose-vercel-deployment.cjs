@@ -15,6 +15,8 @@ function deploymentIdentity(value) {
     state: ['READY', 'ERROR', 'BUILDING', 'QUEUED', 'CANCELED'].includes(value.readyState ?? value.state)
       ? value.readyState ?? value.state : 'UNKNOWN',
     errorCode: /^[A-Z_0-9]{1,80}$/.test(value.errorCode ?? '') ? value.errorCode : null,
+    sourceType: ['git', 'cli', 'api', 'import', 'redeploy'].includes(value.source) ? value.source : null,
+    gitSourcePresent: Boolean(value.gitSource),
     resourceProvisioningFailure: /resource provisioning failed/i.test(value.errorMessage ?? ''),
     integrationState: ['error', 'pending', 'ready', 'skipped', 'timeout'].includes(value.integrations?.status)
       ? value.integrations.status : null,
