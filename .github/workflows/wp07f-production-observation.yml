@@ -52,16 +52,22 @@ jobs:
           node-version: 22
       - name: Verify diagnostic redaction
         run: node --test scripts/diagnose-vercel-deployment.test.cjs
+      - name: Separate token authority from team context
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+        run: node scripts/diagnose-vercel-access.cjs
       - name: Read deployment metadata and classify logs
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
         run: node scripts/diagnose-vercel-deployment.cjs
       - name: Upload redacted diagnostic evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: vercel-deployment-diagnosis-${{ github.sha }}
-          path: artifacts/vercel-deployment-diagnosis/report.json
+          path: artifacts/vercel-deployment-diagnosis/*.json
           if-no-files-found: error
           retention-days: 7
   production-observation:
