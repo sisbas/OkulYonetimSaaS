@@ -22,6 +22,17 @@ function parseQueueDate(date: string | undefined, fallback?: string): string {
     throw new BadRequestException('Daily Operations date must use YYYY-MM-DD');
   }
 
+  // PostgreSQL must never be the validator for a user-supplied calendar date.
+  // JS normalizes e.g. February 30 into March: require an exact round trip.
+  const calendarDate = new Date(`${value}T00:00:00.000Z`);
+  if (
+    !Number.isFinite(calendarDate.getTime()) ||
+    calendarDate.getUTCFullYear() < 1 ||
+    calendarDate.toISOString().slice(0, 10) !== value
+  ) {
+    throw new BadRequestException('Daily Operations date is not a valid calendar date');
+  }
+
   return value;
 }
 
