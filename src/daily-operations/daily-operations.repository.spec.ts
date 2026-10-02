@@ -44,8 +44,26 @@ describe('candidate lookup error integrity', () => {
 // #263 review P2: aday listesi etkilenen olayların KESİŞİMİ değil BİRLEŞİMİdir.
 describe('candidate lookup across multiple impacted events (union, #263 review P2)', () => {
   const events = [
-    { occurrenceDate: '2026-09-14', startsAt: new Date('2026-09-14T09:00:00.000Z'), endsAt: new Date('2026-09-14T10:00:00.000Z') },
-    { occurrenceDate: '2026-09-21', startsAt: new Date('2026-09-21T09:00:00.000Z'), endsAt: new Date('2026-09-21T10:00:00.000Z') },
+    {
+      occurrenceDate: '2026-09-14',
+      startsAt: new Date('2026-09-14T09:00:00.000Z'),
+      endsAt: new Date('2026-09-14T10:00:00.000Z'),
+      dayOfWeek: 1,
+      startTime: '09:00:00',
+      endTime: '10:00:00',
+      courseId: 'course',
+      scheduleEventId: 'lesson',
+    },
+    {
+      occurrenceDate: '2026-09-21',
+      startsAt: new Date('2026-09-21T09:00:00.000Z'),
+      endsAt: new Date('2026-09-21T10:00:00.000Z'),
+      dayOfWeek: 1,
+      startTime: '09:00:00',
+      endTime: '10:00:00',
+      courseId: 'course',
+      scheduleEventId: 'lesson',
+    },
   ];
   const leave = { id: 'leave', tenantId: 'tenant', branchId: 'branch', teacherId: 'original' };
 
@@ -88,24 +106,64 @@ describe('candidate lookup across multiple impacted events (union, #263 review P
     expect(check).toHaveBeenCalledTimes(3);
   });
 
-  it('event-specific candidates must qualify for every occurrence covered by assignment', async () => {
-    const { repository, manager, check } = setup();
-    check.mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new SubstituteIneligibleError('SUBSTITUTE_TIME_CONFLICT'))
-      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+  it('batches eligibility checks for every assignment occurrence into one query', async () => {
+    const { repository, manager } = setup();
+    manager.query.mockResolvedValueOnce([{ teacherId: 'ineligible', teacherBranchId: 'branch-b' }]);
     const result = await (repository as any).findEligibleCandidates(manager, leave, events, 'all');
     expect(result.map((x: any) => x.teacherId)).toEqual(['ineligible']);
-    expect(check).toHaveBeenCalledTimes(4);
+    expect(manager.query).toHaveBeenCalledTimes(1);
+    const [query, parameters] = manager.query.mock.calls[0];
+    expect(query).toContain('jsonb_to_recordset($5::jsonb)');
+    expect(query).toContain('FROM teacher_courses');
+    expect(query).toContain('FROM leave_requests');
+    expect(query).toContain('FROM schedule_events event');
+    expect(query).toContain('FROM leave_substitution_assignments assignment');
+    expect(JSON.parse(parameters[4])).toEqual(events.map((event) => ({
+      occurrenceDate: event.occurrenceDate,
+      startsAt: event.startsAt.toISOString(),
+      endsAt: event.endsAt.toISOString(),
+      dayOfWeek: event.dayOfWeek,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      courseId: event.courseId,
+      scheduleEventId: event.scheduleEventId,
+    })));
   });
 
-  it('propagates a later occurrence database failure in event-specific lookup', async () => {
-    const { repository, manager, check } = setup();
-    const failure = new Error('Connection lost on second occurrence');
-    check.mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure);
+  it('keeps all-occurrence database round trips bounded for large candidate and occurrence sets', async () => {
+    const { repository, manager } = setup();
+    const manyOccurrences = Array.from({ length: 500 }, (_, index) => {
+      const startsAt = new Date(Date.UTC(2026, 0, 5 + index * 7, 9));
+      const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000);
+      return {
+        ...events[0],
+        occurrenceDate: startsAt.toISOString().slice(0, 10),
+        startsAt,
+        endsAt,
+      };
+    });
+    const manyCandidates = Array.from({ length: 50 }, (_, index) => ({
+      teacherId: `candidate-${index}`,
+      teacherBranchId: `branch-${index}`,
+    }));
+    manager.query.mockResolvedValueOnce(manyCandidates);
+
+    const result = await (repository as any).findEligibleCandidates(manager, leave, manyOccurrences, 'all');
+
+    expect(result).toHaveLength(50);
+    expect(manager.query).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(manager.query.mock.calls[0][1][4])).toHaveLength(500);
+  });
+
+  it('propagates an eligibility-query failure without returning partial candidates', async () => {
+    const { repository, manager } = setup();
+    const failure = new Error('Connection lost during batched eligibility lookup');
+    manager.query.mockRejectedValueOnce(failure);
     await expect((repository as any).findEligibleCandidates(manager, leave, events, 'all')).rejects.toBe(failure);
+    expect(manager.query).toHaveBeenCalledTimes(1);
   });
 
-  it('public event candidates reject a teacher unavailable for a later occurrence', async () => {
+  it('public event candidates query all occurrences and return the database-filtered set', async () => {
     const { repository, manager, check } = setup();
     (repository as any).dataSource.manager = manager;
     jest.spyOn(repository as any, 'findApprovedLeave').mockResolvedValue(leave);
@@ -113,14 +171,17 @@ describe('candidate lookup across multiple impacted events (union, #263 review P
       events.map((event) => ({ ...event, scheduleEventId: 'lesson', courseId: 'course' })),
     );
     jest.spyOn(repository as any, 'teacherCoursesReady').mockResolvedValue(true);
-    check.mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new SubstituteIneligibleError('SUBSTITUTE_TIME_CONFLICT'))
-      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+    manager.query.mockResolvedValueOnce([]);
     const result = await repository.candidates(
       { tenantId: 'tenant', requestId: 'candidate-boundary' }, 'leave', 'lesson',
     );
     expect(result.eligibilityFinalized).toBe(true);
-    expect(result.candidates.map((candidate) => candidate.teacherId)).toEqual(['ineligible']);
+    expect(result.candidates).toEqual([]);
+    expect(manager.query).toHaveBeenCalledTimes(1);
+    expect(manager.query.mock.calls[0][0]).toContain('jsonb_to_recordset($5::jsonb)');
+    expect(JSON.parse(manager.query.mock.calls[0][1][4]).map((event: any) => event.occurrenceDate))
+      .toEqual(events.map((event) => event.occurrenceDate));
+    expect(check).not.toHaveBeenCalled();
   });
 });
 

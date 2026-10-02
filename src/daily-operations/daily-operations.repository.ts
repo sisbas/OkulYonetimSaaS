@@ -687,6 +687,133 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
 
   private async findEligibleCandidates(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[], occurrencePolicy: 'any' | 'all' = 'any'): Promise<CandidateResponse['candidates']> {
     const firstEvent = events[0];
+    if (occurrencePolicy === 'all') {
+      const rows: Array<{ teacherId: string; teacherBranchId: string }> = await manager.query(
+        `WITH occurrences AS (
+           SELECT *
+           FROM jsonb_to_recordset($5::jsonb) AS occurrence(
+             "occurrenceDate" date,
+             "startsAt" timestamptz,
+             "endsAt" timestamptz,
+             "dayOfWeek" integer,
+             "startTime" time,
+             "endTime" time,
+             "courseId" uuid,
+             "scheduleEventId" uuid
+           )
+         ),
+         candidates AS (
+           SELECT teacher.id AS "teacherId", branch.id AS "teacherBranchId"
+           FROM teachers teacher
+           JOIN teacher_branches branch ON branch.tenant_id = teacher.tenant_id AND branch.teacher_id = teacher.id
+           WHERE teacher.tenant_id = $1 AND teacher.status = 'active' AND teacher.id <> $2
+             AND branch.branch_id = $3 AND branch.status = 'active'
+             AND branch.effective_from <= $4::date
+             AND (branch.effective_to IS NULL OR branch.effective_to >= $4::date)
+         )
+         SELECT candidate."teacherId", candidate."teacherBranchId"
+         FROM candidates candidate
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM occurrences occurrence
+           WHERE
+             NOT EXISTS (
+               SELECT 1 FROM teacher_branches branch
+               WHERE branch.tenant_id = $1 AND branch.teacher_id = candidate."teacherId"
+                 AND branch.branch_id = $3 AND branch.status = 'active'
+                 AND branch.effective_from <= occurrence."occurrenceDate"
+                 AND (branch.effective_to IS NULL OR branch.effective_to >= occurrence."occurrenceDate")
+             )
+             OR NOT EXISTS (
+               SELECT 1 FROM teacher_courses course
+               WHERE course.tenant_id = $1 AND course.teacher_id = candidate."teacherId"
+                 AND course.course_id = occurrence."courseId" AND course.status = 'active'
+                 AND course.effective_from <= occurrence."occurrenceDate"
+                 AND (course.effective_to IS NULL OR course.effective_to >= occurrence."occurrenceDate")
+             )
+             OR EXISTS (
+               SELECT 1 FROM leave_requests leave_request
+               WHERE leave_request.tenant_id = $1 AND leave_request.teacher_id = candidate."teacherId"
+                 AND leave_request.decision_status = 'approved'
+                 AND leave_request.starts_at < occurrence."endsAt"
+                 AND leave_request.ends_at > occurrence."startsAt"
+             )
+             OR EXISTS (
+               SELECT 1
+               FROM schedule_events event
+               JOIN schedule_versions version ON version.id = event.version_id
+                 AND version.tenant_id = event.tenant_id AND version.branch_id = event.branch_id
+                 AND version.schedule_id = event.schedule_id AND version.status = 'published'
+               JOIN schedules schedule ON schedule.id = event.schedule_id
+                 AND schedule.tenant_id = event.tenant_id AND schedule.branch_id = event.branch_id
+                 AND schedule.active_version_id = version.id AND schedule.status = 'published'
+               WHERE event.tenant_id = $1 AND event.teacher_id = candidate."teacherId"
+                 AND event.day_of_week = occurrence."dayOfWeek"
+                 AND event.start_time < occurrence."endTime" AND event.end_time > occurrence."startTime"
+                 AND schedule.effective_from <= occurrence."occurrenceDate"
+                 AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= occurrence."occurrenceDate"
+             )
+             OR EXISTS (
+               SELECT 1
+               FROM leave_substitution_assignments assignment
+               JOIN leave_requests assigned_leave
+                 ON assigned_leave.id = assignment.leave_request_id
+                AND assigned_leave.tenant_id = assignment.tenant_id
+                AND assigned_leave.decision_status = 'approved'
+               JOIN schedule_events event
+                 ON event.id = assignment.schedule_event_id
+                AND event.tenant_id = assignment.tenant_id
+                AND event.branch_id = assignment.branch_id
+               JOIN schedule_versions version
+                 ON version.id = event.version_id
+                AND version.tenant_id = event.tenant_id
+                AND version.branch_id = event.branch_id
+                AND version.status = 'published'
+               JOIN schedules schedule
+                 ON schedule.id = event.schedule_id
+                AND schedule.tenant_id = event.tenant_id
+                AND schedule.branch_id = event.branch_id
+                AND schedule.active_version_id = version.id
+                AND schedule.status = 'published'
+               WHERE assignment.tenant_id = $1
+                 AND assignment.substitute_teacher_id = candidate."teacherId"
+                 AND assignment.state = 'assigned'
+                 AND event.day_of_week = occurrence."dayOfWeek"
+                 AND event.start_time < occurrence."endTime" AND event.end_time > occurrence."startTime"
+                 AND schedule.effective_from <= occurrence."occurrenceDate"
+                 AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= occurrence."occurrenceDate"
+                 AND assigned_leave.starts_at < occurrence."endsAt"
+                 AND assigned_leave.ends_at > occurrence."startsAt"
+                 AND NOT (assignment.leave_request_id = $6 AND assignment.schedule_event_id = occurrence."scheduleEventId")
+             )
+         )
+         ORDER BY candidate."teacherId" ASC`,
+        [
+          leave.tenantId,
+          leave.teacherId,
+          leave.branchId,
+          firstEvent.occurrenceDate,
+          JSON.stringify(events.map((event) => ({
+            occurrenceDate: event.occurrenceDate,
+            startsAt: event.startsAt,
+            endsAt: event.endsAt,
+            dayOfWeek: event.dayOfWeek,
+            startTime: event.startTime,
+            endTime: event.endTime,
+            courseId: event.courseId,
+            scheduleEventId: event.scheduleEventId,
+          }))),
+          leave.id,
+        ],
+      );
+      return rows.map((row) => ({
+        teacherId: row.teacherId,
+        teacherBranchId: row.teacherBranchId,
+        decisionSupportOnly: true,
+        eligible: true,
+      }));
+    }
+
     const rows = await manager.query(
       `SELECT teacher.id AS "teacherId", branch.id AS "teacherBranchId"
        FROM teachers teacher
@@ -705,20 +832,17 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       // bir fen yedeği ayrı ayrı geçerli olabilir. Kesişim kullanmak, tüm
       // olaylara uygun olmayan geçerli adayları sessizce elerdi (boş liste).
       let eligibleForAnyEvent = false;
-      let eligibleForAllEvents = true;
       for (const event of events) {
         try {
           await this.assertEligibleCandidate(manager, leave, event, row.teacherId, event.startsAt, event.endsAt);
           eligibleForAnyEvent = true;
-          if (occurrencePolicy === 'any') break;
+          break;
         } catch (error) {
           // Storage, schema and unknown failures are not evidence of ineligibility.
           if (!(error instanceof SubstituteIneligibleError)) throw error;
-          eligibleForAllEvents = false;
-          if (occurrencePolicy === 'all') break;
         }
       }
-      if (eligibleForAnyEvent && (occurrencePolicy === 'any' || eligibleForAllEvents)) {
+      if (eligibleForAnyEvent) {
         candidates.push({ teacherId: row.teacherId, teacherBranchId: row.teacherBranchId, decisionSupportOnly: true, eligible: true });
       }
     }
