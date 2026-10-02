@@ -48,7 +48,9 @@
 
         <form id="context-form" class="stack context-form">
           <label>Şube
-            <input id="branch-id" name="branchId" inputmode="latin" aria-describedby="branch-help" required />
+            <select id="branch-id" name="branchCode" aria-describedby="branch-help" required disabled>
+              <option value="">Önce oturum açın</option>
+            </select>
           </label>
           <label>Tarih
             <input id="operation-date" name="date" type="date" />

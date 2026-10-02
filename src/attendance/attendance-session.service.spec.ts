@@ -358,6 +358,24 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
     });
   });
 
+  it('filters teacher attendance sessions by the selected branch', async () => {
+    await service.listByTeacher('t1', 'teacher-1', 'branch-1');
+
+    expect(sessionRepo.find).toHaveBeenCalledWith({
+      where: { tenantId: 't1', teacherId: 'teacher-1', branchId: 'branch-1' },
+      order: { sessionDate: 'DESC' },
+    });
+  });
+
+  it('filters oversight attendance sessions by the selected branch', async () => {
+    await service.listByTenant('t1', 'branch-1');
+
+    expect(sessionRepo.find).toHaveBeenCalledWith({
+      where: { tenantId: 't1', branchId: 'branch-1' },
+      order: { sessionDate: 'DESC' },
+    });
+  });
+
   it('markRecord masks free-text notes on the write path (KVKK, AC-5)', async () => {
     sessionRepo.findOne = jest.fn(async () => publishedSession());
     recordRepo.findOne = jest.fn(async () => ({ id: 'rec-1' }));

@@ -7,6 +7,7 @@ import { PermissionGuard } from './permission.guard';
 
 class ProbeController {}
 class HealthController {}
+class AttendanceSessionController {}
 
 function auditMock(): jest.Mocked<Pick<SecurityAuditService, 'emitAuthorizationDenied'>> {
   return { emitAuthorizationDenied: jest.fn() };
@@ -17,6 +18,7 @@ type GuardHarness = {
   audit: ReturnType<typeof auditMock>;
   resolve: jest.Mock;
   resolveSelection: jest.Mock;
+  sessionContext: jest.Mock;
 };
 
 function harness(options: {
@@ -25,17 +27,29 @@ function harness(options: {
   authority?: { roles: string[]; permissions: string[] } | Error;
 }): GuardHarness {
   const audit = auditMock();
+  const authority = options.authority instanceof Error ? undefined : options.authority;
   const resolve = jest.fn();
   if (options.authority instanceof Error) resolve.mockRejectedValue(options.authority);
   else
     resolve.mockResolvedValue({
-      roles: options.authority?.roles ?? ['teacher'],
-      permissions: options.authority?.permissions ?? options.permissions ?? [],
+      roles: authority?.roles ?? ['teacher'],
+      permissions: authority?.permissions ?? options.permissions ?? [],
       tokenVersion: 1,
       resolvedAt: '2026-09-23T00:00:00.000Z',
       cache: 'miss',
     });
   const resolveSelection = jest.fn();
+  const sessionContext = jest.fn().mockResolvedValue({
+    accessible: [{ branchId: 'branch-a', name: 'Branch A', code: 'A' }],
+    branch: { branchId: 'branch-a', branchName: 'Branch A', source: 'membership_default' },
+    authority: {
+      roles: authority?.roles ?? ['teacher'],
+      permissions: authority?.permissions ?? options.permissions ?? [],
+      tokenVersion: 1,
+      resolvedAt: '2026-09-23T00:00:00.000Z',
+      cache: 'disabled',
+    },
+  });
   const reflector = {
     getAllAndOverride: jest.fn((key: string) =>
       key === PERMISSIONS_KEY ? options.permissions : options.contextScoped === true,
@@ -45,9 +59,9 @@ function harness(options: {
     reflector,
     audit as unknown as SecurityAuditService,
     { resolve } as never,
-    { resolveSelection } as never,
+    { resolveSelection, sessionContext } as never,
   );
-  return { guard, audit, resolve, resolveSelection };
+  return { guard, audit, resolve, resolveSelection, sessionContext };
 }
 
 function executionContext(
@@ -178,6 +192,42 @@ describe('PermissionGuard', () => {
     );
   });
 
+  it('checks body schedule events against the selected attendance branch', async () => {
+    const scheduleEventId = '22222222-2222-4222-8222-222222222222';
+    const { guard, sessionContext } = harness({
+      permissions: ['attendance:generate'],
+      authority: { roles: ['tenant_admin'], permissions: ['attendance:generate'] },
+    });
+    sessionContext.mockImplementation(async (_user: unknown, options: { resources?: Array<{ id: string }> }) => {
+      if (options.resources?.some((resource) => resource.id === scheduleEventId)) {
+        throw new AuthorizationContextError('unauthorized_branch');
+      }
+      return {
+        accessible: [{ branchId: 'branch-a', name: 'Branch A', code: 'A' }],
+        branch: { branchId: 'branch-a', branchName: 'Branch A', source: 'request_selection' },
+        authority: {
+          roles: ['tenant_admin'], permissions: ['attendance:generate'],
+          tokenVersion: 1, resolvedAt: '2026-09-23T00:00:00.000Z', cache: 'disabled',
+        },
+      };
+    });
+    const denied = {
+      ...request(['attendance:generate']),
+      user: authenticatedUser(['attendance:generate'], { sessionId: 'session-a' }),
+      params: {},
+      body: { scheduleEventId },
+      query: {},
+      method: 'POST',
+    };
+
+    await expect(Promise.resolve(
+      guard.canActivate(executionContext(denied, AttendanceSessionController)),
+    )).rejects.toMatchObject({ status: 404 });
+    expect(sessionContext).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      resources: [{ table: 'schedule_events', id: scheduleEventId }],
+    }));
+  });
+
   it('allows @ContextScoped routes with a resolved context and no business permission', async () => {
     const { guard, resolveSelection } = harness({ permissions: undefined, contextScoped: true });
     await expect(Promise.resolve(guard.canActivate(executionContext(request([]))))).resolves.toBe(true);
@@ -239,4 +289,3 @@ describe('PermissionGuard', () => {
     expect(resolve).not.toHaveBeenCalled();
   });
 });
-

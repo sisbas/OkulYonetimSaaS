@@ -28,7 +28,7 @@ export class ContextCatalogController {
   }
 
   /**
-   * Şube seçimi: istemci yalnızca bir AD gönderir; sunucu bu adı yetkili şube
+   * Şube seçimi: istemci bir ad ve isteğe bağlı okunabilir kod gönderir; sunucu yetkili şube
    * kümesiyle eşler. Eşleşme yoksa ya da ad belirsizse non-enumerating 404
    * döner (başka kurum/şube varlığı sızmaz).
    */
@@ -39,12 +39,13 @@ export class ContextCatalogController {
     @Req() req: RequestWithContext,
     @Body() body: ContextBranchSelectDto,
   ): Promise<ContextCatalog> {
-    return this.run(req, { branchName: body?.branchName });
+    if (!req.user?.sessionId) throw toDenyException('missing_authenticated_context');
+    return this.run(req, { branchName: body?.branchName, branchCode: body?.branchCode });
   }
 
   private async run(
     req: RequestWithContext,
-    selection: { branchName?: string | null },
+    selection: { branchName?: string | null; branchCode?: string | null },
   ): Promise<ContextCatalog> {
     try {
       return await this.catalog.build(req.context ?? { requestId: 'unknown' }, selection);

@@ -17,6 +17,7 @@ import handler, {
 import { AppModule } from '../../src/app.module';
 import { AuthService, AUTH_ACCESS_TOKEN_AUDIENCE, AUTH_TOKEN_ISSUER } from '../../src/auth/auth.service';
 import type { RequestUser } from '../../src/common/context/request-context';
+import { BranchScopeService } from '../../src/rbac/branch-scope.service';
 import { AuditRetentionService } from '../../src/common/audit/audit-retention.service';
 import { AuditQueryService } from '../../src/common/audit/audit-query.service';
 
@@ -37,6 +38,7 @@ const authenticatedUser: RequestUser = {
   sessionId: randomUUID(),
   authorizationVersion: 1,
 };
+const routingBranch = randomUUID();
 
 const stubAuthService = {
   validateAccessTokenSession: jest.fn().mockResolvedValue(authenticatedUser),
@@ -62,6 +64,15 @@ async function bootNestApp() {
     .useValue(createStubDataSource() as unknown as DataSource)
     .overrideProvider(AuthService)
     .useValue(stubAuthService)
+    // Routing/validation probe only: no PostgreSQL authority acceptance claim.
+    .overrideProvider(BranchScopeService)
+    .useValue({ sessionContext: jest.fn().mockResolvedValue({
+      accessible: [{ branchId: routingBranch, name: 'Routing', code: 'ROUTING' }],
+      branch: { branchId: routingBranch, branchName: 'Routing', source: 'membership_default' }, authority: {
+        roles: authenticatedUser.roleIds, permissions: authenticatedUser.permissions,
+        tokenVersion: 1, resolvedAt: new Date().toISOString(), cache: 'disabled',
+      },
+    }) })
     .compile();
 
   const app = moduleRef.createNestApplication(new ExpressAdapter(), {
@@ -276,14 +287,14 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
           authorization: `Bearer ${accessToken as string}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ branchId: 'not-a-uuid', durationType: 'weekly', reasonCode: 'administrative' }),
+        body: JSON.stringify({ branchId: routingBranch, durationType: 'weekly', reasonCode: 'administrative' }),
       }),
       400,
     );
 
     expect(body.statusCode).toBe(400);
     const messages = Array.isArray(body.message) ? (body.message as string[]) : [];
-    expect(messages.some((message) => message.includes('branchId must be a UUID'))).toBe(true);
+    expect(messages.some((message) => message.includes('startsAt'))).toBe(true);
     expect(messages.some((message) => message.includes('durationType must be one of the following values'))).toBe(true);
   });
 

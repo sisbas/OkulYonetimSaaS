@@ -156,13 +156,13 @@ export class AttendanceSessionController {
   async list(@Req() req: RequestWithContext) {
     const actor = await this.resolveActor(req);
     if (hasAttendanceOversight(actor)) {
-      return this.sessionService.listByTenant(actor.tenantId);
+      return this.sessionService.listByTenant(actor.tenantId, req.context?.branchId);
     }
     // Öğretmen listesi teachers.id ile sorgulanır (users.id DEĞİL); öğretmen
     // kimliği çözümlenemeyen kullanıcı için bilgi sızdırmayan boş liste.
     if (!actor.teacherId) {
       return [];
     }
-    return this.sessionService.listByTeacher(actor.tenantId, actor.teacherId);
+    return this.sessionService.listByTeacher(actor.tenantId, actor.teacherId, req.context?.branchId);
   }
 }

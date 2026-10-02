@@ -11,6 +11,7 @@ import {
 } from '../context/authorization-context';
 import { emitContextAuditEvent, legacySecurityAuditReasonCode } from '../context/context-audit';
 import { CONTEXT_SCOPE_KEY } from '../context/context-scope.decorator';
+import { branchResources, hasBranchListFilter, isBranchScopedController, isBranchScopedPermission } from '../context/branch-resource-scope';
 import {
   DenyReasonCode,
   decideDeny,
@@ -119,7 +120,7 @@ export class PermissionGuard implements CanActivate {
     // Tamamen senkron yol: yetki çözümleyici enjekte edilmemiş ve istemci şube
     // seçimi yoksa (izole birim spec'leri / DI'siz kullanım) karar senkron
     // verilir; yetki yine kimlik katmanının sunucudan çözdüğü `request.user`dır.
-    if (!this.authority && !branchIdHeader) {
+    if (!this.authority && !branchIdHeader && !user.sessionId) {
       // Gözlemlenebilirlik: DI grafiğinde çözümleyici yoksa (beklenmeyen durum)
       // yetki yine sunucu-çözümlü kullanıcıdan alınır ama önbellek/bağımsız
       // doğrulama devre dışı kalır — bu sessiz kalmamalı.
@@ -134,7 +135,8 @@ export class PermissionGuard implements CanActivate {
       // "bilinmeyen kaynak" ayrımını sızdırırdı. Sözleşme non-enumerating 404'tür.
       this.denyAndThrow(request, 'branch_not_authorized', requiredPermission);
     }
-    return this.resolveAndSettle(request, user, branchIdHeader, requiredPermission);
+    const recoverSelection = controller?.name === 'ContextCatalogController' && handler?.name === 'selectBranch';
+    return this.resolveAndSettle(request, user, branchIdHeader, requiredPermission, recoverSelection, controller?.name);
   }
 
   /** Yetki çözümleyici ile (önbellekli, token_version uyumlu) karar yolu. */
@@ -143,8 +145,46 @@ export class PermissionGuard implements CanActivate {
     user: NonNullable<RequestWithContext['user']>,
     branchIdHeader: string | undefined,
     requiredPermission: ReadonlyArray<string>,
+    recoverSelection = false,
+    controllerName = '',
   ): Promise<boolean> {
     try {
+      if (user.sessionId) {
+        if (requiredPermission.some(isBranchScopedPermission) && !isBranchScopedController(controllerName)) {
+          throw new AuthorizationContextError('unresolved_authority');
+        }
+        // Runtime JWT authentication supplies a signed, database-verified session.
+        // Do not let cached roles or a client header override its persisted choice.
+        if (!this.branchScope) throw new AuthorizationContextError('unresolved_authority');
+        const resolved = await this.branchScope.sessionContext(user, {
+          requireSelection: isBranchScopedController(controllerName),
+          branchIdHeader,
+          recoverSelection,
+          resources: branchResources(controllerName, request.params, request.body),
+        });
+        const selectedCode = resolved.accessible.find((entry) => entry.branchId === resolved.branch?.branchId)?.code;
+        if (isBranchScopedController(controllerName) && !resolved.branch && !recoverSelection) {
+          throw new AuthorizationContextError('unauthorized_branch');
+        }
+        const codeHeader = request.header?.('x-branch-code');
+        if (codeHeader && codeHeader !== selectedCode) throw new AuthorizationContextError('unauthorized_branch');
+        if (hasBranchListFilter(controllerName) && !request.params?.id && request.method === 'GET' && resolved.branch) {
+          request.query.branchId ??= resolved.branch.branchId;
+        }
+        // Legacy business DTOs require branchId. Forward a validated readable
+        // code to that internal field only after resolving the session selection.
+        // Client values never choose a different branch or authorize a request.
+        for (const input of [request.query, request.body]) {
+          if (input?.branchId != null) {
+            if (!resolved.branch) throw new AuthorizationContextError('unauthorized_branch');
+            if (input.branchId !== selectedCode && input.branchId !== resolved.branch.branchId) {
+              throw new AuthorizationContextError('unauthorized_branch');
+            }
+            input.branchId = resolved.branch.branchId;
+          }
+        }
+        return this.settle(request, user, resolved.authority, resolved.branch, requiredPermission);
+      }
       const resolvedAuthority: ServerResolvedAuthority = this.authority
         ? await this.authority.resolve({
             userId: user.userId,
@@ -187,7 +227,7 @@ export class PermissionGuard implements CanActivate {
       //  (b) production: her türlü yetki çözümleme hatası RED (fallback yok).
       //  (c) Gürültülü oturum-fallback'i YALNIZ non-production + açık env bayrağı
       //      (`SECURITY_CONTEXT_ALLOW_SESSION_FALLBACK=true`) ile; default KAPALI.
-      if (!isProductionRuntime() && sessionFallbackExplicitlyEnabled()) {
+      if (!user.sessionId && !isProductionRuntime() && sessionFallbackExplicitlyEnabled()) {
         // Şube seçimi uygulanmaz (kapsam daraltan seçim uygulanmadığı için yetki
         // genişlemez) ve durum GÜRÜLTÜLÜ şekilde loglanır (sabit olay adı, PII yok).
         this.logger.warn(

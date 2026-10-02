@@ -480,9 +480,10 @@ export class AttendanceSessionService {
   async listByTeacher(
     tenantId: string,
     teacherId: string,
+    branchId?: string,
   ): Promise<AttendanceSession[]> {
     return this.sessionRepo.find({
-      where: { tenantId, teacherId },
+      where: { tenantId, teacherId, ...(branchId ? { branchId } : {}) },
       order: { sessionDate: 'DESC' },
     });
   }
@@ -492,9 +493,9 @@ export class AttendanceSessionService {
    * liste. Önceki controller sürümü `listByTeacher(tenantId, '*')` çağırdığı
    * için müdür listesi her zaman boş dönüyordu.
    */
-  async listByTenant(tenantId: string): Promise<AttendanceSession[]> {
+  async listByTenant(tenantId: string, branchId?: string): Promise<AttendanceSession[]> {
     return this.sessionRepo.find({
-      where: { tenantId },
+      where: { tenantId, ...(branchId ? { branchId } : {}) },
       order: { sessionDate: 'DESC' },
     });
   }
