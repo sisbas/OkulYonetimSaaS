@@ -1,10 +1,8 @@
 ﻿import {
   BadRequestException,
-  Body,
   Controller,
   ForbiddenException,
   Get,
-  Post,
   Query,
   Req,
   UnauthorizedException,
@@ -16,10 +14,6 @@ import { RequestContext, RequestWithContext } from '../context/request-context';
 import { Permissions } from '../decorators/permissions.decorator';
 import { TenantScopeGuard } from '../tenant/tenant-scope.guard';
 import { AuditQueryService, AuditQueryActor } from './audit-query.service';
-import {
-  AuditRetentionService,
-  MAX_AUDIT_RETENTION_ROWS,
-} from './audit-retention.service';
 import { AuditActionFilter, TenantScopedAuditQuery } from './transactional-audit.types';
 
 const ENTITY_TYPES = [
@@ -107,7 +101,6 @@ function parseActions(value: string | undefined): AuditActionFilter[] | undefine
 export class AuditController {
   constructor(
     private readonly query: AuditQueryService,
-    private readonly retention: AuditRetentionService,
   ) {}
 
   /** Tenant-scoped, KVKK maskeli audit okuma (okuma işlemi de audit'lenir). */
@@ -156,78 +149,18 @@ export class AuditController {
     return this.query.list(query, actorOf(context));
   }
 
-  /** Zincir doğrulama: kurcalama/kırpma tespiti (varsa checkpoint'ten başlar). */
+  /** Global chain verification requires platform authority, not tenant grants. */
   @Get('verify')
   @Permissions('audit_log:operations:read')
-  verify(
-    @Req() request: RequestWithContext,
-    @Query('expectedHeadHash') expectedHeadHash?: string,
-    @Query('expectedLastSequence') expectedLastSequence?: string,
-    @Query('limit') limit?: string,
-  ) {
-    const context = contextOf(request);
-    if (expectedHeadHash && !/^[0-9a-f]{64}$/i.test(expectedHeadHash)) {
-      throw new BadRequestException('expectedHeadHash must be a 64-char hex hash');
-    }
-    const parsedSequence = parseOptionalInteger(
-      expectedLastSequence,
-      'expectedLastSequence',
-      0,
-      Number.MAX_SAFE_INTEGER,
-    );
-    const parsedLimit = parseOptionalInteger(limit, 'limit', 1, 50_000);
-
-    return this.query.verify({
-      tenantId: context.tenantId as string,
-      ...(expectedHeadHash ? { expectedHeadHash } : {}),
-      ...(parsedSequence !== undefined ? { expectedLastSequence: parsedSequence } : {}),
-      ...(parsedLimit !== undefined ? { limit: parsedLimit } : {}),
-    });
+  verify(@Req() request: RequestWithContext) {
+    contextOf(request);
+    // The global hash chain cannot be tenant-filtered. Existing tenant DB grants
+    // must not expose other tenants' counts/checkpoints or trigger global scans.
+    // Keep a registered, controlled denial until platform authority is approved.
+    throw new ForbiddenException('Audit verification is unavailable');
   }
 
-  /** Retention planı (salt okunur): hangi prefix kırpılabilir. */
-  @Post('retention/plan')
-  @Permissions('audit_log:retention:run')
-  plan() {
-    return this.retention.plan();
-  }
-
-  /**
-   * Retention kırpma koşusu. Güvenli varsayılan: `dryRun` true; gerçek kırpma
-   * için açıkça `dryRun: false` gerekir.
-   */
-  @Post('retention/run')
-  @Permissions('audit_log:retention:run')
-  run(
-    @Req() request: RequestWithContext,
-    @Body() body: { reason?: string; dryRun?: boolean; maxRows?: number },
-  ) {
-    const context = contextOf(request);
-    const reason = String(body?.reason ?? '').trim();
-    if (!/^[a-z0-9_.:-]{3,60}$/.test(reason)) {
-      throw new BadRequestException('reason must match ^[a-z0-9_.:-]{3,60}$');
-    }
-    if (body?.maxRows !== undefined) {
-      const maxRows = body.maxRows;
-      if (
-        !Number.isFinite(maxRows) ||
-        !Number.isInteger(maxRows) ||
-        maxRows < 1 ||
-        maxRows > MAX_AUDIT_RETENTION_ROWS
-      ) {
-        throw new BadRequestException(
-          `maxRows must be an integer between 1 and ${MAX_AUDIT_RETENTION_ROWS}`,
-        );
-      }
-    }
-    const actor = actorOf(context);
-    return this.retention.prune({
-      dryRun: body?.dryRun !== false,
-      reason,
-      actorUserId: actor.actorUserId,
-      tenantId: context.tenantId as string,
-      requestId: actor.requestId,
-      ...(body?.maxRows !== undefined ? { maxRows: body.maxRows } : {}),
-    });
-  }
+  // #367: retention is platform-global, not a tenant operation. No HTTP
+  // route is published, even for existing DB-granted retention permissions.
+  // Internal retention policy/prune semantics remain in AuditRetentionService.
 }

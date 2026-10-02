@@ -131,8 +131,9 @@ export class AuditLogRepository {
   async findTenantScoped(
     entityManager: EntityManager,
     query: TenantScopedAuditQuery,
+    excludeExportReceiptActorUserId?: string,
   ): Promise<TenantScopedAuditRow[]> {
-    const { sql, params } = buildTenantScopedAuditQuery(query);
+    const { sql, params } = buildTenantScopedAuditQuery(query, excludeExportReceiptActorUserId);
     const rows = (await entityManager.query(sql, [...params])) as Array<Record<string, unknown>>;
 
     return rows.map((row) => ({

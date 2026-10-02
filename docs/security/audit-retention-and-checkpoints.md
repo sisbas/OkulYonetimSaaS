@@ -64,9 +64,9 @@ kırpmak ve kırpılan geçmişin bütünlüğünü kanıtlanabilir tutmak.
 | Route | Yetki | Amaç |
 |---|---|---|
 | `GET /api/v1/audit/logs` | `audit_log:read` | Tenant-scoped, KVKK maskeli okuma (`entityType`, `entityId`, `actorUserId`, `actions`, `from`, `to`, `limit`, `offset`) |
-| `GET /api/v1/audit/verify` | `audit_log:operations:read` | Zincir doğrulama; `expectedHeadHash` / `expectedLastSequence` ile kırpma tespiti |
-| `POST /api/v1/audit/retention/plan` | `audit_log:retention:run` | Salt okunur kırpma planı (hangi prefix, kaç satır) |
-| `POST /api/v1/audit/retention/run` | `audit_log:retention:run` | Kırpma koşusu; `{ reason, dryRun?, maxRows? }` — **varsayılan `dryRun: true`** |
+| `GET /api/v1/audit/verify` | JWT/tenant/permission + kontrollü denial | Global verification tenant yetkisiyle çalıştırılmaz: 403; platform authority owner kararı bekler |
+| `POST /api/v1/audit/retention/plan` | HTTP'den çıkarıldı | 404; global aggregate bilgi yayınlanmaz |
+| `POST /api/v1/audit/retention/run` | HTTP'den çıkarıldı | 404; eski DB permission grant'leri route'u açamaz |
 
 Sözleşme notları:
 
@@ -75,12 +75,16 @@ Sözleşme notları:
   bu yüzden `test/rbac/controller-enforcement-consistency.spec.ts` ile zorunlu).
 - `logs` tenant sınırının dışına çıkamaz; PII alanları maskelenir ve okuma
   işlemi `dataprotection.export.redacted` olarak **redactionReceipt** ile
-  audit'lenir (KVKK madde 12 teknik tedbir kanıtı).
-- `verify` varsa son retention checkpoint'inden başlar; checkpoint yoksa
-  genesis'ten doğrular. Sonuç `valid`, `reason`, `checkedRows`,
-  `lastCheckpoint`, `startedFromCheckpoint` alanlarını döner.
-- `retention/run` yıkıcıdır: yalnız `tenant_admin` (yeni izin
-  `audit_log:retention:run`), `reason` zorunlu ve `dryRun` varsayılan **true**.
+  audit'lenir (KVKK madde 12 teknik tedbir kanıtı). Okumayı yapan aktörün kendi
+  receipt satırları, offset sayfalarını kaydırmamak için kendi sonuçlarından
+  gizlenir; kalıcı audit kaydı diğer yetkili tenant okuyucularına görünür.
+- Önceki tenant-admin retention HTTP sözleşmesi #367 güvenlik onarımıyla
+  **superseded**: `docs/security/audit-http-quarantine.md` bağlayıcıdır.
+  Retention service/prune/dry-run semantiği iç kullanım için korunur; HTTP
+  operasyonu veya platform operator'ı bu release'te yoktur.
+- Global `verify` yalnız iç serviste kalır; tenant-facing HTTP yanıtı hiçbir
+  global count/checkpoint/hash döndürmez ve zinciri taramaz. Güvenli, kullanılabilir
+  platform verification yüzeyi ayrıca owner kararı ve runtime acceptance gerektirir.
+  #358 trust-anchor servis kanıtı bu HTTP denial'ı pilot verification PASS yapmaz.
 - Parametreler fail-closed doğrulanır (UUID/hash/ISO tarih/aralık); geçersiz
   girdi `400` döner.
-
