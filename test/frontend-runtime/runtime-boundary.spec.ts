@@ -28,6 +28,19 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(runtimeBuild).toContain('cpSync(sourceDir, outputDir');
   });
 
+  it('builds byte-identical canonical shell, script and stylesheet assets', () => {
+    const { execFileSync } = require('node:child_process');
+    execFileSync(process.execPath, [path.join(root, 'scripts', 'build-runtime-assets.js')], { cwd: root });
+    for (const asset of ['index.html', 'app.js', 'styles.css']) {
+      const source = fs.readFileSync(path.join(runtimeDir, asset));
+      const built = fs.readFileSync(path.join(root, 'dist', 'runtime', asset));
+      expect(source.length).toBeGreaterThan(0);
+      expect(built.equals(source)).toBe(true);
+    }
+    expect(html).toContain('app.js');
+    expect(html).toContain('styles.css');
+  });
+
   it('serves the runtime under /runtime without moving API_ROOT off same origin', () => {
     expect(main).toContain('NestExpressApplication');
     expect(main).toContain("app.useStaticAssets(join(process.cwd(), 'dist', 'runtime'), { prefix: '/runtime' })");

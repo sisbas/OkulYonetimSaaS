@@ -80,8 +80,8 @@ jobs:
       - name: Build backend and runtime assets
         run: npm run build
 
-      - name: Hosted demo smoke
-        run: npm run verify:hosted-demos
+      - name: Canonical runtime asset and API boundary contracts
+        run: npm test -- --runInBand test/frontend-runtime/runtime-boundary.spec.ts test/runtime-integration/production-workflow.spec.ts
 
       - name: Observe production runtime and API
         id: observe
