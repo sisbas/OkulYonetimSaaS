@@ -62,6 +62,15 @@ export const NON_ACCEPTANCE_EXEMPTIONS: ReadonlyArray<{
   mustContain: string;
 }> = Object.freeze([
   {
+    file: path.join('test', 'database', 'notification-outbox-scope.spec.ts'),
+    reason:
+      'N0 non-acceptance real-PostgreSQL query/transaction regression: ON COMMIT DROP ' +
+      'session-local temporary fixtures prove scoped pending SQL and canonical outbox ' +
+      'idempotency/rollback. These are not genuine business/UI journeys, delivery or ' +
+      'pilot acceptance. The existing stale-entry check applies to this exact file.',
+    mustContain: 'INSERT INTO notification_outbox',
+  },
+  {
     file: path.join('test', 'database', 'leave-safety-queries.spec.ts'),
     reason:
       'Mocked/temp-table DB unit test: it creates ON COMMIT DROP temp tables mirroring ' +

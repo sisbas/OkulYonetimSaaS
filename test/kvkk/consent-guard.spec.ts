@@ -59,15 +59,13 @@ describe('KVKK consent guard CG-001-CG-012', () => {
   it('CG-004 does not enqueue provider jobs when consent is missing', async () => {
     const queue = createQueue();
 
-    const result = await new NotificationEligibilityService().send({
+    await expect(new NotificationEligibilityService().send({
       notification: approvedNotification,
       consent: null,
       phone: verifiedPhone,
       channel: allowedChannel,
       queue,
-    });
-
-    expect(result).toEqual({ status: 'blocked_consent', message_body: null });
+    })).rejects.toThrow('NOTIFICATION_LEGACY_SEND_QUARANTINED');
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
@@ -120,70 +118,57 @@ describe('KVKK consent guard CG-001-CG-012', () => {
     expect(result).toEqual({ status: 'approved', message_body: 'Allowed notification text' });
   });
 
-  it('CG-009 returns NOT_APPROVED when trying to send a draft notification', async () => {
+  it('CG-009 preserves pure draft approval denial and quarantines execution', async () => {
     const queue = createQueue();
 
-    const result = await new NotificationEligibilityService().send({
+    await expect(new NotificationEligibilityService().send({
       notification: { ...approvedNotification, status: 'draft' },
       consent: { status: 'approved' },
       phone: verifiedPhone,
       channel: allowedChannel,
       queue,
-    });
+    })).rejects.toThrow('NOTIFICATION_LEGACY_SEND_QUARANTINED');
 
     expect(new NotificationApprovalGuard().canSend({ status: 'draft' })).toBe(NOT_APPROVED);
-    expect(result).toEqual({ status: 'draft', message_body: null, reason: NOT_APPROVED });
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
-  it('CG-010 re-checks consent before send and blocks revoked consent', async () => {
+  it('CG-010 quarantines execution even with revoked consent', async () => {
     const queue = createQueue();
 
-    const result = await new NotificationEligibilityService().send({
+    await expect(new NotificationEligibilityService().send({
       notification: approvedNotification,
       consent: { status: 'revoked' },
       phone: verifiedPhone,
       channel: allowedChannel,
       queue,
-    });
-
-    expect(result).toEqual({ status: 'blocked_consent', message_body: null });
+    })).rejects.toThrow('NOTIFICATION_LEGACY_SEND_QUARANTINED');
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
-  it('CG-011 enqueues one provider job and marks sent when send gates pass', async () => {
+  it('CG-011 denies approved eligible execution instead of reporting queue ACK as sent', async () => {
     const queue = createQueue();
 
-    const result = await new NotificationEligibilityService().send({
+    await expect(new NotificationEligibilityService().send({
       notification: approvedNotification,
       consent: { status: 'approved' },
       phone: verifiedPhone,
       channel: allowedChannel,
       queue,
-    });
-
-    expect(result).toEqual({ status: 'sent', message_body: approvedNotification.messageBody });
-    expect(queue.enqueue).toHaveBeenCalledTimes(1);
-    expect(queue.enqueue).toHaveBeenCalledWith({
-      notificationId: 'notification-1',
-      subjectId: 'parent-1',
-      channel: 'sms',
-      messageBody: approvedNotification.messageBody,
-    });
+    })).rejects.toThrow('NOTIFICATION_LEGACY_SEND_QUARANTINED');
+    expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
   it('CG-012 does not enqueue when consent is approved but channel becomes blocked before send', async () => {
     const queue = createQueue();
 
-    const result = await new NotificationEligibilityService().send({
+    await expect(new NotificationEligibilityService().send({
       notification: approvedNotification,
       consent: { status: 'approved' },
       phone: verifiedPhone,
       channel: { channel: 'sms', allowed: false },
       queue,
-    });
-
-    expect(result).toEqual({ status: 'blocked_channel', message_body: null });
+    })).rejects.toThrow('NOTIFICATION_LEGACY_SEND_QUARANTINED');
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 });

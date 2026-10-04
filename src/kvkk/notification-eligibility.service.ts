@@ -1,6 +1,7 @@
 import { ChannelGuard } from './channel.guard';
 import { ConsentGuard } from './consent.guard';
-import { NotificationApprovalGuard, NOT_APPROVED } from './notification-approval.guard';
+import { NotificationApprovalGuard } from './notification-approval.guard';
+import { LegacySendQuarantinedError } from './legacy-send-quarantined.error';
 import { PhoneGuard } from './phone.guard';
 import {
   NotificationEligibilityInput,
@@ -36,30 +37,8 @@ export class NotificationEligibilityService {
     return { status: 'approved', message_body: input.messageBody };
   }
 
-  async send(input: NotificationSendInput): Promise<NotificationResult> {
-    const approval = this.approvalGuard.canSend(input.notification);
-    if (approval !== true) {
-      return { status: input.notification.status, message_body: null, reason: NOT_APPROVED };
-    }
-
-    const eligibility = this.evaluate({
-      consent: input.consent,
-      phone: input.phone,
-      channel: input.channel,
-      messageBody: input.notification.messageBody,
-    });
-
-    if (eligibility.status !== 'approved' || eligibility.message_body === null) {
-      return eligibility;
-    }
-
-    await input.queue.enqueue({
-      notificationId: input.notification.id,
-      subjectId: input.notification.subjectId,
-      channel: input.notification.channel,
-      messageBody: eligibility.message_body,
-    });
-
-    return { status: 'sent', message_body: eligibility.message_body };
+  /** Legacy execution is denied independently of caller-supplied eligibility. */
+  async send(_input: NotificationSendInput): Promise<NotificationResult> {
+    throw new LegacySendQuarantinedError();
   }
 }
