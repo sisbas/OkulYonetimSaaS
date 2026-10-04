@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
+import { RequestContext } from '../common/context/request-context';
 
 import { NotificationOutboxStatus } from './notification-outbox.entity';
 
@@ -64,19 +65,31 @@ export class NotificationOutboxRepository {
     return inserted.length;
   }
 
-  /** Relay için bekleyen satırlar (tenant-scoped okuma relay tarafında yapılır). */
+  /** Trusted upstream context only; presence checks do not grant dispatch authority. */
   async findPending(
     entityManager: EntityManager,
+    trustedRequestContext: RequestContext,
     limit: number,
   ): Promise<Array<{ id: string; tenantId: string; channel: string }>> {
-    const bounded = Math.min(Math.max(Math.floor(limit), 1), 500);
+    const tenantId = trustedRequestContext?.tenantId;
+    const branchId = trustedRequestContext?.branchId;
+    if (typeof tenantId !== 'string' || !tenantId.trim() ||
+        typeof branchId !== 'string' || !branchId.trim()) {
+      throw new ForbiddenException('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
+    }
+    if (!Number.isSafeInteger(limit) || limit <= 0) {
+      throw new BadRequestException('NOTIFICATION_OUTBOX_LIMIT_INVALID');
+    }
+    const bounded = Math.min(limit, 500);
     return (await entityManager.query(
-      `SELECT id, tenant_id, channel
-         FROM notification_outbox
-        WHERE status = 'pending' AND available_at <= now()
-        ORDER BY available_at ASC
-        LIMIT $1`,
-      [bounded],
+      `SELECT o.id, o.tenant_id AS "tenantId", o.channel
+         FROM notification_outbox o
+         JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+        WHERE o.tenant_id = $1 AND s.branch_id = $2
+          AND o.status = 'pending' AND o.available_at <= now()
+        ORDER BY o.available_at ASC, o.id ASC
+        LIMIT $3`,
+      [tenantId, branchId, bounded],
     )) as Array<{ id: string; tenantId: string; channel: string }>;
   }
 }
