@@ -84,6 +84,8 @@ export const PERMISSION_SEED = [
   { code: 'student:update', description: 'student:update' },
   { code: 'student:deactivate', description: 'student:deactivate' },
   { code: 'student:parent_contact:read', description: 'student:parent_contact:read' },
+  // #266 N1a: encrypted parent contact yönetimi (create/update/link).
+  { code: 'student:parent_contact:manage', description: 'student:parent_contact:manage' },
   { code: 'student:kvkk:read', description: 'student:kvkk:read' },
   { code: 'student:enrollment:read', description: 'student:enrollment:read' },
   { code: 'student:enrollment:update', description: 'student:enrollment:update' },
@@ -190,6 +192,8 @@ export const ROLE_PERMISSION_SEED = {
     'student:enrollment:read',
     'student:enrollment:update',
     'student:group_students:read',
+    'student:parent_contact:manage',
+    'student:parent_contact:read',
     'student:read',
     'student:update',
     'teacher:assignment:read',
