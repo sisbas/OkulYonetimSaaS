@@ -1,4 +1,5 @@
 export * from './channel.guard';
+export * from './consent-authority';
 export * from './consent-test-support';
 export * from './consent.guard';
 export * from './notification-approval.guard';

@@ -32,7 +32,7 @@ withPostgres('N0 real PostgreSQL scope and canonical transaction regressions', (
       CREATE TEMP TABLE attendance_sessions (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, status text) ON COMMIT DROP;
       CREATE TEMP TABLE attendance_records (tenant_id uuid, session_id uuid, student_id uuid, status text) ON COMMIT DROP;
       CREATE TEMP TABLE kvkk_consent_subjects (id uuid, tenant_id uuid, subject_ref_id uuid, subject_type text, status text) ON COMMIT DROP;
-      CREATE TEMP TABLE kvkk_consents (subject_id uuid, tenant_id uuid, consent_type text, status text, revoked_at timestamptz, expires_at timestamptz) ON COMMIT DROP;
+      CREATE TEMP TABLE kvkk_consents (id uuid, tenant_id uuid, subject_id uuid, consent_type text, status text, revoked_at timestamptz, expires_at timestamptz, version int, created_at timestamptz) ON COMMIT DROP;
       CREATE TEMP TABLE notification_outbox (
         id uuid DEFAULT gen_random_uuid() PRIMARY KEY, tenant_id uuid, dedupe_key varchar,
         event_type varchar, student_id uuid, session_id uuid, channel varchar,
@@ -97,8 +97,9 @@ withPostgres('N0 real PostgreSQL scope and canonical transaction regressions', (
       expect(await repo.findPending(manager, ctx, 10)).toEqual([]);
       await manager.query(`ROLLBACK TO SAVEPOINT consent_denial`);
       await manager.query(`INSERT INTO kvkk_consent_subjects VALUES ($1, $2, $3, 'student', 'active')`, [actor, tenantA, student]);
-      await manager.query(`INSERT INTO kvkk_consents VALUES ($1, $2, 'parent_notification', 'approved', NULL, NULL),
-        ($1, $2, 'sms_notification', 'approved', NULL, NULL)`, [actor, tenantA]);
+      await manager.query(`INSERT INTO kvkk_consents VALUES
+        (gen_random_uuid(), $2, $1, 'parent_notification', 'approved', NULL, NULL, 1, now()),
+        (gen_random_uuid(), $2, $1, 'sms_notification', 'approved', NULL, NULL, 1, now())`, [actor, tenantA]);
       await manager.query(`SAVEPOINT domain_mutation`);
       expect((await service.enqueueLockedAbsenceNotifications(manager, input)).insertedRows).toBe(1);
       expect((await service.enqueueLockedAbsenceNotifications(manager, input)).duplicatesSkipped).toBe(1);
