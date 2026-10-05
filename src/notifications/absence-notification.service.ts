@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 
+import {
+  ConsentAuthority,
+  ConsentDecision,
+} from '../kvkk/consent-authority';
 import { pseudonymize, resolvePseudonymKey } from '../kvkk/pseudonym';
 import {
   NotificationOutboxRepository,
@@ -9,12 +13,6 @@ import {
 
 export const ABSENCE_NOTIFICATION_EVENT_TYPE = 'attendance.absent.locked';
 export const DEFAULT_ABSENCE_NOTIFICATION_CHANNEL = 'sms';
-
-const CHANNEL_CONSENT_TYPES: Record<string, string> = {
-  sms: 'sms_notification',
-  whatsapp: 'whatsapp_notification',
-  email: 'email_notification',
-};
 
 export type AbsenceNotificationOutcome = Readonly<{
   sessionStatus: string | null;
@@ -32,14 +30,7 @@ export interface AbsenceNotificationInput {
   channel?: string;
 }
 
-type ConsentDecision = Readonly<{ approved: boolean; reason: string | null }>;
 type AbsentRow = { student_id: string };
-type ConsentRow = {
-  consent_type: string;
-  status: string;
-  revoked_at: Date | null;
-  expires_at: Date | null;
-};
 
 /**
  * Kilitlenen oturumun devamsızlıklarından **idempotent** bildirim olayı üretir
@@ -50,9 +41,12 @@ type ConsentRow = {
  *   satır yazılmaz (yoklaması tamamlanmamış ders veliye duyurulmaz).
  * - Her (oturum, öğrenci) için `dedupe_key` üretilir → tekrar işleme satır
  *   çoğaltmaz (outbox `UNIQUE` + ON CONFLICT DO NOTHING).
- * - KVKK: `parent_notification` onayı **ve** kanal onayı (varsa) approved,
+ * - KVKK: `parent_notification` onayı **ve** kanal onayı (varsa),
+ *   **authoritative consent authority** (N1b) üzerinden çözülen
+ *   güncel (max-version) consent satırı açısından approved,
  *   iptal edilmemiş ve süresi dolmamış olmalı; aksi hâlde satır
  *   `blocked_consent` yazılır (gönderim yok, neden kayıtlı).
+ *   Outbox satırı kararın dayandığı `consent_version`'ı taşır.
  * - `payload_masked` **minimize edilmiş + pseudonymize** içerik taşır: olay türü,
  *   durum, kanal ve kiracıya kilitli deterministik referanslar (`studentRef`,
  *   `sessionRef`). Ham öğrenci/oturum UUID'si payload'a, log'a veya audit
@@ -65,6 +59,7 @@ type ConsentRow = {
 @Injectable()
 export class AbsenceNotificationService {
   private readonly logger = new Logger(AbsenceNotificationService.name);
+  private readonly consentAuthority = new ConsentAuthority();
 
   constructor(private readonly outbox: NotificationOutboxRepository) {
     // Fail-closed konfigürasyon kontrolü: eksik/zayıf pseudonym anahtarı süreci
@@ -151,6 +146,7 @@ export class AbsenceNotificationService {
           channel,
         },
         reason: decision.approved ? null : decision.reason,
+        consentVersion: decision.consentVersion,
         createdById: input.actorUserId,
       });
     }
@@ -176,10 +172,15 @@ export class AbsenceNotificationService {
     );
     return outcome;
   }
-
   /**
-   * Onay kararı: `parent_notification` + kanala özel onay (varsa) `approved`,
-   * iptal edilmemiş ve süresi dolmamış olmalı.
+   * Onay kararı: **authoritative consent authority** üzerinden
+   * çözülür (N1b). Authority özne başına `(consent_type)`
+   * bazında en yüksek `version`'lı satırı seçer; yalnız
+   * **güncel** satır approved, iptal edilmemiş ve süresi
+   * dolmamış olursa onay verir. Geçmişteki onay satırı,
+   * üzerindeki daha yeni bir iptal/red satırı karşılığında
+   * onay vermeyi durdurur (`rows.some(approved)` resurrection
+   * düzeltmesi).
    */
   private async resolveConsent(
     entityManager: EntityManager,
@@ -187,41 +188,13 @@ export class AbsenceNotificationService {
     studentId: string,
     channel: string,
   ): Promise<ConsentDecision> {
-    const channelType = CHANNEL_CONSENT_TYPES[channel] ?? null;
-    const rows = (await entityManager.query(
-      `SELECT c.consent_type, c.status, c.revoked_at, c.expires_at
-         FROM kvkk_consents c
-         JOIN kvkk_consent_subjects s
-           ON s.id = c.subject_id AND s.tenant_id = c.tenant_id
-        WHERE c.tenant_id = $1
-          AND s.subject_ref_id = $2
-          AND s.subject_type = 'student'
-          AND s.status = 'active'
-          AND c.consent_type IN ('parent_notification', $3)`,
-      [tenantId, studentId, channelType],
-    )) as ConsentRow[];
-
-    const isActive = (row: ConsentRow): boolean =>
-      row.status === 'approved' &&
-      row.revoked_at === null &&
-      (row.expires_at === null ||
-        new Date(row.expires_at).getTime() > Date.now());
-
-    const parentApproved = rows.some(
-      (row) => row.consent_type === 'parent_notification' && isActive(row),
-    );
-    if (!parentApproved) {
-      return { approved: false, reason: 'blocked_consent' };
-    }
-
-    if (channelType === null) {
-      return { approved: true, reason: null };
-    }
-    const channelApproved = rows.some(
-      (row) => row.consent_type === channelType && isActive(row),
-    );
-    return channelApproved
-      ? { approved: true, reason: null }
-      : { approved: false, reason: 'blocked_channel_consent' };
+    return this.consentAuthority.resolveNotificationConsent(entityManager, {
+      subject: {
+        tenantId,
+        subjectType: 'student',
+        subjectRefId: studentId,
+      },
+      channel,
+    });
   }
 }

@@ -250,4 +250,95 @@ describe('AbsenceNotificationService (#266)', () => {
       intendedPending: 1,
     });
   });
+
+  it('does not resurrect a revoked consent: the latest version wins (N1b)', async () => {
+    const manager = makeManager({
+      sessionStatus: 'locked',
+      absent: [STUDENT_A],
+      consents: [
+        {
+          id: '66666666-6666-4666-8666-666666666666',
+          consent_type: 'parent_notification',
+          status: 'approved',
+          revoked_at: null,
+          expires_at: null,
+          version: 1,
+          created_at: new Date('2026-01-01T00:00:00.000Z'),
+        },
+        {
+          id: '77777777-7777-4777-8777-777777777777',
+          consent_type: 'parent_notification',
+          status: 'revoked',
+          revoked_at: new Date('2026-02-01T00:00:00.000Z'),
+          expires_at: null,
+          version: 2,
+          created_at: new Date('2026-02-01T00:00:00.000Z'),
+        },
+        {
+          id: '88888888-8888-4888-8888-888888888888',
+          consent_type: 'sms_notification',
+          status: 'approved',
+          revoked_at: null,
+          expires_at: null,
+          version: 1,
+          created_at: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+    });
+    const service = new AbsenceNotificationService(outbox);
+
+    const result = await service.enqueueLockedAbsenceNotifications(
+      manager as never,
+      { tenantId: TENANT_ID, sessionId: SESSION_ID, actorUserId: ACTOR_ID },
+    );
+
+    expect(result).toMatchObject({ intendedBlockedConsent: 1, intendedPending: 0 });
+    const rows = (outbox.enqueueMany as jest.Mock).mock.calls[0][1] as Array<
+      Record<string, unknown>
+    >;
+    expect(rows[0].status).toBe('blocked_consent');
+    expect(rows[0].reason).toBe('blocked_consent');
+    // Kararın dayandığı güncel (v2, revoked) consent version'ı outbox'a kaydedilir.
+    expect(rows[0].consentVersion).toBe(2);
+  });
+
+  it('records the resolved consent version on pending outbox rows (N1b)', async () => {
+    const manager = makeManager({
+      sessionStatus: 'locked',
+      absent: [STUDENT_A],
+      consents: [
+        {
+          id: '99999999-9999-4999-8999-999999999999',
+          consent_type: 'parent_notification',
+          status: 'approved',
+          revoked_at: null,
+          expires_at: null,
+          version: 3,
+          created_at: new Date('2026-01-01T00:00:00.000Z'),
+        },
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          consent_type: 'sms_notification',
+          status: 'approved',
+          revoked_at: null,
+          expires_at: null,
+          version: 1,
+          created_at: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+    });
+    const service = new AbsenceNotificationService(outbox);
+
+    const result = await service.enqueueLockedAbsenceNotifications(
+      manager as never,
+      { tenantId: TENANT_ID, sessionId: SESSION_ID, actorUserId: ACTOR_ID },
+    );
+
+    expect(result).toMatchObject({ intendedPending: 1, intendedBlockedConsent: 0 });
+    const rows = (outbox.enqueueMany as jest.Mock).mock.calls[0][1] as Array<
+      Record<string, unknown>
+    >;
+    expect(rows[0].status).toBe('pending');
+    expect(rows[0].consentVersion).toBe(3);
+  });
 });
