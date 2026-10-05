@@ -74,6 +74,20 @@ describeWithPostgres('kvkk consent authority PostgreSQL (#266 N1b)', () => {
 
   afterAll(async () => {
     if (!dataSource?.isInitialized) return;
+    // Verileri bağımlılık sırasıyla temizle (tablolar kalır;
+    // son test'in kalan satırları tenants FK'i engellemez).
+    await dataSource.query(
+      `DELETE FROM kvkk_consent_events WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `DELETE FROM kvkk_consents WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `DELETE FROM kvkk_consent_subjects WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
     await dataSource.query(`DELETE FROM tenants WHERE id = ANY($1::uuid[])`, [
       [TENANT_ID, OTHER_TENANT_ID],
     ]);
