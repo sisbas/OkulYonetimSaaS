@@ -29,9 +29,34 @@ export class AddNotificationSnapshot1860000000000 implements MigrationInterface 
       `ALTER TABLE "notification_outbox" ADD CONSTRAINT "chk_notification_outbox_status"
          CHECK ("status" IN ('pending', 'blocked_consent', 'dispatched', 'failed', 'approved', 'closed'))`,
     );
+    await queryRunner.query(
+      `CREATE OR REPLACE FUNCTION trg_notification_outbox_snapshot_immutable()
+       RETURNS trigger AS $$
+       BEGIN
+         IF TG_OP = 'UPDATE' THEN
+           IF OLD.snapshot IS NOT NULL AND NEW.snapshot IS DISTINCT FROM OLD.snapshot THEN
+             RAISE EXCEPTION 'notification_outbox.snapshot is immutable';
+           END IF;
+         END IF;
+         RETURN NEW;
+       END;
+       $$ LANGUAGE plpgsql;`,
+    );
+    await queryRunner.query(
+      `DROP TRIGGER IF EXISTS trg_notification_outbox_snapshot_immutable ON "notification_outbox"`,
+    );
+    await queryRunner.query(
+      `CREATE TRIGGER trg_notification_outbox_snapshot_immutable
+         BEFORE UPDATE ON "notification_outbox"
+         FOR EACH ROW EXECUTE FUNCTION trg_notification_outbox_snapshot_immutable();`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `DROP TRIGGER IF EXISTS trg_notification_outbox_snapshot_immutable ON "notification_outbox"`,
+    );
+    await queryRunner.query(`DROP FUNCTION IF EXISTS trg_notification_outbox_snapshot_immutable();`);
     await queryRunner.query(
       `ALTER TABLE "notification_outbox" DROP CONSTRAINT IF EXISTS "chk_notification_outbox_status"`,
     );
