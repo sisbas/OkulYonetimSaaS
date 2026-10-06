@@ -117,10 +117,12 @@ withPostgres('N1c real PostgreSQL snapshot + draft regressions', () => {
     )) as Array<{ id: string }>;
     const id = inserted[0].id;
     const newSnapshot = { ...snapshot, consent: { ...snapshot.consent, approved: false } };
-    await dataSource.query(
-      `UPDATE notification_outbox SET snapshot = $1 WHERE id = $2`,
-      [JSON.stringify(newSnapshot), id],
-    );
+    await expect(
+      dataSource.query(
+        `UPDATE notification_outbox SET snapshot = $1 WHERE id = $2`,
+        [JSON.stringify(newSnapshot), id],
+      ),
+    ).rejects.toThrow();
     const rows = (await dataSource.query(
       `SELECT snapshot FROM notification_outbox WHERE id = $1`,
       [id],
@@ -167,13 +169,18 @@ withPostgres('N1c real PostgreSQL snapshot + draft regressions', () => {
       [TENANT_ID, 'dedupe-appr', STUDENT_ID, SESSION_ID],
     )) as Array<{ id: string }>;
     const id = inserted[0].id;
-    const updated = (await dataSource.query(
+    const updatedRaw = await dataSource.query(
       `UPDATE notification_outbox
           SET status = 'approved', version = version + 1, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'pending' AND version = 0
         RETURNING id, status, version`,
       [TENANT_ID, id],
-    )) as Array<{ id: string; status: string; version: number }>;
+    );
+    const updated = (Array.isArray(updatedRaw) && Array.isArray(updatedRaw[0]) ? updatedRaw[0] : updatedRaw) as Array<{
+      id: string;
+      status: string;
+      version: number;
+    }>;
     expect(updated).toHaveLength(1);
     expect(updated[0].status).toBe('approved');
     expect(updated[0].version).toBe(1);
@@ -187,13 +194,18 @@ withPostgres('N1c real PostgreSQL snapshot + draft regressions', () => {
       [TENANT_ID, 'dedupe-close', STUDENT_ID, SESSION_ID],
     )) as Array<{ id: string }>;
     const id = inserted[0].id;
-    const updated = (await dataSource.query(
+    const updatedRaw = await dataSource.query(
       `UPDATE notification_outbox
           SET status = 'closed', version = version + 1, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'pending' AND version = 0
         RETURNING id, status, version`,
       [TENANT_ID, id],
-    )) as Array<{ id: string; status: string; version: number }>;
+    );
+    const updated = (Array.isArray(updatedRaw) && Array.isArray(updatedRaw[0]) ? updatedRaw[0] : updatedRaw) as Array<{
+      id: string;
+      status: string;
+      version: number;
+    }>;
     expect(updated).toHaveLength(1);
     expect(updated[0].status).toBe('closed');
     expect(updated[0].version).toBe(1);
@@ -207,13 +219,14 @@ withPostgres('N1c real PostgreSQL snapshot + draft regressions', () => {
       [TENANT_ID, 'dedupe-stale', STUDENT_ID, SESSION_ID],
     )) as Array<{ id: string }>;
     const id = inserted[0].id;
-    const updated = (await dataSource.query(
+    const updatedRaw = await dataSource.query(
       `UPDATE notification_outbox
           SET status = 'approved', version = version + 1, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'pending' AND version = 99
         RETURNING id`,
       [TENANT_ID, id],
-    )) as Array<{ id: string }>;
+    );
+    const updated = (Array.isArray(updatedRaw) && Array.isArray(updatedRaw[0]) ? updatedRaw[0] : updatedRaw) as Array<{ id: string }>;
     expect(updated).toHaveLength(0);
   });
 
@@ -225,13 +238,14 @@ withPostgres('N1c real PostgreSQL snapshot + draft regressions', () => {
       [TENANT_ID, 'dedupe-disp', STUDENT_ID, SESSION_ID],
     )) as Array<{ id: string }>;
     const id = inserted[0].id;
-    const updated = (await dataSource.query(
+    const updatedRaw = await dataSource.query(
       `UPDATE notification_outbox
           SET status = 'approved', version = version + 1, updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND status = 'pending' AND version = 0
         RETURNING id`,
       [TENANT_ID, id],
-    )) as Array<{ id: string }>;
+    );
+    const updated = (Array.isArray(updatedRaw) && Array.isArray(updatedRaw[0]) ? updatedRaw[0] : updatedRaw) as Array<{ id: string }>;
     expect(updated).toHaveLength(0);
   });
 
