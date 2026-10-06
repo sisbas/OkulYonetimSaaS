@@ -8,6 +8,8 @@ import { AbsenceNotificationService } from './absence-notification.service';
 import { TransactionalAbsenceNotificationAdapter } from './absence-notification.adapter';
 import { NotificationEligibilityService } from '../kvkk/notification-eligibility.service';
 import { ATTENDANCE_ABSENCE_NOTIFICATION_PORT } from '../attendance/attendance-absence-notification.port';
+import { NotificationDraftService } from './notification-draft.service';
+import { NotificationDraftController } from './notification-draft.controller';
 
 /**
  * Veli Bildirim Modülü (OKUL-08 + #266).
@@ -18,12 +20,14 @@ import { ATTENDANCE_ABSENCE_NOTIFICATION_PORT } from '../attendance/attendance-a
  */
 @Module({
   imports: [TypeOrmModule.forFeature([NotificationLog, NotificationOutboxItem])],
+  controllers: [NotificationDraftController],
   providers: [
     ParentNotificationService,
     NotificationEligibilityService,
     NotificationOutboxRepository,
     AbsenceNotificationService,
     TransactionalAbsenceNotificationAdapter,
+    NotificationDraftService,
     {
       provide: ATTENDANCE_ABSENCE_NOTIFICATION_PORT,
       useExisting: TransactionalAbsenceNotificationAdapter,

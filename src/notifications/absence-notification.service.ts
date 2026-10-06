@@ -10,6 +10,7 @@ import {
   NotificationOutboxRepository,
   EnqueueOutboxRow,
 } from './notification-outbox.repository';
+import { buildNotificationSnapshot } from './notification-snapshot';
 
 export const ABSENCE_NOTIFICATION_EVENT_TYPE = 'attendance.absent.locked';
 export const DEFAULT_ABSENCE_NOTIFICATION_CHANNEL = 'sms';
@@ -123,6 +124,14 @@ export class AbsenceNotificationService {
         channel,
       );
       if (!decision.approved) intendedBlockedConsent += 1;
+      const studentRef = pseudonymize(
+        {
+          tenantId: input.tenantId,
+          scope: 'student',
+          rawId: record.student_id,
+        },
+        pseudonymKey,
+      );
       rows.push({
         tenantId: input.tenantId,
         dedupeKey: `attendance.absent:${input.sessionId}:${record.student_id}`,
@@ -134,20 +143,25 @@ export class AbsenceNotificationService {
         payloadMasked: {
           eventType: ABSENCE_NOTIFICATION_EVENT_TYPE,
           sessionRef,
-          studentRef: pseudonymize(
-            {
-              tenantId: input.tenantId,
-              scope: 'student',
-              rawId: record.student_id,
-            },
-            pseudonymKey,
-          ),
+          studentRef,
           status: 'absent',
           channel,
         },
         reason: decision.approved ? null : decision.reason,
         consentVersion: decision.consentVersion,
         createdById: input.actorUserId,
+        snapshot: buildNotificationSnapshot({
+          sessionRef,
+          studentRef,
+          attendanceStatus: 'absent',
+          sessionStatus: 'locked',
+          channel,
+          consentApproved: decision.approved,
+          consentReason: decision.reason,
+          consentId: decision.consentId,
+          consentVersion: decision.consentVersion,
+          eventType: ABSENCE_NOTIFICATION_EVENT_TYPE,
+        }),
       });
     }
 

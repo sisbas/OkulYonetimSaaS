@@ -90,6 +90,15 @@ export const NON_ACCEPTANCE_EXEMPTIONS: ReadonlyArray<{
       'this spec is never bound to the P0 acceptance check.',
     mustContain: 'INSERT INTO schedule_versions',
   },
+  {
+    file: path.join('test', 'database', 'notification-snapshot.db.spec.ts'),
+    reason:
+      'N1c non-acceptance real-PostgreSQL snapshot/draft regression: it seeds reference ' +
+      'fixtures plus a locked attendance session through SQL to prove immutable snapshot ' +
+      'storage, draft list/transition SQL, optimistic concurrency and tenant isolation. ' +
+      'These are not genuine business/UI journeys, delivery or pilot acceptance.',
+    mustContain: 'INSERT INTO notification_outbox',
+  },
 ]);
 
 /**
