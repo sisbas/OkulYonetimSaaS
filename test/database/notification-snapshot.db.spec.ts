@@ -23,8 +23,8 @@ withPostgres('N1c real PostgreSQL snapshot + draft regressions', () => {
     await dataSource.initialize();
     const runner = dataSource.createQueryRunner();
     try {
-      const tenantsMigration = new CreateTenants1700000000000();
-      const sessionsMigration = new CreateAttendanceSessions1710000000000();
+      const tenantsMigration = new CreateTenants1700000000002();
+      const sessionsMigration = new CreateAttendanceSessions1824000000000();
       const outboxMigration = new CreateNotificationOutbox1829000000000();
       const snapshotMigration = new AddNotificationSnapshot1860000000000();
       await tenantsMigration.up(runner);
