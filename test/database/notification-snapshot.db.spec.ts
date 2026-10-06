@@ -49,7 +49,6 @@ withPostgres('N1c real PostgreSQL snapshot + draft regressions', () => {
     await dataSource.query(`DELETE FROM attendance_sessions WHERE tenant_id = ANY($1::uuid[])`, [[TENANT_ID, OTHER_TENANT_ID]]);
     await dataSource.query(`DELETE FROM tenants WHERE id = ANY($1::uuid[])`, [[TENANT_ID, OTHER_TENANT_ID]]);
     await dataSource.query(`INSERT INTO tenants (id, slug, name) VALUES ($1, 'n1c-test', 'N1c Test') ON CONFLICT (slug) DO NOTHING`, [TENANT_ID]);
-    await dataSource.query(`INSERT INTO attendance_sessions (id, tenant_id, branch_id, status, version) VALUES ($1, $2, $3, 'locked', 1)`, [SESSION_ID, TENANT_ID, BRANCH_ID]);
   });
 
   it('adds snapshot column and version column to notification_outbox (migration postcondition)', async () => {
@@ -130,25 +129,34 @@ withPostgres('N1c real PostgreSQL snapshot + draft regressions', () => {
   });
 
   it('draft list returns only pending and blocked_consent rows', async () => {
-    const statuses = ['pending', 'blocked_consent', 'dispatched', 'failed', 'approved', 'closed'];
-    for (let i = 0; i < statuses.length; i++) {
-      await dataSource.query(
-        `INSERT INTO notification_outbox (tenant_id, dedupe_key, event_type, student_id, session_id, channel, status, payload_masked, version)
-         VALUES ($1, $2, 'attendance.absent.locked', $3, $4, 'sms', $5, '{}', 0)`,
-        [TENANT_ID, `dedupe-${i}`, STUDENT_ID, SESSION_ID, statuses[i]],
+    await dataSource.transaction(async (manager) => {
+      await manager.query(
+        `CREATE TEMP TABLE attendance_sessions (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, status text) ON COMMIT DROP`,
       );
-    }
-    const drafts = (await dataSource.query(
-      `SELECT o.id, o.status
-         FROM notification_outbox o
-         JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
-        WHERE o.tenant_id = $1 AND s.branch_id = $2
-          AND o.status IN ('pending', 'blocked_consent')
-        ORDER BY o.available_at ASC, o.id ASC`,
-      [TENANT_ID, BRANCH_ID],
-    )) as Array<{ id: string; status: string }>;
-    expect(drafts).toHaveLength(2);
-    expect(drafts.map((d) => d.status).sort()).toEqual(['blocked_consent', 'pending']);
+      await manager.query(
+        `INSERT INTO attendance_sessions VALUES ($1, $2, $3, 'locked')`,
+        [SESSION_ID, TENANT_ID, BRANCH_ID],
+      );
+      const statuses = ['pending', 'blocked_consent', 'dispatched', 'failed', 'approved', 'closed'];
+      for (let i = 0; i < statuses.length; i++) {
+        await manager.query(
+          `INSERT INTO notification_outbox (tenant_id, dedupe_key, event_type, student_id, session_id, channel, status, payload_masked, version)
+           VALUES ($1, $2, 'attendance.absent.locked', $3, $4, 'sms', $5, '{}', 0)`,
+          [TENANT_ID, `dedupe-${i}`, STUDENT_ID, SESSION_ID, statuses[i]],
+        );
+      }
+      const drafts = (await manager.query(
+        `SELECT o.id, o.status
+           FROM notification_outbox o
+           JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+          WHERE o.tenant_id = $1 AND s.branch_id = $2
+            AND o.status IN ('pending', 'blocked_consent')
+          ORDER BY o.available_at ASC, o.id ASC`,
+        [TENANT_ID, BRANCH_ID],
+      )) as Array<{ id: string; status: string }>;
+      expect(drafts).toHaveLength(2);
+      expect(drafts.map((d) => d.status).sort()).toEqual(['blocked_consent', 'pending']);
+    });
   });
 
   it('draft transition: pending → approved with optimistic concurrency', async () => {
@@ -228,21 +236,32 @@ withPostgres('N1c real PostgreSQL snapshot + draft regressions', () => {
   });
 
   it('tenant isolation: drafts from other tenants are not visible', async () => {
-    await dataSource.query(`INSERT INTO tenants (id, slug, name) VALUES ($1, 'n1c-other', 'N1c Other') ON CONFLICT (slug) DO NOTHING`, [OTHER_TENANT_ID]);
-    await dataSource.query(`INSERT INTO attendance_sessions (id, tenant_id, branch_id, status, version) VALUES ($1, $2, $3, 'locked', 1)`, ['30000000-0000-4000-8000-000000000002', OTHER_TENANT_ID, BRANCH_ID]);
-    await dataSource.query(
-      `INSERT INTO notification_outbox (tenant_id, dedupe_key, event_type, student_id, session_id, channel, status, payload_masked, version)
-       VALUES ($1, $2, 'attendance.absent.locked', $3, $4, 'sms', 'pending', '{}', 0)`,
-      [OTHER_TENANT_ID, 'dedupe-other', STUDENT_ID, '30000000-0000-4000-8000-000000000002'],
-    );
-    const drafts = (await dataSource.query(
-      `SELECT o.id
-         FROM notification_outbox o
-         JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
-        WHERE o.tenant_id = $1 AND s.branch_id = $2
-          AND o.status IN ('pending', 'blocked_consent')`,
-      [TENANT_ID, BRANCH_ID],
-    )) as Array<{ id: string }>;
-    expect(drafts).toHaveLength(0);
+    await dataSource.transaction(async (manager) => {
+      await manager.query(
+        `INSERT INTO tenants (id, slug, name) VALUES ($1, 'n1c-other', 'N1c Other') ON CONFLICT (slug) DO NOTHING`,
+        [OTHER_TENANT_ID],
+      );
+      await manager.query(
+        `CREATE TEMP TABLE attendance_sessions (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, status text) ON COMMIT DROP`,
+      );
+      await manager.query(
+        `INSERT INTO attendance_sessions VALUES ($1, $2, $3, 'locked')`,
+        ['30000000-0000-4000-8000-000000000002', OTHER_TENANT_ID, BRANCH_ID],
+      );
+      await manager.query(
+        `INSERT INTO notification_outbox (tenant_id, dedupe_key, event_type, student_id, session_id, channel, status, payload_masked, version)
+         VALUES ($1, $2, 'attendance.absent.locked', $3, $4, 'sms', 'pending', '{}', 0)`,
+        [OTHER_TENANT_ID, 'dedupe-other', STUDENT_ID, '30000000-0000-4000-8000-000000000002'],
+      );
+      const drafts = (await manager.query(
+        `SELECT o.id
+           FROM notification_outbox o
+           JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+          WHERE o.tenant_id = $1 AND s.branch_id = $2
+            AND o.status IN ('pending', 'blocked_consent')`,
+        [TENANT_ID, BRANCH_ID],
+      )) as Array<{ id: string }>;
+      expect(drafts).toHaveLength(0);
+    });
   });
 });
