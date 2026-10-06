@@ -1,8 +1,8 @@
 import { DataSource } from 'typeorm';
 import { CreateNotificationOutbox1829000000000 } from '../../src/database/migrations/1829000000000-CreateNotificationOutbox';
 import { AddNotificationSnapshot1860000000000 } from '../../src/database/migrations/1860000000000-AddNotificationSnapshot';
-import { CreateTenants1700000000000 } from '../../src/database/migrations/1700000000000-CreateTenants';
-import { CreateAttendanceSessions1710000000000 } from '../../src/database/migrations/1710000000000-CreateAttendanceSessions';
+import { CreateTenants1700000000002 } from '../../src/database/migrations/1700000000002-CreateTenants';
+import { CreateAttendanceSessions1824000000000 } from '../../src/database/migrations/1824000000000-CreateAttendanceSessions';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const withPostgres = databaseUrl ? describe : describe.skip;

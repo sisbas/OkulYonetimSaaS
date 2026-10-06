@@ -38,6 +38,7 @@ withPostgres('N0 real PostgreSQL scope and canonical transaction regressions', (
         event_type varchar, student_id uuid, session_id uuid, channel varchar,
         status varchar CHECK (status IN ('pending', 'blocked_consent', 'dispatched', 'failed')),
         payload_masked jsonb, reason varchar, consent_version int, created_by_id uuid,
+        snapshot jsonb, version int DEFAULT 0,
         available_at timestamptz DEFAULT now(), UNIQUE (tenant_id, dedupe_key)
       ) ON COMMIT DROP;
     `);
