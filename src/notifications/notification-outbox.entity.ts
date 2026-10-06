@@ -4,7 +4,9 @@ export type NotificationOutboxStatus =
   | 'pending'
   | 'blocked_consent'
   | 'dispatched'
-  | 'failed';
+  | 'failed'
+  | 'approved'
+  | 'closed';
 
 /**
  * Transactional outbox satırı (#266).
@@ -49,6 +51,14 @@ export class NotificationOutboxItem {
 
   @Column({ name: 'consent_version', type: 'integer', nullable: true })
   consentVersion!: number | null;
+
+  /** Immutable snapshot (source/contact/consent/template). PII taşımaz. */
+  @Column({ name: 'snapshot', type: 'jsonb', nullable: true })
+  snapshot!: Record<string, unknown> | null;
+
+  /** Optimistic concurrency version — monotonik ilerler. */
+  @Column({ name: 'version', type: 'integer', default: 0 })
+  version!: number;
 
   @Column({ name: 'attempts', type: 'integer', default: 0 })
   attempts!: number;
