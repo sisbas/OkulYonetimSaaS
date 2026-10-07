@@ -18,7 +18,8 @@ import {
  *   taslak olarak görünür.
  * - Tenant + branch predicate zorunludur (cross-tenant izolasyonu).
  * - Snapshot immutable'dır; bir kez yazıldıktan sonra değişmez.
- * - Onay/iptal yalnız `pending` durumundan yapılabilir.
+ * - Onay: `pending` veya `blocked_consent` durumundan (consent yeniden
+ *   verildikten sonra çıkış). İptal (`close`): yalnız `pending` durumundan.
  * - Optimistic concurrency: `expectedVersion` ile korunur.
  */
 @Injectable()

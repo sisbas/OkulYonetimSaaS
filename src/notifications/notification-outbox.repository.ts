@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { RequestContext } from '../common/context/request-context';
 
@@ -204,10 +209,11 @@ export class NotificationOutboxRepository {
   /**
    * Draft durum geçişi — approve/close (N1c).
    *
-   * Yalnız `pending` durumundan `approved` veya `closed` geçişi
-   * mümkündür. Optimistic concurrency: `expectedVersion` (outbox
-   * `updated_at` tabanlı) ile korunur. Stale version'da 0 satır
-   * etkilenir → ConflictException.
+   * `approve`: `pending` VEYA `blocked_consent` durumundan (onay geri
+   * alınıp consent yeniden verildikten sonra yeniden onay — N2 blocked
+   * akışının çıkışı). `close`: yalnız `pending` durumundan.
+   * Optimistic concurrency: `expectedVersion` ile korunur. Stale
+   * version'da 0 satır etkilenir → ConflictException (HTTP 409).
    */
   async transitionDraft(
     entityManager: EntityManager,
@@ -218,21 +224,23 @@ export class NotificationOutboxRepository {
       expectedVersion: number;
     }>,
   ): Promise<{ id: string; status: string; version: number }> {
+    const fromStatuses =
+      input.targetStatus === 'approved' ? ['pending', 'blocked_consent'] : ['pending'];
     const updated = extractRows<{ id: string; status: string; version: number }>(
       await entityManager.query(
         `UPDATE notification_outbox
             SET status = $1,
                 version = version + 1,
                 updated_at = now()
-          WHERE tenant_id = $2 AND id = $3 AND status = 'pending'
+          WHERE tenant_id = $2 AND id = $3 AND status = ANY($5::varchar[])
             AND version = $4
           RETURNING id, status, version`,
-        [input.targetStatus, input.tenantId, input.id, input.expectedVersion],
+        [input.targetStatus, input.tenantId, input.id, input.expectedVersion, fromStatuses],
       ),
     );
     if (updated.length === 0) {
-      throw new Error(
-        'Notification draft version conflict, not found, or not in pending status',
+      throw new ConflictException(
+        'Notification draft version conflict, not found, or in invalid status',
       );
     }
     return {
