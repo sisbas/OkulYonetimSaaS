@@ -1,13 +1,15 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { join } from 'node:path';
 import { AppModule } from './app.module';
 import { assertDatabaseUrlConfigured } from './database/data-source';
 
 // Guard/interceptor/controller katmanından düşen istekleri yalnız meta veriyle
 // (method/url/status/kategori) raporlar; exception.message/body asla yazılmaz
-// (ham detay sızıntısı tarayıcısına takılmamak için).
+// (ham detay sızıntısı tarayıcısına takılmamak için). YANITI KENDİSİ YAZAR:
+// yanıt göndermeden bırakmak istemci tarafında isteğin askıda kalmasına yol açar.
 const REQUEST_FAILURE_CATEGORIES = [
   'AuthorizationContextError',
   'UnauthorizedException',
@@ -18,23 +20,38 @@ const REQUEST_FAILURE_CATEGORIES = [
   'HttpException',
 ];
 
+function requestFailureBody(exception: unknown): Record<string, unknown> {
+  if (exception instanceof HttpException) {
+    const status = exception.getStatus();
+    const response = exception.getResponse();
+    if (typeof response === 'string') return { statusCode: status, message: response };
+    if (response && typeof response === 'object') return response as Record<string, unknown>;
+    return { statusCode: status, message: exception.message };
+  }
+  return { statusCode: HttpStatus.INTERNAL_SERVER_ERROR, message: 'Internal server error' };
+}
+
 @Catch()
 class RequestFailureFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
-    const request = host.switchToHttp().getRequest<{ method?: string; url?: string }>();
-    if (!request?.method) return;
+    const context = host.switchToHttp();
+    const request = context.getRequest<{ method?: string; url?: string }>();
+    const response = context.getResponse<Response>();
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
-    const name = exception instanceof Error ? exception.constructor.name : 'UnknownError';
-    const category = REQUEST_FAILURE_CATEGORIES.includes(name) ? name : 'Error';
-    console.warn(
-      JSON.stringify({
-        event: 'http.request.failed',
-        method: request.method,
-        url: String(request.url ?? ''),
-        status,
-        error: category,
-      }),
-    );
+    if (request?.method) {
+      const name = exception instanceof Error ? exception.constructor.name : 'UnknownError';
+      const category = REQUEST_FAILURE_CATEGORIES.includes(name) ? name : 'Error';
+      console.warn(
+        JSON.stringify({
+          event: 'http.request.failed',
+          method: request.method,
+          url: String(request.url ?? ''),
+          status,
+          error: category,
+        }),
+      );
+    }
+    response.status(status).json(requestFailureBody(exception));
   }
 }
 

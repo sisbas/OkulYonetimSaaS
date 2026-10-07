@@ -56,6 +56,10 @@ export async function apiCall(
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
+    // Ağır yüklü CI çalıştırıcılarında ara ara görülen HTTP katmanı duraksamasını
+    // yanlış negatif üretmeden tolere et; kalıcı bağlantı geri dönüşümünü kapat.
+    keepalive: false,
+    signal: AbortSignal.timeout(40_000),
   });
   const text = await response.text();
   if (!response.ok) throw new BootstrapHttpError(method, path, response.status, text);
