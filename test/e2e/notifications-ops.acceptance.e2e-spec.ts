@@ -385,6 +385,15 @@ beforeAll(async () => {
     namespace: NAMESPACE,
   });
 
+  // Backend, tüm API login'lerinden ÖNCE başlatılır (port sahipliği + health gate).
+  server = await startRuntimeServer({
+    baseUrl: environment.baseUrl,
+    port: environment.port,
+    artifactDir: serverArtifactDir,
+    env: { NOTIFICATION_SIMULATOR_MODE: 'accept' },
+  });
+  simulatorModes.push('accept');
+
   const tokenA = await loginForBootstrap(
     environment.baseUrl,
     fixture.opsUser.email,
@@ -407,14 +416,6 @@ beforeAll(async () => {
     fixture.teacherUser.credential,
   );
   teacherApi = { baseUrl: environment.baseUrl, token: teacherToken, branchCode: fixture.branchCode };
-
-  server = await startRuntimeServer({
-    baseUrl: environment.baseUrl,
-    port: environment.port,
-    artifactDir: serverArtifactDir,
-    env: { NOTIFICATION_SIMULATOR_MODE: 'accept' },
-  });
-  simulatorModes.push('accept');
 
   browser = await launchE2eBrowser();
   const screenshotDir = path.join(environment.artifactDir, 'screenshots', 'n3');
@@ -1137,15 +1138,20 @@ afterAll(async () => {
   } catch (error) {
     failure = new Error(`Acceptance report could not be written: ${describeFixtureError(error)}`);
   } finally {
-    const stop = async (task: () => Promise<void>): Promise<void> => {
-      await task().catch(() => undefined);
+    const stop = async (task: () => Promise<unknown>): Promise<void> => {
+      await Promise.resolve()
+        .then(task)
+        .catch(() => undefined);
     };
-    await stop(() => sessionA!.close());
-    await stop(() => sessionB!.close());
-    await stop(() => sessionC!.close());
-    await stop(() => browser!.close());
-    await stop(() => server!.stop());
-    await stop(() => dbClient!.end());
+    for (const s of [sessionA, sessionB, sessionC]) {
+      if (s !== undefined) await stop(() => s.close());
+    }
+    const b = browser;
+    if (b !== undefined) await stop(() => b.close());
+    const sv = server;
+    if (sv !== undefined) await stop(() => sv.stop());
+    const db = dbClient;
+    if (db !== undefined) await stop(() => db.end());
   }
   if (failure !== undefined) throw failure;
 });
