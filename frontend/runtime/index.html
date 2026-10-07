@@ -69,6 +69,10 @@
           <strong>Operasyon yöneticisi</strong>
           <small>Ders karşılığı</small>
         </button>
+        <button class="tab" data-tab="notifications" aria-controls="notifications-panel" aria-selected="false">
+          <strong>Bildirimler</strong>
+          <small>Gönderim operasyonu</small>
+        </button>
       </nav>
 
       <main id="runtime-main" tabindex="-1">
@@ -213,6 +217,43 @@
           </div>
           <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
           <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve görevlendirme durumu"></div>
+        </section>
+
+        <section id="notifications-panel" class="panel runtime-panel hidden" data-panel="notifications">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Bildirim operasyonu</p>
+              <h2>Gönderim kuyruğu</h2>
+            </div>
+            <button id="refresh-notifications" type="button">Listeyi yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Sunucu otoriter gönderim akışı</strong>
+            <ul class="checklist">
+              <li>Onay, gönderim, yeniden deneme ve iptal eylemleri yalnızca sunucunun izin verdiği eylemlerdir.</li>
+              <li>Her işlem güncel kayıt sürümüyle doğrulanır; sürüm değişmişse yenileme gerekir.</li>
+              <li>Sağlayıcı etkisi simülasyon modunda üretilir; kanıt dayanıklı gönderim receipt'inde saklanır.</li>
+            </ul>
+          </div>
+          <div class="grid-form">
+            <label>Durum filtresi
+              <select id="notification-status-filter">
+                <option value="">Tüm durumlar</option>
+                <option value="pending">Beklemede</option>
+                <option value="approved">Onaylandı</option>
+                <option value="blocked_consent">Onay engelli</option>
+                <option value="dispatched">Gönderildi</option>
+                <option value="failed">Başarısız</option>
+                <option value="dead_lettered">Durduruldu</option>
+                <option value="uncertain">Belirsiz</option>
+                <option value="cancelled">İptal edildi</option>
+                <option value="closed">Kapatıldı</option>
+              </select>
+            </label>
+            <button id="apply-notification-filter" type="button">Filtreyi uygula</button>
+          </div>
+          <div id="notifications-list" class="cards" role="region" aria-label="Bildirim operasyon listesi"></div>
+          <div id="notification-detail" class="state-box" role="region" aria-label="Seçili bildirim detayı ve eylemleri"></div>
         </section>
       </main>
     </div>

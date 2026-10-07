@@ -16,6 +16,8 @@ const state = {
   impactCount: 0,
   candidateCount: 0,
   activeLessonLabel: '',
+  activeNotificationId: '',
+  activeNotificationVersion: 0,
   lastAction: 'Henüz işlem yapılmadı.',
 };
 
@@ -39,6 +41,13 @@ const reasonUi = {
   ASSIGNMENT_NOT_FOUND: ['empty_or_not_found_same_scope', 'Aktif görevlendirme bulunamadı.'],
   SERVER_ERROR: ['error_retryable', 'İşlem tamamlanamadı.'],
   OFFLINE_OR_UNAVAILABLE: ['offline_or_unavailable', 'Bağlantı kurulamadı.'],
+  CLAIM_ACTIVE: ['conflict_blocking', 'Bu bildirim şu anda gönderiliyor; kısa süre sonra yenileyin.'],
+  BACKOFF_ACTIVE: ['conflict_blocking', 'Yeniden deneme beklemede; biraz sonra tekrar deneyin.'],
+  NOT_DISPATCHABLE: ['locked_state', 'Bu durumda gönderim eylemi uygulanamaz; kayıt durumunu yenileyin.'],
+  CLAIM_LOST: ['conflict_blocking', 'Kayıt başka bir işlemle değişti; listeyi yenileyin.'],
+  NOTIFICATION_NOT_FOUND: ['empty_or_not_found_same_scope', 'Bildirim bulunamadı veya kapsamınız dışında.'],
+  NOTIFICATION_OUTBOX_SCOPE_REQUIRED: ['branch_context_required', 'Bildirim işlemi için şube bağlamı gerekli.'],
+  NOTIFICATION_STATUS_FILTER_INVALID: ['validation_error', 'Durum filtresi geçersiz.'],
 };
 
 const GENERIC_NEST_ERRORS = new Set(['Bad Request', 'Forbidden', 'Conflict', 'Precondition Failed', 'Not Found', 'Unauthorized']);
@@ -71,6 +80,12 @@ const statusLabels = {
   partially_covered: 'Kısmen karşılandı',
   not_required: 'Karşılık gerekmiyor',
   cancelled: 'İptal edildi',
+  blocked_consent: 'Onay engelli',
+  dispatched: 'Gönderildi',
+  failed: 'Başarısız',
+  dead_lettered: 'Durduruldu',
+  uncertain: 'Belirsiz',
+  closed: 'Kapatıldı',
   unknown: 'Durum bekleniyor',
 };
 const statusTones = {
@@ -84,7 +99,13 @@ const statusTones = {
   partially_covered: 'warning',
   uncovered: 'danger',
   rejected: 'danger',
+  failed: 'danger',
+  dead_lettered: 'danger',
+  dispatched: 'success',
+  blocked_consent: 'warning',
+  uncertain: 'warning',
   cancelled: 'neutral',
+  closed: 'neutral',
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -372,6 +393,7 @@ function activateTab(name) {
   });
   document.querySelectorAll('.runtime-panel').forEach((panel) => panel.classList.toggle('hidden', panel.dataset.panel !== name));
   $('#runtime-main').focus();
+  if (name === 'notifications' && state.accessToken) loadNotifications();
 }
 
 async function createLeave(event) {
@@ -596,6 +618,132 @@ async function clearAssignment() {
   }
 }
 
+function formatStamp(value) {
+  if (!value) return 'Zaman bilgisi yok';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('tr-TR');
+}
+
+async function loadNotifications() {
+  if (!requireSession()) return;
+  const branchId = getBranchId();
+  if (!branchId) return announce('Bildirim listesi için şube seçin.', 'warning');
+  const target = $('#notifications-list');
+  const query = new URLSearchParams({ limit: '20', offset: '0' });
+  const filter = $('#notification-status-filter').value;
+  if (filter) query.set('status', filter);
+  target.innerHTML = loading('Bildirimler getiriliyor');
+  try {
+    const { body } = await apiRequest(`/notifications?${query.toString()}`);
+    const rows = asArray(body, ['notifications', 'items']);
+    target.innerHTML = rows.length ? rows.map(renderNotificationCard).join('') : empty('Bu kapsamda bildirim yok.');
+    announce(`${rows.length} bildirim listelendi.`, 'success');
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function renderNotificationCard(row) {
+  const status = pick(row, ['status'], 'unknown');
+  return `<article class="card">
+    <h3>${escapeHtml(pick(row, ['eventType'], 'Bildirim'))}</h3>
+    <p class="card-meta">
+      <span>Kanal: ${escapeHtml(pick(row, ['channel'], '-'))}</span>
+      <span>Deneme: ${escapeHtml(pick(row, ['attempts'], 0))}</span>
+      <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
+    </p>
+    <span class="tag" data-tone="${escapeHtml(statusTone(status))}">${escapeHtml(displayStatus(status))}</span>
+    <button type="button" data-action="notification-detail" data-notification-id="${escapeHtml(pick(row, ['id']))}">Detayı ve eylemleri aç</button>
+  </article>`;
+}
+
+async function openNotificationDetail(id) {
+  if (!requireSession()) return;
+  state.activeNotificationId = id || state.activeNotificationId;
+  if (!state.activeNotificationId) return announce('Önce listeden bir bildirim açın.', 'warning');
+  const target = $('#notification-detail');
+  target.innerHTML = loading('Bildirim detayı getiriliyor');
+  try {
+    const { body } = await apiRequest(`/notifications/${encodeURIComponent(state.activeNotificationId)}`);
+    renderNotificationDetail(body);
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function notificationActionLabel(action) {
+  const labels = {
+    approve: 'Taslağı onayla',
+    close: 'Taslağı kapat',
+    execute: 'Gönderimi yürüt',
+    retry: 'Yeniden uygunluğa al',
+    cancel: 'İptal et',
+  };
+  return labels[action] || action;
+}
+
+function renderReceiptRow(receipt) {
+  const errorCode = pick(receipt, ['errorCode']);
+  return `<li>
+    <strong>Deneme ${escapeHtml(pick(receipt, ['attempt'], '?'))} · ${escapeHtml(pick(receipt, ['outcome'], '-'))}</strong>
+    <span>${escapeHtml(formatStamp(pick(receipt, ['createdAt'], '')))}</span>
+    <span>Sağlayıcı: ${escapeHtml(pick(receipt, ['providerRef'], '-'))}</span>
+    <span class="tag" data-tone="${escapeHtml(pick(receipt, ['simulated'], false) ? 'neutral' : 'warning')}">${escapeHtml(pick(receipt, ['simulated'], false) ? 'simüle' : 'canlı')}</span>
+    ${errorCode ? `<span class="tag" data-tone="danger">${escapeHtml(String(errorCode))}</span>` : ''}
+  </li>`;
+}
+
+function renderNotificationDetail(body) {
+  const row = body && body.row ? body.row : {};
+  const actions = asArray(body, ['availableActions']);
+  const receipts = asArray(body, ['receipts']);
+  state.activeNotificationId = pick(row, ['id'], state.activeNotificationId);
+  state.activeNotificationVersion = Number(pick(row, ['version'], 0));
+  const status = pick(row, ['status'], 'unknown');
+  const reason = pick(row, ['reason']);
+  const actionButtons = actions.length
+    ? actions.map((action) => `<button type="button" data-action="notification-run" data-notification-action="${escapeHtml(action)}">${escapeHtml(notificationActionLabel(action))}</button>`).join('')
+    : '<p class="hint">Sunucu bu durumda izin verilen bir eylem döndürmedi.</p>';
+  $('#notification-detail').innerHTML = `<article class="card">
+    <h3>${escapeHtml(pick(row, ['eventType'], 'Bildirim'))} · ${escapeHtml(displayStatus(status))}</h3>
+    <p class="card-meta">
+      <span>Kanal: ${escapeHtml(pick(row, ['channel'], '-'))}</span>
+      <span>Deneme: ${escapeHtml(pick(row, ['attempts'], 0))}</span>
+      <span>Sürüm: ${escapeHtml(pick(row, ['version'], 0))}</span>
+      <span>Onay sürümü: ${escapeHtml(pick(row, ['consentVersion'], '-'))}</span>
+      <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
+    </p>
+    ${reason ? `<p>Gerekçe: ${escapeHtml(String(reason))}</p>` : ''}
+    <div class="quick-actions">${actionButtons}</div>
+    <strong>Gönderim kanıtları</strong>
+    ${receipts.length ? `<ul class="impact-list">${receipts.map(renderReceiptRow).join('')}</ul>` : '<p class="hint">Gönderim kanıtı (receipt) yok veya görüntüleme yetkiniz sınırlı.</p>'}
+  </article>`;
+}
+
+async function runNotificationAction(action) {
+  if (!requireSession()) return;
+  const id = state.activeNotificationId;
+  if (!id) return announce('Önce listeden bir bildirim açın.', 'warning');
+  const target = $('#notification-detail');
+  let path = `/notifications/${encodeURIComponent(id)}/${encodeURIComponent(action)}`;
+  let body;
+  if (action === 'approve' || action === 'close') {
+    path = `/notifications/drafts/${encodeURIComponent(id)}/${encodeURIComponent(action)}`;
+    body = { expectedVersion: state.activeNotificationVersion };
+  }
+  target.innerHTML = loading('İşlem sunucuda uygulanıyor');
+  try {
+    const { body: result } = await apiRequest(path, { method: 'POST', ...(body ? { body } : {}) });
+    const nextStatus = pick(result, ['status'], '');
+    announce(`İşlem tamamlandı${nextStatus ? ` · ${displayStatus(nextStatus)}` : ''}.`, 'success');
+    await openNotificationDetail(id);
+    await loadNotifications();
+  } catch (error) {
+    renderError(target, error);
+    if (error.uiState === 'stale_version' || error.uiState === 'version_required') await openNotificationDetail(id);
+  }
+}
+
 function captureLeaveVersion(body, etag) {
   state.activeLeaveId = pick(body, ['leaveRequestId', 'leaveId', 'id'], state.activeLeaveId);
   state.activeLeaveEtag = pick(body, ['leaveEtag', 'etag'], etag || state.activeLeaveEtag);
@@ -633,6 +781,8 @@ document.addEventListener('click', (event) => {
   if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();
+  if (target.dataset.action === 'notification-detail') openNotificationDetail(target.dataset.notificationId);
+  if (target.dataset.action === 'notification-run') runNotificationAction(target.dataset.notificationAction);
 });
 
 $('#login-form').addEventListener('submit', login);
@@ -640,4 +790,6 @@ $('#context-form').addEventListener('submit', updateContext);
 $('#leave-form').addEventListener('submit', createLeave);
 $('#load-own-leave').addEventListener('click', loadOwnLeave);
 $('#refresh-queue').addEventListener('click', loadQueue);
+$('#refresh-notifications').addEventListener('click', loadNotifications);
+$('#apply-notification-filter').addEventListener('click', loadNotifications);
 updateWorkflowProgress();
