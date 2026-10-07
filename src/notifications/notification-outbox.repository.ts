@@ -219,11 +219,16 @@ export class NotificationOutboxRepository {
     entityManager: EntityManager,
     input: Readonly<{
       tenantId: string;
+      branchId: string;
       id: string;
       targetStatus: 'approved' | 'closed';
       expectedVersion: number;
     }>,
   ): Promise<{ id: string; status: string; version: number }> {
+    if (typeof input.tenantId !== 'string' || !input.tenantId.trim() ||
+        typeof input.branchId !== 'string' || !input.branchId.trim()) {
+      throw new ForbiddenException('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
+    }
     const fromStatuses =
       input.targetStatus === 'approved' ? ['pending', 'blocked_consent'] : ['pending'];
     const updated = extractRows<{ id: string; status: string; version: number }>(
@@ -234,8 +239,11 @@ export class NotificationOutboxRepository {
                 updated_at = now()
           WHERE tenant_id = $2 AND id = $3 AND status = ANY($5::varchar[])
             AND version = $4
+            AND session_id IN (
+              SELECT id FROM attendance_sessions
+               WHERE tenant_id = $2 AND branch_id = $6)
           RETURNING id, status, version`,
-        [input.targetStatus, input.tenantId, input.id, input.expectedVersion, fromStatuses],
+        [input.targetStatus, input.tenantId, input.id, input.expectedVersion, fromStatuses, input.branchId],
       ),
     );
     if (updated.length === 0) {

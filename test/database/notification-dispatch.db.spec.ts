@@ -1,5 +1,5 @@
-import { ConflictException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { DataSource, EntityManager } from 'typeorm';
 import { CreateTenants1700000000002 } from '../../src/database/migrations/1700000000002-CreateTenants';
 import { CreateKvkkConsents1700000000010 } from '../../src/database/migrations/1700000000010-CreateKvkkConsents';
 import { CreateAttendanceSessions1824000000000 } from '../../src/database/migrations/1824000000000-CreateAttendanceSessions';
@@ -20,9 +20,23 @@ const withPostgres = databaseUrl ? describe : describe.skip;
 const TENANT_ID = '10000000-0000-4000-8000-000000000001';
 const OTHER_TENANT_ID = '10000000-0000-4000-8000-000000000002';
 const BRANCH_ID = '20000000-0000-4000-8000-000000000001';
+const OTHER_BRANCH_ID = '20000000-0000-4000-8000-000000000002';
 const SESSION_ID = '30000000-0000-4000-8000-000000000001';
+const OTHER_SESSION_ID = '30000000-0000-4000-8000-000000000009';
+const FIXTURE_USER_ID = '30000000-0000-4000-8000-000000000010';
+const TEACHER_ID = '40000000-0000-4000-8000-000000000002';
+const TEACHER_BRANCH_ID = '40000000-0000-4000-8000-000000000003';
 const STUDENT_ID = '40000000-0000-4000-8000-000000000001';
 const SUBJECT_ID = '50000000-0000-4000-8000-000000000001';
+const COURSE_ID = '50000000-0000-4000-8000-000000000002';
+const GROUP_ID = '50000000-0000-4000-8000-000000000003';
+const TIME_SLOT_ID = '50000000-0000-4000-8000-000000000004';
+const ROOM_ID = '50000000-0000-4000-8000-000000000005';
+const SCHEDULE_ID = '60000000-0000-4000-8000-000000000001';
+const VERSION_ID = '60000000-0000-4000-8000-000000000002';
+const EVENT_ID = '60000000-0000-4000-8000-000000000003';
+const SESSION_DATE = '2026-10-05';
+const OTHER_SESSION_DATE = '2026-10-06';
 
 const ctx = { tenantId: TENANT_ID, branchId: BRANCH_ID } as RequestContext;
 
@@ -98,6 +112,47 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       `DELETE FROM attendance_sessions WHERE tenant_id = ANY($1::uuid[])`,
       [[TENANT_ID, OTHER_TENANT_ID]],
     );
+    await dataSource.query(
+      `DELETE FROM schedule_events WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `UPDATE schedules SET active_version_id = NULL WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `DELETE FROM schedule_versions WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `DELETE FROM schedules WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `DELETE FROM teacher_branches WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `DELETE FROM teachers WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `DELETE FROM time_slots WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `DELETE FROM student_groups WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(
+      `DELETE FROM courses WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
+    await dataSource.query(`DELETE FROM users WHERE id = $1`, [FIXTURE_USER_ID]);
+    await dataSource.query(
+      `DELETE FROM branches WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
     await dataSource.query(`DELETE FROM tenants WHERE id = ANY($1::uuid[])`, [
       [TENANT_ID, OTHER_TENANT_ID],
     ]);
@@ -109,7 +164,98 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       `INSERT INTO tenants (id, slug, name) VALUES ($1, 'n2-dispatch', 'N2 Dispatch') ON CONFLICT (slug) DO NOTHING`,
       [TENANT_ID],
     );
+    await seedSessionFixture();
   });
+
+  async function seedSessionFixture(): Promise<void> {
+    await dataSource.query(
+      `INSERT INTO branches (id, tenant_id, name, code, status)
+       VALUES ($1, $2, 'N2 Dispatch Branch A', 'N2-DISP-A', 'active'),
+              ($3, $2, 'N2 Dispatch Branch B', 'N2-DISP-B', 'active')`,
+      [BRANCH_ID, TENANT_ID, OTHER_BRANCH_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO users (id, email, credential_hash, full_name, status, token_version)
+       VALUES ($1, 'n2-dispatch-teacher@example.test', 'x', 'N2 Dispatch Teacher', 'active', 1)`,
+      [FIXTURE_USER_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO teachers (id, tenant_id, user_id, employee_code, first_name, last_name, status)
+       VALUES ($1, $2, $3, 'N2-D-1', 'N2', 'Teacher', 'active')`,
+      [TEACHER_ID, TENANT_ID, FIXTURE_USER_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO teacher_branches (id, tenant_id, teacher_id, branch_id, status, effective_from)
+       VALUES ($1, $2, $3, $4, 'active', CURRENT_DATE - INTERVAL '1 day')`,
+      [TEACHER_BRANCH_ID, TENANT_ID, TEACHER_ID, BRANCH_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO courses (id, tenant_id, name, code, status)
+       VALUES ($1, $2, 'N2 Dispatch Course', 'N2-D-C', 'active')`,
+      [COURSE_ID, TENANT_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO student_groups (id, tenant_id, branch_id, name, code, status)
+       VALUES ($1, $2, $3, 'N2 Dispatch Group', 'N2-D-G', 'active')`,
+      [GROUP_ID, TENANT_ID, BRANCH_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO time_slots (id, tenant_id, branch_id, name, day_of_week, start_time, end_time, order_index, status)
+       VALUES ($1, $2, $3, 'N2 Slot', 1, '10:00', '11:00', 1, 'active')`,
+      [TIME_SLOT_ID, TENANT_ID, BRANCH_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO schedules (id, tenant_id, branch_id, status, revision, effective_from, effective_to)
+       VALUES ($1, $2, $3, 'published', 1, $4::date - INTERVAL '1 day', $4::date + INTERVAL '7 days')`,
+      [SCHEDULE_ID, TENANT_ID, BRANCH_ID, SESSION_DATE],
+    );
+    await dataSource.query(
+      `INSERT INTO schedule_versions (id, tenant_id, branch_id, schedule_id, version_no, status, validation_mode, validation_fingerprint, validated_revision, snapshot, published_at)
+       VALUES ($1, $2, $3, $4, 1, 'published', 'FULL', 'n2-dispatch', 1, '{}'::jsonb, now())`,
+      [VERSION_ID, TENANT_ID, BRANCH_ID, SCHEDULE_ID],
+    );
+    await dataSource.query(
+      `UPDATE schedules SET active_version_id = $1, updated_at = now() WHERE id = $2`,
+      [VERSION_ID, SCHEDULE_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO schedule_events (id, tenant_id, branch_id, schedule_id, version_id, teacher_id, teacher_branch_id, student_group_id, course_id, room_id, time_slot_id, day_of_week, start_time, end_time, time_slot_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, '10:00', '11:00', '{"label":"N2 Slot"}'::jsonb)`,
+      [
+        EVENT_ID,
+        TENANT_ID,
+        BRANCH_ID,
+        SCHEDULE_ID,
+        VERSION_ID,
+        TEACHER_ID,
+        TEACHER_BRANCH_ID,
+        GROUP_ID,
+        COURSE_ID,
+        ROOM_ID,
+        TIME_SLOT_ID,
+      ],
+    );
+    await dataSource.query(
+      `INSERT INTO attendance_sessions (id, tenant_id, branch_id, schedule_event_id, teacher_id, student_group_id, course_id, room_id, session_date, roster_snapshot, status, version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10::jsonb, 'locked', 1),
+              ($11, $2, $12, $4, $5, $6, $7, $8, $13::date, $10::jsonb, 'locked', 1)`,
+      [
+        SESSION_ID,
+        TENANT_ID,
+        BRANCH_ID,
+        EVENT_ID,
+        TEACHER_ID,
+        GROUP_ID,
+        COURSE_ID,
+        ROOM_ID,
+        SESSION_DATE,
+        JSON.stringify([STUDENT_ID]),
+        OTHER_SESSION_ID,
+        OTHER_BRANCH_ID,
+        OTHER_SESSION_DATE,
+      ],
+    );
+  }
 
   async function seedConsent(approved: boolean): Promise<void> {
     await dataSource.query(
@@ -280,7 +426,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('claims an approved row: attempts+1, fencing+1, lease set', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-claim');
       const claim = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, id }),
+        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(claim).not.toBeNull();
       expect(claim!.attempt).toBe(1);
@@ -301,10 +447,10 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('second claim while lease active is rejected (0 rows)', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-lease');
       await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, id }),
+        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       const second = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, id }),
+        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(second).toBeNull();
     });
@@ -312,14 +458,14 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('expired lease can be reclaimed with a higher fencing token', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-expire');
       const first = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, id }),
+        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       await dataSource.query(
         `UPDATE notification_outbox SET claim_expires_at = now() - interval '1 second' WHERE id = $1`,
         [id],
       );
       const second = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, id }),
+        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(second).not.toBeNull();
       expect(second!.fencingToken).toBe(first!.fencingToken + 1);
@@ -331,7 +477,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       for (const status of ['pending', 'blocked_consent', 'cancelled', 'closed', 'dead_lettered', 'uncertain']) {
         const id = await insertOutboxRow(status, `dedupe-no-${status}`);
         const claim = await dataSource.transaction((em) =>
-          repo.claim(em, { tenantId: TENANT_ID, id }),
+          repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
         );
         expect(claim).toBeNull();
       }
@@ -340,9 +486,24 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('does not claim rows from other tenants (tenant predicate)', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-tenant');
       const claim = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: OTHER_TENANT_ID, id }),
+        repo.claim(em, { tenantId: OTHER_TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(claim).toBeNull();
+    });
+
+    it('does not claim rows from other branches (branch predicate)', async () => {
+      const id = await insertOutboxRow('approved', 'dedupe-branch');
+      const claim = await dataSource.transaction((em) =>
+        repo.claim(em, { tenantId: TENANT_ID, branchId: OTHER_BRANCH_ID, id }),
+      );
+      expect(claim).toBeNull();
+      const row = (await dataSource.query(
+        `SELECT attempts, fencing_token, claim_token FROM notification_outbox WHERE id = $1`,
+        [id],
+      )) as Array<{ attempts: number; fencing_token: number; claim_token: string | null }>;
+      expect(row[0].attempts).toBe(0);
+      expect(row[0].fencing_token).toBe(0);
+      expect(row[0].claim_token).toBeNull();
     });
   });
 
@@ -352,7 +513,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     >;
     async function claimRow(id: string): Promise<ClaimRow> {
       const claim = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, id }),
+        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(claim).not.toBeNull();
       return claim!;
@@ -406,7 +567,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       expect(delayMs).toBeLessThanOrEqual(backoffMsForAttempts(1) + 2_000);
 
       const blocked = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, id }),
+        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(blocked).toBeNull();
     });
@@ -487,7 +648,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       const id = await insertOutboxRow('approved', 'dedupe-cancel-race');
       const claim = await claimRow(id);
       const cancelled = await dataSource.transaction((em) =>
-        repo.cancel(em, { tenantId: TENANT_ID, id }),
+        repo.cancel(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(cancelled).toEqual({ status: 'cancelled', version: 2 });
       const applied = await dataSource.transaction((em) =>
@@ -518,7 +679,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('retry rearms dead_lettered preserving attempts', async () => {
       const id = await insertOutboxRow('dead_lettered', 'dedupe-retry', { attempts: 3 });
       const next = await dataSource.transaction((em) =>
-        repo.rearmForRetry(em, { tenantId: TENANT_ID, id }),
+        repo.rearmForRetry(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(next).toEqual({ status: 'approved', version: 1 });
       const row = (await dataSource.query(
@@ -531,7 +692,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('retry rejects dispatched rows', async () => {
       const id = await insertOutboxRow('dispatched', 'dedupe-retry-no');
       const next = await dataSource.transaction((em) =>
-        repo.rearmForRetry(em, { tenantId: TENANT_ID, id }),
+        repo.rearmForRetry(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(next).toBeNull();
     });
@@ -539,9 +700,29 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('cancel rejects dispatched rows', async () => {
       const id = await insertOutboxRow('dispatched', 'dedupe-cancel-no');
       const next = await dataSource.transaction((em) =>
-        repo.cancel(em, { tenantId: TENANT_ID, id }),
+        repo.cancel(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
       );
       expect(next).toBeNull();
+    });
+
+    it('retry and cancel cannot touch rows from other branches', async () => {
+      const retryId = await insertOutboxRow('dead_lettered', 'dedupe-retry-branch', { attempts: 3 });
+      const retried = await dataSource.transaction((em) =>
+        repo.rearmForRetry(em, { tenantId: TENANT_ID, branchId: OTHER_BRANCH_ID, id: retryId }),
+      );
+      expect(retried).toBeNull();
+      const cancelId = await insertOutboxRow('approved', 'dedupe-cancel-branch');
+      const cancelled = await dataSource.transaction((em) =>
+        repo.cancel(em, { tenantId: TENANT_ID, branchId: OTHER_BRANCH_ID, id: cancelId }),
+      );
+      expect(cancelled).toBeNull();
+      const rows = (await dataSource.query(
+        `SELECT id, status FROM notification_outbox WHERE id = ANY($1::uuid[])`,
+        [[retryId, cancelId]],
+      )) as Array<{ id: string; status: string }>;
+      const statusById = new Map(rows.map((row) => [row.id, row.status]));
+      expect(statusById.get(retryId)).toBe('dead_lettered');
+      expect(statusById.get(cancelId)).toBe('approved');
     });
   });
 
@@ -665,5 +846,56 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       const result = await service.execute(ctx, id);
       expect(result.status).toBe('dispatched');
     });
+
+    it('execute from another branch context is rejected without touching the row (branch predicate)', async () => {
+      await seedConsent(true);
+      const id = await insertOutboxRow('approved', 'dedupe-e2e-branch');
+      const otherBranchCtx = {
+        tenantId: TENANT_ID,
+        branchId: OTHER_BRANCH_ID,
+      } as RequestContext;
+
+      await expect(service.execute(otherBranchCtx, id)).rejects.toThrow(ForbiddenException);
+
+      const row = (await dataSource.query(
+        `SELECT status, attempts, claim_token FROM notification_outbox WHERE id = $1`,
+        [id],
+      )) as Array<{ status: string; attempts: number; claim_token: string | null }>;
+      expect(row[0].status).toBe('approved');
+      expect(row[0].attempts).toBe(0);
+      expect(row[0].claim_token).toBeNull();
+      const receipts = (await dataSource.query(
+        `SELECT count(*)::int AS n FROM notification_dispatch_receipts WHERE outbox_id = $1`,
+        [id],
+      )) as Array<{ n: number }>;
+      expect(receipts[0].n).toBe(0);
+    });
+  });
+});
+
+describe('N2 dispatch branch scope pre-storage denial', () => {
+  const dispatchRepo = new NotificationDispatchRepository();
+  const query = jest.fn();
+  const em = { query } as unknown as EntityManager;
+  const base = { tenantId: TENANT_ID, id: SESSION_ID };
+
+  beforeEach(() => query.mockClear());
+
+  const cases = [
+    { name: 'claim', run: () => dispatchRepo.claim(em, { ...base, branchId: '' } as never) },
+    {
+      name: 'currentClaimBasis',
+      run: () => dispatchRepo.currentClaimBasis(em, { ...base, branchId: undefined } as never),
+    },
+    {
+      name: 'rearmForRetry',
+      run: () => dispatchRepo.rearmForRetry(em, { ...base, branchId: ' ' } as never),
+    },
+    { name: 'cancel', run: () => dispatchRepo.cancel(em, { ...base, branchId: undefined } as never) },
+  ];
+
+  it.each(cases)('$name rejects missing branch scope before query', async ({ run }) => {
+    await expect(run()).rejects.toThrow('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
+    expect(query).not.toHaveBeenCalled();
   });
 });

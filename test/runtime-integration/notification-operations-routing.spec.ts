@@ -357,6 +357,7 @@ describe('notification operations API routing + permission authority', () => {
       expect(body.status).toBe('approved');
       expect(draftServiceStub.approveDraft).toHaveBeenCalledWith(expect.anything(), {
         tenantId: authenticatedUser.tenantId,
+        branchId: routingBranch,
         id: notificationId,
         expectedVersion: 1,
       });

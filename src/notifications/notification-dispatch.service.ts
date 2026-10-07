@@ -112,14 +112,15 @@ export class NotificationDispatchService {
    */
   async execute(context: RequestContext, id: string): Promise<ExecuteResult> {
     const tenantId = context.tenantId!;
+    const branchId = context.branchId!;
 
     const claim = await this.dataSource.transaction((em) =>
-      this.outbox.claim(em, { tenantId, id }),
+      this.outbox.claim(em, { tenantId, branchId, id }),
     );
 
     if (!claim) {
       const basis = await this.dataSource.transaction((em) =>
-        this.outbox.currentClaimBasis(em, tenantId, id),
+        this.outbox.currentClaimBasis(em, { tenantId, branchId, id }),
       );
       if (basis?.status === 'dispatched') {
         const receipt = await this.dataSource.transaction((em) =>
@@ -229,10 +230,11 @@ export class NotificationDispatchService {
     id: string,
   ): Promise<{ id: string; status: NotificationOutboxStatus; version: number }> {
     const tenantId = context.tenantId!;
+    const branchId = context.branchId!;
     return this.dataSource.transaction(async (em) => {
-      const next = await this.outbox.rearmForRetry(em, { tenantId, id });
+      const next = await this.outbox.rearmForRetry(em, { tenantId, branchId, id });
       if (!next) {
-        const basis = await this.outbox.currentClaimBasis(em, tenantId, id);
+        const basis = await this.outbox.currentClaimBasis(em, { tenantId, branchId, id });
         throw claimConflict(basis, id);
       }
       return { id, status: next.status, version: next.version };
@@ -248,10 +250,11 @@ export class NotificationDispatchService {
     id: string,
   ): Promise<{ id: string; status: NotificationOutboxStatus; version: number }> {
     const tenantId = context.tenantId!;
+    const branchId = context.branchId!;
     return this.dataSource.transaction(async (em) => {
-      const next = await this.outbox.cancel(em, { tenantId, id });
+      const next = await this.outbox.cancel(em, { tenantId, branchId, id });
       if (!next) {
-        const basis = await this.outbox.currentClaimBasis(em, tenantId, id);
+        const basis = await this.outbox.currentClaimBasis(em, { tenantId, branchId, id });
         throw claimConflict(basis, id);
       }
       return { id, status: next.status, version: next.version };

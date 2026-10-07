@@ -97,6 +97,7 @@ export class NotificationDraftController {
     return this.dataSource.transaction(async (em) =>
       this.draftService.approveDraft(em, {
         tenantId: ctx.tenantId!,
+        branchId: ctx.branchId!,
         id,
         expectedVersion: body.expectedVersion,
       }),
@@ -121,6 +122,7 @@ export class NotificationDraftController {
     return this.dataSource.transaction(async (em) =>
       this.draftService.closeDraft(em, {
         tenantId: ctx.tenantId!,
+        branchId: ctx.branchId!,
         id,
         expectedVersion: body.expectedVersion,
       }),

@@ -54,6 +54,13 @@ export type StartRuntimeServerInput = Readonly<{
   port: number;
   artifactDir: string;
   readyTimeoutMs?: number;
+  /**
+   * Süreç başına ek ortam değişkenleri (ör. NOTIFICATION_SIMULATOR_MODE).
+   * `PORT` dâhil `process.env` üzerine bindirilir; işaretsiz değişkenler
+   * miras kalır. N3: aynı DB üzerinde farklı simulator modlarıyla art arda
+   * sunucu başlatmak için kullanılır.
+   */
+  env?: Readonly<Record<string, string>>;
 }>;
 
 const DEFAULT_READY_TIMEOUT_MS = 180_000;
@@ -150,7 +157,7 @@ export async function startRuntimeServer(input: StartRuntimeServerInput): Promis
 
   const child = spawn(process.execPath, [tsNodeBin, 'src/main.ts'], {
     cwd: repoRoot,
-    env: { ...process.env, PORT: String(input.port) },
+    env: { ...process.env, ...input.env, PORT: String(input.port) },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });

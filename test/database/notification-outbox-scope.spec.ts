@@ -140,4 +140,22 @@ describe('N0 scope/limit pre-storage denial', () => {
       .rejects.toThrow('NOTIFICATION_OUTBOX_LIMIT_INVALID');
     expect(query).not.toHaveBeenCalled();
   });
+  it.each([
+    { tenantId: tenantA, branchId: undefined },
+    { tenantId: tenantA, branchId: '' },
+    { tenantId: undefined, branchId: branchX },
+    { tenantId: ' ', branchId: branchX },
+  ])('transitionDraft rejects missing scope before query: %j', async (scope) => {
+    const query = jest.fn();
+    await expect(
+      repo.transitionDraft({ query } as unknown as EntityManager, {
+        tenantId: scope.tenantId as string,
+        branchId: scope.branchId as string,
+        id: 'draft-1',
+        targetStatus: 'approved',
+        expectedVersion: 0,
+      }),
+    ).rejects.toThrow('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
+    expect(query).not.toHaveBeenCalled();
+  });
 });

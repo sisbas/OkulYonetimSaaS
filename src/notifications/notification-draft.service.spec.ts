@@ -83,6 +83,7 @@ describe('NotificationDraftService', () => {
       outbox.transitionDraft.mockResolvedValue({ id: 'draft-1', status: 'approved', version: 1 });
       const result = await service.approveDraft({} as any, {
         tenantId,
+        branchId: ctx.branchId!,
         id: 'draft-1',
         expectedVersion: 0,
       });
@@ -90,6 +91,7 @@ describe('NotificationDraftService', () => {
         {},
         expect.objectContaining({
           tenantId,
+          branchId: ctx.branchId,
           id: 'draft-1',
           targetStatus: 'approved',
           expectedVersion: 0,
@@ -104,6 +106,7 @@ describe('NotificationDraftService', () => {
       outbox.transitionDraft.mockResolvedValue({ id: 'draft-1', status: 'closed', version: 1 });
       const result = await service.closeDraft({} as any, {
         tenantId,
+        branchId: ctx.branchId!,
         id: 'draft-1',
         expectedVersion: 0,
       });
@@ -111,6 +114,7 @@ describe('NotificationDraftService', () => {
         {},
         expect.objectContaining({
           tenantId,
+          branchId: ctx.branchId,
           id: 'draft-1',
           targetStatus: 'closed',
           expectedVersion: 0,

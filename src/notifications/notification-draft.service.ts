@@ -65,12 +65,14 @@ export class NotificationDraftService {
     entityManager: EntityManager,
     input: Readonly<{
       tenantId: string;
+      branchId: string;
       id: string;
       expectedVersion: number;
     }>,
   ): Promise<{ id: string; status: string; version: number }> {
     return this.outbox.transitionDraft(entityManager, {
       tenantId: input.tenantId,
+      branchId: input.branchId,
       id: input.id,
       targetStatus: 'approved',
       expectedVersion: input.expectedVersion,
@@ -87,12 +89,14 @@ export class NotificationDraftService {
     entityManager: EntityManager,
     input: Readonly<{
       tenantId: string;
+      branchId: string;
       id: string;
       expectedVersion: number;
     }>,
   ): Promise<{ id: string; status: string; version: number }> {
     return this.outbox.transitionDraft(entityManager, {
       tenantId: input.tenantId,
+      branchId: input.branchId,
       id: input.id,
       targetStatus: 'closed',
       expectedVersion: input.expectedVersion,

@@ -108,6 +108,7 @@ describe('NotificationDispatchService', () => {
 
       expect(outbox.claim).toHaveBeenCalledWith(expect.anything(), {
         tenantId: 't1',
+        branchId: 'b1',
         id: 'o1',
       });
       expect(outbox.transitionToBlockedConsent).not.toHaveBeenCalled();

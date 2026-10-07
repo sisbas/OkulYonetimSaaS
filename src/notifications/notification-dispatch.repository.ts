@@ -105,7 +105,7 @@ export class NotificationDispatchRepository {
   /** Tenant + branch predicate'i — tüm operasyon sorguları için zorunlu. */
   private scope(
     entityManager: EntityManager,
-    trustedRequestContext: RequestContext,
+    trustedRequestContext: Readonly<{ tenantId?: string; branchId?: string }>,
   ): { tenantId: string; branchId: string } {
     const tenantId = trustedRequestContext?.tenantId;
     const branchId = trustedRequestContext?.branchId;
@@ -175,8 +175,7 @@ export class NotificationDispatchRepository {
   /** Satırın güncel durumu — başarısız claim'in sınıflandırılması için. */
   async currentClaimBasis(
     entityManager: EntityManager,
-    tenantId: string,
-    id: string,
+    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
   ): Promise<{
     status: NotificationOutboxStatus;
     version: number;
@@ -184,13 +183,17 @@ export class NotificationDispatchRepository {
     claimActive: boolean;
     backoffUntil: Date | null;
   } | null> {
+    const { tenantId, branchId } = this.scope(entityManager, input);
     const rows = (await entityManager.query(
       `SELECT o.status, o.version, o.attempts,
               (o.claim_expires_at IS NOT NULL AND o.claim_expires_at >= now()) AS "claimActive",
               o.available_at AS "backoffUntil"
          FROM notification_outbox o
-        WHERE o.tenant_id = $1 AND o.id = $2`,
-      [tenantId, id],
+        WHERE o.tenant_id = $1 AND o.id = $2
+          AND o.session_id IN (
+            SELECT id FROM attendance_sessions
+             WHERE tenant_id = $1 AND branch_id = $3)`,
+      [tenantId, input.id, branchId],
     )) as Array<{
       status: NotificationOutboxStatus;
       version: number;
@@ -217,8 +220,9 @@ export class NotificationDispatchRepository {
    */
   async claim(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; id: string }>,
+    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
   ): Promise<ClaimResult | null> {
+    const { tenantId, branchId } = this.scope(entityManager, input);
     const claimToken = randomUUID();
     const rows = extractRows<{
       id: string;
@@ -242,6 +246,9 @@ export class NotificationDispatchRepository {
                 version = version + 1,
                 updated_at = now()
           WHERE tenant_id = $1 AND id = $2
+            AND session_id IN (
+              SELECT id FROM attendance_sessions
+               WHERE tenant_id = $1 AND branch_id = $5)
             AND status IN ('approved', 'failed')
             AND available_at <= now()
             AND (claim_expires_at IS NULL OR claim_expires_at < now())
@@ -249,7 +256,7 @@ export class NotificationDispatchRepository {
                     channel, event_type AS "eventType", snapshot,
                     attempts AS attempt, fencing_token AS "fencingToken",
                     claim_token AS "claimToken", version`,
-        [input.tenantId, input.id, claimToken, CLAIM_LEASE_SECONDS],
+        [tenantId, input.id, claimToken, CLAIM_LEASE_SECONDS, branchId],
       ),
     );
     if (rows.length === 0) return null;
@@ -447,8 +454,9 @@ export class NotificationDispatchRepository {
    */
   async rearmForRetry(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; id: string }>,
+    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
   ): Promise<{ status: NotificationOutboxStatus; version: number } | null> {
+    const { tenantId, branchId } = this.scope(entityManager, input);
     const rows = extractRows<{ status: NotificationOutboxStatus; version: number }>(
       await entityManager.query(
         `UPDATE notification_outbox
@@ -458,9 +466,12 @@ export class NotificationDispatchRepository {
                 version = version + 1,
                 updated_at = now()
           WHERE tenant_id = $1 AND id = $2
+            AND session_id IN (
+              SELECT id FROM attendance_sessions
+               WHERE tenant_id = $1 AND branch_id = $3)
             AND status IN ('dead_lettered', 'uncertain')
           RETURNING status, version`,
-        [input.tenantId, input.id],
+        [tenantId, input.id, branchId],
       ),
     );
     if (rows.length === 0) return null;
@@ -473,8 +484,9 @@ export class NotificationDispatchRepository {
    */
   async cancel(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; id: string }>,
+    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
   ): Promise<{ status: NotificationOutboxStatus; version: number } | null> {
+    const { tenantId, branchId } = this.scope(entityManager, input);
     const rows = extractRows<{ status: NotificationOutboxStatus; version: number }>(
       await entityManager.query(
         `UPDATE notification_outbox
@@ -484,9 +496,12 @@ export class NotificationDispatchRepository {
                 version = version + 1,
                 updated_at = now()
           WHERE tenant_id = $1 AND id = $2
+            AND session_id IN (
+              SELECT id FROM attendance_sessions
+               WHERE tenant_id = $1 AND branch_id = $3)
             AND status NOT IN ('dispatched', 'cancelled', 'closed')
           RETURNING status, version`,
-        [input.tenantId, input.id],
+        [tenantId, input.id, branchId],
       ),
     );
     if (rows.length === 0) return null;

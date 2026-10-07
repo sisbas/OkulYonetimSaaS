@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import puppeteer, { type Browser, type Page } from 'puppeteer-core';
+import puppeteer, { type Browser, type KeyInput, type Page } from 'puppeteer-core';
 import { E2eEnvironmentError } from './env';
 
 /**
@@ -71,6 +71,16 @@ export type UiSession = Readonly<{
   clickElement: (selector: string) => Promise<void>;
   submitForm: (formSelector: string) => Promise<void>;
   waitForText: (selector: string, pattern: RegExp, timeoutMs?: number) => Promise<string>;
+  /** Odaklama: gerçek klavye akışı (senaryo 12) için selector'a odaklanır. */
+  focus: (selector: string) => Promise<void>;
+  /** Gerçek klavye tuşu (Enter/Tab/...). DOM enjeksiyonu yok. */
+  press: (key: KeyInput) => Promise<void>;
+  /** Select elemanına değer atar (page.select; DOM yazar — form değeri). */
+  selectValue: (selector: string, value: string) => Promise<void>;
+  /** Çoklu elemanın metinlerini okur (salt okunur). */
+  queryTexts: (selector: string) => Promise<string[]>;
+  /** Eşleşen eleman sayısını okur (salt okunur). */
+  countElements: (selector: string) => Promise<number>;
   maskCredentialInputs: () => Promise<void>;
   screenshot: (name: string) => Promise<string>;
   close: () => Promise<void>;
@@ -164,6 +174,22 @@ export async function createUiSession(input: Readonly<{
       }
       throw new Error(`Timed out waiting for ${String(pattern)} in ${selector} (last: "${last}").`);
     },
+    focus: async (selector: string) => {
+      await page.focus(selector);
+    },
+    press: async (key: KeyInput) => {
+      await page.keyboard.press(key);
+    },
+    selectValue: async (selector: string, value: string) => {
+      await page.select(selector, value);
+    },
+    queryTexts: async (selector: string) =>
+      page.$$eval(
+        selector,
+        (elements) => elements.map((element) => element.textContent ?? ''),
+      ),
+    countElements: async (selector: string) =>
+      page.$$eval(selector, (elements) => elements.length),
     /**
      * Kimlik alanlarını GERÇEK klavye etkileşimiyle boşaltır (DOM enjeksiyonu
      * yok). Böylece ekran görüntüleri maskeli kalır.
