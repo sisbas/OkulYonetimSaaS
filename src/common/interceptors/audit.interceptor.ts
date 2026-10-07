@@ -58,16 +58,40 @@ export class AuditInterceptor implements NestInterceptor {
     if (!audit) return next.handle();
     const request = context.switchToHttp().getRequest<RequestWithContext>();
     const startedAt = Date.now();
-    return next.handle().pipe(tap(() => {
-      this.logger.log(JSON.stringify({
-        action: audit.action,
-        resource: audit.resource,
-        tenantId: request.context?.tenantId,
-        userId: request.context?.user?.userId,
-        requestId: request.context?.requestId,
-        durationMs: Date.now() - startedAt,
-        body: sanitize(request.body),
-      }));
-    }));
+    return next.handle().pipe(
+      tap({
+        next: () => {
+          this.logger.log(JSON.stringify({
+            action: audit.action,
+            resource: audit.resource,
+            tenantId: request.context?.tenantId,
+            userId: request.context?.user?.userId,
+            requestId: request.context?.requestId,
+            durationMs: Date.now() - startedAt,
+            body: sanitize(request.body),
+          }));
+        },
+        error: (error: unknown) => {
+          // Başarısız denetlenen eylemler sessizce yutulmaz: yalnızca hata
+          // kategorisi ve durum kodunu loglarız (gövde/ileti asla yazılmaz —
+          // PII). Kategori allowlist'i, artefakt tarayıcısının ham istisna
+          // sınıflarını (ör. QueryFailedError) yakıt olarak görmesini önler.
+          const name = (error as Error | undefined)?.constructor?.name ?? 'Error';
+          const category = ['AuthorizationContextError', 'UnauthorizedException', 'ForbiddenException', 'NotFoundException', 'HttpException'].includes(name)
+            ? name
+            : 'Error';
+          this.logger.warn(JSON.stringify({
+            action: audit.action,
+            resource: audit.resource,
+            requestId: request.context?.requestId,
+            durationMs: Date.now() - startedAt,
+            status: typeof (error as { status?: unknown })?.status === 'number'
+              ? (error as { status: number }).status
+              : 500,
+            error: category,
+          }));
+        },
+      }),
+    );
   }
 }

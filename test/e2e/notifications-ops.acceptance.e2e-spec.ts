@@ -269,7 +269,22 @@ async function ensureBranch(session: UiSession, code: string): Promise<void> {
   if (scope.includes(code)) return;
   await session.selectValue('#branch-id', code);
   await session.submitForm('#context-form');
-  await session.waitForText('#summary-scope', new RegExp(code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 20_000);
+  const pattern = new RegExp(code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const deadline = Date.now() + 20_000;
+  let last = '';
+  while (Date.now() < deadline) {
+    last = await session.text('#summary-scope');
+    if (pattern.test(last)) return;
+    await sleep(150);
+  }
+  // Zaman aşımı tanısı: sunucu hatası UI'da `.error-state` data-state'ine eşlenir
+  // (401→AUTH_REQUIRED, 403→FORBIDDEN, 404→RESOURCE_NOT_FOUND_SAME_SCOPE, 500→SERVER_ERROR).
+  const queueText = await session.text('#queue-output').catch(() => '');
+  const queueState = await session.attribute('#queue-output .error-state', 'data-state').catch(() => '');
+  const messageText = await session.text('#message-region').catch(() => '');
+  throw new Error(
+    `Branch '${code}' did not become active after selection (scope="${last}" queue="${queueText}" queueState="${queueState}" message="${messageText}").`,
+  );
 }
 
 async function snap(session: UiSession, name: string): Promise<void> {

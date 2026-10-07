@@ -266,7 +266,11 @@ export function scanTextForLeaks(text: string): string[] {
   if (/Invalid credentials|QueryFailedError|stack trace|credential_hash|password hash/i.test(value)) {
     findings.push('raw-backend-detail');
   }
-  if (/(?:\+90|0090|0)?\s?5\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}/.test(value)) {
+  // Rakam sınırları: UUID segmentlerindeki rastgele rakam dizileri (ör.
+  // `-975911775950`) gerçek telefonla karışmaması için eşleşme bir rakama
+  // bitişik olamaz. Gerçek telefonlar (`+90 532 123 45 67`, `05321234567`)
+  // ayraç ya da metin sınırıyla ayrıldığından tarama zayıflamaz.
+  if (/(?<![\d])(?:\+90|0090|0)?\s?5\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?![\d])/.test(value)) {
     findings.push('phone-like-value');
   }
   for (const match of value.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)) {
