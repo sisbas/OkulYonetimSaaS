@@ -56,9 +56,17 @@ export type StorageSnapshot = Readonly<{
   cookie: string;
 }>;
 
+export type NetworkEntry = {
+  method: string;
+  url: string;
+  status: number | 'PENDING';
+};
+
 export type UiSession = Readonly<{
   page: Page;
   consoleErrors: string[];
+  /** İstek/yığın logu: hangi isteğin gidip hangi status ile döndüğünün müşteri-taraflı gerçeği. */
+  networkLog: () => NetworkEntry[];
   navigateToRuntime: () => Promise<number>;
   armResponse: (pathFragment: string, method: string) => Promise<number>;
   text: (selector: string) => Promise<string>;
@@ -112,6 +120,19 @@ export async function createUiSession(input: Readonly<{
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
+  const networkEntries: NetworkEntry[] = [];
+  page.on('request', (request) => {
+    networkEntries.push({ method: request.method(), url: request.url(), status: 'PENDING' });
+  });
+  page.on('response', (response) => {
+    for (let i = networkEntries.length - 1; i >= 0; i -= 1) {
+      const entry = networkEntries[i];
+      if (entry.status === 'PENDING' && entry.url === response.url()) {
+        entry.status = response.status();
+        break;
+      }
+    }
+  });
 
   const readOnlyText = async (selector: string): Promise<string> =>
     page.$eval(selector, (element) => element.textContent ?? '').catch(() => '');
@@ -119,6 +140,7 @@ export async function createUiSession(input: Readonly<{
   const session: UiSession = {
     page,
     consoleErrors,
+    networkLog: () => networkEntries.slice(),
     navigateToRuntime: async () => {
       const response = await page.goto(`${input.baseUrl}/runtime/`, {
         waitUntil: 'networkidle2',

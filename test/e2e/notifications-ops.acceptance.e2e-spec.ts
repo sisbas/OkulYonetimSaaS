@@ -282,8 +282,13 @@ async function ensureBranch(session: UiSession, code: string): Promise<void> {
   const queueText = await session.text('#queue-output').catch(() => '');
   const queueState = await session.attribute('#queue-output .error-state', 'data-state').catch(() => '');
   const messageText = await session.text('#message-region').catch(() => '');
+  const recent = session
+    .networkLog()
+    .filter((entry) => entry.status === 'PENDING' || entry.method === 'POST' || entry.status !== 200)
+    .slice(-10)
+    .map((entry) => `${entry.method} ${entry.url} -> ${entry.status}`);
   throw new Error(
-    `Branch '${code}' did not become active after selection (scope="${last}" queue="${queueText}" queueState="${queueState}" message="${messageText}").`,
+    `Branch '${code}' did not become active after selection (scope="${last}" queue="${queueText}" queueState="${queueState}" message="${messageText}" net=[${recent.join(' | ')}]).`,
   );
 }
 
