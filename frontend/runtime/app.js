@@ -353,10 +353,12 @@ async function login(event) {
     state.accessToken = result.accessToken || '';
     state.tenantId = tenantId;
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
-    announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
     updateWorkflowProgress();
     const { body: catalog } = await apiRequest('/context');
     applyCatalog(catalog);
+    // Başarı bildirimi ancak katalog uygulandıktan sonra yayınlanır; aksi halde
+    // şube seçimi yapılmaya hazır görünürken applyCatalog seçimi sıfırlar.
+    announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
   } catch (error) {
     state.accessToken = '';
     setStatus('Oturum başarısız', 'danger');

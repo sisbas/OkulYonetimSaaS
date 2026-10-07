@@ -263,12 +263,35 @@ async function expectApiError(
 
 let currentScenario = '';
 
+async function submitBranchSelection(session: UiSession, code: string): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await session.selectValue('#branch-id', code);
+    } catch {
+      await sleep(250);
+      continue;
+    }
+    const ready = await session.page
+      .evaluate((branchCode: string) => {
+        const select = document.querySelector<HTMLSelectElement>('#branch-id');
+        const form = document.querySelector<HTMLFormElement>('#context-form');
+        return Boolean(select && form && select.value === branchCode && form.checkValidity());
+      }, code)
+      .catch(() => false);
+    if (!ready) {
+      await sleep(250);
+      continue;
+    }
+    await session.submitForm('#context-form');
+    return;
+  }
+}
+
 async function ensureBranch(session: UiSession, code: string): Promise<void> {
   await session.waitForText('#summary-scope', /./, 20_000);
   const scope = await session.text('#summary-scope');
   if (scope.includes(code)) return;
-  await session.selectValue('#branch-id', code);
-  await session.submitForm('#context-form');
+  await submitBranchSelection(session, code);
   const pattern = new RegExp(code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const deadline = Date.now() + 20_000;
   let last = '';
