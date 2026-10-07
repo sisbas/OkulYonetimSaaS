@@ -67,6 +67,23 @@ const OPERATION_COLUMNS = `
   o.cancelled_at AS "cancelledAt", o.dead_lettered_at AS "deadLetteredAt",
   o.last_error_code AS "lastErrorCode", o.created_at AS "createdAt"`;
 
+/** Receipt satırını snake_case → alan sözleşmesine eşler. */
+function mapReceiptRow(row: Record<string, unknown>): NotificationDispatchReceipt {
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    outboxId: String(row.outbox_id),
+    attempt: Number(row.attempt),
+    fencingToken: Number(row.fencing_token),
+    outcome: row.outcome as DispatchOutcome,
+    simulated: Boolean(row.simulated),
+    providerRef: (row.provider_ref as string | null) ?? null,
+    errorCode: (row.error_code as string | null) ?? null,
+    receipt: (row.receipt as Record<string, unknown>) ?? {},
+    createdAt: new Date(String(row.created_at)),
+  };
+}
+
 /**
  * #266 N2 — Gönderim (dispatch) deposu: claim/lease/fencing + dayanıklı geçişler.
  *
@@ -368,13 +385,13 @@ export class NotificationDispatchRepository {
       receipt: Record<string, unknown>;
     }>,
   ): Promise<NotificationDispatchReceipt> {
-    const rows = extractRows<{ id: string }>(
+    const rows = extractRows<Record<string, unknown>>(
       await entityManager.query(
         `INSERT INTO notification_dispatch_receipts
            (tenant_id, outbox_id, attempt, fencing_token, outcome,
             simulated, provider_ref, error_code, receipt)
          VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8::jsonb)
-         RETURNING id`,
+         RETURNING *`,
         [
           input.tenantId,
           input.outboxId,
@@ -387,11 +404,8 @@ export class NotificationDispatchRepository {
         ],
       ),
     );
-    const receipt = await entityManager.findOne(NotificationDispatchReceipt, {
-      where: { id: rows[0].id },
-    });
-    if (!receipt) throw new Error('Notification dispatch receipt insert failed');
-    return receipt;
+    if (rows.length === 0) throw new Error('Notification dispatch receipt insert failed');
+    return mapReceiptRow(rows[0]);
   }
 
   /** Gönderim kanıtları — detail yanıtı için (attempt artan sırada). */
@@ -400,10 +414,13 @@ export class NotificationDispatchRepository {
     tenantId: string,
     outboxId: string,
   ): Promise<NotificationDispatchReceipt[]> {
-    return entityManager.find(NotificationDispatchReceipt, {
-      where: { tenantId, outboxId },
-      order: { attempt: 'ASC' },
-    });
+    const rows = (await entityManager.query(
+      `SELECT * FROM notification_dispatch_receipts
+        WHERE tenant_id = $1 AND outbox_id = $2
+        ORDER BY attempt ASC`,
+      [tenantId, outboxId],
+    )) as Array<Record<string, unknown>>;
+    return rows.map(mapReceiptRow);
   }
 
   /**
@@ -420,8 +437,8 @@ export class NotificationDispatchRepository {
         WHERE tenant_id = $1 AND outbox_id = $2
         ORDER BY attempt DESC LIMIT 1`,
       [tenantId, outboxId],
-    )) as NotificationDispatchReceipt[];
-    return rows[0] ?? null;
+    )) as Array<Record<string, unknown>>;
+    return rows.length > 0 ? mapReceiptRow(rows[0]) : null;
   }
 
   /**
