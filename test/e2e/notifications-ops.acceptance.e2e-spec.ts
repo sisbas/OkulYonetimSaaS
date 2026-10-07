@@ -282,13 +282,45 @@ async function ensureBranch(session: UiSession, code: string): Promise<void> {
   const queueText = await session.text('#queue-output').catch(() => '');
   const queueState = await session.attribute('#queue-output .error-state', 'data-state').catch(() => '');
   const messageText = await session.text('#message-region').catch(() => '');
+  const form = await session
+    .page
+    .evaluate(
+      (branchCode: string) => {
+        const formEl = document.querySelector<HTMLFormElement>('#context-form');
+        const select = document.querySelector<HTMLSelectElement>('#branch-id');
+        const button = document.querySelector<HTMLButtonElement>('#context-form button[type="submit"]');
+        if (!formEl || !select || !button) return { mounted: Boolean(formEl && select && button) };
+        const invalid = Array.from(formEl.querySelectorAll<HTMLElement>(':invalid') ?? [])
+          .map((el) => `${(el as HTMLInputElement).id || (el as HTMLInputElement).name || el.tagName}:${(el as HTMLInputElement).value || ''}`)
+          .join(',');
+        return {
+          mounted: true,
+          validity: formEl.checkValidity(),
+          invalid,
+          selectDisabled: select.disabled,
+          selectValue: select.value,
+          optionCount: select.options.length,
+          hasOption: Array.from(select.options).some((option) => option.value === branchCode),
+          buttonDisabled: button.disabled,
+          actionStep: document.querySelector('[data-step="context"]')?.getAttribute('aria-current') ?? '',
+        };
+      },
+      code,
+    )
+    .catch(() => ({ evaluateError: 'form-probe failed' }));
   const recent = session
     .networkLog()
-    .filter((entry) => entry.status === 'PENDING' || entry.method === 'POST' || entry.status !== 200)
+    .filter(
+      (entry) =>
+        entry.status === 'PENDING' ||
+        entry.method === 'POST' ||
+        entry.status !== 200 ||
+        entry.url.includes('branch'),
+    )
     .slice(-10)
     .map((entry) => `${entry.method} ${entry.url} -> ${entry.status}`);
   throw new Error(
-    `Branch '${code}' did not become active after selection (scope="${last}" queue="${queueText}" queueState="${queueState}" message="${messageText}" net=[${recent.join(' | ')}]).`,
+    `Branch '${code}' did not become active after selection (scope="${last}" queue="${queueText}" queueState="${queueState}" message="${messageText}" form=${JSON.stringify(form)} net=[${recent.join(' | ')}]).`,
   );
 }
 
