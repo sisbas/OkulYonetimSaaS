@@ -368,7 +368,7 @@ beforeAll(async () => {
     credential: environment.fixtureCredential,
     namespace: NAMESPACE,
   });
-  await seedAdditionalBranch(dbClient, {
+  const branchB = await seedAdditionalBranch(dbClient, {
     tenantId: fixture.tenantId,
     namespace: NAMESPACE,
   });
@@ -400,6 +400,10 @@ beforeAll(async () => {
     fixture.opsUser.credential,
   );
   opsApi = { baseUrl: environment.baseUrl, token: tokenA, branchCode: fixture.branchCode };
+  await selectBranchForBootstrap(opsApi, {
+    branchName: `${NAMESPACE} reference branch`,
+    branchCode: fixture.branchCode,
+  });
 
   await setupScheduleAndOutbox();
 
@@ -409,13 +413,21 @@ beforeAll(async () => {
     fixture.opsUser.email,
     fixture.opsUser.credential,
   );
-  opsApiB = { baseUrl: environment.baseUrl, token: tokenB, branchCode: 'N3OPS-BRANCH-B' };
+  opsApiB = { baseUrl: environment.baseUrl, token: tokenB, branchCode: branchB.branchCode };
+  await selectBranchForBootstrap(opsApiB, {
+    branchName: `${NAMESPACE} secondary branch`,
+    branchCode: branchB.branchCode,
+  });
   const teacherToken = await loginForBootstrap(
     environment.baseUrl,
     fixture.teacherUser.email,
     fixture.teacherUser.credential,
   );
   teacherApi = { baseUrl: environment.baseUrl, token: teacherToken, branchCode: fixture.branchCode };
+  await selectBranchForBootstrap(teacherApi, {
+    branchName: `${NAMESPACE} reference branch`,
+    branchCode: fixture.branchCode,
+  });
 
   browser = await launchE2eBrowser();
   const screenshotDir = path.join(environment.artifactDir, 'screenshots', 'n3');
