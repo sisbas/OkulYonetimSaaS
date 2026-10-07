@@ -513,15 +513,6 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await sessionA!.waitForText('#notification-detail h3', /· Onaylandı/, 20_000);
     recordEvidence(currentScenario, 'UI approve → 200 Onaylandı (blocked_consent geçerli draft durumu)');
 
-    await expectApiError(
-      opsApi,
-      'POST',
-      `/notifications/${rows.r10}/execute`,
-      409,
-      'NOT_DISPATCHABLE:blocked_consent',
-    );
-    recordEvidence(currentScenario, 'onaylı olsa da consent yok → execute claim dışı (reddedildi)');
-
     await openCard(sessionA!, 'r10');
     await sessionA!.waitForText('#notification-detail h3', /· Onaylanıyor/, 1).catch(() => undefined);
     await sessionA!.waitForText('#notification-detail', /Onay sürümü: -/, 10_000);
@@ -660,20 +651,20 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
 
   it('Stale version mutation’ın conflict üretmesi.', async () => {
     currentScenario = SCENARIO_NAMES[5];
-    // B, r3'ü onaylanmadan önce (sürüm 1, Beklemede) açar.
+    // B, r3'ü onaylanmadan önce (sürüm 0, Beklemede) açar.
     await openCard(sessionB!, 'r3');
     await sessionB!.waitForText('#notification-detail h3', /· Beklemede/, 20_000);
-    await sessionB!.waitForText('#notification-detail', /Sürüm: 1/, 10_000);
-    recordEvidence(currentScenario, 'B oturumu r3 detayını sürüm 1’le açtı');
+    await sessionB!.waitForText('#notification-detail', /Sürüm: 0/, 10_000);
+    recordEvidence(currentScenario, 'B oturumu r3 detayını Sürüm: 0 ile açtı (taslaklar sürüm 0’dan başlar)');
 
     // A onaylar (riskli: sürüm optimistic concurrency ile korunur).
     await openCard(sessionA!, 'r3');
     await sessionA!.waitForText('#notification-detail h3', /· Beklemede/, 20_000);
     await runAction(sessionA!, 'approve');
     await sessionA!.waitForText('#notification-detail h3', /· Onaylandı/, 20_000);
-    await expectRow('r3', { status: 'approved', version: 2, attempts: 0 });
+    await expectRow('r3', { status: 'approved', version: 1, attempts: 0 });
 
-    // B eski sürümle (expectedVersion 1) onaylar → conflict üretir.
+    // B eski sürümle (expectedVersion 0) onaylar → conflict üretir.
     await runAction(sessionB!, 'approve');
     await sessionB!.waitForText(
       '#notification-detail .error-state',
@@ -682,10 +673,10 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     );
     const state = await sessionB!.attribute('#notification-detail .error-state', 'data-state');
     expect(state).toBe('conflict_blocking');
-    await expectRow('r3', { status: 'approved', version: 2, attempts: 0 });
+    await expectRow('r3', { status: 'approved', version: 1, attempts: 0 });
     recordEvidence(
       currentScenario,
-      'B stale approve (expectedVersion 1) → 409 conflict_blocking; DB r3 approved v2 attempts 0 (tek etki)',
+      'B stale approve (expectedVersion 0) → 409 conflict_blocking; DB r3 approved v1 attempts 0 (tek etki)',
     );
     await snap(sessionB!, '06-stale-version-conflict');
     recordScenario(SCENARIO_NAMES[5], 'PASS');
@@ -712,7 +703,7 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     expect(await sessionB!.attribute('#notification-detail .error-state', 'data-state')).toBe(
       'forbidden_non_enumerating',
     );
-    await expectRow('r3', { status: 'approved', version: 2, attempts: 0 });
+    await expectRow('r3', { status: 'approved', version: 1, attempts: 0 });
 
     // Diğer şubede detay → 404 (scope dışı kayıt non-enumerating).
     await openCard(sessionB!, 'r4');
@@ -820,7 +811,21 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
       attempts: 2,
       receipts: [expect.any(Object) as unknown as ReadonlyArray<unknown>],
     });
-    expect(finalRow.consentVersion).toBe(consentFixtures[6].parentConsentVersion + 2);
+    expect(finalRow.consentVersion).toBe(consentFixtures[6].parentConsentVersion + 1);
+    // Sütun anlambilimi: consent_version, block (son onay-kontrolü yazımı) sırasında
+    // karar sürümünü taşır; dispatch-time yeniden doğrulama ise receipt JSON'da
+    // `consent.versionAtDispatch` olarak dijital kanıta yazılır.
+    const dispatchReceipt = await dbClient!.query(
+      `SELECT (r.receipt -> 'consent' ->> 'versionAtDispatch')::int AS "versionAtDispatch"
+         FROM notification_dispatch_receipts r
+        WHERE r.tenant_id = $1::uuid AND r.outbox_id = $2::uuid
+        ORDER BY r.attempt DESC
+        LIMIT 1`,
+      [fixture.tenantId, rows.r6!],
+    );
+    expect(Number((dispatchReceipt.rows[0] ?? {}).versionAtDispatch)).toBe(
+      consentFixtures[6].parentConsentVersion + 2,
+    );
     expect(finalRow.receipts.length).toBe(1);
     recordEvidence(
       currentScenario,

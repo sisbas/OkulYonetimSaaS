@@ -383,7 +383,15 @@ const AVAILABLE_POLL_INTERVAL_MS = 500;
 /**
  * Backoff kanıtı: `available_at` sunucu saatine göre hazır olana kadar
  * salt-okunur poll (BACKOFF_ACTIVE çakışmasını UI'dan önce beklemek için).
+ *
+ * Claim tarafı aynı DB sütununa `available_at <= now()` ile bakar; poll'un
+ * dönüşü ile client'ın POST'unun sunucuya varışı arasındaki jalp/clock yarışını
+ * emniyete almak için READY eşiği ek marjla ötelenir. Kanıt zayıflamaz: backoff
+ * aralığı (5s/10s) aynen test edilir; yalnızca "hazırdır" kararı marj sonrasına
+ * alınır.
  */
+const AVAILABLE_MARGIN_MS = 1500;
+
 export async function waitForDispatchAvailable(
   client: PgClient,
   tenantId: string,
@@ -394,7 +402,7 @@ export async function waitForDispatchAvailable(
   let last: DispatchRowSnapshot | null = null;
   while (Date.now() < deadline) {
     last = await readDispatchRow(client, tenantId, outboxId);
-    if (new Date(last.availableAt).getTime() <= Date.now()) return last;
+    if (new Date(last.availableAt).getTime() <= Date.now() - AVAILABLE_MARGIN_MS) return last;
     await new Promise<void>((resolve) => setTimeout(resolve, AVAILABLE_POLL_INTERVAL_MS));
   }
   throw new Error(
