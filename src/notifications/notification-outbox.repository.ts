@@ -30,6 +30,7 @@ export type NotificationDraftRow = {
   reason: string | null;
   consentVersion: number | null;
   snapshot: Record<string, unknown> | null;
+  version: number;
   availableAt: Date;
   createdAt: Date;
 };
@@ -157,11 +158,11 @@ export class NotificationOutboxRepository {
               o.event_type AS "eventType", o.channel, o.status,
               o.payload_masked AS "payloadMasked", o.reason,
               o.consent_version AS "consentVersion", o.snapshot,
-              o.available_at AS "availableAt", o.created_at AS "createdAt"
+              o.version, o.available_at AS "availableAt", o.created_at AS "createdAt"
          FROM notification_outbox o
-         JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
-        WHERE o.tenant_id = $1 AND s.branch_id = $2
-          AND o.status IN ('pending', 'blocked_consent')
+        JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+       WHERE o.tenant_id = $1 AND s.branch_id = $2
+         AND o.status IN ('pending', 'blocked_consent')
         ORDER BY o.available_at ASC, o.id ASC
         LIMIT $3 OFFSET $4`,
       [tenantId, branchId, bounded, offset],
@@ -190,10 +191,10 @@ export class NotificationOutboxRepository {
               o.event_type AS "eventType", o.channel, o.status,
               o.payload_masked AS "payloadMasked", o.reason,
               o.consent_version AS "consentVersion", o.snapshot,
-              o.available_at AS "availableAt", o.created_at AS "createdAt"
+              o.version, o.available_at AS "availableAt", o.created_at AS "createdAt"
          FROM notification_outbox o
-         JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
-        WHERE o.tenant_id = $1 AND s.branch_id = $2 AND o.id = $3
+        JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+       WHERE o.tenant_id = $1 AND s.branch_id = $2 AND o.id = $3
           AND o.status IN ('pending', 'blocked_consent')`,
       [tenantId, branchId, id],
     )) as NotificationDraftRow[];

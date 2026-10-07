@@ -34,6 +34,7 @@ describe('NotificationDraftService', () => {
       template: { eventType: 'attendance.absent.locked', channel: 'sms', templateRef: 'attendance.absent.locked:sms' },
       enqueuedAt: '2026-10-05T12:00:00.000Z',
     },
+    version: 0,
     availableAt: new Date('2026-10-05T12:00:00Z'),
     createdAt: new Date('2026-10-05T12:00:00Z'),
   };
