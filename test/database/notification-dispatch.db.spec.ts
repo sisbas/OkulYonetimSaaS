@@ -292,6 +292,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     status: string,
     dedupeKey: string,
     overrides: Record<string, unknown> = {},
+    sessionId: string = SESSION_ID,
   ): Promise<string> {
     const rows = (await dataSource.query(
       `INSERT INTO notification_outbox
@@ -304,7 +305,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
         TENANT_ID,
         dedupeKey,
         STUDENT_ID,
-        SESSION_ID,
+        sessionId,
         status,
         (overrides.version as number) ?? 0,
         (overrides.availableAt as Date | null) ?? null,
@@ -869,6 +870,81 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
         [id],
       )) as Array<{ n: number }>;
       expect(receipts[0].n).toBe(0);
+    });
+  });
+
+  describe('list (findAll) pagination & branch scoping', () => {
+    async function insertWithCreatedAt(
+      status: string,
+      dedupeKey: string,
+      createdAt: Date,
+      sessionId: string = SESSION_ID,
+    ): Promise<string> {
+      const id = await insertOutboxRow(status, dedupeKey, {}, sessionId);
+      await dataSource.query(
+        `UPDATE notification_outbox SET created_at = $2 WHERE id = $1`,
+        [id, createdAt],
+      );
+      return id;
+    }
+
+    it('paginates without a status filter (LIMIT/OFFSET indices stay bigint)', async () => {
+      const a1 = await insertWithCreatedAt(
+        'pending',
+        'list-a1',
+        new Date('2026-10-05T10:00:01.000Z'),
+      );
+      const a2 = await insertWithCreatedAt(
+        'approved',
+        'list-a2',
+        new Date('2026-10-05T10:00:02.000Z'),
+      );
+      const a3 = await insertWithCreatedAt(
+        'dispatched',
+        'list-a3',
+        new Date('2026-10-05T10:00:03.000Z'),
+      );
+      const otherBranchId = await insertWithCreatedAt(
+        'pending',
+        'list-other-branch',
+        new Date('2026-10-05T10:00:04.000Z'),
+        OTHER_SESSION_ID,
+      );
+
+      const all = await dataSource.transaction((em) =>
+        repo.findAll(em, ctx, { limit: 100, offset: 0 }),
+      );
+      expect(all.map((r) => r.id)).toEqual([a3, a2, a1]);
+      expect(all.map((r) => r.id)).not.toContain(otherBranchId);
+
+      const page = await dataSource.transaction((em) =>
+        repo.findAll(em, ctx, { limit: 2, offset: 1 }),
+      );
+      expect(page.map((r) => r.id)).toEqual([a2, a1]);
+    });
+
+    it('filters by status without shifting LIMIT onto the status parameter', async () => {
+      const a1 = await insertWithCreatedAt(
+        'pending',
+        'status-a1',
+        new Date('2026-10-05T10:01:01.000Z'),
+      );
+      const a2 = await insertWithCreatedAt(
+        'approved',
+        'status-a2',
+        new Date('2026-10-05T10:01:02.000Z'),
+      );
+
+      const pending = await dataSource.transaction((em) =>
+        repo.findAll(em, ctx, { limit: 100, offset: 0, status: 'pending' }),
+      );
+      const approved = await dataSource.transaction((em) =>
+        repo.findAll(em, ctx, { limit: 100, offset: 0, status: 'approved' }),
+      );
+      expect(pending.map((r) => r.id)).toEqual([a1]);
+      expect(pending.map((r) => r.status)).toEqual(['pending']);
+      expect(approved.map((r) => r.id)).toEqual([a2]);
+      expect(approved.map((r) => r.status)).toEqual(['approved']);
     });
   });
 });

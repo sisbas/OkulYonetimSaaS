@@ -141,8 +141,8 @@ export class NotificationDispatchRepository {
       statusPredicate = 'AND o.status = $3';
     }
     params.push(bounded, input.offset);
-    const limitIndex = input.status ? 3 : 2;
-    const offsetIndex = limitIndex + 1;
+    const limitIndex = params.length - 1;
+    const offsetIndex = params.length;
     return (await entityManager.query(
       `SELECT ${OPERATION_COLUMNS}
          FROM notification_outbox o
