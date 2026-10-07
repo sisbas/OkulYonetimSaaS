@@ -272,6 +272,8 @@ export async function launchE2eBrowser(): Promise<Browser> {
   });
 }
 
+export const PHONE_LEAK_PATTERN = /(?<![\d])(?:\+90|0090|0)?\s?5\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?![\d])/;
+
 /**
  * PII/secret sızıntı taraması. Kabul artefaktları (DOM metni, report.json,
  * screenshot öncesi ekran) bu kurala uymak zorundadır.
@@ -292,7 +294,7 @@ export function scanTextForLeaks(text: string): string[] {
   // `-975911775950`) gerçek telefonla karışmaması için eşleşme bir rakama
   // bitişik olamaz. Gerçek telefonlar (`+90 532 123 45 67`, `05321234567`)
   // ayraç ya da metin sınırıyla ayrıldığından tarama zayıflamaz.
-  if (/(?<![\d])(?:\+90|0090|0)?\s?5\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?![\d])/.test(value)) {
+  if (PHONE_LEAK_PATTERN.test(value)) {
     findings.push('phone-like-value');
   }
   for (const match of value.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)) {

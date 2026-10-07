@@ -4,6 +4,7 @@ import type { Browser } from 'puppeteer-core';
 import {
   createUiSession,
   launchE2eBrowser,
+  PHONE_LEAK_PATTERN,
   scanTextForLeaks,
   type UiSession,
 } from './support/browser';
@@ -1093,7 +1094,19 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     const maskedBodies = scrubText(bodies);
     expect(maskedBodies).not.toMatch(/n3ops-student-\d/i);
     expect(maskedBodies).not.toMatch(/n3ops student/i);
-    expect(scanTextForLeaks(maskedBodies)).toEqual([]);
+    const bodyLeaks = scanTextForLeaks(maskedBodies);
+    if (bodyLeaks.length > 0) {
+      const windows = Array.from(maskedBodies.matchAll(PHONE_LEAK_PATTERN))
+        .slice(0, 5)
+        .map((m) => {
+          const start = Math.max(0, (m.index ?? 0) - 60);
+          return `…${maskedBodies.slice(start, (m.index ?? 0) + 80)}…`;
+        });
+      throw new Error(
+        `network body leak: ${bodyLeaks.join(', ')}\n${windows.join('\n---\n')}`,
+      );
+    }
+    expect(bodyLeaks).toEqual([]);
     recordEvidence(
       currentScenario,
       `network: ${networkRecords.length} yanıt tarandı (auth hariç), ham PII yok; uuid'ler maskelendi`,
