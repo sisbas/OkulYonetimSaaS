@@ -106,10 +106,16 @@ export async function createUiSession(input: Readonly<{
   baseUrl: string;
   screenshotDir: string;
   index: { value: number };
+  timeZone?: string;
 }>): Promise<UiSession> {
   fs.mkdirSync(input.screenshotDir, { recursive: true });
 
   const page = await input.browser.newPage();
+  // Okul saati yerel saat diliminden gelir: datetime-local değerlerinin
+  // (örn. "2026-10-26T08:00") sayfada `new Date(...)` ile Avrupa/İstanbul
+  // okul saatine göre yorumlanması gerekir; CI headless Chrome UTC'de
+  // çalıştığı için aksi halde izin-etki çakışması sınırda kaçırılır (#266).
+  await page.emulateTimezone(input.timeZone ?? 'Europe/Istanbul').catch(() => undefined);
   // HTTP cache KAPALI: aynı URL'e yapılan tekrar ziyaretler 304 (Not Modified)
   // dönerse "canlı 200" iddiası yanlış negatif üretir (ilk CI koşusunda
   // gözlendi: Expected 200 / Received 304). Kabul kanıtı her seferinde gerçek

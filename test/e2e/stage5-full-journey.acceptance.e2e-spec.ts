@@ -950,6 +950,14 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
           );
           return `count=${result.rows[0].n}`;
         }],
+        ['leaveRange', async () => {
+          const result = await dbClient!.query(
+            `SELECT starts_at::text AS starts_at, ends_at::text AS ends_at FROM leave_requests WHERE tenant_id = $1::uuid AND id = $2::uuid`,
+            [fixture.tenantId, leaveId],
+          );
+          const row = result.rows[0];
+          return row === undefined ? '(yok)' : `${row.starts_at} → ${row.ends_at}`;
+        }],
       ]);
     }
     recordEvidence(currentScenario, 'ops UI onay → DB approved, coverage unresolved (etki açık)');
