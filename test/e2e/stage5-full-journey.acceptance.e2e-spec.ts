@@ -141,7 +141,14 @@ function daysUntil(dateIso: string): number {
   return Math.round((target - nowMs) / 86_400_000);
 }
 
-type NetworkRecord = Readonly<{ label: string; method: string; status: number; url: string; body: string }>;
+type NetworkRecord = Readonly<{
+  label: string;
+  method: string;
+  status: number;
+  url: string;
+  body: string;
+  requestHeaders: string;
+}>;
 const networkRecords: NetworkRecord[] = [];
 
 /** Tarayıcı ağ kayıtçısı — auth yanıtları (oturum kimliği taşır) kayıt dışıdır. */
@@ -153,7 +160,16 @@ function attachNetworkRecorder(session: UiSession, label: string): void {
       let body = '';
       const text = await response.text();
       if (typeof text === 'string' && text.length <= 100_000) body = text;
-      const record: NetworkRecord = { label, method: response.request().method(), status: response.status(), url, body };
+      const requestHeaders = response.request().headers();
+      const relevant = ['if-match', 'if-none-match', 'x-branch-code', 'content-type', 'authorization']
+        .filter((header) => requestHeaders[header] !== undefined)
+        .map((header) => {
+          const value = requestHeaders[header];
+          if (header === 'authorization') return 'authorization=Bearer <redacted>';
+          return `${header}=${value}`;
+        })
+        .join(' | ');
+      const record: NetworkRecord = { label, method: response.request().method(), status: response.status(), url, body, requestHeaders: relevant };
       if (networkRecords.length >= 1200) networkRecords.shift();
       networkRecords.push(record);
     } catch {
@@ -175,7 +191,7 @@ function networkTail(label: string, urlPattern: RegExp, limit = 6): string {
     .slice(-limit);
   if (matching.length === 0) return 'net: eşleşen /api/v1 yanıtı yok';
   return matching
-    .map((r) => `${r.method} ${r.url.replace(/^.*\/api\/v1/, '/api/v1')} -> ${r.status}\n${r.body.slice(0, 600)}`)
+    .map((r) => `${r.method} ${r.url.replace(/^.*\/api\/v1/, '/api/v1')} -> ${r.status}\n[${r.requestHeaders}]\n${r.body.slice(0, 600)}`)
     .join('\n---\n');
 }
 
@@ -505,7 +521,24 @@ async function readScheduleEvents(): Promise<Array<Record<string, string | numbe
       ORDER BY created_at ASC`,
     [fixture.tenantId, fixture.branchId],
   );
-  return result.rows as Array<Record<string, string | number>>;
+  return result.rows.map((row) => {
+    const r = row as {
+      id: string;
+      teacher_id: string;
+      teacher_branch_id: string;
+      day_of_week: number;
+      start_time: string;
+      end_time: string;
+    };
+    return {
+      id: String(r.id),
+      teacherId: String(r.teacher_id),
+      teacherBranchId: String(r.teacher_branch_id),
+      dayOfWeek: Number(r.day_of_week),
+      startTime: String(r.start_time),
+      endTime: String(r.end_time),
+    };
+  });
 }
 
 async function readLeave(id: string): Promise<{ decisionStatus: string; coverageStatus: string; version: number }> {
@@ -870,6 +903,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
       await rethrowWithDiag(error, currentScenario, [
         ['message', () => textOf(sessionA!, '#message-region')],
         ['output', () => textOf(sessionA!, '#leaves-output')],
+        ['etagAttr', () => sessionA!.attribute('#leaves-output button[data-leave-decision="approve"]', 'data-leave-etag').then((v) => v ?? '(yok)').catch(() => '(yok)')],
         ['net', () => networkTail('opsA', /\/leaves\//)],
       ]);
     }
