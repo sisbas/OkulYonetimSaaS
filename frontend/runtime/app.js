@@ -1030,7 +1030,7 @@ async function generateAttendance(event) {
       method: 'POST',
       body: {
         scheduleEventId,
-        sessionDate: state.date || new Date().toISOString().slice(0, 10),
+        sessionDate: $('#attendance-session-date').value || state.date || new Date().toISOString().slice(0, 10),
         studentIds,
       },
     });

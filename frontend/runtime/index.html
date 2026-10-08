@@ -358,6 +358,8 @@
           <form id="attendance-generate-form" class="grid-form">
             <label>Ders olayı ID <input id="attendance-event-id" autocomplete="off" aria-describedby="attendance-event-help" /></label>
             <p id="attendance-event-help" class="hint wide">Yayınlanmış program olayının kimliği (UUID).</p>
+            <label>Oturum tarihi <input id="attendance-session-date" type="date" aria-describedby="attendance-date-help" /></label>
+            <p id="attendance-date-help" class="hint wide">Boş bırakılırsa seçili işlem tarihi/kayıt tarihi kullanılır.</p>
             <label>Öğrenci listesi <textarea id="attendance-student-ids" rows="2" aria-describedby="attendance-roster-help"></textarea></label>
             <p id="attendance-roster-help" class="hint wide">Roster: her satırda veya virgülle ayırarak öğrenci UUID'leri.</p>
             <button type="submit">Yoklama oturumu aç</button>
