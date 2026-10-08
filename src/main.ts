@@ -43,10 +43,21 @@ class RequestFailureFilter implements ExceptionFilter {
       const category = REQUEST_FAILURE_CATEGORIES.includes(name) ? name : 'Error';
       // Yalnızca kategorisiz iç hatalar için Postgres driver hatası KODU eklenir;
       // message/SQL/veri değerleri asla yazılmaz (ham PII taraması koruması).
-      const driverError = (exception as { driverError?: { code?: string } }).driverError;
+      const failed = exception as {
+        driverError?: { code?: string; message?: string; table?: string };
+      };
+      const driverError = failed?.driverError;
       const extra: Record<string, unknown> = {};
       if (!REQUEST_FAILURE_CATEGORIES.includes(name) && typeof driverError?.code === 'string') {
         extra.code = driverError.code;
+        if (driverError.code === '42P01') {
+          if (typeof driverError.table === 'string' && driverError.table) {
+            extra.relation = driverError.table;
+          } else {
+            const relation = /relation\s+"([^"]+)"/.exec(driverError.message ?? '')?.[1];
+            if (relation) extra.relation = relation;
+          }
+        }
       }
       console.warn(
         JSON.stringify({
