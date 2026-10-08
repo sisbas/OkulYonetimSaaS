@@ -80,6 +80,33 @@ export class NotificationDraftController {
   }
 
   /**
+   * Session düzeyinde toplu draft onayı — `pending|blocked_consent` → `approved`.
+   *
+   * (P1B-FINAL Stage 5) Aynı attendance session'ının tüm draftlarını tek
+   * işlemde onaylar. Optimistic concurrency: `expectedVersions` dizisindeki
+   * `(id, version)` eşleşmesi all-or-nothing korumalıdır.
+   * `:id` parametresiyle çakışmaması için `:id/approve`'tan ÖNCE kayıtlıdır.
+   */
+  @Post('session/:sessionId/approve')
+  @Permissions('notification:draft:approve')
+  async approveSession(
+    @Req() req: RequestWithContext,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Body() body: { expectedVersions: Array<{ id: string; version: number }> },
+  ) {
+    const ctx = req.context;
+    if (!ctx) throw new ForbiddenException('Request context required');
+    return this.dataSource.transaction(async (em) =>
+      this.draftService.bulkApproveSession(em, {
+        tenantId: ctx.tenantId!,
+        branchId: ctx.branchId!,
+        sessionId,
+        expectedVersions: body.expectedVersions ?? [],
+      }),
+    );
+  }
+
+  /**
    * Draft onayı — `pending` → `approved`.
    *
    * Optimistic concurrency: `expectedVersion` ile korunur.

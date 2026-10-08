@@ -27,6 +27,7 @@ export type EnqueueOutboxRow = Readonly<{
 export type NotificationDraftRow = {
   id: string;
   tenantId: string;
+  sessionId: string;
   dedupeKey: string;
   eventType: string;
   channel: string;
@@ -158,8 +159,9 @@ export class NotificationOutboxRepository {
       throw new BadRequestException('NOTIFICATION_OUTBOX_OFFSET_INVALID');
     }
     const bounded = Math.min(limit, 100);
-    return (await entityManager.query(
-      `SELECT o.id, o.tenant_id AS "tenantId", o.dedupe_key AS "dedupeKey",
+return (await entityManager.query(
+      `SELECT o.id, o.tenant_id AS "tenantId", o.session_id AS "sessionId",
+              o.dedupe_key AS "dedupeKey",
               o.event_type AS "eventType", o.channel, o.status,
               o.payload_masked AS "payloadMasked", o.reason,
               o.consent_version AS "consentVersion", o.snapshot,
@@ -191,8 +193,9 @@ export class NotificationOutboxRepository {
         typeof branchId !== 'string' || !branchId.trim()) {
       throw new ForbiddenException('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
     }
-    const rows = (await entityManager.query(
-      `SELECT o.id, o.tenant_id AS "tenantId", o.dedupe_key AS "dedupeKey",
+const rows = (await entityManager.query(
+      `SELECT o.id, o.tenant_id AS "tenantId", o.session_id AS "sessionId",
+              o.dedupe_key AS "dedupeKey",
               o.event_type AS "eventType", o.channel, o.status,
               o.payload_masked AS "payloadMasked", o.reason,
               o.consent_version AS "consentVersion", o.snapshot,
@@ -256,5 +259,73 @@ export class NotificationOutboxRepository {
       status: updated[0].status,
       version: Number(updated[0].version),
     };
+  }
+
+  /**
+   * Session düzeyinde toplu draft onayı (P1B-FINAL Stage 5).
+   *
+   * Aynı attendance session'ının tüm bekleyen/bloke draftlarını tek
+   * işlemde `approved`'a geçirir. Optimistic concurrency satır başına
+   * `(id, version)` eşleşmesiyle korunur; istemcinin gördüğü tüm
+   * versionlar birebir eşleşmezse 0 satır döner → all-or-nothing
+   * ConflictException (HTTP 409) → işlem geri alınır.
+   * Tenant + branch predicate zorunludur.
+   */
+  async transitionDraftsForSession(
+    entityManager: EntityManager,
+    input: Readonly<{
+      tenantId: string;
+      branchId: string;
+      sessionId: string;
+      targetStatus: 'approved';
+      expectedVersions: ReadonlyArray<{ id: string; version: number }>;
+    }>,
+  ): Promise<Array<{ id: string; status: string; version: number }>> {
+    if (typeof input.tenantId !== 'string' || !input.tenantId.trim() ||
+        typeof input.branchId !== 'string' || !input.branchId.trim() ||
+        typeof input.sessionId !== 'string' || !input.sessionId.trim()) {
+      throw new ForbiddenException('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
+    }
+    if (!Array.isArray(input.expectedVersions) || input.expectedVersions.length === 0) {
+      throw new BadRequestException('NOTIFICATION_BULK_VERSIONS_REQUIRED');
+    }
+    const bounded = input.expectedVersions.slice(0, 200);
+    const ids = bounded.map((v) => v.id);
+    const versions = bounded.map((v) => v.version);
+    const fromStatuses = ['pending', 'blocked_consent'];
+
+    const updated = extractRows<{ id: string; status: string; version: number }>(
+      await entityManager.query(
+        `UPDATE notification_outbox o
+            SET status = $1,
+                version = o.version + 1,
+                updated_at = now()
+           FROM (
+             SELECT tn.id, tn.version
+               FROM unnest($4::uuid[], $5::int[]) AS tn(id, version)
+           ) AS expected
+           JOIN attendance_sessions s
+             ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+          WHERE o.tenant_id = $2
+            AND s.branch_id = $6
+            AND o.session_id = $3
+            AND o.status = ANY($7::varchar[])
+            AND o.id = expected.id
+            AND o.version = expected.version
+          RETURNING o.id, o.status, o.version`,
+        [input.targetStatus, input.tenantId, input.sessionId, ids, versions, input.branchId, fromStatuses],
+      ),
+    );
+
+    if (updated.length !== bounded.length) {
+      throw new ConflictException(
+        'Notification draft bulk version conflict, not found, or in invalid status',
+      );
+    }
+    return updated.map((row) => ({
+      id: row.id,
+      status: row.status,
+      version: Number(row.version),
+    }));
   }
 }

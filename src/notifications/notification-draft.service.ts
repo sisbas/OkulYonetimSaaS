@@ -102,4 +102,29 @@ export class NotificationDraftService {
       expectedVersion: input.expectedVersion,
     });
   }
+
+  /**
+   * Session düzeyinde toplu draft onayı (P1B-FINAL Stage 5).
+   *
+   * Aynı attendance session'ının tüm bekleyen/bloke draftlarını tek
+   * işlemde `approved`'a geçirir (all-or-nothing; stale version'da
+   * ConflictException → transaction geri alınır).
+   */
+  async bulkApproveSession(
+    entityManager: EntityManager,
+    input: Readonly<{
+      tenantId: string;
+      branchId: string;
+      sessionId: string;
+      expectedVersions: ReadonlyArray<{ id: string; version: number }>;
+    }>,
+  ): Promise<Array<{ id: string; status: string; version: number }>> {
+    return this.outbox.transitionDraftsForSession(entityManager, {
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      sessionId: input.sessionId,
+      targetStatus: 'approved',
+      expectedVersions: input.expectedVersions,
+    });
+  }
 }
