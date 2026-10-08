@@ -1074,7 +1074,42 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     currentScenario = SCENARIO_NAMES[3];
     await sessionA!.clickElement('.tab[data-tab="notifications"]');
     await sessionA!.clickElement('#refresh-notifications');
-    await waitForCountAtLeast(sessionA!, '#notifications-list article.card', 2);
+    try {
+      await waitForCountAtLeast(sessionA!, '#notifications-list article.card', 2);
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['apiList', async () => {
+          const result = await apiCall(opsApi, 'GET', '/notifications?limit=20&offset=0');
+          const list = (result.json as { notifications?: Array<{ id: string; status: string }> }).notifications ?? [];
+          return `opsA GET /notifications → ${list.length} öğe (${list.map((n) => n.status).join(',')})`;
+        }],
+        ['findDraftsMirror', async () => {
+          const result = await dbClient!.query(
+            `SELECT o.id, o.status, o.channel, o.session_id
+               FROM notification_outbox o
+               JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+              WHERE o.tenant_id = $1::uuid AND s.branch_id = $2::uuid
+                AND o.status IN ('pending', 'blocked_consent')
+              ORDER BY o.available_at ASC, o.id ASC`,
+            [fixture.tenantId, fixture.branchId],
+          );
+          const ids = result.rows.map((row) => String(row.id).slice(0, 8)).join(',');
+          return `findDrafts[tenant, branchA=${fixture.branchId}] → ${result.rows.length} row (${ids})`;
+        }],
+        ['outboxAll', async () => {
+          const result = await dbClient!.query(
+            `SELECT o.status, o.channel, s.branch_id AS "sessionBranch", s.session_date AS "sessionDate"
+               FROM notification_outbox o
+               JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+              WHERE o.tenant_id = $1::uuid
+              ORDER BY o.created_at, o.id`,
+            [fixture.tenantId],
+          );
+          return result.rows.map((row) => JSON.stringify(row)).join(' | ');
+        }],
+        ['net', () => networkTail('opsA', /\/notifications/)],
+      ]);
+    }
     recordEvidence(currentScenario, 'notifications list renderme: >= 2 kart (N3 kalıntıları nedeniyle tam sayı yerine alt sınır)');
     await sessionA!.waitForText('#bulk-approve-output button[data-action="bulk-approve-session"]', /toplu onayla/i, 10_000);
     await sessionA!.clickElement('#bulk-approve-output button[data-action="bulk-approve-session"]');
