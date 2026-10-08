@@ -1036,16 +1036,32 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionB!.clickElement('#refresh-attendance');
     await sessionB!.clickElement(`button[data-action="attendance-open"][data-session-id="${session1Id}"]`);
     await sessionB!.waitForText('#attendance-detail h3', /Yoklama/, 20_000);
-    await sessionB!.clickElement(
-      `button[data-action="attendance-mark"][data-student-id="${students[0].studentId}"][data-mark="absent"]`,
-    );
-    await sessionB!.clickElement(
-      `button[data-action="attendance-mark"][data-student-id="${students[1].studentId}"][data-mark="present"]`,
-    );
-    await sessionB!.clickElement(
-      `button[data-action="attendance-mark"][data-student-id="${students[2].studentId}"][data-mark="absent"]`,
-    );
-    await sessionB!.waitForText('#attendance-detail', /Yoklama · Yayınlandı/, 20_000);
+    try {
+      await waitForCountAtLeast(sessionB!, '#attendance-detail button[data-action="attendance-mark"]', STUDENT_COUNT);
+      await sessionB!.clickElement(
+        `button[data-action="attendance-mark"][data-student-id="${students[0].studentId}"][data-mark="absent"]`,
+      );
+      await sessionB!.clickElement(
+        `button[data-action="attendance-mark"][data-student-id="${students[1].studentId}"][data-mark="present"]`,
+      );
+      await sessionB!.clickElement(
+        `button[data-action="attendance-mark"][data-student-id="${students[2].studentId}"][data-mark="absent"]`,
+      );
+      await sessionB!.waitForText('#attendance-detail', /Yoklama · Yayınlandı/, 20_000);
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['detail', () => textOf(sessionB!, '#attendance-detail')],
+        ['message', () => textOf(sessionB!, '#message-region')],
+        ['net', () => networkTail('teacher', /\/attendance\/|\/records/)],
+        ['recordCount', async () => {
+          const result = await dbClient!.query(
+            `SELECT count(*)::int AS n FROM attendance_records WHERE tenant_id = $1::uuid AND session_id = $2::uuid`,
+            [fixture.tenantId, session1Id],
+          );
+          return `count=${result.rows[0].n}`;
+        }],
+      ]);
+    }
     const recordCount = await readAttendanceRecordCount(session1Id);
     expect(recordCount).toBe(STUDENT_COUNT);
     recordEvidence(currentScenario, 'teacher UI: 3 kayıt işaretlendi (absent/present/absent)');
