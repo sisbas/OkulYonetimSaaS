@@ -73,6 +73,14 @@
           <strong>Bildirimler</strong>
           <small>Gönderim operasyonu</small>
         </button>
+        <button class="tab" data-tab="program" aria-controls="program-panel" aria-selected="false">
+          <strong>Program</strong>
+          <small>Ders çizelgesi</small>
+        </button>
+        <button class="tab" data-tab="attendance" aria-controls="attendance-panel" aria-selected="false">
+          <strong>Yoklama</strong>
+          <small>Oturum ve kayıt</small>
+        </button>
       </nav>
 
       <main id="runtime-main" tabindex="-1">
@@ -197,6 +205,22 @@
         <section id="ops-panel" class="panel runtime-panel hidden" data-panel="ops">
           <div class="section-head">
             <div>
+              <p class="eyebrow">İzin kararları</p>
+              <h2>Bekleyen izin talepleri</h2>
+            </div>
+            <button id="refresh-leaves" type="button">İzin listesini yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Karar hattı</strong>
+            <ol class="checklist">
+              <li>Bekleyen talebi inceleyin (karar aynı güncel kayıt sürümüyle verilir).</li>
+              <li>Onay ders karşılığı akışını başlatır; ret talebi kapatır.</li>
+              <li>Kayıt değişmişse yenileme gerekir.</li>
+            </ol>
+          </div>
+          <div id="leaves-output" class="cards" role="region" aria-label="Bekleyen izin talebi kararları"></div>
+          <div class="section-head">
+            <div>
               <p class="eyebrow">Operasyon yöneticisi işlemleri</p>
               <h2>Günlük iş listesi</h2>
             </div>
@@ -254,6 +278,91 @@
           </div>
           <div id="notifications-list" class="cards" role="region" aria-label="Bildirim operasyon listesi"></div>
           <div id="notification-detail" class="state-box" role="region" aria-label="Seçili bildirim detayı ve eylemleri"></div>
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">KVKK onay yönetimi</p>
+              <h2>Veli bilgilendirme onayları</h2>
+            </div>
+            <button id="refresh-consents" type="button">Onayları yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Consent otoritesi</strong>
+            <ul class="checklist">
+              <li>Onay listesi yalnız ürün kayıtlarına erişen roller tarafından görüntülenir.</li>
+              <li>Geri çekme, onayın otorite kaydını günceller; bekleyen bildirimler yeniden değerlendirilir.</li>
+            </ul>
+          </div>
+          <div id="consents-output" class="cards" role="region" aria-label="Konsent listesi"></div>
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Toplu onay</p>
+              <h2>Oturum düzeyinde toplu gönderim onayı</h2>
+            </div>
+            <p class="hint">Aynı yoklama oturumunun tüm bekleyen bildirimleri, her satırın güncel sürümüyle tek işlemde onaylanır.</p>
+          </div>
+        </section>
+
+        <section id="program-panel" class="panel runtime-panel hidden" data-panel="program">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Ders çizelgesi</p>
+              <h2>Program yönetimi</h2>
+            </div>
+            <button id="refresh-schedule-status" type="button">Durumu yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Sunucu otoriter yayın akışı</strong>
+            <ol class="checklist">
+              <li>Dönem aralığıyla çizelge oluşturun.</li>
+              <li>Ders olaylarını ekleyin ve taslağı kaydedin.</li>
+              <li>Doğrulayın; çakışmasız olanı yayınlayın.</li>
+            </ol>
+          </div>
+          <form id="schedule-create-form" class="grid-form">
+            <label>Şube kodu <input id="schedule-branch" name="branchCode" autocomplete="off" /></label>
+            <label>Geçerlilik başlangıcı <input id="schedule-effective-from" type="date" required /></label>
+            <label>Geçerlilik sonu <input id="schedule-effective-to" type="date" /></label>
+            <p class="hint wide">Çizelge oluşturulunca oturumdaki şube seçimiyle karşılaştırılır.</p>
+            <button type="submit">Çizelge oluştur</button>
+          </form>
+          <div id="schedule-status" class="state-box" role="region" aria-label="Program durumu ve olay listesi"></div>
+          <form id="schedule-event-form" class="stack">
+            <div id="schedule-events" class="cards" role="region" aria-label="Program olayları"></div>
+            <button id="add-schedule-event" type="button">Olay satırı ekle</button>
+            <div class="quick-actions">
+              <button id="save-schedule-draft" type="button">Taslağı kaydet</button>
+              <button id="validate-schedule" type="button">Doğrula</button>
+              <button id="publish-schedule" type="button">Yayınla</button>
+              <button id="unpublish-schedule" type="button">Yayından kaldır</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="attendance-panel" class="panel runtime-panel hidden" data-panel="attendance">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Yoklama oturumları</p>
+              <h2>Oturum açma ve kayıt</h2>
+            </div>
+            <button id="refresh-attendance" type="button">Kayıtları yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Sunucu otoriter yoklama zinciri</strong>
+            <ol class="checklist">
+              <li>Yayınlanmış ders olayından oturum açın (roster sabitlenir).</li>
+              <li>Öğretmen öğrenci kayıtlarını işaretler.</li>
+              <li>Kilitlenince devamsızlık bildirim kuyruğu oluşturulur.</li>
+            </ol>
+          </div>
+          <form id="attendance-generate-form" class="grid-form">
+            <label>Ders olayı ID <input id="attendance-event-id" autocomplete="off" aria-describedby="attendance-event-help" /></label>
+            <p id="attendance-event-help" class="hint wide">Yayınlanmış program olayının kimliği (UUID).</p>
+            <label>Öğrenci listesi <textarea id="attendance-student-ids" rows="2" aria-describedby="attendance-roster-help"></textarea></label>
+            <p id="attendance-roster-help" class="hint wide">Roster: her satırda veya virgülle ayırarak öğrenci UUID'leri.</p>
+            <button type="submit">Yoklama oturumu aç</button>
+          </form>
+          <div id="attendance-sessions" class="cards" role="region" aria-label="Yoklama oturumları listesi"></div>
+          <div id="attendance-detail" class="cards" role="region" aria-label="Yoklama oturumu detayı ve kayıt eylemleri"></div>
         </section>
       </main>
     </div>
