@@ -41,22 +41,35 @@ class RequestFailureFilter implements ExceptionFilter {
     if (request?.method) {
       const name = exception instanceof Error ? exception.constructor.name : 'UnknownError';
       const category = REQUEST_FAILURE_CATEGORIES.includes(name) ? name : 'Error';
-      // Yalnızca kategorisiz iç hatalar için Postgres driver hatası KODU eklenir;
-      // message/SQL/veri değerleri asla yazılmaz (ham PII taraması koruması).
+      // Yalnızca kategorisiz iç hatalar için Postgres driver hatası KODU eklenir.
+      // Ham veri değeri içerebilecek message, algoritmik olarak tüm UUID/heks
+      // benzeri belirteçlerden arındırılıp kısaltılır; SQL yalnız $N yer tutucu
+      // içerdiğinden güvenlidir (bağlı değerler asla loglanmaz — ham PII taraması).
       const failed = exception as {
-        driverError?: { code?: string; message?: string; table?: string };
+        driverError?: { code?: string; message?: string; table?: string; detail?: string };
+        query?: string;
       };
       const driverError = failed?.driverError;
       const extra: Record<string, unknown> = {};
       if (!REQUEST_FAILURE_CATEGORIES.includes(name) && typeof driverError?.code === 'string') {
         extra.code = driverError.code;
-        if (driverError.code === '42P01') {
-          if (typeof driverError.table === 'string' && driverError.table) {
-            extra.relation = driverError.table;
-          } else {
-            const relation = /relation\s+"([^"]+)"/.exec(driverError.message ?? '')?.[1];
-            if (relation) extra.relation = relation;
-          }
+        if (typeof driverError.table === 'string' && driverError.table) {
+          extra.relation = driverError.table;
+        }
+        if (!extra.relation && typeof driverError.message === 'string') {
+          const relation = /relation\s+"([^"]+)"/.exec(driverError.message)?.[1];
+          if (relation) extra.relation = relation;
+        }
+        if (typeof failed?.query === 'string' && failed.query) {
+          extra.sql = failed.query.length > 2000 ? `${failed.query.slice(0, 2000)}…` : failed.query;
+        }
+        const message = (driverError?.message ?? '').split('\n')[0].trim();
+        if (message) {
+          const sanitized =
+            message.length > 160
+              ? `${message.slice(0, 160)}…`
+              : message.replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/g, '<id>').replace(/\b[0-9a-f]{32,}\b/g, '<hash>');
+          extra.message = sanitized;
         }
       }
       console.warn(
