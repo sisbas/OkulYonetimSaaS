@@ -650,7 +650,7 @@ async function clearAssignment() {
 }
 
 function renderLeaveEtag(leaveId, version) {
-  return `leave:${leaveId}:v${version}`;
+  return `"leave:${leaveId}:v${version}"`;
 }
 
 async function loadLeaves() {
