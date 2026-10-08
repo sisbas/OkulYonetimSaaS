@@ -853,7 +853,7 @@ function renderScheduleEventRow(event, index) {
       <label>Başlangıç <input data-schedule-field="startTime" value="${escapeHtml(pick(event, ['startTime'], ''))}" /></label>
       <label>Bitiş <input data-schedule-field="endTime" value="${escapeHtml(pick(event, ['endTime'], ''))}" /></label>
       <label>Öğretmen <input data-schedule-field="teacherId" value="${escapeHtml(event.teacherId || '')}" /></label>
-      <label>Şube <input data-schedule-field="teacherBranchId" value="${escapeHtml(event.teacherBranchId || getBranchId())}" /></label>
+      <label>Şube (öğretmen ataması UUID) <input data-schedule-field="teacherBranchId" value="${escapeHtml(event.teacherBranchId || '')}" /></label>
       <label>Öğrenci grubu <input data-schedule-field="studentGroupId" value="${escapeHtml(event.studentGroupId || '')}" /></label>
       <label>Ders <input data-schedule-field="courseId" value="${escapeHtml(event.courseId || '')}" /></label>
       <label>Derslik <input data-schedule-field="roomId" value="${escapeHtml(event.roomId || '')}" /></label>
@@ -871,7 +871,7 @@ function addScheduleEvent() {
   const defaults = {
     eventId: crypto.randomUUID ? crypto.randomUUID() : '',
     teacherId: '',
-    teacherBranchId: getBranchId(),
+    teacherBranchId: '',
     studentGroupId: '',
     courseId: '',
     roomId: '',
@@ -891,7 +891,7 @@ function scheduleEventsFromForm() {
     return {
       eventId: event.eventId || '',
       teacherId: read('teacherId') || '',
-      teacherBranchId: read('teacherBranchId') || getBranchId(),
+      teacherBranchId: read('teacherBranchId') || '',
       studentGroupId: read('studentGroupId') || '',
       courseId: read('courseId') || '',
       roomId: read('roomId') || '',
@@ -910,7 +910,7 @@ function updateScheduleRow(index) {
   state.scheduleEvents[index] = {
     ...state.scheduleEvents[index],
     teacherId: read('teacherId') || '',
-    teacherBranchId: read('teacherBranchId') || getBranchId(),
+    teacherBranchId: read('teacherBranchId') || '',
     studentGroupId: read('studentGroupId') || '',
     courseId: read('courseId') || '',
     roomId: read('roomId') || '',
@@ -931,12 +931,11 @@ async function saveScheduleDraft() {
   const target = $('#schedule-status');
   target.innerHTML = loading('Taslak kaydediliyor');
   try {
-    const { body } = await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/draft`, {
+    await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/draft`, {
       method: 'POST',
       body: { branchId, events },
     });
-    const next = Number(pick(body, ['revision', 'versionNo', 'revisionNo'], 0));
-    if (next > 0) state.scheduleRevision = next;
+    state.scheduleRevision += 1;
     announce('Taslak kaydedildi.', 'success');
     renderScheduleStatus();
   } catch (error) {
@@ -985,7 +984,7 @@ async function publishSchedule() {
       method: 'POST',
       body: { branchId, events, revision: state.scheduleRevision, requestId: state.requestId || `${Date.now()}` },
     });
-    state.scheduleRevision = Number(pick(body, ['versionNo', 'revision', 'revisionNo'], state.scheduleRevision)) || state.scheduleRevision;
+    void body;
     announce('Çizelge yayınlandı.', 'success');
     renderScheduleStatus();
   } catch (error) {
