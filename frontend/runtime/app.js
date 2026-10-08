@@ -341,7 +341,7 @@ function clearBranchWork() {
   state.scheduleRevision = 0;
   state.scheduleEvents = [];
   state.activeAttendanceSessionId = '';
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail']) {
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail']) {
     $(id).innerHTML = '';
   }
 }
@@ -790,7 +790,7 @@ async function bulkApproveSession(sessionId, versionsCsv) {
   } catch (_error) {
     return announce('Toplu onay için sürüm bilgisi çözülemedi.', 'warning');
   }
-  const target = $('#notifications-list');
+  const target = $('#bulk-approve-output');
   target.innerHTML = loading('Toplu onay sunucuda uygulanıyor');
   try {
     await apiRequest(`/notifications/drafts/session/${encodeURIComponent(sessionId)}/approve`, {
@@ -1183,6 +1183,8 @@ async function loadNotifications() {
   try {
     const { body } = await apiRequest(`/notifications?${query.toString()}`);
     const rows = asArray(body, ['notifications', 'items']);
+    target.innerHTML = rows.length ? rows.map(renderNotificationCard).join('') : empty('Bu kapsamda bildirim yok.');
+    const bulkTarget = $('#bulk-approve-output');
     const bulkActions = rows.some((row) => pick(row, ['sessionId'], ''))
       ? [...groupDraftsBySession(rows).entries()]
           .filter(([sessionId]) => sessionId !== 'no-session')
@@ -1191,7 +1193,7 @@ async function loadNotifications() {
             ${renderSessionBulkAction(sessionRows)}
           </article>`).join('')
       : '';
-    target.innerHTML = (rows.length ? rows.map(renderNotificationCard).join('') : empty('Bu kapsamda bildirim yok.')) + bulkActions;
+    bulkTarget.innerHTML = bulkActions;
     announce(`${rows.length} bildirim listelendi.`, 'success');
   } catch (error) {
     renderError(target, error);
