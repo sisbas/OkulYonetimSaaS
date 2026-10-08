@@ -552,6 +552,30 @@ async function readLeave(id: string): Promise<{ decisionStatus: string; coverage
   return { decisionStatus: row.decision_status, coverageStatus: row.coverage_status, version: row.version };
 }
 
+/** Beklenen etki JOIN'ini birebir yansıtan tanı satırı — boş etkinin kaynağını ayırır. */
+async function readPublishedEventsDiag(): Promise<string[]> {
+  const result = await dbClient!.query(
+    `SELECT event.day_of_week::int AS day_of_week,
+            event.start_time::text AS start_time, event.end_time::text AS end_time,
+            schedule.effective_from::text AS effective_from, schedule.effective_to::text AS effective_to,
+            schedule.status AS schedule_status, version.status AS version_status,
+            (schedule.active_version_id = version.id) AS active_version_match,
+            (version.branch_id = event.branch_id AND version.schedule_id = event.schedule_id) AS version_branch_match,
+            (event.teacher_id = $3::uuid) AS teacher_match
+       FROM schedule_events event
+       LEFT JOIN schedule_versions version
+         ON version.id = event.version_id AND version.tenant_id = event.tenant_id
+        AND version.branch_id = event.branch_id AND version.schedule_id = event.schedule_id
+       LEFT JOIN schedules schedule
+         ON schedule.id = event.schedule_id AND schedule.tenant_id = event.tenant_id
+        AND schedule.branch_id = event.branch_id
+      WHERE event.tenant_id = $1::uuid AND event.branch_id = $2::uuid AND event.teacher_id = $3::uuid
+      ORDER BY event.created_at ASC`,
+    [fixture.tenantId, fixture.branchId, fixture.teacherId],
+  );
+  return result.rows.map((row) => JSON.stringify(row));
+}
+
 async function readAssignment(): Promise<{ substituteTeacherId: string; state: string } | null> {
   const result = await dbClient!.query(
     `SELECT substitute_teacher_id::text AS substitute_teacher_id, state
@@ -909,9 +933,28 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     }
     await sessionA!.waitForText('#leaves-output', /Onaylandı/, 10_000);
     let leave = await readLeave(leaveId);
-    expect(leave.decisionStatus).toBe('approved');
-    expect(leave.coverageStatus).toBe('unresolved');
+    try {
+      expect(leave.decisionStatus).toBe('approved');
+      expect(leave.coverageStatus).toBe('unresolved');
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['approve200', async () => (await networkTail('opsA', /\/approve/)) || '(yok)'],
+        ['publishedEvents', async () => {
+          const rows = await readPublishedEventsDiag();
+          return rows.length ? rows.join('\n') : '(yok)';
+        }],
+        ['projectedLessons', async () => {
+          const result = await dbClient!.query(
+            `SELECT count(*)::int AS n FROM daily_operation_lessons WHERE tenant_id = $1::uuid AND leave_request_id = $2::uuid`,
+            [fixture.tenantId, leaveId],
+          );
+          return `count=${result.rows[0].n}`;
+        }],
+      ]);
+    }
     recordEvidence(currentScenario, 'ops UI onay → DB approved, coverage unresolved (etki açık)');
+    const approveLines = await networkTail('opsA', /\/approve/);
+    recordEvidence(currentScenario, `approve impact yanıtı: ${approveLines.split('\n').find((line) => line.startsWith('{')) ?? approveLines}`);
 
     await sessionA!.clickElement('#refresh-queue');
     await sessionA!.waitForText('#queue-output', new RegExp(leaveMonday), 20_000);
