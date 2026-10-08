@@ -1033,9 +1033,18 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, `ops UI generate: session ${attendanceMonday} roster 3 → published`);
 
     await sessionB!.clickElement('.tab[data-tab="attendance"]');
-    await sessionB!.clickElement('#refresh-attendance');
-    await sessionB!.clickElement(`button[data-action="attendance-open"][data-session-id="${session1Id}"]`);
-    await sessionB!.waitForText('#attendance-detail h3', /Yoklama/, 20_000);
+    try {
+      await sessionB!.clickElement('#refresh-attendance');
+      await sessionB!.clickElement(`button[data-action="attendance-open"][data-session-id="${session1Id}"]`);
+      await sessionB!.waitForText('#attendance-detail h3', /Yoklama/, 20_000);
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['detail', () => textOf(sessionB!, '#attendance-detail')],
+        ['sessions', () => textOf(sessionB!, '#attendance-sessions')],
+        ['message', () => textOf(sessionB!, '#message-region')],
+        ['net', () => networkTail('teacher', /\/attendance\//)],
+      ]);
+    }
     try {
       await waitForCountAtLeast(sessionB!, '#attendance-detail button[data-action="attendance-mark"]', STUDENT_COUNT);
       await sessionB!.clickElement(
