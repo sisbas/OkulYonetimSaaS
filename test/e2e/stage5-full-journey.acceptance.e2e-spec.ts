@@ -558,17 +558,25 @@ async function readLatestConsent(studentId: string, consentType: string): Promis
   version: number;
   status: string;
   revokedAt: unknown;
-}> {
+} | null> {
   const result = await dbClient!.query(
-    `SELECT version::int AS version, status, revoked_at
-       FROM kvkk_consents
-      WHERE tenant_id = $1::uuid AND subject_id = $2::uuid AND consent_type = $3
-      ORDER BY version DESC, created_at DESC, id DESC
+    `SELECT c.version::int AS version, c.status, c.revoked_at
+       FROM kvkk_consents c
+       JOIN kvkk_consent_subjects s
+         ON s.id = c.subject_id
+        AND s.tenant_id = c.tenant_id
+        AND s.subject_ref_id = $2::uuid
+        AND s.subject_type = 'student'
+        AND s.deleted_at IS NULL
+      WHERE c.tenant_id = $1::uuid AND c.consent_type = $3
+      ORDER BY c.version DESC, c.created_at DESC, c.id DESC
       LIMIT 1`,
     [fixture.tenantId, studentId, consentType],
   );
-  const row = result.rows[0] as { version: number; status: string; revoked_at: unknown };
-  return { version: row.version, status: row.status, revokedAt: row.revoked_at };
+  const row = result.rows[0] as { version: number; status: string; revoked_at: unknown } | undefined;
+  return row === undefined
+    ? null
+    : { version: row.version, status: row.status, revokedAt: row.revoked_at };
 }
 
 /**
@@ -849,6 +857,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionB!.waitForText('#message-region', /İzin talebi oluşturuldu|kaydedildi/i, 10_000).catch(() => undefined);
     recordEvidence(currentScenario, `teacher UI: izin ${leaveMonday} 08:00-18:00 (full_day/health) kaydedildi`);
 
+    await sessionA!.clickElement('.tab[data-tab="ops"]');
     await sessionA!.clickElement('#refresh-leaves');
     await waitForCountAtLeast(sessionA!, '#leaves-output article.card', 1);
     await sessionA!.waitForText('#leaves-output', /Beklemede/, 10_000);
@@ -1068,8 +1077,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
         ]);
       }
       const consent = await readLatestConsent(studentForRevoke, consentType);
-      expect(consent.status).toBe('revoked');
-      expect(consent.revokedAt).not.toBeNull();
+      expect(consent).not.toBeNull();
+      expect(consent!.status).toBe('revoked');
+      expect(consent!.revokedAt).not.toBeNull();
     }
     recordEvidence(currentScenario, 'UI consent tab → her iki kanal revoke edildi (DB revoked + revoked_at)');
 
@@ -1186,7 +1196,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(maskedBodies).not.toMatch(/s5-student-\d/i);
     const bodyLeaks = scanTextForLeaks(maskedBodies);
     if (bodyLeaks.length > 0) {
-      const windows = Array.from(maskedBodies.matchAll(PHONE_LEAK_PATTERN))
+      const windows = Array.from(
+        maskedBodies.matchAll(new RegExp(PHONE_LEAK_PATTERN.source, 'g')),
+      )
         .slice(0, 5)
         .map((m) => {
           const start = Math.max(0, (m.index ?? 0) - 60);

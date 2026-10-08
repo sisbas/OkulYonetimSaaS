@@ -162,8 +162,9 @@ export class ScheduleService {
 
   /**
    * Draft'ı FULL modunda doğrular (çakışma + referans kontrolü).
-   * references dışarıdan beslenir (RBAC/aktif kaynak seti); yoksa
-   * boş set ile çalışır (yalnızca time-overlap tespiti).
+   * references dışarıdan beslenir (RBAC/aktif kaynak seti); verilmezse
+   * gerçek aktif kaynak seti DB'den yüklenir (publish ile aynı davranış),
+   * böylece boş set yüzünden referans doğrulamaları false-positive üretmez.
    */
   async validateDraft(
     tenantId: string,
@@ -171,8 +172,10 @@ export class ScheduleService {
     scheduleId: string,
     events: ScheduleEventDraft[],
     revision: number,
-    references: ScheduleReferenceSet = EMPTY_REFERENCES,
+    references?: ScheduleReferenceSet,
   ): Promise<ScheduleValidationEvidence> {
+    const effectiveReferences =
+      references ?? (await this.loadActiveReferences(tenantId, branchId, events));
     const input: ScheduleValidationInput = {
       mode: 'FULL',
       tenantId,
@@ -188,7 +191,7 @@ export class ScheduleService {
       effectiveTo: null,
       publishedPeriodConflict: false,
       events,
-      references,
+      references: effectiveReferences,
     };
     return validateSchedule(input);
   }

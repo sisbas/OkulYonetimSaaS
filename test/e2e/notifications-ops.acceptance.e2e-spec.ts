@@ -1096,7 +1096,9 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     expect(maskedBodies).not.toMatch(/n3ops student/i);
     const bodyLeaks = scanTextForLeaks(maskedBodies);
     if (bodyLeaks.length > 0) {
-      const windows = Array.from(maskedBodies.matchAll(PHONE_LEAK_PATTERN))
+      const windows = Array.from(
+        maskedBodies.matchAll(new RegExp(PHONE_LEAK_PATTERN.source, 'g')),
+      )
         .slice(0, 5)
         .map((m) => {
           const start = Math.max(0, (m.index ?? 0) - 60);
