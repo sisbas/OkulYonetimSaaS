@@ -298,7 +298,7 @@ const rows = (await entityManager.query(
       await entityManager.query(
         `UPDATE notification_outbox o
             SET status = $1,
-                version = version + 1,
+                version = o.version + 1,
                 updated_at = now()
            FROM (
              SELECT tn.id, tn.version
