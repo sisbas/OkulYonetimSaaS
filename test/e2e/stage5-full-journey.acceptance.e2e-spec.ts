@@ -1051,9 +1051,11 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
       await sessionB!.clickElement(
         `button[data-action="attendance-mark"][data-student-id="${students[0].studentId}"][data-mark="absent"]`,
       );
+      await sessionB!.waitForText('#attendance-detail', /Yoklama · Yayınlandı/, 20_000);
       await sessionB!.clickElement(
         `button[data-action="attendance-mark"][data-student-id="${students[1].studentId}"][data-mark="present"]`,
       );
+      await sessionB!.waitForText('#attendance-detail', /Yoklama · Yayınlandı/, 20_000);
       await sessionB!.clickElement(
         `button[data-action="attendance-mark"][data-student-id="${students[2].studentId}"][data-mark="absent"]`,
       );
