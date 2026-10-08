@@ -41,6 +41,13 @@ class RequestFailureFilter implements ExceptionFilter {
     if (request?.method) {
       const name = exception instanceof Error ? exception.constructor.name : 'UnknownError';
       const category = REQUEST_FAILURE_CATEGORIES.includes(name) ? name : 'Error';
+      // Yalnızca kategorisiz iç hatalar için Postgres driver hatası KODU eklenir;
+      // message/SQL/veri değerleri asla yazılmaz (ham PII taraması koruması).
+      const driverError = (exception as { driverError?: { code?: string } }).driverError;
+      const extra: Record<string, unknown> = {};
+      if (!REQUEST_FAILURE_CATEGORIES.includes(name) && typeof driverError?.code === 'string') {
+        extra.code = driverError.code;
+      }
       console.warn(
         JSON.stringify({
           event: 'http.request.failed',
@@ -48,6 +55,7 @@ class RequestFailureFilter implements ExceptionFilter {
           url: String(request.url ?? ''),
           status,
           error: category,
+          ...extra,
         }),
       );
     }
