@@ -1035,6 +1035,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionB!.clickElement('.tab[data-tab="attendance"]');
     try {
       await sessionB!.clickElement('#refresh-attendance');
+      await waitForCountAtLeast(sessionB!, 'button[data-action="attendance-open"]', 1, 20_000);
       await sessionB!.clickElement(`button[data-action="attendance-open"][data-session-id="${session1Id}"]`);
       await sessionB!.waitForText('#attendance-detail h3', /Yoklama/, 20_000);
     } catch (error) {
@@ -1076,6 +1077,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'teacher UI: 3 kayıt işaretlendi (absent/present/absent)');
 
     await sessionA!.clickElement('#refresh-attendance');
+    await waitForCountAtLeast(sessionA!, `button[data-action="attendance-open"][data-session-id="${session1Id}"]`, 1, 20_000);
     await sessionA!.clickElement(`button[data-action="attendance-open"][data-session-id="${session1Id}"]`);
     await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
     await sessionA!.clickElement('button[data-action="attendance-lock"]');
@@ -1249,6 +1251,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionB!.clickElement('.tab[data-tab="attendance"]');
     await sessionB!.clickElement('#refresh-attendance');
     const session2Button = `button[data-action="attendance-open"][data-session-id="${session2Id}"]`;
+    await waitForCountAtLeast(sessionB!, session2Button, 1, 20_000);
     await sessionB!.clickElement(session2Button);
     await sessionB!.waitForText('#attendance-detail h3', /Yoklama/, 20_000);
     await sessionB!.clickElement(
@@ -1256,6 +1259,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     );
 
     await sessionA!.clickElement('#refresh-attendance');
+    await waitForCountAtLeast(sessionA!, session2Button, 1, 20_000);
     await sessionA!.clickElement(session2Button);
     await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
     await sessionA!.clickElement('button[data-action="attendance-lock"]');
