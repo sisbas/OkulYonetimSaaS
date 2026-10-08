@@ -222,6 +222,86 @@ async function waitForCount(
   throw new Error(`waitForCount timeout: ${selector} expected ${expected}, last ${last}.`);
 }
 
+/** Liste yeniden render'ı sırasında kopan tıklamaları toleranslı hale getirir. */
+async function clickRetry(session: UiSession, selector: string, attempts = 5, delayMs = 400): Promise<void> {
+  let last: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await session.clickElement(selector);
+      return;
+    } catch (error) {
+      last = error;
+      await sleep(delayMs);
+    }
+  }
+  throw last instanceof Error ? last : new Error(String(last));
+}
+
+/** Adım başarısında UI + ağ durumunu kanıtlayıp hatayı zenginleştirerek yeniden fırlatır. */
+async function rethrowWithDiag(
+  error: unknown,
+  scenario: string,
+  parts: ReadonlyArray<readonly [string, () => Promise<string> | string]>,
+): Promise<never> {
+  const lines = [`step-error: ${error instanceof Error ? error.message : String(error)}`];
+  for (const [label, read] of parts) {
+    try {
+      const value = await read();
+      lines.push(`${label}=${value.slice(0, 600)}`);
+    } catch {
+      lines.push(`${label}=?`);
+    }
+  }
+  recordEvidence(scenario, lines.join('\n'));
+  throw new Error(lines.join('\n'));
+}
+
+/** announce, listenin yenilenmesiyle ezilebilir → kalıcı kaynak DB kararıdır. */
+async function waitForLeaveDecision(leaveId: string, status: string, timeoutMs = 20_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let last = '';
+  while (Date.now() < deadline) {
+    const row = await readLeave(leaveId).catch(() => null);
+    last = String(row?.decisionStatus ?? '');
+    if (last === status) return;
+    await sleep(300);
+  }
+  throw new Error(`waitForLeaveDecision timeout: ${leaveId} expected ${status}, last=${last || 'okunamadi'}`);
+}
+
+/** Toplu onay announce'ı da ezilebilir → dispatch satırı kalıcı kaynaktır. */
+async function waitForDispatchStatus(key: string, status: string, timeoutMs = 20_000): Promise<void> {
+  const id = rows[key];
+  if (!id) throw new Error(`No outbox id for row ${key}.`);
+  const deadline = Date.now() + timeoutMs;
+  let last = '';
+  while (Date.now() < deadline) {
+    const row = await readDispatchRow(dbClient!, fixture.tenantId, id).catch(() => null);
+    last = String(row?.status ?? '');
+    if (last === status) return;
+    await sleep(300);
+  }
+  throw new Error(`waitForDispatchStatus timeout: ${key} expected ${status}, last=${last || 'okunamadi'}`);
+}
+
+/** revoke announce'ı liste-yenilemeyle ezilebilir → onay satırı kalıcı kaynaktır. */
+async function waitForConsentStatus(
+  studentId: string,
+  consentType: string,
+  status: string,
+  timeoutMs = 20_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let last = '';
+  while (Date.now() < deadline) {
+    const row = await readLatestConsent(studentId, consentType).catch(() => null);
+    last = String(row?.status ?? '');
+    if (last === status) return;
+    await sleep(300);
+  }
+  throw new Error(`waitForConsentStatus timeout: ${studentId}/${consentType} expected ${status}, last=${last || 'okunamadi'}`);
+}
+
 async function openCard(session: UiSession, key: string): Promise<void> {
   const id = rows[key];
   if (!id) throw new Error(`No outbox id for row ${key}.`);
@@ -674,28 +754,53 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionA!.clickElement('#add-schedule-event');
     const row = (index: string, field: string): string =>
       `#schedule-events [data-schedule-row="${index}"] [data-schedule-field="${field}"]`;
-    await sessionA!.typeInto(row('0', 'teacherId'), fixture.teacherId);
-    await sessionA!.typeInto(row('0', 'teacherBranchId'), fixture.teacherBranchId);
-    await sessionA!.typeInto(row('0', 'studentGroupId'), fixture.studentGroupId);
-    await sessionA!.typeInto(row('0', 'courseId'), fixture.courseId);
-    await sessionA!.typeInto(row('0', 'roomId'), fixture.roomId);
-    await sessionA!.typeInto(row('0', 'timeSlotId'), fixture.timeSlotId);
-    await sessionA!.typeInto(row('0', 'dayOfWeek'), '1');
-    await sessionA!.typeInto(row('0', 'startTime'), '10:00');
-    await sessionA!.typeInto(row('0', 'endTime'), '11:00');
+    await fillField(sessionA!, row('0', 'teacherId'), fixture.teacherId);
+    await fillField(sessionA!, row('0', 'teacherBranchId'), fixture.teacherBranchId);
+    await fillField(sessionA!, row('0', 'studentGroupId'), fixture.studentGroupId);
+    await fillField(sessionA!, row('0', 'courseId'), fixture.courseId);
+    await fillField(sessionA!, row('0', 'roomId'), fixture.roomId);
+    await fillField(sessionA!, row('0', 'timeSlotId'), fixture.timeSlotId);
+    await fillField(sessionA!, row('0', 'dayOfWeek'), '1');
+    await fillField(sessionA!, row('0', 'startTime'), '10:00');
+    await fillField(sessionA!, row('0', 'endTime'), '11:00');
     await sessionA!.clickElement('button[data-action="schedule-row-update"]');
 
     await sessionA!.clickElement('#save-schedule-draft');
-    await sessionA!.waitForText('#schedule-status', /Revizyon: 2/, 20_000);
+    try {
+      await sessionA!.waitForText('#schedule-status', /Revizyon: 2/, 20_000);
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['status', () => textOf(sessionA!, '#schedule-status')],
+        ['message', () => textOf(sessionA!, '#message-region')],
+        ['dayField', () => textOf(sessionA!, row('0', 'dayOfWeek'))],
+        ['net', () => networkTail('opsA', /\/schedules\//)],
+      ]);
+    }
     recordEvidence(currentScenario, 'draft: revision 1 → 2 (state.scheduleRevision sunucu yanıtı + draft +1)');
 
     await sessionA!.clickElement('#validate-schedule');
-    await sessionA!.waitForText('#schedule-status', /Yayınlanabilir: Evet/, 20_000);
-    await sessionA!.waitForText('#message-region', /Doğrulama geçti/, 10_000);
+    try {
+      await sessionA!.waitForText('#schedule-status', /Yayınlanabilir: Evet/, 20_000);
+      await sessionA!.waitForText('#message-region', /Doğrulama geçti/, 10_000);
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['status', () => textOf(sessionA!, '#schedule-status')],
+        ['message', () => textOf(sessionA!, '#message-region')],
+        ['net', () => networkTail('opsA', /\/schedules\//)],
+      ]);
+    }
 
     await sessionA!.clickElement('#publish-schedule');
-    await sessionA!.waitForText('#schedule-status', /Çizelge hazır/, 20_000);
-    await sessionA!.waitForText('#message-region', /Çizelge yayınlandı/, 10_000);
+    try {
+      await sessionA!.waitForText('#schedule-status', /Çizelge hazır/, 20_000);
+      await sessionA!.waitForText('#message-region', /Çizelge yayınlandı/, 10_000);
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['status', () => textOf(sessionA!, '#schedule-status')],
+        ['message', () => textOf(sessionA!, '#message-region')],
+        ['net', () => networkTail('opsA', /\/schedules\//)],
+      ]);
+    }
 
     created = await readScheduleRow();
     expect(created.revision).toBe(2);
@@ -749,8 +854,16 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionA!.waitForText('#leaves-output', /Beklemede/, 10_000);
     leaveId = (await sessionA!.attribute('#leaves-output button[data-leave-decision="approve"]', 'data-leave-id')) ?? '';
     if (!leaveId) throw new Error('leave id not captured from approve button');
-    await sessionA!.clickElement('#leaves-output button[data-leave-decision="approve"]');
-    await sessionA!.waitForText('#message-region', /İzin kararı tamamlandı/, 20_000);
+    await clickRetry(sessionA!, '#leaves-output button[data-leave-decision="approve"]');
+    try {
+      await waitForLeaveDecision(leaveId, 'approved');
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['message', () => textOf(sessionA!, '#message-region')],
+        ['output', () => textOf(sessionA!, '#leaves-output')],
+        ['net', () => networkTail('opsA', /\/leaves\//)],
+      ]);
+    }
     await sessionA!.waitForText('#leaves-output', /Onaylandı/, 10_000);
     let leave = await readLeave(leaveId);
     expect(leave.decisionStatus).toBe('approved');
@@ -808,17 +921,26 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
       students.map((student) => student.studentId).join(','),
     );
     await sessionA!.submitForm('#attendance-generate-form');
-    await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Taslak/, 20_000);
+    try {
+      await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['detail', () => textOf(sessionA!, '#attendance-detail')],
+        ['message', () => textOf(sessionA!, '#message-region')],
+        ['eventIdField', () => textOf(sessionA!, '#attendance-event-id')],
+        ['net', () => networkTail('opsA', /\/attendance\//)],
+      ]);
+    }
     session1Id = await readLatestSessionIdByDate(attendanceMonday);
     if (!session1Id) throw new Error('session1 id not captured');
     let session = await readAttendanceSession(session1Id);
-    expect(session.status).toBe('draft');
+    expect(session.status).toBe('published');
     expect(session.sessionDate).toBe(attendanceMonday);
-    recordEvidence(currentScenario, `ops UI generate: session ${attendanceMonday} roster 3 → draft`);
+    recordEvidence(currentScenario, `ops UI generate: session ${attendanceMonday} roster 3 → published`);
 
     await sessionB!.clickElement('.tab[data-tab="attendance"]');
     await sessionB!.clickElement('#refresh-attendance');
-    await sessionB!.clickElement('button[data-action="attendance-open"]');
+    await sessionB!.clickElement(`button[data-action="attendance-open"][data-session-id="${session1Id}"]`);
     await sessionB!.waitForText('#attendance-detail h3', /Yoklama/, 20_000);
     await sessionB!.clickElement(
       `button[data-action="attendance-mark"][data-student-id="${students[0].studentId}"][data-mark="absent"]`,
@@ -829,14 +951,14 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionB!.clickElement(
       `button[data-action="attendance-mark"][data-student-id="${students[2].studentId}"][data-mark="absent"]`,
     );
-    await sessionB!.waitForText('#attendance-detail', /Yoklama · Taslak/, 20_000);
+    await sessionB!.waitForText('#attendance-detail', /Yoklama · Yayınlandı/, 20_000);
     const recordCount = await readAttendanceRecordCount(session1Id);
     expect(recordCount).toBe(STUDENT_COUNT);
     recordEvidence(currentScenario, 'teacher UI: 3 kayıt işaretlendi (absent/present/absent)');
 
     await sessionA!.clickElement('#refresh-attendance');
-    await sessionA!.clickElement('button[data-action="attendance-open"]');
-    await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Taslak/, 20_000);
+    await sessionA!.clickElement(`button[data-action="attendance-open"][data-session-id="${session1Id}"]`);
+    await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
     await sessionA!.clickElement('button[data-action="attendance-lock"]');
     await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Kilitli/, 20_000);
     session = await readAttendanceSession(session1Id);
@@ -862,7 +984,16 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'notifications list renderme: >= 2 kart (N3 kalıntıları nedeniyle tam sayı yerine alt sınır)');
     await sessionA!.waitForText('#bulk-approve-output button[data-action="bulk-approve-session"]', /toplu onayla/i, 10_000);
     await sessionA!.clickElement('#bulk-approve-output button[data-action="bulk-approve-session"]');
-    await sessionA!.waitForText('#message-region', /toplu onaylandı/i, 20_000);
+    try {
+      await waitForDispatchStatus('r0', 'approved');
+      await waitForDispatchStatus('r1', 'approved');
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['message', () => textOf(sessionA!, '#message-region')],
+        ['bulk', () => textOf(sessionA!, '#bulk-approve-output')],
+        ['net', () => networkTail('opsA', /\/notifications\/drafts\//)],
+      ]);
+    }
     await expectRow('r0', { status: 'approved', version: 1, attempts: 0 });
     await expectRow('r1', { status: 'approved', version: 1, attempts: 0 });
     recordEvidence(currentScenario, 'session-level bulk approve → her iki draft approved v1 (tek istek)');
@@ -923,10 +1054,19 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     const studentForRevoke = students[2].studentId;
     await waitForCount(sessionA!, revokeSelector(studentForRevoke), 2);
     for (const consentType of ['parent_notification', 'sms_notification']) {
-      await sessionA!.clickElement(
+      await clickRetry(
+        sessionA!,
         `button[data-action="consent-revoke"][data-subject-ref-id="${studentForRevoke}"][data-consent-type="${consentType}"]`,
       );
-      await sessionA!.waitForText('#message-region', /Onay geri çekildi/i, 20_000);
+      try {
+        await waitForConsentStatus(studentForRevoke, consentType, 'revoked');
+      } catch (error) {
+        await rethrowWithDiag(error, currentScenario, [
+          ['message', () => textOf(sessionA!, '#message-region')],
+          ['consents', () => textOf(sessionA!, '#consents-output')],
+          ['net', () => networkTail('opsA', /\/consents\//)],
+        ]);
+      }
       const consent = await readLatestConsent(studentForRevoke, consentType);
       expect(consent.status).toBe('revoked');
       expect(consent.revokedAt).not.toBeNull();
@@ -938,7 +1078,16 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await fillField(sessionA!, '#attendance-session-date', session2Date);
     await fillField(sessionA!, '#attendance-student-ids', studentForRevoke);
     await sessionA!.submitForm('#attendance-generate-form');
-    await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Taslak/, 20_000);
+    try {
+      await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['detail', () => textOf(sessionA!, '#attendance-detail')],
+        ['message', () => textOf(sessionA!, '#message-region')],
+        ['eventIdField', () => textOf(sessionA!, '#attendance-event-id')],
+        ['net', () => networkTail('opsA', /\/attendance\//)],
+      ]);
+    }
     session2Id = await readLatestSessionIdByDate(session2Date);
     if (!session2Id) throw new Error('session2 id not captured');
 
@@ -946,12 +1095,14 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionB!.clickElement('#refresh-attendance');
     const session2Button = `button[data-action="attendance-open"][data-session-id="${session2Id}"]`;
     await sessionB!.clickElement(session2Button);
+    await sessionB!.waitForText('#attendance-detail h3', /Yoklama/, 20_000);
     await sessionB!.clickElement(
       `button[data-action="attendance-mark"][data-student-id="${studentForRevoke}"][data-mark="absent"]`,
     );
 
     await sessionA!.clickElement('#refresh-attendance');
     await sessionA!.clickElement(session2Button);
+    await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
     await sessionA!.clickElement('button[data-action="attendance-lock"]');
     await sessionA!.waitForText('#attendance-detail h3', /Yoklama · Kilitli/, 20_000);
 

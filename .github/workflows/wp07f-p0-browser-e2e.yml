@@ -129,6 +129,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wp07f-p0-browser-e2e-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/wp07f-p0-browser-e2e
+          path: |
+            artifacts/wp07f-p0-browser-e2e
+            artifacts/n3-server-logs
+            artifacts/s5-server-logs
           if-no-files-found: error
           retention-days: 14
