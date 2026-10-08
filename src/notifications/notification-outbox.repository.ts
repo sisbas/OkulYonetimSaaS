@@ -303,12 +303,13 @@ const rows = (await entityManager.query(
            FROM (
              SELECT tn.id, tn.version
                FROM unnest($4::uuid[], $5::int[]) AS tn(id, version)
-           ) AS expected
-           JOIN attendance_sessions s
-             ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+           ) AS expected,
+           attendance_sessions s
           WHERE o.tenant_id = $2
-            AND s.branch_id = $6
             AND o.session_id = $3
+            AND s.id = o.session_id
+            AND s.tenant_id = o.tenant_id
+            AND s.branch_id = $6
             AND o.status = ANY($7::varchar[])
             AND o.id = expected.id
             AND o.version = expected.version
