@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import puppeteer, { type Browser, type Page } from 'puppeteer-core';
+import puppeteer, { type Browser, type KeyInput, type Page } from 'puppeteer-core';
 import { E2eEnvironmentError } from './env';
 
 /**
@@ -56,9 +56,17 @@ export type StorageSnapshot = Readonly<{
   cookie: string;
 }>;
 
+export type NetworkEntry = {
+  method: string;
+  url: string;
+  status: number | 'PENDING';
+};
+
 export type UiSession = Readonly<{
   page: Page;
   consoleErrors: string[];
+  /** İstek/yığın logu: hangi isteğin gidip hangi status ile döndüğünün müşteri-taraflı gerçeği. */
+  networkLog: () => NetworkEntry[];
   navigateToRuntime: () => Promise<number>;
   armResponse: (pathFragment: string, method: string) => Promise<number>;
   text: (selector: string) => Promise<string>;
@@ -71,6 +79,16 @@ export type UiSession = Readonly<{
   clickElement: (selector: string) => Promise<void>;
   submitForm: (formSelector: string) => Promise<void>;
   waitForText: (selector: string, pattern: RegExp, timeoutMs?: number) => Promise<string>;
+  /** Odaklama: gerçek klavye akışı (senaryo 12) için selector'a odaklanır. */
+  focus: (selector: string) => Promise<void>;
+  /** Gerçek klavye tuşu (Enter/Tab/...). DOM enjeksiyonu yok. */
+  press: (key: KeyInput) => Promise<void>;
+  /** Select elemanına değer atar (page.select; DOM yazar — form değeri). */
+  selectValue: (selector: string, value: string) => Promise<void>;
+  /** Çoklu elemanın metinlerini okur (salt okunur). */
+  queryTexts: (selector: string) => Promise<string[]>;
+  /** Eşleşen eleman sayısını okur (salt okunur). */
+  countElements: (selector: string) => Promise<number>;
   maskCredentialInputs: () => Promise<void>;
   screenshot: (name: string) => Promise<string>;
   close: () => Promise<void>;
@@ -88,10 +106,16 @@ export async function createUiSession(input: Readonly<{
   baseUrl: string;
   screenshotDir: string;
   index: { value: number };
+  timeZone?: string;
 }>): Promise<UiSession> {
   fs.mkdirSync(input.screenshotDir, { recursive: true });
 
   const page = await input.browser.newPage();
+  // Okul saati yerel saat diliminden gelir: datetime-local değerlerinin
+  // (örn. "2026-10-26T08:00") sayfada `new Date(...)` ile Avrupa/İstanbul
+  // okul saatine göre yorumlanması gerekir; CI headless Chrome UTC'de
+  // çalıştığı için aksi halde izin-etki çakışması sınırda kaçırılır (#266).
+  await page.emulateTimezone(input.timeZone ?? 'Europe/Istanbul').catch(() => undefined);
   // HTTP cache KAPALI: aynı URL'e yapılan tekrar ziyaretler 304 (Not Modified)
   // dönerse "canlı 200" iddiası yanlış negatif üretir (ilk CI koşusunda
   // gözlendi: Expected 200 / Received 304). Kabul kanıtı her seferinde gerçek
@@ -102,6 +126,19 @@ export async function createUiSession(input: Readonly<{
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
   });
+  const networkEntries: NetworkEntry[] = [];
+  page.on('request', (request) => {
+    networkEntries.push({ method: request.method(), url: request.url(), status: 'PENDING' });
+  });
+  page.on('response', (response) => {
+    for (let i = networkEntries.length - 1; i >= 0; i -= 1) {
+      const entry = networkEntries[i];
+      if (entry.status === 'PENDING' && entry.url === response.url()) {
+        entry.status = response.status();
+        break;
+      }
+    }
+  });
 
   const readOnlyText = async (selector: string): Promise<string> =>
     page.$eval(selector, (element) => element.textContent ?? '').catch(() => '');
@@ -109,6 +146,7 @@ export async function createUiSession(input: Readonly<{
   const session: UiSession = {
     page,
     consoleErrors,
+    networkLog: () => networkEntries.slice(),
     navigateToRuntime: async () => {
       const response = await page.goto(`${input.baseUrl}/runtime/`, {
         waitUntil: 'networkidle2',
@@ -164,6 +202,22 @@ export async function createUiSession(input: Readonly<{
       }
       throw new Error(`Timed out waiting for ${String(pattern)} in ${selector} (last: "${last}").`);
     },
+    focus: async (selector: string) => {
+      await page.focus(selector);
+    },
+    press: async (key: KeyInput) => {
+      await page.keyboard.press(key);
+    },
+    selectValue: async (selector: string, value: string) => {
+      await page.select(selector, value);
+    },
+    queryTexts: async (selector: string) =>
+      page.$$eval(
+        selector,
+        (elements) => elements.map((element) => element.textContent ?? ''),
+      ),
+    countElements: async (selector: string) =>
+      page.$$eval(selector, (elements) => elements.length),
     /**
      * Kimlik alanlarını GERÇEK klavye etkileşimiyle boşaltır (DOM enjeksiyonu
      * yok). Böylece ekran görüntüleri maskeli kalır.
@@ -224,6 +278,8 @@ export async function launchE2eBrowser(): Promise<Browser> {
   });
 }
 
+export const PHONE_LEAK_PATTERN = /(?<![\d])(?:\+90|0090|0)?\s?5\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?![\d])/;
+
 /**
  * PII/secret sızıntı taraması. Kabul artefaktları (DOM metni, report.json,
  * screenshot öncesi ekran) bu kurala uymak zorundadır.
@@ -240,7 +296,11 @@ export function scanTextForLeaks(text: string): string[] {
   if (/Invalid credentials|QueryFailedError|stack trace|credential_hash|password hash/i.test(value)) {
     findings.push('raw-backend-detail');
   }
-  if (/(?:\+90|0090|0)?\s?5\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}/.test(value)) {
+  // Rakam sınırları: UUID segmentlerindeki rastgele rakam dizileri (ör.
+  // `-975911775950`) gerçek telefonla karışmaması için eşleşme bir rakama
+  // bitişik olamaz. Gerçek telefonlar (`+90 532 123 45 67`, `05321234567`)
+  // ayraç ya da metin sınırıyla ayrıldığından tarama zayıflamaz.
+  if (PHONE_LEAK_PATTERN.test(value)) {
     findings.push('phone-like-value');
   }
   for (const match of value.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)) {

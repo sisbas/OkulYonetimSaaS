@@ -118,6 +118,44 @@ describe('AttendanceSessionController list() (P1: users.id vs teachers.id)', () 
     expect(listByTeacher).not.toHaveBeenCalled();
   });
 
+  it('injects tenantId from the verified context, never the body (tenant isolation)', async () => {
+    const createFromPublishedOccurrence = jest.fn(async () => makeSession());
+    const { controller, req } = setup(makeActor(), {
+      createFromPublishedOccurrence,
+    });
+    req.context!.tenantId = TENANT_ID;
+
+    const body = {
+      tenantId: '99999999-9999-4999-8999-999999999999', // spoof — asla body'den inanılmaz
+      scheduleEventId: 'evt-1',
+      sessionDate: new Date('2026-09-01'),
+      studentIds: ['s1'],
+    };
+    await controller.create(req, body);
+
+    expect(createFromPublishedOccurrence).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: TENANT_ID, actorId: USERS_ID }),
+      req.context,
+    );
+  });
+
+  it('fails closed when the tenant context is missing', async () => {
+    const createFromPublishedOccurrence = jest.fn(async () => makeSession());
+    const { controller, req } = setup(makeActor(), {
+      createFromPublishedOccurrence,
+    });
+    req.context = undefined as unknown as RequestWithContext['context'];
+    const body = {
+      tenantId: '99999999-9999-4999-8999-999999999999',
+      scheduleEventId: 'evt-1',
+      sessionDate: new Date('2026-09-01'),
+      studentIds: ['s1'],
+    };
+
+    await expect(controller.create(req, body)).rejects.toThrow('Tenant context required');
+    expect(createFromPublishedOccurrence).not.toHaveBeenCalled();
+  });
+
   it('passes the selected branch to attendance list queries', async () => {
     const listByTeacher = jest.fn(async () => [makeSession()]);
     const { controller, req } = setup(makeActor(), { listByTeacher });

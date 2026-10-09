@@ -29,6 +29,7 @@ import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ScheduleModule } from './schedules/schedule.module';
 import { ParentsModule } from './parents/parents.module';
+import { KvkkModule } from './kvkk/kvkk.module';
 
 // #261 quarantine: eokul-sync / reports are UNSUPPORTED paths until their
 // acceptance is real. Keep them OUT of the runtime graph unless explicitly
@@ -68,6 +69,8 @@ if (process.env.ENABLE_REPORTS === 'true') {
     // (`AUDIT_HMAC_PREVIOUS_KEYS`) fail-closed doğrulaması boot'ta HİÇ
     // çalışmıyordu. Regresyon koruması: `src/app.module.spec.ts`.
     AuditModule,
+    // Stage 5 — consent yönetim yüzeyi (/api/v1/consents).
+    KvkkModule,
 
     ...QUARANTINED_MODULES,
   ],

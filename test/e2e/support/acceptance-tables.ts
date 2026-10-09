@@ -14,12 +14,24 @@
  * Bu tablolar "kim/nerede/ne zaman" sorusunu tanımlar; bir işin SONUCUNU
  * (onaylı izin, yedek görevlendirme, yoklama, bildirim, program olayı) temsil
  * ETMEZ.
+ *
+ * `kvkk_consent_subjects` / `kvkk_consents`: N3 senaryo önkoşullarıdır —
+ * izin (consent) satırları bir İŞ SONUCU değil, yetki otoritesinin girdisidir;
+ * bu yüzden referans fixture olarak SQL ile seed edilir ve senaryo 3'teki
+ * revoke, otorite olayıdır (dispatch sonucu üretmez).
+ *
+ * `students`: "kim" verisidir (yoklama/bildirim satırı ÜRETMEZ); ürün
+ * yüzeyinde öğrenci CRUD API'si bulunmadığından N3 kabul harness'ı
+ * önkoşul öğrencilerini yalnız bu listedeki SQL yoluyla ekleyebilir.
  */
 export const REFERENCE_TABLES: ReadonlyArray<string> = Object.freeze([
   'branches',
   'courses',
+  'kvkk_consents',
+  'kvkk_consent_subjects',
   'rooms',
   'student_groups',
+  'students',
   'teacher_branches',
   'teacher_courses',
   'teachers',
@@ -33,6 +45,9 @@ export const REFERENCE_TABLES: ReadonlyArray<string> = Object.freeze([
 /**
  * İş sonucu (business outcome) tabloları. Kabul testlerinde SQL ile
  * ÜRETİLEMEZ; yalnızca gerçek işlemsel yol (görünür UI / public API) üretir.
+ *
+ * `notification_dispatch_receipts`: provider denemesinin kalıcı kanıtı;
+ * N2'de yalnız dispatch servisi yazar (guard yalnız SELECT'e izin verir).
  */
 export const JOB_OUTCOME_TABLES: ReadonlyArray<string> = Object.freeze([
   'attendance_records',
@@ -40,6 +55,7 @@ export const JOB_OUTCOME_TABLES: ReadonlyArray<string> = Object.freeze([
   'leave_outbox_events',
   'leave_requests',
   'leave_substitution_assignments',
+  'notification_dispatch_receipts',
   'notification_logs',
   'notification_outbox',
   'schedule_events',

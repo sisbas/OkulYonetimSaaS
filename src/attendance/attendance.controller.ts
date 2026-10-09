@@ -54,9 +54,15 @@ export class AttendanceSessionController {
     @Body() body: CreateSessionInput,
   ) {
     const actor = await this.resolveActor(req);
+    // Tenant isolation: tenantId asla body'den gelmez (schedule.controller.ts
+    // kuralı); TenantScopeGuard doğrulanmış context'i sağlar. Eksikse fail-closed.
+    if (!req.context?.tenantId) {
+      throw new ForbiddenException('Tenant context required');
+    }
     return this.sessionService.createFromPublishedOccurrence(
       {
         ...body,
+        tenantId: req.context.tenantId,
         actorId: actor.userId,
         // Correlation ID: audit kaydı isteğin izini taşır (#259).
         requestId: actor.requestId,

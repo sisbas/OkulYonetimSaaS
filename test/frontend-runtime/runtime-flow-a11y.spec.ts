@@ -171,6 +171,9 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
   });
 
   it('does not expose internal labels, transport versions or backend jargon in visible runtime copy', () => {
+    // 'Version:' jargonu yalnız string kopyasında yasak; tanımlayıcı bağlamı
+    // (ör. `activeNotificationVersion:`) görünür kopya değildir.
+    const appCopy = app.replace(/\w+Version:/g, '');
     for (const forbidden of [
       'Tenant ID',
       'Branch ID',
@@ -190,7 +193,7 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
       'Coverage:',
     ]) {
       expect(html).not.toContain(forbidden);
-      expect(app).not.toContain(forbidden);
+      expect(appCopy).not.toContain(forbidden);
     }
   });
 

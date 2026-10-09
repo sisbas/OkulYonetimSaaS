@@ -20,6 +20,7 @@ describe('NotificationDraftService', () => {
   const mockDraft: NotificationDraftRow = {
     id: 'draft-1',
     tenantId: '10000000-0000-4000-8000-000000000001',
+    sessionId: '30000000-0000-4000-8000-000000000001',
     dedupeKey: 'attendance.absent:session:student',
     eventType: 'attendance.absent.locked',
     channel: 'sms',
@@ -34,6 +35,7 @@ describe('NotificationDraftService', () => {
       template: { eventType: 'attendance.absent.locked', channel: 'sms', templateRef: 'attendance.absent.locked:sms' },
       enqueuedAt: '2026-10-05T12:00:00.000Z',
     },
+    version: 0,
     availableAt: new Date('2026-10-05T12:00:00Z'),
     createdAt: new Date('2026-10-05T12:00:00Z'),
   };
@@ -43,6 +45,7 @@ describe('NotificationDraftService', () => {
       findDrafts: jest.fn(),
       findDraftById: jest.fn(),
       transitionDraft: jest.fn(),
+      transitionDraftsForSession: jest.fn(),
     } as unknown as jest.Mocked<NotificationOutboxRepository>;
     service = new NotificationDraftService(outbox);
   });
@@ -82,6 +85,7 @@ describe('NotificationDraftService', () => {
       outbox.transitionDraft.mockResolvedValue({ id: 'draft-1', status: 'approved', version: 1 });
       const result = await service.approveDraft({} as any, {
         tenantId,
+        branchId: ctx.branchId!,
         id: 'draft-1',
         expectedVersion: 0,
       });
@@ -89,6 +93,7 @@ describe('NotificationDraftService', () => {
         {},
         expect.objectContaining({
           tenantId,
+          branchId: ctx.branchId,
           id: 'draft-1',
           targetStatus: 'approved',
           expectedVersion: 0,
@@ -103,6 +108,7 @@ describe('NotificationDraftService', () => {
       outbox.transitionDraft.mockResolvedValue({ id: 'draft-1', status: 'closed', version: 1 });
       const result = await service.closeDraft({} as any, {
         tenantId,
+        branchId: ctx.branchId!,
         id: 'draft-1',
         expectedVersion: 0,
       });
@@ -110,12 +116,45 @@ describe('NotificationDraftService', () => {
         {},
         expect.objectContaining({
           tenantId,
+          branchId: ctx.branchId,
           id: 'draft-1',
           targetStatus: 'closed',
           expectedVersion: 0,
         }),
       );
       expect(result.status).toBe('closed');
+    });
+  });
+
+  describe('bulkApproveSession', () => {
+    it('delegates to outbox.transitionDraftsForSession with session scope (all-or-nothing)', async () => {
+      outbox.transitionDraftsForSession.mockResolvedValue([
+        { id: 'draft-1', status: 'approved', version: 1 },
+        { id: 'draft-2', status: 'approved', version: 1 },
+      ]);
+      const result = await service.bulkApproveSession({} as any, {
+        tenantId,
+        branchId: ctx.branchId!,
+        sessionId: '30000000-0000-4000-8000-000000000001',
+        expectedVersions: [
+          { id: 'draft-1', version: 0 },
+          { id: 'draft-2', version: 0 },
+        ],
+      });
+      expect(outbox.transitionDraftsForSession).toHaveBeenCalledWith(
+        {},
+        expect.objectContaining({
+          tenantId,
+          branchId: ctx.branchId,
+          sessionId: '30000000-0000-4000-8000-000000000001',
+          targetStatus: 'approved',
+          expectedVersions: [
+            { id: 'draft-1', version: 0 },
+            { id: 'draft-2', version: 0 },
+          ],
+        }),
+      );
+      expect(result.every((row) => row.status === 'approved')).toBe(true);
     });
   });
 });

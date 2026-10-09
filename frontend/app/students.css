@@ -1,0 +1,77 @@
+/* HERO: The class-register summary celebrates the school while keeping student records precise. */
+.student-summary {
+  display: grid;
+  grid-template-columns: 1.65fr repeat(3, 1fr);
+  align-items: center;
+  gap: 28px;
+  padding: 30px 34px;
+  border: 1px solid #d8ddcf;
+  background: #e9eddf;
+  border-radius: 7px;
+  margin-bottom: 30px;
+}
+.student-kicker { font-size: 9px; font-weight: 600; letter-spacing: 1.5px; color: #46523e; }
+.student-summary h2 { font-family: Georgia, serif; font-weight: 400; font-size: 31px; line-height: 1.15; letter-spacing: -1px; margin: 13px 0 0; }
+.student-summary h2 em { color: var(--primary); }
+.student-stat { display: flex; flex-direction: column; gap: 9px; border-left: 1px solid #ccd4bf; padding-left: 28px; }
+.student-stat strong { font-size: 40px; font-weight: 400; line-height: 1; letter-spacing: -1.5px; }
+.student-stat span { font-size: 11px; color: var(--muted); }
+.student-register-header { display: flex; align-items: center; justify-content: space-between; padding: 23px 26px; border-bottom: 1px solid var(--line); gap: 20px; }
+.student-register-header h2 { font-family: Georgia, serif; font-size: 25px; font-weight: 400; letter-spacing: -.6px; margin: 0; }
+.student-register-header p { margin: 5px 0 0; font-size: 11px; color: var(--muted); }
+.student-record-count { font-size: 10px; border: 1px solid var(--line); padding: 5px 11px; border-radius: 3px; white-space: nowrap; }
+.student-toolbar { display: grid; grid-template-columns: minmax(200px, 1fr) 175px 160px; gap: 16px; padding: 20px 26px 12px; align-items: end; }
+.student-search-label { display: flex; align-items: center; gap: 10px; padding: 0 13px; background: #f7f5ee; border: 1px solid #c4cabe; border-radius: 4px; min-width: 0; }
+.student-search-label > span:not(.sr-only) { color: var(--primary); font-size: 26px; }
+.students-surface .student-search-label input { width: 100%; border: 0; border-radius: 0; background: transparent; padding: 13px 0; min-height: 44px; font-size: 12px; color: var(--ink); }
+.student-search-label:focus-within { outline: 3px solid var(--primary); outline-offset: 2px; }
+.students-surface .student-search-label input:focus-visible { outline: none; }
+.student-filter { display: grid; gap: 6px; font-size: 10px; font-weight: 600; }
+.students-surface .student-filter select { min-height: 44px; padding: 10px 12px; border: 1px solid #c4cabe; border-radius: 4px; background: #fffef9; font-size: 11px; color: var(--ink); }
+.student-result-count { margin: 0; padding: 4px 26px 16px; font-size: 10px; color: var(--muted); }
+.student-table .table-wrap { overflow-x: auto; }
+.student-table table { width: 100%; min-width: 740px; }
+.students-surface .student-table td { padding: 16px 20px; }
+.students-surface .student-table th { padding: 12px 20px; border-top: 1px solid var(--line); white-space: nowrap; }
+.student-identity { display: flex; align-items: center; gap: 12px; min-width: 175px; }
+.student-identity > div { display: flex; flex-direction: column; gap: 3px; }
+.student-identity strong { font-size: 12px; font-weight: 600; }
+.student-identity > div > span { font-size: 9px; color: var(--muted); }
+.student-avatar { width: 36px; height: 36px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: #e5ebfa; color: #2548a8; font-size: 11px; font-weight: 600; }
+.student-avatar-1 { background: #e6eadb; color: #415233; }
+.student-avatar-2 { background: #eeece1; color: #67553b; }
+.student-number { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11px; }
+.student-class { display: inline-block; padding: 4px 9px; border: 1px solid #d9ddd2; border-radius: 3px; font-size: 10px; white-space: nowrap; }
+.student-contact { font-size: 10px; color: #405735; white-space: nowrap; }
+.student-contact-missing { color: #815719; }
+.student-detail { display: inline-flex; align-items: center; gap: 15px; font-size: 11px; font-weight: 600; min-height: 40px; white-space: nowrap; }
+.student-detail:hover { text-decoration: underline; text-underline-offset: 4px; }
+.student-pagination { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 17px 26px; background: #f6f5ee; font-size: 10px; color: var(--muted); }
+.student-pagination > div { display: flex; align-items: center; gap: 14px; }
+.student-pagination button { min-width: 36px; min-height: 36px; padding: 6px; background: #fffef9; }
+.student-empty { text-align: center; padding: 45px 20px; border-top: 1px solid var(--line); }
+.student-empty > span { display: block; font-size: 42px; color: var(--primary); }
+.student-empty h3 { font-family: Georgia, serif; font-size: 24px; font-weight: 400; margin: 10px 0; }
+.student-empty p { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+.student-bottom-note { margin: 17px 0 0; color: var(--muted); font-size: 10px; }
+.student-summary { animation: student-arrive .6s both; }
+@keyframes student-arrive { from { opacity: 0; translate: 0 10px; } to { opacity: 1; translate: 0 0; } }
+@media (max-width: 1050px) {
+  .student-summary { gap: 20px; padding: 25px; }
+  .student-stat { padding-left: 20px; }
+  .student-summary h2 { font-size: 27px; }
+  .student-toolbar { grid-template-columns: 1fr 1fr; }
+  .student-search-label { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .student-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 23px; gap: 25px 15px; }
+  .student-summary-title { grid-column: 1 / -1; }
+  .student-stat { padding-left: 12px; }
+  .student-stat strong { font-size: 30px; }
+  .student-stat span { font-size: 9px; }
+  .student-register-header { padding: 20px 16px; }
+  .student-toolbar { padding: 16px 16px 10px; gap: 12px; }
+  .student-result-count { padding-left: 16px; padding-right: 16px; }
+  .student-pagination { padding: 16px; flex-wrap: wrap; gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .student-summary { animation: none; } }

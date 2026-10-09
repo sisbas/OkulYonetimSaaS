@@ -16,6 +16,12 @@ const state = {
   impactCount: 0,
   candidateCount: 0,
   activeLessonLabel: '',
+  activeNotificationId: '',
+  activeNotificationVersion: 0,
+  scheduleId: '',
+  scheduleRevision: 0,
+  scheduleEvents: [],
+  activeAttendanceSessionId: '',
   lastAction: 'Henüz işlem yapılmadı.',
 };
 
@@ -39,6 +45,19 @@ const reasonUi = {
   ASSIGNMENT_NOT_FOUND: ['empty_or_not_found_same_scope', 'Aktif görevlendirme bulunamadı.'],
   SERVER_ERROR: ['error_retryable', 'İşlem tamamlanamadı.'],
   OFFLINE_OR_UNAVAILABLE: ['offline_or_unavailable', 'Bağlantı kurulamadı.'],
+  CLAIM_ACTIVE: ['conflict_blocking', 'Bu bildirim şu anda gönderiliyor; kısa süre sonra yenileyin.'],
+  BACKOFF_ACTIVE: ['conflict_blocking', 'Yeniden deneme beklemede; biraz sonra tekrar deneyin.'],
+  NOT_DISPATCHABLE: ['locked_state', 'Bu durumda gönderim eylemi uygulanamaz; kayıt durumunu yenileyin.'],
+  CLAIM_LOST: ['conflict_blocking', 'Kayıt başka bir işlemle değişti; listeyi yenileyin.'],
+  NOTIFICATION_NOT_FOUND: ['empty_or_not_found_same_scope', 'Bildirim bulunamadı veya kapsamınız dışında.'],
+  NOTIFICATION_OUTBOX_SCOPE_REQUIRED: ['branch_context_required', 'Bildirim işlemi için şube bağlamı gerekli.'],
+  NOTIFICATION_STATUS_FILTER_INVALID: ['validation_error', 'Durum filtresi geçersiz.'],
+  'CONSENT NOT IN AN APPROVED STATE': ['conflict_blocking', 'Onay zaten kapalı veya geçersiz durumda; işlem yapılamaz.'],
+  'NOTIFICATION DRAFT BULK VERSION CONFLICT': ['stale_version', 'Liste güncellendi; yenileyip tekrar deneyin.'],
+  CONSENT_SUBJECT_TYPE_INVALID: ['validation_error', 'Onay özne türü geçersiz.'],
+  CONSENT_REVOKE_BODY_REQUIRED: ['validation_error', 'Onay geri çekme bilgileri eksik.'],
+  ATTENDANCE_SESSION_CONFLICT: ['conflict_blocking', 'Oturum kilitli; kontrollü düzeltme akışı gerekir.'],
+  ATTENDANCE_OPTIMISTIC_CONFLICT: ['stale_version', 'Oturum güncellendi; yenileyip tekrar deneyin.'],
 };
 
 const GENERIC_NEST_ERRORS = new Set(['Bad Request', 'Forbidden', 'Conflict', 'Precondition Failed', 'Not Found', 'Unauthorized']);
@@ -71,6 +90,20 @@ const statusLabels = {
   partially_covered: 'Kısmen karşılandı',
   not_required: 'Karşılık gerekmiyor',
   cancelled: 'İptal edildi',
+  blocked_consent: 'Onay engelli',
+  dispatched: 'Gönderildi',
+  failed: 'Başarısız',
+  dead_lettered: 'Durduruldu',
+  uncertain: 'Belirsiz',
+  closed: 'Kapatıldı',
+  draft: 'Taslak',
+  published: 'Yayınlandı',
+  locked: 'Kilitli',
+  present: 'Hazır',
+  absent: 'Devamsız',
+  late: 'Geç',
+  excused: 'Mazeretli',
+  revoked: 'Geri çekildi',
   unknown: 'Durum bekleniyor',
 };
 const statusTones = {
@@ -84,7 +117,20 @@ const statusTones = {
   partially_covered: 'warning',
   uncovered: 'danger',
   rejected: 'danger',
+  failed: 'danger',
+  dead_lettered: 'danger',
+  dispatched: 'success',
+  blocked_consent: 'warning',
+  uncertain: 'warning',
   cancelled: 'neutral',
+  closed: 'neutral',
+  draft: 'neutral',
+  published: 'success',
+  locked: 'success',
+  present: 'success',
+  late: 'warning',
+  excused: 'neutral',
+  revoked: 'neutral',
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -291,7 +337,11 @@ function clearBranchWork() {
   state.activeAssignmentId = '';
   state.activeLessonLabel = '';
   state.queueCount = state.impactCount = state.candidateCount = 0;
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output']) {
+  state.scheduleId = '';
+  state.scheduleRevision = 0;
+  state.scheduleEvents = [];
+  state.activeAttendanceSessionId = '';
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail']) {
     $(id).innerHTML = '';
   }
 }
@@ -332,10 +382,12 @@ async function login(event) {
     state.accessToken = result.accessToken || '';
     state.tenantId = tenantId;
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
-    announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
     updateWorkflowProgress();
     const { body: catalog } = await apiRequest('/context');
     applyCatalog(catalog);
+    // Başarı bildirimi ancak katalog uygulandıktan sonra yayınlanır; aksi halde
+    // şube seçimi yapılmaya hazır görünürken applyCatalog seçimi sıfırlar.
+    announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
   } catch (error) {
     state.accessToken = '';
     setStatus('Oturum başarısız', 'danger');
@@ -372,6 +424,7 @@ function activateTab(name) {
   });
   document.querySelectorAll('.runtime-panel').forEach((panel) => panel.classList.toggle('hidden', panel.dataset.panel !== name));
   $('#runtime-main').focus();
+  if (name === 'notifications' && state.accessToken) loadNotifications();
 }
 
 async function createLeave(event) {
@@ -555,6 +608,21 @@ function renderCandidate(candidate) {
   </article>`;
 }
 
+/**
+ * Aday kartındaki "temizle" eylemini güncel görevlendirme durumuyla eşitler.
+ * `renderCandidate` yalnız render anındaki `state` değerini yansıttığı için
+ * başarılı assign sonrası kart yeniden çizilmeden eylem kilitli kalırdı;
+ * sunucu-otoriter sonucu UI'ya burada yansıtırız (ve temizleme sonrası kilitler).
+ */
+function syncCandidateAssignmentActions() {
+  const enabled = Boolean(state.activeAssignmentId && state.activeLeaveEtag);
+  document
+    .querySelectorAll('#candidate-output button[data-action="clear"]')
+    .forEach((button) => {
+      button.disabled = !enabled;
+    });
+}
+
 async function createAssignment(teacherId) {
   if (!state.activeLeaveEtag) return announce('Güncel izin kaydı alınmadan görevlendirme yapılamaz.', 'warning');
   const target = $('#candidate-output');
@@ -567,6 +635,7 @@ async function createAssignment(teacherId) {
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
     if (!state.activeAssignmentId) state.activeAssignmentId = 'server-confirmed';
+    syncCandidateAssignmentActions();
     announce('Görevlendirme kaydedildi; günlük işler ve etki listesi yenileniyor.', 'success');
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
@@ -587,12 +656,664 @@ async function clearAssignment() {
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
     state.activeAssignmentId = '';
+    syncCandidateAssignmentActions();
     announce('Görevlendirme temizlendi; günlük işler ve etki listesi yenileniyor.', 'success');
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
   } catch (error) {
     renderError(target, error);
+  }
+}
+
+function renderLeaveEtag(leaveId, version) {
+  return `"leave:${leaveId}:v${version}"`;
+}
+
+async function loadLeaves() {
+  if (!requireSession()) return;
+  const branchId = getBranchId();
+  if (!branchId) return announce('İzin kararları için şube seçin.', 'warning');
+  const target = $('#leaves-output');
+  const query = new URLSearchParams({ branchId });
+  target.innerHTML = loading('İzin talepleri getiriliyor');
+  try {
+    const { body } = await apiRequest(`/leaves?${query.toString()}`);
+    const rows = asArray(body, ['leaves', 'items', 'requests', 'data']);
+    target.innerHTML = rows.length ? rows.map(renderLeaveDecisionCard).join('') : empty('Bu kapsamda izin talebi yok.');
+    announce(`${rows.length} izin talebi listelendi.`, 'success');
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function renderLeaveDecisionCard(leave) {
+  const leaveId = pick(leave, ['id']);
+  const decision = String(pick(leave, ['decisionStatus'], 'unknown')).toLowerCase();
+  const coverage = String(pick(leave, ['coverageStatus'], 'unknown')).toLowerCase();
+  const pending = decision === 'pending' || decision === 'unknown';
+  const etag = renderLeaveEtag(leaveId, Number(pick(leave, ['version'], 1)));
+  return `<article class="card">
+    <h3>İzin talebi · ${escapeHtml(displayStatus(decision))}</h3>
+    <p class="card-meta">
+      <span>Karşılık: ${escapeHtml(displayStatus(coverage))}</span>
+      <span>${escapeHtml(pick(leave, ['reasonCode'], '-'))}</span>
+      <span>${escapeHtml(formatStamp(pick(leave, ['createdAt'], '')))}</span>
+    </p>
+    ${pending
+      ? `<div class="quick-actions">
+          <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="approve" data-leave-etag="${escapeHtml(etag)}">Onayla</button>
+          <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="reject" data-leave-etag="${escapeHtml(etag)}">Reddet</button>
+        </div>`
+      : '<p class="hint">Bu talebin kararı verilmiş; kayıt güncelliği listeyle birlikte tazelenir.</p>'}
+  </article>`;
+}
+
+async function decideLeave(leaveId, decision, etag) {
+  if (!requireSession()) return;
+  const target = $('#leaves-output');
+  target.innerHTML = loading('Karar sunucuda uygulanıyor');
+  try {
+    const { body } = await apiRequest(`/leaves/${encodeURIComponent(leaveId)}/${encodeURIComponent(decision)}`, {
+      method: 'PATCH',
+      headers: { 'If-Match': etag },
+    });
+    const nextDecision = pick(body, ['decisionStatus'], '');
+    announce(`İzin kararı tamamlandı${nextDecision ? ` · ${displayStatus(nextDecision)}` : ''}.`, 'success');
+    await loadLeaves();
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function loadConsents() {
+  if (!requireSession()) return;
+  const target = $('#consents-output');
+  target.innerHTML = loading('Onaylar getiriliyor');
+  try {
+    const { body } = await apiRequest('/consents');
+    const rows = asArray(body, ['consents', 'items']);
+    target.innerHTML = rows.length ? rows.map(renderConsentCard).join('') : empty('Bu kapsamda onay kaydı yok.');
+    announce(`${rows.length} onay kaydı listelendi.`, 'success');
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function renderConsentCard(row) {
+  const subjectType = pick(row, ['subjectType'], 'student');
+  const subjectRefId = pick(row, ['subjectRefId']);
+  const consentType = pick(row, ['consentType'], '');
+  const status = String(pick(row, ['status'], 'unknown')).toLowerCase();
+  const revocable = status === 'approved';
+  return `<article class="card">
+    <h3>${escapeHtml(consentType)} · ${escapeHtml(displayStatus(status))}</h3>
+    <p class="card-meta">
+      <span>Özne: ${escapeHtml(subjectType)}</span>
+      <span>Sürüm: ${escapeHtml(pick(row, ['version'], 0))}</span>
+      <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
+    </p>
+    ${revocable
+      ? `<button type="button" data-action="consent-revoke" data-subject-ref-id="${escapeHtml(subjectRefId)}" data-subject-type="${escapeHtml(subjectType)}" data-consent-type="${escapeHtml(consentType)}">Onayı geri çek</button>`
+      : '<p class="hint">Onay zaten kapalı; geri çekilecek bir kayıt yok.</p>'}
+  </article>`;
+}
+
+async function revokeConsent(subjectRefId, subjectType, consentType) {
+  if (!requireSession()) return;
+  const target = $('#consents-output');
+  target.innerHTML = loading('Onay geri çekiliyor');
+  try {
+    const { body } = await apiRequest('/consents/revoke', {
+      method: 'POST',
+      body: { subjectRefId, subjectType, consentType },
+    });
+    announce(`Onay geri çekildi · ${escapeHtml(pick(body, ['consentType'], consentType))} (${escapeHtml(displayStatus(pick(body, ['status'], 'revoked')))}).`, 'success');
+    await loadConsents();
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function groupDraftsBySession(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const sessionId = pick(row, ['sessionId'], '');
+    const key = sessionId || 'no-session';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return groups;
+}
+
+function renderSessionBulkAction(rows) {
+  const approvable = rows.filter((row) => {
+    const status = String(pick(row, ['status'], '')).toLowerCase();
+    return status === 'pending' || status === 'blocked_consent';
+  });
+  if (!approvable.length) return '<p class="hint">Bu oturum için bekleyen onay yok.</p>';
+  const expectedVersions = approvable.map((row) => ({
+    id: pick(row, ['id']),
+    version: Number(pick(row, ['version'], 0)),
+  }));
+  return `<button type="button" data-action="bulk-approve-session" data-session-id="${escapeHtml(pick(approvable[0], ['sessionId'], ''))}" data-versions="${escapeHtml(encodeURIComponent(JSON.stringify(expectedVersions)))}">Bu oturumun ${approvable.length} taslağını toplu onayla</button>`;
+}
+
+async function bulkApproveSession(sessionId, versionsCsv) {
+  if (!requireSession()) return;
+  let expectedVersions;
+  try {
+    expectedVersions = JSON.parse(decodeURIComponent(versionsCsv));
+  } catch (_error) {
+    return announce('Toplu onay için sürüm bilgisi çözülemedi.', 'warning');
+  }
+  const target = $('#bulk-approve-output');
+  target.innerHTML = loading('Toplu onay sunucuda uygulanıyor');
+  try {
+    await apiRequest(`/notifications/drafts/session/${encodeURIComponent(sessionId)}/approve`, {
+      method: 'POST',
+      body: { expectedVersions },
+    });
+    announce('Oturum taslakları toplu onaylandı.', 'success');
+    await loadNotifications();
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function createSchedule(event) {
+  event.preventDefault();
+  if (!requireSession()) return;
+  const branchId = getBranchId();
+  const target = $('#schedule-status');
+  const effectiveFrom = $('#schedule-effective-from').value;
+  const effectiveTo = $('#schedule-effective-to').value || null;
+  if (!branchId || !effectiveFrom) return announce('Çizelge için şube ve geçerlilik başlangıcı gerekli.', 'warning');
+  target.innerHTML = loading('Çizelge oluşturuluyor');
+  try {
+    const { body } = await apiRequest('/schedules', {
+      method: 'POST',
+      body: { branchId, effectiveFrom, effectiveTo },
+    });
+    state.scheduleId = pick(body, ['scheduleId', 'id'], '');
+    state.scheduleRevision = Number(pick(body, ['revision', 'versionNo', 'revisionNo'], 1)) || 1;
+    state.scheduleEvents = [];
+    renderScheduleStatus();
+    announce('Çizelge oluşturuldu; olay satırları ekleyip taslağı kaydedin.', 'success');
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function renderScheduleStatus() {
+  const target = $('#schedule-status');
+  target.innerHTML = `<article class="card">
+    <h3>${state.scheduleId ? 'Çizelge hazır' : 'Çizelge yok'}</h3>
+    <p>Kimlik: ${escapeHtml(state.scheduleId || '-')} · Revizyon: ${escapeHtml(state.scheduleRevision)}</p>
+    <p>Olay sayısı: ${state.scheduleEvents.length}</p>
+  </article>`;
+  $('#schedule-events').innerHTML = state.scheduleEvents.length
+    ? state.scheduleEvents.map(renderScheduleEventRow).join('')
+    : '<p class="hint">Henüz olay satırı yok; satır ekleyip doldurun.</p>';
+}
+
+function renderScheduleEventRow(event, index) {
+  const hasAllRefs = Boolean(event.teacherId && event.studentGroupId && event.courseId && event.roomId && event.timeSlotId);
+  return `<article class="card" data-schedule-row="${index}">
+    <h3>Olay ${index + 1} · ${escapeHtml(pick(event, ['dayOfWeek'], ''))}. gün ${escapeHtml(pick(event, ['startTime'], ''))}-${escapeHtml(pick(event, ['endTime'], ''))}</h3>
+    <p class="card-meta">
+      <span>${hasAllRefs ? 'Referanslar tamam' : 'Referanslar eksik'}</span>
+      <span>Olay: ${escapeHtml(pick(event, ['eventId'], '-'))}</span>
+    </p>
+    <div class="grid-form">
+      <label>Gün (0-6) <input data-schedule-field="dayOfWeek" type="number" min="0" max="6" value="${escapeHtml(pick(event, ['dayOfWeek'], 0))}" /></label>
+      <label>Başlangıç <input data-schedule-field="startTime" value="${escapeHtml(pick(event, ['startTime'], ''))}" /></label>
+      <label>Bitiş <input data-schedule-field="endTime" value="${escapeHtml(pick(event, ['endTime'], ''))}" /></label>
+      <label>Öğretmen <input data-schedule-field="teacherId" value="${escapeHtml(event.teacherId || '')}" /></label>
+      <label>Şube (öğretmen ataması UUID) <input data-schedule-field="teacherBranchId" value="${escapeHtml(event.teacherBranchId || '')}" /></label>
+      <label>Öğrenci grubu <input data-schedule-field="studentGroupId" value="${escapeHtml(event.studentGroupId || '')}" /></label>
+      <label>Ders <input data-schedule-field="courseId" value="${escapeHtml(event.courseId || '')}" /></label>
+      <label>Derslik <input data-schedule-field="roomId" value="${escapeHtml(event.roomId || '')}" /></label>
+      <label>Zaman dilimi <input data-schedule-field="timeSlotId" value="${escapeHtml(event.timeSlotId || '')}" /></label>
+    </div>
+    <div class="quick-actions">
+      <button type="button" data-action="schedule-row-update" data-schedule-index="${index}">Satırı güncelle</button>
+      <button type="button" data-action="schedule-row-remove" data-schedule-index="${index}">Satırı sil</button>
+    </div>
+  </article>`;
+}
+
+function addScheduleEvent() {
+  if (!state.scheduleId) return announce('Önce çizelge oluşturun.', 'warning');
+  const defaults = {
+    eventId: crypto.randomUUID ? crypto.randomUUID() : '',
+    teacherId: '',
+    teacherBranchId: '',
+    studentGroupId: '',
+    courseId: '',
+    roomId: '',
+    timeSlotId: '',
+    dayOfWeek: 1,
+    startTime: '09:00',
+    endTime: '09:40',
+  };
+  state.scheduleEvents.push(defaults);
+  renderScheduleStatus();
+}
+
+function scheduleEventsFromForm() {
+  return state.scheduleEvents.map((event, index) => {
+    const row = document.querySelector(`[data-schedule-row="${index}"]`);
+    const read = (name) => row?.querySelector(`[data-schedule-field="${name}"]`)?.value ?? event[name];
+    return {
+      eventId: event.eventId || '',
+      teacherId: read('teacherId') || '',
+      teacherBranchId: read('teacherBranchId') || '',
+      studentGroupId: read('studentGroupId') || '',
+      courseId: read('courseId') || '',
+      roomId: read('roomId') || '',
+      timeSlotId: read('timeSlotId') || '',
+      dayOfWeek: Number(read('dayOfWeek')),
+      startTime: read('startTime'),
+      endTime: read('endTime'),
+    };
+  });
+}
+
+function updateScheduleRow(index) {
+  if (!state.scheduleEvents[index]) return;
+  const row = document.querySelector(`[data-schedule-row="${index}"]`);
+  const read = (name) => row?.querySelector(`[data-schedule-field="${name}"]`)?.value ?? state.scheduleEvents[index][name];
+  state.scheduleEvents[index] = {
+    ...state.scheduleEvents[index],
+    teacherId: read('teacherId') || '',
+    teacherBranchId: read('teacherBranchId') || '',
+    studentGroupId: read('studentGroupId') || '',
+    courseId: read('courseId') || '',
+    roomId: read('roomId') || '',
+    timeSlotId: read('timeSlotId') || '',
+    dayOfWeek: Number(read('dayOfWeek')),
+    startTime: read('startTime'),
+    endTime: read('endTime'),
+  };
+  renderScheduleStatus();
+}
+
+async function saveScheduleDraft() {
+  if (!requireSession()) return;
+  if (!state.scheduleId) return announce('Önce çizelge oluşturun.', 'warning');
+  const branchId = getBranchId();
+  const events = scheduleEventsFromForm();
+  state.scheduleEvents = events;
+  const target = $('#schedule-status');
+  target.innerHTML = loading('Taslak kaydediliyor');
+  try {
+    await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/draft`, {
+      method: 'POST',
+      body: { branchId, events },
+    });
+    state.scheduleRevision += 1;
+    announce('Taslak kaydedildi.', 'success');
+    renderScheduleStatus();
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function validateSchedule() {
+  if (!requireSession()) return;
+  if (!state.scheduleId) return announce('Önce çizelge oluşturun.', 'warning');
+  const branchId = getBranchId();
+  const events = scheduleEventsFromForm();
+  state.scheduleEvents = events;
+  const target = $('#schedule-status');
+  target.innerHTML = loading('Doğrulama sunucuda çalışıyor');
+  try {
+    const { body } = await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/validate`, {
+      method: 'POST',
+      body: { branchId, events, revision: state.scheduleRevision },
+    });
+    const evidence = body && body.evidence ? body.evidence : body;
+    const status = String(pick(evidence, ['status'], 'invalid')).toLowerCase();
+    const canPublish = Boolean(pick(evidence, ['canPublish'], false));
+    const reasons = asArray(evidence, ['reasons']);
+    target.innerHTML = `<article class="card">
+      <h3>Doğrulama · ${escapeHtml(displayStatus(status === 'valid' ? 'published' : 'draft'))}</h3>
+      <p>Yayınlanabilir: ${canPublish ? 'Evet' : 'Hayır'} · Çakışma: ${escapeHtml(pick(evidence, ['hardConflictCount'], 0))}</p>
+      ${reasons.length ? `<ul class="impact-list">${reasons.slice(0, 10).map((r) => `<li>${escapeHtml(pick(r, ['code'], '-'))}</li>`).join('')}</ul>` : ''}
+    </article>`;
+    announce(canPublish ? 'Doğrulama geçti; yayınlanabilir.' : 'Doğrulama engelleri var.', canPublish ? 'success' : 'warning');
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function publishSchedule() {
+  if (!requireSession()) return;
+  if (!state.scheduleId) return announce('Önce çizelge oluşturun.', 'warning');
+  const branchId = getBranchId();
+  const events = scheduleEventsFromForm();
+  state.scheduleEvents = events;
+  const target = $('#schedule-status');
+  target.innerHTML = loading('Çizelge yayınlanıyor');
+  try {
+    const { body } = await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/publish`, {
+      method: 'POST',
+      body: { branchId, events, revision: state.scheduleRevision, requestId: state.requestId || `${Date.now()}` },
+    });
+    void body;
+    announce('Çizelge yayınlandı.', 'success');
+    renderScheduleStatus();
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function unpublishSchedule() {
+  if (!requireSession()) return;
+  if (!state.scheduleId) return announce('Önce çizelge oluşturun.', 'warning');
+  const branchId = getBranchId();
+  const target = $('#schedule-status');
+  target.innerHTML = loading('Yayından kaldırılıyor');
+  try {
+    await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/unpublish`, {
+      method: 'POST',
+      body: { branchId, revision: state.scheduleRevision, requestId: state.requestId || `${Date.now()}` },
+    });
+    announce('Çizelge yayından kaldırıldı.', 'success');
+    renderScheduleStatus();
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function generateAttendance(event) {
+  event.preventDefault();
+  if (!requireSession()) return;
+  const branchId = getBranchId();
+  const scheduleEventId = $('#attendance-event-id').value.trim();
+  const rosterText = $('#attendance-student-ids').value;
+  const studentIds = rosterText
+    .split(/[\n,]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!branchId || !scheduleEventId || !studentIds.length) {
+    return announce('Yoklama oturumu için ders olayı ve öğrenci listesi gerekli.', 'warning');
+  }
+  const target = $('#attendance-detail');
+  target.innerHTML = loading('Yoklama oturumu açılıyor');
+  try {
+    const { body } = await apiRequest('/attendance/sessions', {
+      method: 'POST',
+      body: {
+        scheduleEventId,
+        sessionDate: $('#attendance-session-date').value || state.date || new Date().toISOString().slice(0, 10),
+        studentIds,
+      },
+    });
+    state.activeAttendanceSessionId = pick(body, ['id'], '');
+    announce('Yoklama oturumu açıldı; kayıtları işaretleyin.', 'success');
+    await loadAttendanceSessions();
+    if (state.activeAttendanceSessionId) await openAttendanceSession(state.activeAttendanceSessionId);
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function loadAttendanceSessions() {
+  if (!requireSession()) return;
+  const target = $('#attendance-sessions');
+  target.innerHTML = loading('Yoklama oturumları getiriliyor');
+  try {
+    const { body } = await apiRequest('/attendance/sessions');
+    const rows = asArray(body, ['sessions', 'items']);
+    target.innerHTML = rows.length ? rows.map(renderAttendanceSessionCard).join('') : empty('Bu kapsamda yoklama oturumu yok.');
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function renderAttendanceSessionCard(session) {
+  const sessionId = pick(session, ['id']);
+  const status = String(pick(session, ['status'], 'draft')).toLowerCase();
+  const roster = asArray(session, ['rosterSnapshot', 'roster']);
+  return `<article class="card">
+    <h3>Yoklama oturumu · ${escapeHtml(displayStatus(status))}</h3>
+    <p class="card-meta">
+      <span>${escapeHtml(formatStamp(pick(session, ['sessionDate'], '')))}</span>
+      <span>Sürüm: ${escapeHtml(pick(session, ['version'], 0))}</span>
+      <span>Öğrenci: ${roster.length}</span>
+    </p>
+    <button type="button" data-action="attendance-open" data-session-id="${escapeHtml(sessionId)}">Oturumu aç ve kayıtları yönet</button>
+  </article>`;
+}
+
+async function openAttendanceSession(sessionId) {
+  if (!requireSession()) return;
+  state.activeAttendanceSessionId = sessionId || state.activeAttendanceSessionId;
+  if (!state.activeAttendanceSessionId) return announce('Önce listeden bir oturum açın.', 'warning');
+  const target = $('#attendance-detail');
+  target.innerHTML = loading('Oturum detayı getiriliyor');
+  try {
+    const { body } = await apiRequest(`/attendance/sessions/${encodeURIComponent(state.activeAttendanceSessionId)}/records`);
+    renderAttendanceDetail(body);
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function renderAttendanceDetail(session) {
+  const sessionId = pick(session, ['id']);
+  const status = String(pick(session, ['status'], 'draft')).toLowerCase();
+  const version = Number(pick(session, ['version'], 0));
+  const roster = asArray(session, ['rosterSnapshot', 'roster']);
+  const locked = status === 'locked';
+  const rosterRows = roster.map((studentId, index) => `<li>
+    <strong>Öğrenci ${index + 1}</strong>
+    <span>${escapeHtml(String(studentId).slice(0, 8))}…</span>
+    ${locked
+      ? `<button type="button" data-action="attendance-correct" data-student-id="${escapeHtml(studentId)}" data-session-version="${version}">Kontrollü düzeltme</button>`
+      : `<span class="quick-actions">
+          ${['present', 'absent', 'late', 'excused'].map((mark) => `<button type="button" data-action="attendance-mark" data-session-id="${escapeHtml(sessionId)}" data-student-id="${escapeHtml(studentId)}" data-mark="${mark}">${escapeHtml(displayStatus(mark))}</button>`).join('')}
+        </span>`}
+  </li>`).join('');
+  const actions = locked
+    ? '<p class="hint">Oturum kilitli; kayıtlar kontrollü düzeltme (gözetim) akışıyla değişir.</p>'
+    : `<button type="button" data-action="attendance-lock" data-session-id="${escapeHtml(sessionId)}" data-session-version="${version}">Oturumu kilitle ve devamsızlıkları kuyruğa al</button>`;
+  $('#attendance-detail').innerHTML = `<article class="card">
+    <h3>Yoklama · ${escapeHtml(displayStatus(status))} · Sürüm ${escapeHtml(version)}</h3>
+    <p>Roster: ${roster.length} öğrenci</p>
+    <ul class="impact-list">${rosterRows || '<li>Roster yok.</li>'}</ul>
+    ${actions}
+  </article>`;
+}
+
+async function markAttendance(sessionId, studentId, mark) {
+  if (!requireSession()) return;
+  const target = $('#attendance-detail');
+  target.innerHTML = loading('Kayıt işaretleniyor');
+  try {
+    await apiRequest(`/attendance/sessions/${encodeURIComponent(sessionId)}/records`, {
+      method: 'POST',
+      body: { studentId, status: mark },
+    });
+    announce('Yoklama kaydı işaretlendi.', 'success');
+    await openAttendanceSession(sessionId);
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function lockAttendance(sessionId, version) {
+  if (!requireSession()) return;
+  const target = $('#attendance-detail');
+  target.innerHTML = loading('Oturum kilitleniyor');
+  try {
+    const { body } = await apiRequest(`/attendance/sessions/${encodeURIComponent(sessionId)}/lock`, {
+      method: 'POST',
+      body: { expectedVersion: Number(version) },
+    });
+    state.activeAttendanceSessionId = pick(body, ['id'], sessionId);
+    announce('Oturum kilitlendi; devamsızlık bildirimleri kuyruğa alındı.', 'success');
+    await openAttendanceSession(state.activeAttendanceSessionId);
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function correctAttendance(studentId, sessionVersion) {
+  if (!requireSession()) return;
+  const status = window.prompt('Düzeltme durumu (present/absent/late/excused):', 'present');
+  if (!status) return;
+  const reasonCode = window.prompt('Kapalı gerekçe kodu (data_entry_error / teacher_review / process_error):', 'data_entry_error');
+  if (!reasonCode) return;
+  const target = $('#attendance-detail');
+  target.innerHTML = loading('Kontrollü düzeltme uygulanıyor');
+  try {
+    await apiRequest(`/attendance/sessions/${encodeURIComponent(state.activeAttendanceSessionId)}/records/${encodeURIComponent(studentId)}/correction`, {
+      method: 'POST',
+      body: { status, reasonCode, expectedVersion: Number(sessionVersion) },
+    });
+    announce('Kontrollü düzeltme tamamlandı.', 'success');
+    await openAttendanceSession(state.activeAttendanceSessionId);
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function formatStamp(value) {
+  if (!value) return 'Zaman bilgisi yok';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('tr-TR');
+}
+
+async function loadNotifications() {
+  if (!requireSession()) return;
+  const branchId = getBranchId();
+  if (!branchId) return announce('Bildirim listesi için şube seçin.', 'warning');
+  const target = $('#notifications-list');
+  const query = new URLSearchParams({ limit: '20', offset: '0' });
+  const filter = $('#notification-status-filter').value;
+  if (filter) query.set('status', filter);
+  target.innerHTML = loading('Bildirimler getiriliyor');
+  try {
+    const { body } = await apiRequest(`/notifications?${query.toString()}`);
+    const rows = asArray(body, ['notifications', 'items']);
+    target.innerHTML = rows.length ? rows.map(renderNotificationCard).join('') : empty('Bu kapsamda bildirim yok.');
+    const bulkTarget = $('#bulk-approve-output');
+    const bulkActions = rows.some((row) => pick(row, ['sessionId'], ''))
+      ? [...groupDraftsBySession(rows).entries()]
+          .filter(([sessionId]) => sessionId !== 'no-session')
+          .map(([sessionId, sessionRows]) => `<article class="card">
+            <h3>Oturum ${escapeHtml(String(sessionId).slice(0, 8))}…</h3>
+            ${renderSessionBulkAction(sessionRows)}
+          </article>`).join('')
+      : '';
+    bulkTarget.innerHTML = bulkActions;
+    announce(`${rows.length} bildirim listelendi.`, 'success');
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function renderNotificationCard(row) {
+  const status = pick(row, ['status'], 'unknown');
+  return `<article class="card">
+    <h3>${escapeHtml(pick(row, ['eventType'], 'Bildirim'))}</h3>
+    <p class="card-meta">
+      <span>Kanal: ${escapeHtml(pick(row, ['channel'], '-'))}</span>
+      <span>Deneme: ${escapeHtml(pick(row, ['attempts'], 0))}</span>
+      <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
+    </p>
+    <span class="tag" data-tone="${escapeHtml(statusTone(status))}">${escapeHtml(displayStatus(status))}</span>
+    <button type="button" data-action="notification-detail" data-notification-id="${escapeHtml(pick(row, ['id']))}">Detayı ve eylemleri aç</button>
+  </article>`;
+}
+
+async function openNotificationDetail(id) {
+  if (!requireSession()) return;
+  state.activeNotificationId = id || state.activeNotificationId;
+  if (!state.activeNotificationId) return announce('Önce listeden bir bildirim açın.', 'warning');
+  const target = $('#notification-detail');
+  target.innerHTML = loading('Bildirim detayı getiriliyor');
+  try {
+    const { body } = await apiRequest(`/notifications/${encodeURIComponent(state.activeNotificationId)}`);
+    renderNotificationDetail(body);
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function notificationActionLabel(action) {
+  const labels = {
+    approve: 'Taslağı onayla',
+    close: 'Taslağı kapat',
+    execute: 'Gönderimi yürüt',
+    retry: 'Yeniden uygunluğa al',
+    cancel: 'İptal et',
+  };
+  return labels[action] || action;
+}
+
+function renderReceiptRow(receipt) {
+  const errorCode = pick(receipt, ['errorCode']);
+  return `<li>
+    <strong>Deneme ${escapeHtml(pick(receipt, ['attempt'], '?'))} · ${escapeHtml(pick(receipt, ['outcome'], '-'))}</strong>
+    <span>${escapeHtml(formatStamp(pick(receipt, ['createdAt'], '')))}</span>
+    <span>Sağlayıcı: ${escapeHtml(pick(receipt, ['providerRef'], '-'))}</span>
+    <span class="tag" data-tone="${escapeHtml(pick(receipt, ['simulated'], false) ? 'neutral' : 'warning')}">${escapeHtml(pick(receipt, ['simulated'], false) ? 'simüle' : 'canlı')}</span>
+    ${errorCode ? `<span class="tag" data-tone="danger">${escapeHtml(String(errorCode))}</span>` : ''}
+  </li>`;
+}
+
+function renderNotificationDetail(body) {
+  const row = body && body.row ? body.row : {};
+  const actions = asArray(body, ['availableActions']);
+  const receipts = asArray(body, ['receipts']);
+  state.activeNotificationId = pick(row, ['id'], state.activeNotificationId);
+  state.activeNotificationVersion = Number(pick(row, ['version'], 0));
+  const status = pick(row, ['status'], 'unknown');
+  const reason = pick(row, ['reason']);
+  const actionButtons = actions.length
+    ? actions.map((action) => `<button type="button" data-action="notification-run" data-notification-action="${escapeHtml(action)}">${escapeHtml(notificationActionLabel(action))}</button>`).join('')
+    : '<p class="hint">Sunucu bu durumda izin verilen bir eylem döndürmedi.</p>';
+  $('#notification-detail').innerHTML = `<article class="card">
+    <h3>${escapeHtml(pick(row, ['eventType'], 'Bildirim'))} · ${escapeHtml(displayStatus(status))}</h3>
+    <p class="card-meta">
+      <span>Kanal: ${escapeHtml(pick(row, ['channel'], '-'))}</span>
+      <span>Deneme: ${escapeHtml(pick(row, ['attempts'], 0))}</span>
+      <span>Sürüm: ${escapeHtml(pick(row, ['version'], 0))}</span>
+      <span>Onay sürümü: ${escapeHtml(pick(row, ['consentVersion'], '-'))}</span>
+      <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
+    </p>
+    ${reason ? `<p>Gerekçe: ${escapeHtml(String(reason))}</p>` : ''}
+    <div class="quick-actions">${actionButtons}</div>
+    <strong>Gönderim kanıtları</strong>
+    ${receipts.length ? `<ul class="impact-list">${receipts.map(renderReceiptRow).join('')}</ul>` : '<p class="hint">Gönderim kanıtı (receipt) yok veya görüntüleme yetkiniz sınırlı.</p>'}
+  </article>`;
+}
+
+async function runNotificationAction(action) {
+  if (!requireSession()) return;
+  const id = state.activeNotificationId;
+  if (!id) return announce('Önce listeden bir bildirim açın.', 'warning');
+  const target = $('#notification-detail');
+  let path = `/notifications/${encodeURIComponent(id)}/${encodeURIComponent(action)}`;
+  let body;
+  if (action === 'approve' || action === 'close') {
+    path = `/notifications/drafts/${encodeURIComponent(id)}/${encodeURIComponent(action)}`;
+    body = { expectedVersion: state.activeNotificationVersion };
+  }
+  target.innerHTML = loading('İşlem sunucuda uygulanıyor');
+  try {
+    const { body: result } = await apiRequest(path, { method: 'POST', ...(body ? { body } : {}) });
+    const nextStatus = pick(result, ['status'], '');
+    announce(`İşlem tamamlandı${nextStatus ? ` · ${displayStatus(nextStatus)}` : ''}.`, 'success');
+    await openNotificationDetail(id);
+    await loadNotifications();
+  } catch (error) {
+    renderError(target, error);
+    if (error.uiState === 'stale_version' || error.uiState === 'version_required') await openNotificationDetail(id);
   }
 }
 
@@ -633,11 +1354,38 @@ document.addEventListener('click', (event) => {
   if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();
+  if (target.dataset.action === 'notification-detail') openNotificationDetail(target.dataset.notificationId);
+  if (target.dataset.action === 'notification-run') runNotificationAction(target.dataset.notificationAction);
+  if (target.dataset.action === 'leave-decision') decideLeave(target.dataset.leaveId, target.dataset.leaveDecision, target.dataset.leaveEtag);
+  if (target.dataset.action === 'consent-revoke') revokeConsent(target.dataset.subjectRefId, target.dataset.subjectType, target.dataset.consentType);
+  if (target.dataset.action === 'bulk-approve-session') bulkApproveSession(target.dataset.sessionId, target.dataset.versions);
+  if (target.dataset.action === 'schedule-row-update') updateScheduleRow(Number(target.dataset.scheduleIndex));
+  if (target.dataset.action === 'schedule-row-remove') {
+    state.scheduleEvents.splice(Number(target.dataset.scheduleIndex), 1);
+    renderScheduleStatus();
+  }
+  if (target.dataset.action === 'attendance-open') openAttendanceSession(target.dataset.sessionId);
+  if (target.dataset.action === 'attendance-mark') markAttendance(target.dataset.sessionId, target.dataset.studentId, target.dataset.mark);
+  if (target.dataset.action === 'attendance-lock') lockAttendance(target.dataset.sessionId, target.dataset.sessionVersion);
+  if (target.dataset.action === 'attendance-correct') correctAttendance(target.dataset.studentId, target.dataset.sessionVersion);
 });
 
 $('#login-form').addEventListener('submit', login);
 $('#context-form').addEventListener('submit', updateContext);
 $('#leave-form').addEventListener('submit', createLeave);
+$('#schedule-create-form').addEventListener('submit', createSchedule);
+$('#attendance-generate-form').addEventListener('submit', generateAttendance);
 $('#load-own-leave').addEventListener('click', loadOwnLeave);
 $('#refresh-queue').addEventListener('click', loadQueue);
+$('#refresh-leaves').addEventListener('click', loadLeaves);
+$('#refresh-notifications').addEventListener('click', loadNotifications);
+$('#apply-notification-filter').addEventListener('click', loadNotifications);
+$('#refresh-consents').addEventListener('click', loadConsents);
+$('#refresh-schedule-status').addEventListener('click', renderScheduleStatus);
+$('#add-schedule-event').addEventListener('click', addScheduleEvent);
+$('#save-schedule-draft').addEventListener('click', saveScheduleDraft);
+$('#validate-schedule').addEventListener('click', validateSchedule);
+$('#publish-schedule').addEventListener('click', publishSchedule);
+$('#unpublish-schedule').addEventListener('click', unpublishSchedule);
+$('#refresh-attendance').addEventListener('click', loadAttendanceSessions);
 updateWorkflowProgress();

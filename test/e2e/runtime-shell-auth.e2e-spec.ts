@@ -229,7 +229,7 @@ describe('S0-A1 acceptance — runtime shell auth (fresh DB, real backend, real 
     await session!.waitForText('#session-status', /Oturum aktif/i);
     expect(await session!.attribute('#session-status', 'data-tone')).toBe('success');
     expect(await session!.text('#summary-session')).toBe('Aktif');
-    expect(await session!.text('#activity-trail')).toMatch(/Oturum açıldı/);
+    await session!.waitForText('#activity-trail', /Oturum açıldı/);
     expect(await session!.attribute('[data-step="session"]', 'data-state')).toBe('done');
 
     await session!.maskCredentialInputs();
