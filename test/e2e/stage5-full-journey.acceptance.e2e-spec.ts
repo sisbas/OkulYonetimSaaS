@@ -1187,11 +1187,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     });
     expect(row1.receipts[0].providerRef).toMatch(/^sim:/);
 
-    // Duplicate click → tek business effect.
-    await runAction(sessionA!, 'execute');
-    await sessionA!.waitForText('#notification-detail h3', /· Gönderildi/, 20_000);
-    const afterDup = await expectRow('r1', { status: 'dispatched', attempts: 1 });
-    expect(afterDup.receipts.length).toBe(1);
+    // Response-loss simülasyonu: aynı execute tekrarı → idempotent 200.
+    // UI, dispatch sonrası ikinci execute sunmaz (buton kalkar); tekrar,
+    // istemcinin aynı isteği yeniden göndermesi olarak API üzerinden doğrulanır.
     const second = await apiCall(opsApi, 'POST', `/notifications/${rows.r1}/execute`);
     const secondJson = second.json as { idempotent?: boolean; status?: string };
     expect(secondJson.idempotent).toBe(true);
@@ -1199,8 +1197,8 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     const afterLoss = await expectRow('r1', { status: 'dispatched', attempts: 1 });
     expect(afterLoss.receipts.length).toBe(1);
 
-    negatives['dup-execute'] = 'aynı execute iki kez → idempotent 200, attempts 1, receipt 1';
-    recordEvidence(currentScenario, 'SIMULATED execute → dispatched; receipt provider_accepted/simüle/sim:... ↔ DB birebir; dup idempotent');
+    negatives['dup-execute'] = 'execute tekrarı (response-loss) → 200 idempotent, attempts 1, receipt 1; UI dispatch sonrası ikinci execute sunmaz';
+    recordEvidence(currentScenario, 'SIMULATED execute → dispatched; receipt provider_accepted/simüle/sim:... ↔ DB birebir; execute tekrarı idempotent');
     await snap(sessionA!, '04-bulk-approved-simulated-dispatched');
     recordScenario(SCENARIO_NAMES[3], 'PASS');
   });
@@ -1270,8 +1268,8 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     const outboxMap2 = await readOutboxIdsBySession(dbClient!, fixture.tenantId, session2Id);
     expect(Object.keys(outboxMap2)).toHaveLength(1);
     rows.r2 = outboxMap2[studentForRevoke];
-    await expectRow('r2', { status: 'blocked_consent', attempts: 0, consentVersion: null, dispatchedAt: null, receipts: [] });
-    recordEvidence(currentScenario, 'lock → enqueue-time yeniden doğrulama: revoked onay → blocked_consent, consentVersion yok');
+    await expectRow('r2', { status: 'blocked_consent', attempts: 0, consentVersion: 2, dispatchedAt: null, receipts: [] });
+    recordEvidence(currentScenario, 'lock → enqueue-time yeniden doğrulama: revoked onay → blocked_consent (kararın dayandığı onay sürümü v2 korunur)');
 
     await sessionA!.clickElement('.tab[data-tab="notifications"]');
     await sessionA!.clickElement('#refresh-notifications');
@@ -1279,7 +1277,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await openCard(sessionA!, 'r2');
     const heading = await detailHeading(sessionA!);
     expect(heading).toContain('· Onay engelli');
-    await sessionA!.waitForText('#notification-detail', /Onay sürümü: -/, 10_000);
+    await sessionA!.waitForText('#notification-detail', /Onay sürümü: 2/, 10_000);
 
     await expectApiError(opsApi, 'POST', `/notifications/${rows.r2}/execute`, 409, 'NOT_DISPATCHABLE');
     await expectRow('r2', { status: 'blocked_consent', attempts: 0, dispatchedAt: null, receipts: [] });
