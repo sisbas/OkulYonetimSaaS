@@ -611,6 +611,24 @@ async function waitForAssignment(
   throw new Error(`waitForAssignment('${state}') timeout; last=${JSON.stringify(last)}.`);
 }
 
+/**
+ * Assign başarısından sonra ürün `syncCandidateAssignmentActions` ile "temizle"
+ * eyleminin kilidini açar. DB kapısı (waitForAssignment) UI render'ından önce
+ * dönebildiği için butonun etkinleşmesini burada ayrıca bekleriz; aksi halde
+ * hâlâ `disabled` olan butona tıklamak sessizce yutulur (olay tetiklenmez).
+ */
+async function waitForClearEnabled(session: UiSession, timeoutMs = 20_000): Promise<void> {
+  const selector = '#candidate-output button[data-action="clear"]';
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const disabled = await session.attribute(selector, 'disabled').catch(() => null);
+    const count = await session.countElements(selector);
+    if (count > 0 && disabled === null) return;
+    await sleep(150);
+  }
+  throw new Error('clear button did not become enabled after assign.');
+}
+
 async function readAttendanceSession(sessionId: string): Promise<{ status: string; sessionDate: string }> {
   const result = await dbClient!.query(
     `SELECT status, session_date::text AS session_date
@@ -1015,6 +1033,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(leave.coverageStatus).toBe('covered');
     recordEvidence(currentScenario, 'assign → DB state=assigned, coverage covered, substitute=seed teacher');
 
+    await waitForClearEnabled(sessionA!);
     await sessionA!.clickElement('#candidate-output button[data-action="clear"]');
     await waitForAssignment('cleared');
     expect(await textOf(sessionA!, '#message-region')).toMatch(

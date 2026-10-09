@@ -608,6 +608,21 @@ function renderCandidate(candidate) {
   </article>`;
 }
 
+/**
+ * Aday kartındaki "temizle" eylemini güncel görevlendirme durumuyla eşitler.
+ * `renderCandidate` yalnız render anındaki `state` değerini yansıttığı için
+ * başarılı assign sonrası kart yeniden çizilmeden eylem kilitli kalırdı;
+ * sunucu-otoriter sonucu UI'ya burada yansıtırız (ve temizleme sonrası kilitler).
+ */
+function syncCandidateAssignmentActions() {
+  const enabled = Boolean(state.activeAssignmentId && state.activeLeaveEtag);
+  document
+    .querySelectorAll('#candidate-output button[data-action="clear"]')
+    .forEach((button) => {
+      button.disabled = !enabled;
+    });
+}
+
 async function createAssignment(teacherId) {
   if (!state.activeLeaveEtag) return announce('Güncel izin kaydı alınmadan görevlendirme yapılamaz.', 'warning');
   const target = $('#candidate-output');
@@ -620,6 +635,7 @@ async function createAssignment(teacherId) {
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
     if (!state.activeAssignmentId) state.activeAssignmentId = 'server-confirmed';
+    syncCandidateAssignmentActions();
     announce('Görevlendirme kaydedildi; günlük işler ve etki listesi yenileniyor.', 'success');
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
@@ -640,6 +656,7 @@ async function clearAssignment() {
     captureLeaveVersion(body, etag);
     updateAssignmentStateFromEvents(asArray(body, ['events', 'affectedLessons', 'lessons', 'items']));
     state.activeAssignmentId = '';
+    syncCandidateAssignmentActions();
     announce('Görevlendirme temizlendi; günlük işler ve etki listesi yenileniyor.', 'success');
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
