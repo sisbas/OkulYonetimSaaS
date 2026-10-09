@@ -813,7 +813,26 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await loginViaUi(sessionC!, fixture.teacherUser.email, fixture.teacherUser.credential);
     await ensureBranch(sessionC!, fixture.branchCode);
     await sessionC!.clickElement('.tab[data-tab="notifications"]');
-    await sessionC!.waitForText('#notifications-list .error-state', /Bu işlem için yetkiniz yok/, 20_000);
+    try {
+      await sessionC!.waitForText('#notifications-list .error-state', /Bu işlem için yetkiniz yok/, 20_000);
+    } catch (error) {
+      // Teşhis: teacher listesi 403 yerine boş kalırsa şube kapısı mı (lista
+      // isteği hiç gitmez), ağ isteği mi, tab aktivasyonu mu olduğunu ayırt eder.
+      const diag = {
+        scope: await sessionC!.text('#summary-scope'),
+        message: await sessionC!.text('#message-region'),
+        listErrorCount: await sessionC!.countElements('#notifications-list .error-state'),
+        listHtml: (await sessionC!.text('#notifications-list')).slice(0, 300),
+        tabSelected: await sessionC!.attribute('.tab[data-tab="notifications"]', 'aria-selected'),
+        net: sessionC!
+          .networkLog()
+          .filter((entry) => entry.url.includes('/notifications') || entry.url.includes('/context'))
+          .map((entry) => `${entry.method} ${entry.url} -> ${entry.status}`),
+      };
+      throw new Error(
+        `teacher forbidden state not rendered. diag=${JSON.stringify(diag)}\n${String(error)}`,
+      );
+    }
     expect(await sessionC!.attribute('#notifications-list .error-state', 'data-state')).toBe(
       'forbidden_non_enumerating',
     );

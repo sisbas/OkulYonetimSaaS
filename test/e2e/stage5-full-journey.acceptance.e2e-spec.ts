@@ -591,6 +591,26 @@ async function readAssignment(): Promise<{ substituteTeacherId: string; state: s
     : { substituteTeacherId: row.substitute_teacher_id, state: row.state };
 }
 
+/**
+ * Otoriter DB kapısı: assign/clear sonrası UI başarı mesajı `announce` ile
+ * aynı bölgeye yazılır ve hemen ardından gelen `loadQueue()` yeniden render'ı
+ * onu 'Günlük işler yenilendi.' ile ezebilir (deterministik yarış). Kanıt bu
+ * yüzden doğrudan DB durumundan beklenir; UI mesajı ayrıca tolere edilir.
+ */
+async function waitForAssignment(
+  state: 'assigned' | 'cleared',
+  timeoutMs = 20_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let last: { substituteTeacherId: string; state: string } | null = null;
+  while (Date.now() < deadline) {
+    last = await readAssignment();
+    if (last !== null && last.state === state) return;
+    await sleep(200);
+  }
+  throw new Error(`waitForAssignment('${state}') timeout; last=${JSON.stringify(last)}.`);
+}
+
 async function readAttendanceSession(sessionId: string): Promise<{ status: string; sessionDate: string }> {
   const result = await dbClient!.query(
     `SELECT status, session_date::text AS session_date
@@ -983,7 +1003,10 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'substitute aday UI: uygun + assign aktif (teacher_branches/teacher_courses seed)');
 
     await sessionA!.clickElement('#candidate-output button[data-action="assign"]');
-    await sessionA!.waitForText('#message-region', /Görevlendirme kaydedildi/, 20_000);
+    await waitForAssignment('assigned');
+    expect(await textOf(sessionA!, '#message-region')).toMatch(
+      /Görevlendirme kaydedildi|Günlük işler yenilendi/,
+    );
     let assignment = await readAssignment();
     expect(assignment).not.toBeNull();
     expect(assignment!.substituteTeacherId).toBe(substituteTeacherId);
@@ -993,7 +1016,10 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'assign → DB state=assigned, coverage covered, substitute=seed teacher');
 
     await sessionA!.clickElement('#candidate-output button[data-action="clear"]');
-    await sessionA!.waitForText('#message-region', /Görevlendirme temizlendi/, 20_000);
+    await waitForAssignment('cleared');
+    expect(await textOf(sessionA!, '#message-region')).toMatch(
+      /Görevlendirme temizlendi|Günlük işler yenilendi/,
+    );
     assignment = await readAssignment();
     expect(assignment).not.toBeNull();
     expect(assignment!.state).toBe('cleared');
