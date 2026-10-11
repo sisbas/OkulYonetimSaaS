@@ -348,10 +348,20 @@ async function ensureBranch(session: UiSession, code: string): Promise<void> {
   );
 }
 
-async function snap(session: UiSession, name: string): Promise<void> {
-  await session.maskCredentialInputs().catch(() => undefined);
-  screenshots.push(await session.screenshot(name));
-}
+  async function snap(session: UiSession, name: string): Promise<void> {
+    await session.maskCredentialInputs().catch(() => undefined);
+    screenshots.push(await session.screenshot(name));
+  }
+
+  async function waitForNetworkIdle(session: UiSession, timeoutMs = 10_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const pending = session.networkLog().filter((entry) => entry.status === 'PENDING');
+      if (pending.length === 0) return;
+      await sleep(150);
+    }
+    throw new Error('network did not become idle after context/branch settlement');
+  }
 
 async function openNotificationsAndWait(
   session: UiSession,
@@ -812,6 +822,7 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     currentScenario = SCENARIO_NAMES[7];
     await loginViaUi(sessionC!, fixture.teacherUser.email, fixture.teacherUser.credential);
     await ensureBranch(sessionC!, fixture.branchCode);
+    await waitForNetworkIdle(sessionC!);
     await sessionC!.clickElement('.tab[data-tab="notifications"]');
     try {
       await sessionC!.waitForText('#notifications-list .error-state', /Bu işlem için yetkiniz yok/, 20_000);

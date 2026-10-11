@@ -352,8 +352,13 @@ function applyCatalog(catalog) {
   selector.innerHTML = '<option value="">Şube seçin</option>' + state.branches.map((branch) =>
     `<option value="${escapeHtml(branch.code)}">${escapeHtml(branch.name)} · ${escapeHtml(branch.code)}</option>`).join('');
   selector.disabled = !state.branches.length;
-  state.branchId = catalog.activeBranch?.code || '';
-  state.branchLabel = catalog.activeBranch ? `${catalog.activeBranch.name} · ${catalog.activeBranch.code}` : '';
+  // activeBranch yoksa branchId'yi TEMİZLEME: login sırasındaki GET /context
+  // (x-branch-code göndermez) aktif şube döndürmeyebilir; bu durumda eşzamanlı
+  // updateContext'in ayarladığı branchId'in sıfırlanmasını önler.
+  if (catalog.activeBranch) {
+    state.branchId = catalog.activeBranch.code || '';
+    state.branchLabel = `${catalog.activeBranch.name} · ${catalog.activeBranch.code}`;
+  }
   selector.value = state.branchId;
   updateWorkflowProgress();
 }
