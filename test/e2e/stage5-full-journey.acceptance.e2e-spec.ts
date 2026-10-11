@@ -941,7 +941,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await loginViaUi(sessionB!, fixture.teacherUser.email, fixture.teacherUser.credential);
     await submitContextDate(sessionB!, leaveMonday);
     await ensureBranch(sessionB!, fixture.branchCode);
-
+    await waitForNetworkIdle(sessionB!);
     await sessionB!.selectValue('#leave-duration-type', 'full_day');
     await sessionB!.selectValue('#leave-reason-code', 'health');
     await fillField(sessionB!, '#leave-starts-at', `${leaveMonday}T08:00`);
