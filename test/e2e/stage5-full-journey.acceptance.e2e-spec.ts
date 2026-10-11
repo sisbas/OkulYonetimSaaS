@@ -1395,8 +1395,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionA!.clickElement('#refresh-attendance');
     await waitForCountAtLeast(sessionA!, '#attendance-sessions article.card', 2);
 
-    await sessionA!.clickElement('.tab[data-tab="notifications"]');
-    await sessionA!.clickElement('#refresh-consents');
+    await clickRetry(sessionA!, '.tab[data-tab="notifications"]');
     await waitForConsentsWithRetry(sessionA!, revokeSelector(students[0].studentId), 2);
     await waitForCount(sessionA!, revokeSelector(students[2].studentId), 0);
     const persistedConsents = await sessionA!.countElements('#consents-output article.card').catch(() => -1);
