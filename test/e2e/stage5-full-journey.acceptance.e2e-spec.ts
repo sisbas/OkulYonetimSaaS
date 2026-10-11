@@ -263,6 +263,27 @@ async function clickRetry(session: UiSession, selector: string, attempts = 5, de
   throw last instanceof Error ? last : new Error(String(last));
 }
 
+/**
+ * `#refresh-consents` tıklaması render sırasında kopabilir veya loadConsents
+ * geçici bir durumda no-op olabilir; butonlar görünene kadar yeniden dener.
+ */
+async function waitForConsentsWithRetry(
+  session: UiSession,
+  selector: string,
+  expected: number,
+  timeoutMs = 30_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let last = -1;
+  while (Date.now() < deadline) {
+    last = await session.countElements(selector).catch(() => -1);
+    if (last === expected) return;
+    await session.clickElement('#refresh-consents').catch(() => undefined);
+    await sleep(400);
+  }
+  throw new Error(`waitForConsentsWithRetry timeout: ${selector} expected ${expected}, last=${last}.`);
+}
+
 /** Adım başarısında UI + ağ durumunu kanıtlayıp hatayı zenginleştirerek yeniden fırlatır. */
 async function rethrowWithDiag(
   error: unknown,
@@ -1376,7 +1397,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
 
     await sessionA!.clickElement('.tab[data-tab="notifications"]');
     await sessionA!.clickElement('#refresh-consents');
-    await waitForCount(sessionA!, revokeSelector(students[0].studentId), 2);
+    await waitForConsentsWithRetry(sessionA!, revokeSelector(students[0].studentId), 2);
     await waitForCount(sessionA!, revokeSelector(students[2].studentId), 0);
     const persistedConsents = await sessionA!.countElements('#consents-output article.card').catch(() => -1);
     recordEvidence(
