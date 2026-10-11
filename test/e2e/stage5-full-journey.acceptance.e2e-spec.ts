@@ -222,6 +222,16 @@ function revokeSelector(sid: string): string {
   return `#consents-output button[data-action="consent-revoke"][data-subject-ref-id="${sid}"]`;
 }
 
+async function waitForNetworkIdle(session: UiSession, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const pending = session.networkLog().filter((entry) => entry.status === 'PENDING');
+    if (pending.length === 0) return;
+    await sleep(150);
+  }
+  throw new Error('network did not become idle after context/branch settlement');
+}
+
 async function waitForCount(
   session: UiSession,
   selector: string,
@@ -1351,6 +1361,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await loginViaUi(sessionA!, fixture.opsUser.email, fixture.opsUser.credential);
     await submitContextDate(sessionA!, attendanceMonday);
     await ensureBranch(sessionA!, fixture.branchCode);
+    await waitForNetworkIdle(sessionA!);
     await sessionA!.clickElement('.tab[data-tab="notifications"]');
     await sessionA!.clickElement('#refresh-notifications');
     await waitForCountAtLeast(sessionA!, '#notifications-list article.card', 3);
