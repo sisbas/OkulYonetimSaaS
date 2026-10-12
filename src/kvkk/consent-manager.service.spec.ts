@@ -1,25 +1,26 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
-import { SecurityAuditService } from '../common/audit/security-audit.service';
 import { RequestContext } from '../common/context/request-context';
+import { TransactionalAuditWriter } from '../common/audit/transactional-audit-writer';
 import { ConsentManagerService } from './consent-manager.service';
 
 describe('ConsentManagerService', () => {
   let service: ConsentManagerService;
-  let audit: jest.Mocked<SecurityAuditService>;
+  let audit: { write: jest.Mock };
+
+  const CONSENT_ID = 'c1000000-0000-4000-8000-000000000001';
+  const ACTOR_USER_ID = '90000000-0000-4000-8000-000000000001';
 
   const ctx: RequestContext = {
     requestId: 'test-req',
     tenantId: '10000000-0000-4000-8000-000000000001',
     branchId: '20000000-0000-4000-8000-000000000001',
-    user: { userId: '90000000-0000-4000-8000-000000000001', tenantId: '10000000-0000-4000-8000-000000000001', roleIds: [], permissions: [] },
+    userId: ACTOR_USER_ID,
+    user: { userId: ACTOR_USER_ID, tenantId: '10000000-0000-4000-8000-000000000001', roleIds: [], permissions: [] },
   };
 
   beforeEach(() => {
-    audit = {
-      emitDataProtectionEvent: jest.fn(),
-      logger: { log: jest.fn() },
-    } as unknown as jest.Mocked<SecurityAuditService>;
-    service = new ConsentManagerService(audit);
+    audit = { write: jest.fn().mockResolvedValue(undefined) };
+    service = new ConsentManagerService(audit as unknown as TransactionalAuditWriter);
   });
 
   describe('listConsents', () => {
@@ -69,10 +70,10 @@ describe('ConsentManagerService', () => {
   });
 
   describe('revokeConsent', () => {
-    it('revokes the latest approved row and emits dataprotection.consent.revoked', async () => {
+    it('revokes the latest approved row and writes dataprotection.consent.revoked in the same transaction', async () => {
       const em = {
         query: jest.fn().mockResolvedValue([
-          { id: 'c1', consent_type: 'PARENT_NOTIFICATION', status: 'revoked', version: 2 },
+          { id: CONSENT_ID, consent_type: 'PARENT_NOTIFICATION', status: 'revoked', version: 2 },
         ]),
       } as any;
 
@@ -87,16 +88,34 @@ describe('ConsentManagerService', () => {
         [ctx.tenantId, '60000000-0000-4000-8000-000000000001', 'student', 'PARENT_NOTIFICATION'],
       );
       expect(result).toEqual({
-        consentId: 'c1',
+        consentId: CONSENT_ID,
         subjectType: 'student',
         subjectRefId: '60000000-0000-4000-8000-000000000001',
         consentType: 'PARENT_NOTIFICATION',
         status: 'revoked',
         version: 2,
       });
-      expect(audit.emitDataProtectionEvent).toHaveBeenCalledWith(
-        ctx,
-        expect.objectContaining({ eventName: 'dataprotection.consent.revoked', purpose: 'notification_consent_authority_revoke' }),
+      expect(audit.write).toHaveBeenCalledTimes(1);
+      expect(audit.write).toHaveBeenCalledWith(
+        em,
+        'dataprotection.consent.revoked',
+        expect.objectContaining({
+          schemaVersion: 1,
+          tenantId: ctx.tenantId,
+          actorUserId: ACTOR_USER_ID,
+          actorSessionId: null,
+          requestId: 'test-req',
+          entityType: 'dataprotection',
+          entityId: CONSENT_ID,
+          result: 'success',
+          changedFields: ['purpose', 'legalBasis'],
+          redactionReceipt: expect.objectContaining({
+            strategy: 'none',
+            evaluatedFieldCount: 6,
+            redactedFieldCount: 0,
+            skippedFieldCount: 6,
+          }),
+        }),
       );
     });
 
@@ -109,7 +128,24 @@ describe('ConsentManagerService', () => {
           consentType: 'PARENT_NOTIFICATION',
         }),
       ).rejects.toBeInstanceOf(ConflictException);
-      expect(audit.emitDataProtectionEvent).not.toHaveBeenCalled();
+      expect(audit.write).not.toHaveBeenCalled();
+    });
+
+    it('propagates an audit write failure so the revoke cannot outlive its audit record', async () => {
+      const em = {
+        query: jest.fn().mockResolvedValue([
+          { id: CONSENT_ID, consent_type: 'PARENT_NOTIFICATION', status: 'revoked', version: 2 },
+        ]),
+      } as any;
+      audit.write.mockRejectedValueOnce(new Error('audit chain unavailable'));
+
+      await expect(
+        service.revokeConsent(em, ctx, {
+          subjectRefId: '60000000-0000-4000-8000-000000000001',
+          subjectType: 'student',
+          consentType: 'PARENT_NOTIFICATION',
+        }),
+      ).rejects.toThrow('audit chain unavailable');
     });
 
     it('throws when tenant scope is missing', async () => {
@@ -120,6 +156,7 @@ describe('ConsentManagerService', () => {
           consentType: 'PARENT_NOTIFICATION',
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(audit.write).not.toHaveBeenCalled();
     });
   });
 });

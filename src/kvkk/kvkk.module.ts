@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
-import { SecurityAuditService } from '../common/audit/security-audit.service';
+import { AuditLogRepository } from '../common/audit/audit-log.repository';
+import {
+  TRANSACTIONAL_AUDIT_WRITER,
+  TypeOrmTransactionalAuditWriter,
+} from '../common/audit/transactional-audit-writer';
 import { ConsentManagerService } from './consent-manager.service';
 import { KvkkConsentController } from './kvkk-consent.controller';
 
@@ -11,7 +15,12 @@ import { KvkkConsentController } from './kvkk-consent.controller';
  */
 @Module({
   controllers: [KvkkConsentController],
-  providers: [ConsentManagerService, SecurityAuditService],
+  providers: [
+    AuditLogRepository,
+    TypeOrmTransactionalAuditWriter,
+    { provide: TRANSACTIONAL_AUDIT_WRITER, useExisting: TypeOrmTransactionalAuditWriter },
+    ConsentManagerService,
+  ],
   exports: [ConsentManagerService],
 })
 export class KvkkModule {}

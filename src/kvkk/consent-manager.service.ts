@@ -1,11 +1,15 @@
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
 } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { RequestContext } from '../common/context/request-context';
-import { SecurityAuditService } from '../common/audit/security-audit.service';
+import {
+  TRANSACTIONAL_AUDIT_WRITER,
+  TransactionalAuditWriter,
+} from '../common/audit/transactional-audit-writer';
 import { ConsentSubjectType } from './consent-authority';
 
 export type ConsentRowSnapshot = Readonly<{
@@ -61,14 +65,19 @@ function toSnapshot(row: ConsentRowRecord): ConsentRowSnapshot {
  * Okuma + revoke, `ConsentAuthority` ile AYNI tablo ve lineage
  * sözleşmesini kullanır (tenant + subject predicate, max-version).
  * Revoke, yalnız güncel `approved` satırı `revoked` yapar ve version
- * bump eder; bunu `dataprotection.consent.revoked` audit eventi izler.
+ * bump eder; `dataprotection.consent.revoked` audit kaydı domain mutasyonuyla
+ * AYNI transaction'da `audit_logs` zincirine yazılır (Madde III: audit,
+ * mutasyonla birlikte commit/rollback olur).
  *
  * Ham PII taşınmaz: liste/revoke yanıtları yalnız subject ref (UUID)
  * ve consent türü/statüsü döndürür.
  */
 @Injectable()
 export class ConsentManagerService {
-  constructor(private readonly audit: SecurityAuditService) {}
+  constructor(
+    @Inject(TRANSACTIONAL_AUDIT_WRITER)
+    private readonly audit: TransactionalAuditWriter,
+  ) {}
 
   async listConsents(
     entityManager: EntityManager,
@@ -152,10 +161,23 @@ export class ConsentManagerService {
     }
 
     const row = updated[0];
-    this.audit.emitDataProtectionEvent(context, {
-      eventName: 'dataprotection.consent.revoked',
-      outcome: 'success',
-      purpose: 'notification_consent_authority_revoke',
+    await this.audit.write(entityManager, 'dataprotection.consent.revoked', {
+      schemaVersion: 1,
+      tenantId,
+      actorUserId: context.userId ?? context.user?.userId ?? null,
+      actorSessionId: null,
+      requestId: context.requestId,
+      entityType: 'dataprotection',
+      entityId: String(row.id),
+      result: 'success',
+      changedFields: ['purpose', 'legalBasis'],
+      redactionReceipt: {
+        strategy: 'none',
+        evaluatedFieldCount: 6,
+        redactedFieldCount: 0,
+        skippedFieldCount: 6,
+        appliedAt: new Date().toISOString(),
+      },
     });
 
     return Object.freeze({
