@@ -8,8 +8,10 @@ import { assertDatabaseUrlConfigured } from './database/data-source';
 
 // Guard/interceptor/controller katmanından düşen istekleri yalnız meta veriyle
 // (method/url/status/kategori) raporlar; exception.message/body asla yazılmaz
-// (ham detay sızıntısı tarayıcısına takılmamak için). YANITI KENDİSİ YAZAR:
-// yanıt göndermeden bırakmak istemci tarafında isteğin askıda kalmasına yol açar.
+// (ham detay sızıntısı tarayıcısına takılmamak için). URL yalnızca pathname olarak
+// yazılır — query string öğretmen/öğrenci filtrelerini taşıdığı için log'a girmez.
+// YANITI KENDİSİ YAZAR: yanıt göndermeden bırakmak istemci tarafında isteğin
+// askıda kalmasına yol açar.
 const REQUEST_FAILURE_CATEGORIES = [
   'AuthorizationContextError',
   'UnauthorizedException',
@@ -45,7 +47,7 @@ class RequestFailureFilter implements ExceptionFilter {
         JSON.stringify({
           event: 'http.request.failed',
           method: request.method,
-          url: String(request.url ?? ''),
+          url: String(request.url ?? '').split('?')[0].split('#')[0],
           status,
           error: category,
         }),
