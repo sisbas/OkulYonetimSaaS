@@ -104,11 +104,13 @@ export class NotificationDraftService {
   }
 
   /**
-   * Session düzeyinde toplu draft onayı (P1B-FINAL Stage 5).
+   * Session düzeyinde toplu draft onayı (P1B-FINAL Stage 5, #389).
    *
    * Aynı attendance session'ının tüm bekleyen/bloke draftlarını tek
    * işlemde `approved`'a geçirir (all-or-nothing; stale version'da
-   * ConflictException → transaction geri alınır).
+   * ConflictException → transaction geri alınır). Yetkili draft kümesi
+   * sunucu tarafında türetilir; eksik/fazla istemci listesi
+   * `NOTIFICATION_BULK_INCOMPLETE_LIST` ile reddedilir.
    */
   async bulkApproveSession(
     entityManager: EntityManager,

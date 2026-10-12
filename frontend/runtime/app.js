@@ -54,6 +54,11 @@ const reasonUi = {
   NOTIFICATION_STATUS_FILTER_INVALID: ['validation_error', 'Durum filtresi geçersiz.'],
   'CONSENT NOT IN AN APPROVED STATE': ['conflict_blocking', 'Onay zaten kapalı veya geçersiz durumda; işlem yapılamaz.'],
   'NOTIFICATION DRAFT BULK VERSION CONFLICT': ['stale_version', 'Liste güncellendi; yenileyip tekrar deneyin.'],
+  NOTIFICATION_BULK_INCOMPLETE_LIST: ['conflict_blocking', 'Oturum onay listesi eksik veya fazla; listeyi yenileyip tüm taslaklarla tekrar deneyin.'],
+  NOTIFICATION_BULK_VERSIONS_TOO_LARGE: ['validation_error', 'Toplu onay listesi çok büyük; oturumu onaylayacak şekilde küçültün.'],
+  NOTIFICATION_BULK_VERSIONS_DUPLICATE: ['validation_error', 'Onay listesinde yinelenen kayıt var; listeyi yenileyin.'],
+  NOTIFICATION_BULK_SESSION_TOO_LARGE: ['conflict_blocking', 'Oturumdaki bekleyen taslak sayısı toplu onay üst sınırını aşıyor.'],
+  NOTIFICATION_BULK_VERSIONS_REQUIRED: ['validation_error', 'Onay listesi boş; sayfayı yenileyip tekrar deneyin.'],
   CONSENT_SUBJECT_TYPE_INVALID: ['validation_error', 'Onay özne türü geçersiz.'],
   CONSENT_REVOKE_BODY_REQUIRED: ['validation_error', 'Onay geri çekme bilgileri eksik.'],
   ATTENDANCE_SESSION_CONFLICT: ['conflict_blocking', 'Oturum kilitli; kontrollü düzeltme akışı gerekir.'],
@@ -793,22 +798,42 @@ function renderSessionBulkAction(rows) {
     return status === 'pending' || status === 'blocked_consent';
   });
   if (!approvable.length) return '<p class="hint">Bu oturum için bekleyen onay yok.</p>';
-  const expectedVersions = approvable.map((row) => ({
-    id: pick(row, ['id']),
-    version: Number(pick(row, ['version'], 0)),
-  }));
-  return `<button type="button" data-action="bulk-approve-session" data-session-id="${escapeHtml(pick(approvable[0], ['sessionId'], ''))}" data-versions="${escapeHtml(encodeURIComponent(JSON.stringify(expectedVersions)))}">Bu oturumun ${approvable.length} taslağını toplu onayla</button>`;
+  return `<button type="button" data-action="bulk-approve-session" data-session-id="${escapeHtml(pick(approvable[0], ['sessionId'], ''))}">Bu oturumun bekleyen taslaklarını toplu onayla</button>`;
 }
 
-async function bulkApproveSession(sessionId, versionsCsv) {
+async function fetchSessionApprovableVersions(sessionId) {
+  const rows = [];
+  const limit = 100;
+  for (let offset = 0; offset <= 500; offset += limit) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const { body } = await apiRequest(`/notifications?${query.toString()}`);
+    const page = asArray(body, ['notifications', 'items']);
+    for (const row of page) {
+      if (pick(row, ['sessionId'], '') !== sessionId) continue;
+      const status = String(pick(row, ['status'], '')).toLowerCase();
+      if (status === 'pending' || status === 'blocked_consent') {
+        rows.push({ id: pick(row, ['id']), version: Number(pick(row, ['version'], 0)) });
+      }
+    }
+    if (page.length < limit) break;
+  }
+  return rows;
+}
+
+async function bulkApproveSession(sessionId) {
   if (!requireSession()) return;
+  const target = $('#bulk-approve-output');
+  target.innerHTML = loading('Toplu onay için oturum listesi hazırlanıyor');
   let expectedVersions;
   try {
-    expectedVersions = JSON.parse(decodeURIComponent(versionsCsv));
-  } catch (_error) {
-    return announce('Toplu onay için sürüm bilgisi çözülemedi.', 'warning');
+    expectedVersions = await fetchSessionApprovableVersions(sessionId);
+  } catch (error) {
+    return renderError(target, error);
   }
-  const target = $('#bulk-approve-output');
+  if (!expectedVersions.length) {
+    target.innerHTML = '';
+    return announce('Onaylanacak bekleyen taslak yok; listeyi yenileyin.', 'warning');
+  }
   target.innerHTML = loading('Toplu onay sunucuda uygulanıyor');
   try {
     await apiRequest(`/notifications/drafts/session/${encodeURIComponent(sessionId)}/approve`, {
@@ -1359,7 +1384,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.action === 'notification-run') runNotificationAction(target.dataset.notificationAction);
   if (target.dataset.action === 'leave-decision') decideLeave(target.dataset.leaveId, target.dataset.leaveDecision, target.dataset.leaveEtag);
   if (target.dataset.action === 'consent-revoke') revokeConsent(target.dataset.subjectRefId, target.dataset.subjectType, target.dataset.consentType);
-  if (target.dataset.action === 'bulk-approve-session') bulkApproveSession(target.dataset.sessionId, target.dataset.versions);
+  if (target.dataset.action === 'bulk-approve-session') bulkApproveSession(target.dataset.sessionId);
   if (target.dataset.action === 'schedule-row-update') updateScheduleRow(Number(target.dataset.scheduleIndex));
   if (target.dataset.action === 'schedule-row-remove') {
     state.scheduleEvents.splice(Number(target.dataset.scheduleIndex), 1);
