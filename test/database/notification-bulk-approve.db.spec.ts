@@ -37,7 +37,8 @@ withPostgres('N2 bulk approve completeness regressions (#389)', () => {
         status varchar CHECK (status IN ('pending', 'blocked_consent', 'approved', 'closed', 'dispatched', 'failed')),
         payload_masked jsonb, reason varchar, consent_version int, created_by_id uuid,
         snapshot jsonb, version int DEFAULT 0,
-        available_at timestamptz DEFAULT now(), UNIQUE (tenant_id, dedupe_key)
+        available_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(),
+        UNIQUE (tenant_id, dedupe_key)
       ) ON COMMIT DROP;
     `);
     await manager.query(
