@@ -73,7 +73,8 @@ describe('ConsentManagerService', () => {
     it('revokes the latest approved row and writes dataprotection.consent.revoked in the same transaction', async () => {
       const em = {
         query: jest.fn().mockResolvedValue([
-          { id: CONSENT_ID, consent_type: 'PARENT_NOTIFICATION', status: 'revoked', version: 2 },
+          [{ id: CONSENT_ID, consent_type: 'PARENT_NOTIFICATION', status: 'revoked', version: 2 }],
+          1,
         ]),
       } as any;
 
@@ -131,10 +132,23 @@ describe('ConsentManagerService', () => {
       expect(audit.write).not.toHaveBeenCalled();
     });
 
+    it('throws ConflictException when the UPDATE matches no row ([rows, rowCount] driver tuple)', async () => {
+      const em = { query: jest.fn().mockResolvedValue([[], 0]) } as any;
+      await expect(
+        service.revokeConsent(em, ctx, {
+          subjectRefId: '60000000-0000-4000-8000-000000000001',
+          subjectType: 'student',
+          consentType: 'PARENT_NOTIFICATION',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(audit.write).not.toHaveBeenCalled();
+    });
+
     it('propagates an audit write failure so the revoke cannot outlive its audit record', async () => {
       const em = {
         query: jest.fn().mockResolvedValue([
-          { id: CONSENT_ID, consent_type: 'PARENT_NOTIFICATION', status: 'revoked', version: 2 },
+          [{ id: CONSENT_ID, consent_type: 'PARENT_NOTIFICATION', status: 'revoked', version: 2 }],
+          1,
         ]),
       } as any;
       audit.write.mockRejectedValueOnce(new Error('audit chain unavailable'));

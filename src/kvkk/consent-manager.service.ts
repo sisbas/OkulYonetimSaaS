@@ -60,6 +60,18 @@ function toSnapshot(row: ConsentRowRecord): ConsentRowSnapshot {
 }
 
 /**
+ * TypeORM postgres sürücüsü UPDATE/DELETE sorgularında `[rows, rowCount]`
+ * tuple'ı döner; SELECT/INSERT ise doğrudan `rows` dizisi. Ham sonucu
+ * satır dizisine indirger (bkz. NotificationOutboxRepository.extractRows).
+ */
+function extractRows<T>(result: unknown): T[] {
+  if (Array.isArray(result) && Array.isArray(result[0])) {
+    return result[0] as T[];
+  }
+  return (result ?? []) as T[];
+}
+
+/**
  * KVKK consent authority değişim yüzeyi (#266 / P1B-FINAL Stage 5).
  *
  * Okuma + revoke, `ConsentAuthority` ile AYNI tablo ve lineage
@@ -122,8 +134,14 @@ export class ConsentManagerService {
       throw new ForbiddenException('CONSENT_REVOKE_INPUT_REQUIRED');
     }
 
-    const updated = (await entityManager.query(
-      `WITH latest AS (
+    const updated = extractRows<{
+      id: string;
+      consent_type: string;
+      status: string;
+      version: number | null;
+    }>(
+      await entityManager.query(
+        `WITH latest AS (
          SELECT c.id, c.status
            FROM kvkk_consents c
            JOIN kvkk_consent_subjects s
@@ -146,13 +164,9 @@ export class ConsentManagerService {
           AND c.status = 'approved'
           AND c.revoked_at IS NULL
         RETURNING c.id, c.consent_type, c.status, c.version`,
-      [tenantId, input.subjectRefId, input.subjectType, input.consentType],
-    )) as Array<{
-      id: string;
-      consent_type: string;
-      status: string;
-      version: number | null;
-    }>;
+        [tenantId, input.subjectRefId, input.subjectType, input.consentType],
+      ),
+    );
 
     if (updated.length === 0) {
       throw new ConflictException(
@@ -161,41 +175,24 @@ export class ConsentManagerService {
     }
 
     const row = updated[0];
-    try {
-      await this.audit.write(entityManager, 'dataprotection.consent.revoked', {
-        schemaVersion: 1,
-        tenantId,
-        actorUserId: context.userId ?? context.user?.userId ?? null,
-        actorSessionId: null,
-        requestId: context.requestId,
-        entityType: 'dataprotection',
-        entityId: String(row.id),
-        result: 'success',
-        changedFields: ['purpose', 'legalBasis'],
-        redactionReceipt: {
-          strategy: 'none',
-          evaluatedFieldCount: 6,
-          redactedFieldCount: 0,
-          skippedFieldCount: 6,
-          appliedAt: new Date().toISOString(),
-        },
-      });
-    } catch (error) {
-      // TEMP DIAGNOSTIC (revert before merge): PII-free failure shape only.
-      const failure = error as { name?: string; stack?: string };
-      console.warn(
-        JSON.stringify({
-          event: 'consent.revoke.audit_failed',
-          name: failure?.name ?? 'Unknown',
-          frame: String(failure?.stack ?? '').split('\n')[1] ?? '',
-          hasActor: Boolean(context.userId ?? context.user?.userId),
-          hasRequestId: Boolean(context.requestId),
-          hasTenantId: Boolean(tenantId),
-          entityId: String(row.id),
-        }),
-      );
-      throw error;
-    }
+    await this.audit.write(entityManager, 'dataprotection.consent.revoked', {
+      schemaVersion: 1,
+      tenantId,
+      actorUserId: context.userId ?? context.user?.userId ?? null,
+      actorSessionId: null,
+      requestId: context.requestId,
+      entityType: 'dataprotection',
+      entityId: String(row.id),
+      result: 'success',
+      changedFields: ['purpose', 'legalBasis'],
+      redactionReceipt: {
+        strategy: 'none',
+        evaluatedFieldCount: 6,
+        redactedFieldCount: 0,
+        skippedFieldCount: 6,
+        appliedAt: new Date().toISOString(),
+      },
+    });
 
     return Object.freeze({
       consentId: String(row.id),
