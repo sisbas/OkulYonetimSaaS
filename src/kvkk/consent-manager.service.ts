@@ -161,24 +161,41 @@ export class ConsentManagerService {
     }
 
     const row = updated[0];
-    await this.audit.write(entityManager, 'dataprotection.consent.revoked', {
-      schemaVersion: 1,
-      tenantId,
-      actorUserId: context.userId ?? context.user?.userId ?? null,
-      actorSessionId: null,
-      requestId: context.requestId,
-      entityType: 'dataprotection',
-      entityId: String(row.id),
-      result: 'success',
-      changedFields: ['purpose', 'legalBasis'],
-      redactionReceipt: {
-        strategy: 'none',
-        evaluatedFieldCount: 6,
-        redactedFieldCount: 0,
-        skippedFieldCount: 6,
-        appliedAt: new Date().toISOString(),
-      },
-    });
+    try {
+      await this.audit.write(entityManager, 'dataprotection.consent.revoked', {
+        schemaVersion: 1,
+        tenantId,
+        actorUserId: context.userId ?? context.user?.userId ?? null,
+        actorSessionId: null,
+        requestId: context.requestId,
+        entityType: 'dataprotection',
+        entityId: String(row.id),
+        result: 'success',
+        changedFields: ['purpose', 'legalBasis'],
+        redactionReceipt: {
+          strategy: 'none',
+          evaluatedFieldCount: 6,
+          redactedFieldCount: 0,
+          skippedFieldCount: 6,
+          appliedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      // TEMP DIAGNOSTIC (revert before merge): PII-free failure shape only.
+      const failure = error as { name?: string; stack?: string };
+      console.warn(
+        JSON.stringify({
+          event: 'consent.revoke.audit_failed',
+          name: failure?.name ?? 'Unknown',
+          frame: String(failure?.stack ?? '').split('\n')[1] ?? '',
+          hasActor: Boolean(context.userId ?? context.user?.userId),
+          hasRequestId: Boolean(context.requestId),
+          hasTenantId: Boolean(tenantId),
+          entityId: String(row.id),
+        }),
+      );
+      throw error;
+    }
 
     return Object.freeze({
       consentId: String(row.id),
