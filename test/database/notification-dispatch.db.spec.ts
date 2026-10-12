@@ -149,6 +149,12 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       [[TENANT_ID, OTHER_TENANT_ID]],
     );
     await dataSource.query(`DELETE FROM users WHERE id = $1`, [FIXTURE_USER_ID]);
+    // schedule_events.room_id FK'si (fk_schedule_events_room_branch) odaları
+    // branches'tan önce silmeyi zorunlu kılar.
+    await dataSource.query(
+      `DELETE FROM rooms WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
     await dataSource.query(
       `DELETE FROM branches WHERE tenant_id = ANY($1::uuid[])`,
       [[TENANT_ID, OTHER_TENANT_ID]],
@@ -173,6 +179,11 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
        VALUES ($1, $2, 'N2 Dispatch Branch A', 'N2-DISP-A', 'active'),
               ($3, $2, 'N2 Dispatch Branch B', 'N2-DISP-B', 'active')`,
       [BRANCH_ID, TENANT_ID, OTHER_BRANCH_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO rooms (id, tenant_id, branch_id, name, code, status)
+       VALUES ($1, $2, $3, 'N2 Dispatch Room', 'N2-D-R', 'active')`,
+      [ROOM_ID, TENANT_ID, BRANCH_ID],
     );
     await dataSource.query(
       `INSERT INTO users (id, email, credential_hash, full_name, status, token_version)

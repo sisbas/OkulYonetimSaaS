@@ -1,5 +1,5 @@
 import * as bcrypt from 'bcryptjs';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import { CreateRolesPermissions1700000000007 } from '../../src/database/migrations/1700000000007-CreateRolesPermissions';
 import { CreateTenantMemberships1700000000006 } from '../../src/database/migrations/1700000000006-CreateTenantMemberships';
@@ -83,13 +83,54 @@ describeWithPostgres('admin user seed on real PostgreSQL (#388)', () => {
     if (dataSource?.isInitialized) await dataSource.destroy();
   });
 
+  // beforeAll yalnızca 4 çekirdek tablo yaratır; paylaşımlı CI veritabanında
+  // tam şema vardır, kısmi şemada ise bu yardımcı tablolar atlanır.
+  async function runIfTableExists(
+    manager: EntityManager,
+    table: string,
+    sql: string,
+  ): Promise<void> {
+    const rows: Array<{ ok: boolean }> = await manager.query(
+      `SELECT to_regclass(current_schema() || '.' || $1) IS NOT NULL AS ok`,
+      [table],
+    );
+    if (rows[0].ok) await manager.query(sql);
+  }
+
   beforeEach(async () => {
     await dataSource.transaction(async (manager) => {
-      await manager.query('DELETE FROM user_roles');
-      await manager.query('DELETE FROM tenant_memberships');
-      await manager.query('DELETE FROM users');
-      await manager.query('DELETE FROM roles');
-      await manager.query('DELETE FROM tenants');
+      // test/database suite'leri aynı CI veritabanında sırayla koşar; önceki
+      // suite'lerin (ör. attendance/leave/schedule fixture'ları) bıraktığı
+      // kullanıcı referansları global kullanıcı wipe'ını FK ile kırar.
+      await runIfTableExists(
+        manager,
+        'audit_logs',
+        `UPDATE audit_logs
+            SET actor_user_id = NULL, actor_session_id = NULL
+          WHERE actor_user_id IS NOT NULL OR actor_session_id IS NOT NULL`,
+      );
+      await runIfTableExists(
+        manager,
+        'kvkk_consent_events',
+        `UPDATE kvkk_consent_events SET actor_user_id = NULL WHERE actor_user_id IS NOT NULL`,
+      );
+      await runIfTableExists(
+        manager,
+        'teachers',
+        `UPDATE teachers SET user_id = NULL WHERE user_id IS NOT NULL`,
+      );
+      await runIfTableExists(manager, 'user_sessions', `DELETE FROM user_sessions`);
+      await manager.query(`DELETE FROM user_roles`);
+      await manager.query(`DELETE FROM tenant_memberships`);
+      // Fail-closed ilk-kullanıcı semantiği tüm users tablosunu boş ister.
+      await manager.query(`DELETE FROM users`);
+      // Tenant/rol yaşam döngüsü kendi slug'ıyla sınırlıdır: paylaşımlı CI
+      // veritabanındaki diğer suite verilerine (branches/outbox/audit vb.) dokunulmaz.
+      await manager.query(
+        `DELETE FROM roles WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)`,
+        [BASE_INPUT.tenantSlug],
+      );
+      await manager.query(`DELETE FROM tenants WHERE slug = $1`, [BASE_INPUT.tenantSlug]);
       await manager.query(`INSERT INTO tenants (name, slug) VALUES ('Admin Seed Tenant', $1)`, [
         BASE_INPUT.tenantSlug,
       ]);
@@ -186,8 +227,11 @@ describeWithPostgres('admin user seed on real PostgreSQL (#388)', () => {
   });
 
   it('fails closed when the tenant is missing', async () => {
-    await dataSource.query(`DELETE FROM roles`);
-    await dataSource.query(`DELETE FROM tenants`);
+    await dataSource.query(
+      `DELETE FROM roles WHERE tenant_id IN (SELECT id FROM tenants WHERE slug = $1)`,
+      [BASE_INPUT.tenantSlug],
+    );
+    await dataSource.query(`DELETE FROM tenants WHERE slug = $1`, [BASE_INPUT.tenantSlug]);
 
     await expect(
       dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT)),
@@ -195,7 +239,12 @@ describeWithPostgres('admin user seed on real PostgreSQL (#388)', () => {
   });
 
   it('fails closed when the tenant_admin role is missing', async () => {
-    await dataSource.query(`DELETE FROM roles WHERE name = 'tenant_admin'`);
+    await dataSource.query(
+      `DELETE FROM roles
+        WHERE name = 'tenant_admin'
+          AND tenant_id IN (SELECT id FROM tenants WHERE slug = $1)`,
+      [BASE_INPUT.tenantSlug],
+    );
 
     await expect(
       dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT)),
