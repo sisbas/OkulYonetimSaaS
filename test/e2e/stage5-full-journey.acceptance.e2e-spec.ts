@@ -1282,9 +1282,8 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
   it('UI KVKK onay geri çekme + enqueue/execute yeniden doğrulama reddi.', async () => {
     currentScenario = SCENARIO_NAMES[4];
     await sessionA!.clickElement('.tab[data-tab="notifications"]');
-    await sessionA!.clickElement('#refresh-consents');
     const studentForRevoke = students[2].studentId;
-    await waitForCount(sessionA!, revokeSelector(studentForRevoke), 2);
+    await waitForConsentsWithRetry(sessionA!, revokeSelector(studentForRevoke), 2);
     for (const consentType of ['parent_notification', 'sms_notification']) {
       await clickRetry(
         sessionA!,
