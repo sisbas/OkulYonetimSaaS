@@ -28,6 +28,9 @@ const TEACHER_ID = '40000000-0000-4000-8000-000000000002';
 const TEACHER_BRANCH_ID = '40000000-0000-4000-8000-000000000003';
 const STUDENT_ID = '40000000-0000-4000-8000-000000000001';
 const SUBJECT_ID = '50000000-0000-4000-8000-000000000001';
+const CONSENT_PARENT_ID = '50000000-0000-4000-8000-000000000011';
+const CONSENT_SMS_ID = '50000000-0000-4000-8000-000000000012';
+const CONSENT_REVOKED_ID = '50000000-0000-4000-8000-000000000013';
 const COURSE_ID = '50000000-0000-4000-8000-000000000002';
 const GROUP_ID = '50000000-0000-4000-8000-000000000003';
 const TIME_SLOT_ID = '50000000-0000-4000-8000-000000000004';
@@ -275,11 +278,11 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       [SUBJECT_ID, TENANT_ID, STUDENT_ID],
     );
     const rows: Array<[string, string, number, Date | null]> = [
-      ['c-parent', 'parent_notification', 1, null],
-      ['c-sms', 'sms_notification', 1, null],
+      [CONSENT_PARENT_ID, 'parent_notification', 1, null],
+      [CONSENT_SMS_ID, 'sms_notification', 1, null],
     ];
     if (!approved) {
-      rows.push(['c-parent-revoked', 'parent_notification', 2, new Date()]);
+      rows.push([CONSENT_REVOKED_ID, 'parent_notification', 2, new Date()]);
     }
     for (const [id, type, version, revokedAt] of rows) {
       await dataSource.query(
@@ -325,7 +328,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
           (overrides.snapshot as Record<string, unknown>) ?? {
             source: { sessionRef: 'p1:session:abc', studentRef: 'p1:student:def' },
             contact: { channel: 'sms', maskedDisplay: null, verificationStatus: null },
-            consent: { approved: true, reason: null, consentId: 'c-parent', consentVersion: 1 },
+            consent: { approved: true, reason: null, consentId: CONSENT_PARENT_ID, consentVersion: 1 },
             template: {
               eventType: 'attendance.absent.locked',
               channel: 'sms',
