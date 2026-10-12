@@ -18,7 +18,8 @@ import {
  *   taslak olarak görünür.
  * - Tenant + branch predicate zorunludur (cross-tenant izolasyonu).
  * - Snapshot immutable'dır; bir kez yazıldıktan sonra değişmez.
- * - Onay/iptal yalnız `pending` durumundan yapılabilir.
+ * - Onay: `pending` veya `blocked_consent` durumundan (consent yeniden
+ *   verildikten sonra çıkış). İptal (`close`): yalnız `pending` durumundan.
  * - Optimistic concurrency: `expectedVersion` ile korunur.
  */
 @Injectable()
@@ -64,12 +65,14 @@ export class NotificationDraftService {
     entityManager: EntityManager,
     input: Readonly<{
       tenantId: string;
+      branchId: string;
       id: string;
       expectedVersion: number;
     }>,
   ): Promise<{ id: string; status: string; version: number }> {
     return this.outbox.transitionDraft(entityManager, {
       tenantId: input.tenantId,
+      branchId: input.branchId,
       id: input.id,
       targetStatus: 'approved',
       expectedVersion: input.expectedVersion,
@@ -86,15 +89,42 @@ export class NotificationDraftService {
     entityManager: EntityManager,
     input: Readonly<{
       tenantId: string;
+      branchId: string;
       id: string;
       expectedVersion: number;
     }>,
   ): Promise<{ id: string; status: string; version: number }> {
     return this.outbox.transitionDraft(entityManager, {
       tenantId: input.tenantId,
+      branchId: input.branchId,
       id: input.id,
       targetStatus: 'closed',
       expectedVersion: input.expectedVersion,
+    });
+  }
+
+  /**
+   * Session düzeyinde toplu draft onayı (P1B-FINAL Stage 5).
+   *
+   * Aynı attendance session'ının tüm bekleyen/bloke draftlarını tek
+   * işlemde `approved`'a geçirir (all-or-nothing; stale version'da
+   * ConflictException → transaction geri alınır).
+   */
+  async bulkApproveSession(
+    entityManager: EntityManager,
+    input: Readonly<{
+      tenantId: string;
+      branchId: string;
+      sessionId: string;
+      expectedVersions: ReadonlyArray<{ id: string; version: number }>;
+    }>,
+  ): Promise<Array<{ id: string; status: string; version: number }>> {
+    return this.outbox.transitionDraftsForSession(entityManager, {
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      sessionId: input.sessionId,
+      targetStatus: 'approved',
+      expectedVersions: input.expectedVersions,
     });
   }
 }

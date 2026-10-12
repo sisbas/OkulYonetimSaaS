@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { RequestContext } from '../common/context/request-context';
 
@@ -22,6 +27,7 @@ export type EnqueueOutboxRow = Readonly<{
 export type NotificationDraftRow = {
   id: string;
   tenantId: string;
+  sessionId: string;
   dedupeKey: string;
   eventType: string;
   channel: string;
@@ -30,6 +36,7 @@ export type NotificationDraftRow = {
   reason: string | null;
   consentVersion: number | null;
   snapshot: Record<string, unknown> | null;
+  version: number;
   availableAt: Date;
   createdAt: Date;
 };
@@ -152,16 +159,17 @@ export class NotificationOutboxRepository {
       throw new BadRequestException('NOTIFICATION_OUTBOX_OFFSET_INVALID');
     }
     const bounded = Math.min(limit, 100);
-    return (await entityManager.query(
-      `SELECT o.id, o.tenant_id AS "tenantId", o.dedupe_key AS "dedupeKey",
+return (await entityManager.query(
+      `SELECT o.id, o.tenant_id AS "tenantId", o.session_id AS "sessionId",
+              o.dedupe_key AS "dedupeKey",
               o.event_type AS "eventType", o.channel, o.status,
               o.payload_masked AS "payloadMasked", o.reason,
               o.consent_version AS "consentVersion", o.snapshot,
-              o.available_at AS "availableAt", o.created_at AS "createdAt"
+              o.version, o.available_at AS "availableAt", o.created_at AS "createdAt"
          FROM notification_outbox o
-         JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
-        WHERE o.tenant_id = $1 AND s.branch_id = $2
-          AND o.status IN ('pending', 'blocked_consent')
+        JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+       WHERE o.tenant_id = $1 AND s.branch_id = $2
+         AND o.status IN ('pending', 'blocked_consent')
         ORDER BY o.available_at ASC, o.id ASC
         LIMIT $3 OFFSET $4`,
       [tenantId, branchId, bounded, offset],
@@ -185,15 +193,16 @@ export class NotificationOutboxRepository {
         typeof branchId !== 'string' || !branchId.trim()) {
       throw new ForbiddenException('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
     }
-    const rows = (await entityManager.query(
-      `SELECT o.id, o.tenant_id AS "tenantId", o.dedupe_key AS "dedupeKey",
+const rows = (await entityManager.query(
+      `SELECT o.id, o.tenant_id AS "tenantId", o.session_id AS "sessionId",
+              o.dedupe_key AS "dedupeKey",
               o.event_type AS "eventType", o.channel, o.status,
               o.payload_masked AS "payloadMasked", o.reason,
               o.consent_version AS "consentVersion", o.snapshot,
-              o.available_at AS "availableAt", o.created_at AS "createdAt"
+              o.version, o.available_at AS "availableAt", o.created_at AS "createdAt"
          FROM notification_outbox o
-         JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
-        WHERE o.tenant_id = $1 AND s.branch_id = $2 AND o.id = $3
+        JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+       WHERE o.tenant_id = $1 AND s.branch_id = $2 AND o.id = $3
           AND o.status IN ('pending', 'blocked_consent')`,
       [tenantId, branchId, id],
     )) as NotificationDraftRow[];
@@ -203,35 +212,46 @@ export class NotificationOutboxRepository {
   /**
    * Draft durum geçişi — approve/close (N1c).
    *
-   * Yalnız `pending` durumundan `approved` veya `closed` geçişi
-   * mümkündür. Optimistic concurrency: `expectedVersion` (outbox
-   * `updated_at` tabanlı) ile korunur. Stale version'da 0 satır
-   * etkilenir → ConflictException.
+   * `approve`: `pending` VEYA `blocked_consent` durumundan (onay geri
+   * alınıp consent yeniden verildikten sonra yeniden onay — N2 blocked
+   * akışının çıkışı). `close`: yalnız `pending` durumundan.
+   * Optimistic concurrency: `expectedVersion` ile korunur. Stale
+   * version'da 0 satır etkilenir → ConflictException (HTTP 409).
    */
   async transitionDraft(
     entityManager: EntityManager,
     input: Readonly<{
       tenantId: string;
+      branchId: string;
       id: string;
       targetStatus: 'approved' | 'closed';
       expectedVersion: number;
     }>,
   ): Promise<{ id: string; status: string; version: number }> {
+    if (typeof input.tenantId !== 'string' || !input.tenantId.trim() ||
+        typeof input.branchId !== 'string' || !input.branchId.trim()) {
+      throw new ForbiddenException('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
+    }
+    const fromStatuses =
+      input.targetStatus === 'approved' ? ['pending', 'blocked_consent'] : ['pending'];
     const updated = extractRows<{ id: string; status: string; version: number }>(
       await entityManager.query(
         `UPDATE notification_outbox
             SET status = $1,
                 version = version + 1,
                 updated_at = now()
-          WHERE tenant_id = $2 AND id = $3 AND status = 'pending'
+          WHERE tenant_id = $2 AND id = $3 AND status = ANY($5::varchar[])
             AND version = $4
+            AND session_id IN (
+              SELECT id FROM attendance_sessions
+               WHERE tenant_id = $2 AND branch_id = $6)
           RETURNING id, status, version`,
-        [input.targetStatus, input.tenantId, input.id, input.expectedVersion],
+        [input.targetStatus, input.tenantId, input.id, input.expectedVersion, fromStatuses, input.branchId],
       ),
     );
     if (updated.length === 0) {
-      throw new Error(
-        'Notification draft version conflict, not found, or not in pending status',
+      throw new ConflictException(
+        'Notification draft version conflict, not found, or in invalid status',
       );
     }
     return {
@@ -239,5 +259,74 @@ export class NotificationOutboxRepository {
       status: updated[0].status,
       version: Number(updated[0].version),
     };
+  }
+
+  /**
+   * Session düzeyinde toplu draft onayı (P1B-FINAL Stage 5).
+   *
+   * Aynı attendance session'ının tüm bekleyen/bloke draftlarını tek
+   * işlemde `approved`'a geçirir. Optimistic concurrency satır başına
+   * `(id, version)` eşleşmesiyle korunur; istemcinin gördüğü tüm
+   * versionlar birebir eşleşmezse 0 satır döner → all-or-nothing
+   * ConflictException (HTTP 409) → işlem geri alınır.
+   * Tenant + branch predicate zorunludur.
+   */
+  async transitionDraftsForSession(
+    entityManager: EntityManager,
+    input: Readonly<{
+      tenantId: string;
+      branchId: string;
+      sessionId: string;
+      targetStatus: 'approved';
+      expectedVersions: ReadonlyArray<{ id: string; version: number }>;
+    }>,
+  ): Promise<Array<{ id: string; status: string; version: number }>> {
+    if (typeof input.tenantId !== 'string' || !input.tenantId.trim() ||
+        typeof input.branchId !== 'string' || !input.branchId.trim() ||
+        typeof input.sessionId !== 'string' || !input.sessionId.trim()) {
+      throw new ForbiddenException('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
+    }
+    if (!Array.isArray(input.expectedVersions) || input.expectedVersions.length === 0) {
+      throw new BadRequestException('NOTIFICATION_BULK_VERSIONS_REQUIRED');
+    }
+    const bounded = input.expectedVersions.slice(0, 200);
+    const ids = bounded.map((v) => v.id);
+    const versions = bounded.map((v) => v.version);
+    const fromStatuses = ['pending', 'blocked_consent'];
+
+    const updated = extractRows<{ id: string; status: string; version: number }>(
+      await entityManager.query(
+        `UPDATE notification_outbox o
+            SET status = $1,
+                version = o.version + 1,
+                updated_at = now()
+           FROM (
+             SELECT tn.id, tn.version
+               FROM unnest($4::uuid[], $5::int[]) AS tn(id, version)
+           ) AS expected,
+           attendance_sessions s
+          WHERE o.tenant_id = $2
+            AND o.session_id = $3
+            AND s.id = o.session_id
+            AND s.tenant_id = o.tenant_id
+            AND s.branch_id = $6
+            AND o.status = ANY($7::varchar[])
+            AND o.id = expected.id
+            AND o.version = expected.version
+          RETURNING o.id, o.status, o.version`,
+        [input.targetStatus, input.tenantId, input.sessionId, ids, versions, input.branchId, fromStatuses],
+      ),
+    );
+
+    if (updated.length !== bounded.length) {
+      throw new ConflictException(
+        'Notification draft bulk version conflict, not found, or in invalid status',
+      );
+    }
+    return updated.map((row) => ({
+      id: row.id,
+      status: row.status,
+      version: Number(row.version),
+    }));
   }
 }

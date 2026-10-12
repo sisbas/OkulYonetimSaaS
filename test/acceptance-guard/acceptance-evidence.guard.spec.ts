@@ -99,6 +99,17 @@ export const NON_ACCEPTANCE_EXEMPTIONS: ReadonlyArray<{
       'These are not genuine business/UI journeys, delivery or pilot acceptance.',
     mustContain: 'INSERT INTO notification_outbox',
   },
+  {
+    file: path.join('test', 'database', 'notification-dispatch.db.spec.ts'),
+    reason:
+      'N2 non-acceptance real-PostgreSQL bounded dispatch regression: it seeds reference ' +
+      'fixtures plus locked attendance sessions through SQL to prove claim lease/fencing, ' +
+      'exponential backoff, dead-letter and receipt idempotency, and tenant/branch operation ' +
+      'predicates. The seeded rows are scaffolding for repository/service regressions, not ' +
+      'genuine business/UI journeys, delivery or pilot acceptance, and this spec is never ' +
+      'bound to the P0 acceptance check.',
+    mustContain: 'INSERT INTO notification_outbox',
+  },
 ]);
 
 /**

@@ -1,0 +1,97 @@
+/* HERO: A tilted paper reminder anchors a calm, editorial sign-in composition. */
+.login-page {
+  --login-paper: #f7f5ee;
+  --login-ink: #202a28;
+  --login-muted: #515b55;
+  --login-blue: #2854ce;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  background: var(--login-paper);
+  color: var(--login-ink);
+  font-family: "Segoe UI", sans-serif;
+}
+.login-header, .login-footer {
+  width: min(1240px, calc(100% - 112px));
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.login-header { padding: 28px 0; border-bottom: 1px solid #d9ddd2; }
+.login-brand { display: inline-flex; align-items: center; gap: 12px; color: var(--login-ink); font-size: 24px; font-weight: 700; letter-spacing: -1px; }
+.login-brand img { width: 38px; height: 38px; }
+.login-brand > span > span { font-weight: 400; }
+.login-home { color: var(--login-muted); font-size: 12px; }
+.login-home > span { margin-left: 16px; color: var(--login-blue); }
+.login-main {
+  width: min(1120px, calc(100% - 112px));
+  margin: auto;
+  padding: 70px 0;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  align-items: center;
+  gap: 90px;
+}
+.login-story { position: relative; padding: 30px 0; }
+.login-kicker { margin: 0; display: flex; align-items: center; gap: 9px; font-size: 10px; font-weight: 700; letter-spacing: 1.6px; }
+.login-story h1 { font-family: Georgia, serif; font-size: clamp(45px, 4.7vw, 66px); font-weight: 400; line-height: 1.1; letter-spacing: -3px; margin: 26px 0; }
+.login-story h1 em { color: var(--login-blue); font-weight: 400; }
+.login-description { color: var(--login-muted); font-size: 14px; line-height: 1.85; margin: 0; }
+.login-paper { position: relative; z-index: 1; margin: 48px 28px 0 5px; max-width: 370px; padding: 23px 27px; background: #fffef9; border: 1px solid #d9ddd2; border-radius: 4px; transform: rotate(-4deg); box-shadow: 0 20px 38px -24px #303b3545; }
+.login-paper-top { display: flex; justify-content: space-between; font-size: 10px; color: var(--login-muted); border-bottom: 1px solid #e0e3d9; padding-bottom: 14px; }
+.login-paper-top > span:last-child { color: var(--login-blue); font-size: 16px; }
+.login-paper > p { font-family: Georgia, serif; font-size: 26px; line-height: 1.3; letter-spacing: -.8px; margin: 20px 0; }
+.login-paper > p em { color: var(--login-blue); }
+.login-paper-bottom { display: flex; gap: 8px; align-items: center; font-size: 9px; color: var(--login-muted); }
+.login-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--login-blue); flex-shrink: 0; }
+.login-spark { position: absolute; bottom: -5px; right: -10px; color: #dce3ce; font-size: 150px; line-height: 1; transform: rotate(15deg); }
+.login-form-section { border-left: 1px solid #d9ddd2; padding: 20px 0 20px 65px; }
+.login-form-inner { max-width: 360px; }
+.login-form-inner h2 { font-family: Georgia, serif; font-size: 34px; line-height: 1.2; letter-spacing: -1.3px; font-weight: 400; margin: 19px 0 12px; }
+.login-form-description { color: var(--login-muted); font-size: 12px; line-height: 1.7; margin: 0 0 30px; }
+.login-page #login-form { display: grid; gap: 20px; }
+.login-page .login-field { display: grid; gap: 9px; font-size: 12px; font-weight: 600; }
+.login-page .login-field input { width: 100%; min-height: 49px; padding: 13px 14px; border: 1px solid #c4cabe; border-radius: 4px; background: #fffef9; color: var(--login-ink); font: inherit; font-size: 14px; font-weight: 400; }
+.login-page .login-field input::placeholder { color: #626b63; }
+.login-page .login-submit { width: 100%; min-height: 50px; display: flex; justify-content: space-between; border: 1px solid var(--login-blue); border-radius: 4px; margin-top: 4px; padding: 13px 18px; background: var(--login-blue); color: white; font-size: 13px; }
+.login-page .login-submit:hover { background: #193fae; }
+.login-page .login-submit:disabled { opacity: .7; cursor: wait; }
+.login-help { margin: 22px 0 28px; font-size: 11px; line-height: 1.8; color: var(--login-muted); }
+.login-help strong { font-weight: 400; }
+.login-preview { display: grid; gap: 9px; padding-top: 23px; border-top: 1px solid #d9ddd2; font-size: 11px; color: var(--login-muted); }
+.login-preview a { color: var(--login-blue); font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+.login-feedback { margin-bottom: 22px; padding: 12px 14px; border-left: 3px solid var(--login-blue); background: #e9edfb; color: #203b83; font-size: 12px; }
+.login-footer { border-top: 1px solid #d9ddd2; padding: 22px 0; font-size: 10px; color: var(--login-muted); }
+.login-page :focus-visible { outline: 3px solid var(--login-blue); outline-offset: 4px; }
+.login-page a:hover { color: var(--login-blue); }
+.login-story, .login-form-section { animation: login-arrive .6s both; }
+.login-form-section { animation-delay: .08s; }
+@keyframes login-arrive { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
+@media (max-width: 1050px) {
+  .login-main { gap: 40px; }
+  .login-form-section { padding-left: 35px; }
+  .login-story h1 { font-size: 48px; }
+  .login-spark { right: -15px; font-size: 110px; }
+}
+@media (max-width: 760px) {
+  .login-header, .login-footer, .login-main { width: calc(100% - 40px); }
+  .login-header { padding: 20px 0; }
+  .login-brand { font-size: 20px; gap: 8px; }
+  .login-brand img { width: 30px; height: 30px; }
+  .login-home { font-size: 10px; }
+  .login-home > span { margin-left: 5px; }
+  .login-main { max-width: 460px; grid-template-columns: 1fr; padding: 34px 0 45px; gap: 32px; }
+  .login-story { padding: 0; }
+  .login-story h1 { font-size: 40px; letter-spacing: -1.8px; margin: 18px 0; }
+  .login-description { font-size: 12px; }
+  .login-paper, .login-spark { display: none; }
+  .login-form-section { padding: 30px 0 0; border-left: 0; border-top: 1px solid #d9ddd2; }
+  .login-form-inner { max-width: none; }
+  .login-form-inner h2 { font-size: 31px; }
+  .login-kicker { font-size: 8px; letter-spacing: 1.2px; }
+  .login-footer { gap: 20px; font-size: 9px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-story, .login-form-section { animation: none; }
+}
