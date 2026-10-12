@@ -47,12 +47,26 @@ describeWithPostgres('consent revoke + transactional audit PostgreSQL (#266)', (
   const kvkkMigration = new CreateKvkkConsents1700000000010();
   const versionMigration = new AddKvkkConsentVersion1850000000000();
 
-  async function cleanup(): Promise<void> {
+  /** Domain satırlarını sıfırlar; tenant/actor sabit fixture olarak kalır. */
+  async function resetRows(): Promise<void> {
     // audit_logs önce: actor_user_id FK users'e bağlı.
     await dataSource.query(`DELETE FROM audit_logs WHERE request_id LIKE $1`, [REQUEST_PREFIX]);
     await dataSource.query(`DELETE FROM kvkk_consent_events WHERE tenant_id = $1`, [TENANT_ID]);
     await dataSource.query(`DELETE FROM kvkk_consents WHERE tenant_id = $1`, [TENANT_ID]);
     await dataSource.query(`DELETE FROM kvkk_consent_subjects WHERE tenant_id = $1`, [TENANT_ID]);
+  }
+
+  async function seedSubject(): Promise<void> {
+    await dataSource.query(
+      `INSERT INTO kvkk_consent_subjects (id, tenant_id, subject_type, subject_ref_id, status)
+       VALUES ($1, $2, 'student', $3, 'active')
+       ON CONFLICT (id) DO NOTHING`,
+      [SUBJECT_ID, TENANT_ID, STUDENT_ID],
+    );
+  }
+
+  async function cleanup(): Promise<void> {
+    await resetRows();
     await dataSource.query(`DELETE FROM users WHERE id = $1`, [ACTOR_USER_ID]);
     await dataSource.query(`DELETE FROM tenants WHERE id = $1`, [TENANT_ID]);
   }
@@ -79,19 +93,18 @@ describeWithPostgres('consent revoke + transactional audit PostgreSQL (#266)', (
 
     await cleanup();
     await dataSource.query(
-      `INSERT INTO tenants (id, name, slug, status, timezone) VALUES ($1, $2, $3, 'active', 'Europe/Istanbul')`,
+      `INSERT INTO tenants (id, name, slug, status, timezone)
+       VALUES ($1, $2, $3, 'active', 'Europe/Istanbul')
+       ON CONFLICT (id) DO NOTHING`,
       [TENANT_ID, 'Consent Revoke Tenant', 'consent-revoke-db-tenant'],
     );
     await dataSource.query(
       `INSERT INTO users (id, email, credential_hash, full_name, status, token_version)
-       VALUES ($1, 'consent-revoke-actor@example.test', 'x', 'Consent Revoke Actor', 'active', 1)`,
+       VALUES ($1, 'consent-revoke-actor@example.test', 'x', 'Consent Revoke Actor', 'active', 1)
+       ON CONFLICT (id) DO NOTHING`,
       [ACTOR_USER_ID],
     );
-    await dataSource.query(
-      `INSERT INTO kvkk_consent_subjects (id, tenant_id, subject_type, subject_ref_id, status)
-       VALUES ($1, $2, 'student', $3, 'active')`,
-      [SUBJECT_ID, TENANT_ID, STUDENT_ID],
-    );
+    await seedSubject();
   });
 
   afterAll(async () => {
@@ -101,12 +114,8 @@ describeWithPostgres('consent revoke + transactional audit PostgreSQL (#266)', (
   });
 
   beforeEach(async () => {
-    await cleanup();
-    await dataSource.query(
-      `INSERT INTO kvkk_consent_subjects (id, tenant_id, subject_type, subject_ref_id, status)
-       VALUES ($1, $2, 'student', $3, 'active')`,
-      [SUBJECT_ID, TENANT_ID, STUDENT_ID],
-    );
+    await resetRows();
+    await seedSubject();
   });
 
   function context(requestId: string): RequestContext {
