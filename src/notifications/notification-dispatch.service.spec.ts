@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { RequestContext } from '../common/context/request-context';
+import { TransactionalAuditWriter } from '../common/audit/transactional-audit-writer';
 import {
   availableActionsFor,
   NotificationDispatchService,
@@ -12,7 +13,12 @@ import {
 } from './notification-dispatch.repository';
 import { NotificationSimulatorService } from './notification-simulator.service';
 
-const ctx = { tenantId: 't1', branchId: 'b1' } as RequestContext;
+const ctx = {
+  tenantId: 't1',
+  branchId: 'b1',
+  requestId: 'dispatch-req',
+  userId: 'u1',
+} as RequestContext;
 
 const claimFixture = {
   id: 'o1',
@@ -32,6 +38,7 @@ describe('NotificationDispatchService', () => {
   let outbox: jest.Mocked<NotificationDispatchRepository>;
   let simulator: jest.Mocked<NotificationSimulatorService>;
   let service: NotificationDispatchService;
+  let audit: { write: jest.Mock };
   let consent: { approved: boolean; reason: string | null; consentVersion: number | null };
 
   beforeEach(() => {
@@ -61,10 +68,12 @@ describe('NotificationDispatchService', () => {
         errorCode: null,
       }),
     } as unknown as jest.Mocked<NotificationSimulatorService>;
+    audit = { write: jest.fn().mockResolvedValue(undefined) };
     service = new NotificationDispatchService(
       dataSource as unknown as DataSource,
       outbox,
       simulator,
+      audit as unknown as TransactionalAuditWriter,
     );
     consent = { approved: true, reason: null, consentVersion: 2 };
     (service as unknown as { consentAuthority: unknown }).consentAuthority = {
@@ -125,6 +134,46 @@ describe('NotificationDispatchService', () => {
       expect(result.status).toBe('dispatched');
       expect(result.idempotent).toBe(false);
       expect(result.receipt).toEqual({ id: 'r1' });
+      expect(audit.write).toHaveBeenCalledTimes(1);
+      expect(audit.write).toHaveBeenCalledWith(
+        expect.anything(),
+        'notification.sent',
+        expect.objectContaining({
+          schemaVersion: 1,
+          tenantId: 't1',
+          actorUserId: 'u1',
+          actorSessionId: null,
+          requestId: 'dispatch-req',
+          entityType: 'notification',
+          entityId: 'o1',
+          result: 'success',
+          changedFields: ['status'],
+        }),
+      );
+    });
+
+    it('records a durable notification.failed audit for a rejected provider outcome', async () => {
+      outbox.claim.mockResolvedValue(claimFixture);
+      outbox.applyOutcome.mockResolvedValue({ status: 'failed', version: 2 });
+      outbox.insertReceipt.mockResolvedValue({ id: 'r1' } as never);
+
+      const result = await service.execute(ctx, 'o1');
+
+      expect(result.status).toBe('failed');
+      expect(audit.write).toHaveBeenCalledWith(
+        expect.anything(),
+        'notification.failed',
+        expect.objectContaining({ result: 'failure', entityId: 'o1' }),
+      );
+    });
+
+    it('propagates an audit write failure so the transition cannot commit without its audit record', async () => {
+      outbox.claim.mockResolvedValue(claimFixture);
+      outbox.applyOutcome.mockResolvedValue({ status: 'dispatched', version: 2 });
+      outbox.insertReceipt.mockResolvedValue({ id: 'r1' } as never);
+      audit.write.mockRejectedValueOnce(new Error('audit chain unavailable'));
+
+      await expect(service.execute(ctx, 'o1')).rejects.toThrow('audit chain unavailable');
     });
 
     it('blocked at dispatch: no simulator call, no receipt, zero provider effect', async () => {
@@ -140,6 +189,15 @@ describe('NotificationDispatchService', () => {
       expect(result.status).toBe('blocked_consent');
       expect(result.reason).toBe('blocked_consent');
       expect(result.receipt).toBeNull();
+      expect(audit.write).toHaveBeenCalledWith(
+        expect.anything(),
+        'notification.failed',
+        expect.objectContaining({
+          entityId: 'o1',
+          result: 'failure',
+          changedFields: ['status'],
+        }),
+      );
     });
 
     it('idempotent: claim miss on dispatched row returns existing receipt (no new effect)', async () => {
@@ -159,6 +217,7 @@ describe('NotificationDispatchService', () => {
       expect(result.receipt).toEqual({ id: 'r1' });
       expect(simulator.simulate).not.toHaveBeenCalled();
       expect(outbox.insertReceipt).not.toHaveBeenCalled();
+      expect(audit.write).not.toHaveBeenCalled();
     });
 
     it('claim miss during active lease → CLAIM_ACTIVE conflict', async () => {
@@ -199,6 +258,7 @@ describe('NotificationDispatchService', () => {
         new ConflictException('CLAIM_LOST:o1'),
       );
       expect(outbox.insertReceipt).not.toHaveBeenCalled();
+      expect(audit.write).not.toHaveBeenCalled();
     });
   });
 

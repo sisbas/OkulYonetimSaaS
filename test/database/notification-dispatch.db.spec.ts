@@ -7,6 +7,8 @@ import { CreateNotificationOutbox1829000000000 } from '../../src/database/migrat
 import { AddNotificationSnapshot1860000000000 } from '../../src/database/migrations/1860000000000-AddNotificationSnapshot';
 import { AddNotificationDispatch1870000000000 } from '../../src/database/migrations/1870000000000-AddNotificationDispatch';
 import { RequestContext } from '../../src/common/context/request-context';
+import { AuditLogRepository } from '../../src/common/audit/audit-log.repository';
+import { TypeOrmTransactionalAuditWriter } from '../../src/common/audit/transactional-audit-writer';
 import {
   backoffMsForAttempts,
   NotificationDispatchRepository,
@@ -41,7 +43,11 @@ const EVENT_ID = '60000000-0000-4000-8000-000000000003';
 const SESSION_DATE = '2026-10-05';
 const OTHER_SESSION_DATE = '2026-10-06';
 
-const ctx = { tenantId: TENANT_ID, branchId: BRANCH_ID } as RequestContext;
+const ctx = {
+  tenantId: TENANT_ID,
+  branchId: BRANCH_ID,
+  requestId: 'n2-dispatch-req',
+} as RequestContext;
 
 // NON-ACCEPTANCE SQL regression: session-local fixtures, never a genuine
 // business/UI journey or notification delivery/pilot acceptance.
@@ -49,6 +55,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
   let dataSource: DataSource;
   let repo: NotificationDispatchRepository;
   let service: NotificationDispatchService;
+  let auditWriter: TypeOrmTransactionalAuditWriter;
   const originalSimulatorMode = process.env.NOTIFICATION_SIMULATOR_MODE;
 
   beforeAll(async () => {
@@ -71,11 +78,13 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       await runner.release();
     }
     repo = new NotificationDispatchRepository();
+    auditWriter = new TypeOrmTransactionalAuditWriter(new AuditLogRepository());
     delete process.env.NOTIFICATION_SIMULATOR_MODE;
     service = new NotificationDispatchService(
       dataSource,
       repo,
       new NotificationSimulatorService(),
+      auditWriter,
     );
   });
 
@@ -91,6 +100,11 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
   });
 
   async function cleanup(): Promise<void> {
+    // audit_logs, tenants FK'sine sahip: fixture kiracılardan ÖNCE silinmeli.
+    await dataSource.query(
+      `DELETE FROM audit_logs WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_ID, OTHER_TENANT_ID]],
+    );
     await dataSource.query(
       `DELETE FROM notification_dispatch_receipts WHERE tenant_id = ANY($1::uuid[])`,
       [[TENANT_ID, OTHER_TENANT_ID]],
@@ -764,6 +778,30 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       expect(stored[0].receipt.simulated).toBe(true);
       expect(stored[0].receipt.attempt).toBe(1);
       expect(JSON.stringify(stored[0].receipt)).not.toContain(STUDENT_ID);
+
+      const auditRows = (await dataSource.query(
+        `SELECT action, entity_type, entity_id, request_id, metadata_json, actor_user_id
+           FROM audit_logs
+          WHERE entity_id = $1 AND action = 'notification.sent'`,
+        [id],
+      )) as Array<{
+        action: string;
+        entity_type: string;
+        entity_id: string;
+        request_id: string;
+        metadata_json: Record<string, unknown>;
+        actor_user_id: string | null;
+      }>;
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0].entity_type).toBe('notification');
+      expect(auditRows[0].entity_id).toBe(id);
+      expect(auditRows[0].request_id).toBe(ctx.requestId);
+      expect(auditRows[0].actor_user_id).toBeNull();
+      expect(auditRows[0].metadata_json).toMatchObject({
+        schemaVersion: 1,
+        result: 'success',
+        changedFields: ['status'],
+      });
     });
 
     it('second execute on dispatched row is idempotent (same receipt, no new effect)', async () => {
@@ -808,6 +846,17 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       expect(row[0].status).toBe('blocked_consent');
       expect(row[0].reason).toBe('blocked_consent');
       expect(row[0].consent_version).toBe(2);
+
+      const auditRows = (await dataSource.query(
+        `SELECT action, metadata_json FROM audit_logs
+          WHERE entity_id = $1 AND action = 'notification.failed'`,
+        [id],
+      )) as Array<{ action: string; metadata_json: Record<string, unknown> }>;
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0].metadata_json).toMatchObject({
+        result: 'failure',
+        changedFields: ['status'],
+      });
     });
 
     it('fail_first mode: rejection schedules backoff, then acceptance dispatches (attempt 2)', async () => {
@@ -817,6 +866,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
         dataSource,
         repo,
         new NotificationSimulatorService(),
+        auditWriter,
       );
       delete process.env.NOTIFICATION_SIMULATOR_MODE;
 

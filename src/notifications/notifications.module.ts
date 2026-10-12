@@ -12,6 +12,11 @@ import { AbsenceNotificationService } from './absence-notification.service';
 import { TransactionalAbsenceNotificationAdapter } from './absence-notification.adapter';
 import { NotificationEligibilityService } from '../kvkk/notification-eligibility.service';
 import { ATTENDANCE_ABSENCE_NOTIFICATION_PORT } from '../attendance/attendance-absence-notification.port';
+import { AuditLogRepository } from '../common/audit/audit-log.repository';
+import {
+  TRANSACTIONAL_AUDIT_WRITER,
+  TypeOrmTransactionalAuditWriter,
+} from '../common/audit/transactional-audit-writer';
 import { NotificationDraftService } from './notification-draft.service';
 import { NotificationDraftController } from './notification-draft.controller';
 import { NotificationOperationsController } from './notification-operations.controller';
@@ -36,6 +41,9 @@ import { NotificationOperationsController } from './notification-operations.cont
   ],
   controllers: [NotificationDraftController, NotificationOperationsController],
   providers: [
+    AuditLogRepository,
+    TypeOrmTransactionalAuditWriter,
+    { provide: TRANSACTIONAL_AUDIT_WRITER, useExisting: TypeOrmTransactionalAuditWriter },
     ParentNotificationService,
     NotificationEligibilityService,
     NotificationOutboxRepository,

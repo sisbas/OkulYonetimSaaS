@@ -1,6 +1,15 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { DataSource, EntityManager } from 'typeorm';
 import { RequestContext } from '../common/context/request-context';
+import {
+  TRANSACTIONAL_AUDIT_WRITER,
+  TransactionalAuditWriter,
+} from '../common/audit/transactional-audit-writer';
 import { ConsentAuthority } from '../kvkk/consent-authority';
 import { NotificationOutboxStatus } from './notification-outbox.entity';
 import { NotificationDispatchReceipt } from './notification-dispatch-receipt.entity';
@@ -69,6 +78,9 @@ export function availableActionsFor(status: NotificationOutboxStatus): readonly 
  * - Idempotentlik: `dispatched` satıra ikinci execute → yeni etki üretmez,
  *   mevcut receipt'i döner (200).
  * - Cancel yarışı: koşullu UPDATE; tx2 0 satır görürse rollback → etki yok.
+ * - Dayanıcı audit (#266 review P1): tx2'deki her sonuç geçişi
+ *   (`blocked_consent`/`dispatched`/`failed`/`dead_lettered`/`uncertain`)
+ *   actor + requestId ile `audit_logs` zincirine AYNI transaction'da yazılır.
  */
 @Injectable()
 export class NotificationDispatchService {
@@ -78,6 +90,8 @@ export class NotificationDispatchService {
     private readonly dataSource: DataSource,
     private readonly outbox: NotificationDispatchRepository,
     private readonly simulator: NotificationSimulatorService,
+    @Inject(TRANSACTIONAL_AUDIT_WRITER)
+    private readonly audit: TransactionalAuditWriter,
   ) {}
 
   /** Operasyon listesi — tüm durumlar. */
@@ -159,6 +173,10 @@ export class NotificationDispatchService {
           consentVersion: decision.consentVersion,
         });
         if (!transitioned) throw new ConflictException(`CLAIM_LOST:${claim.id}`);
+        await this.writeOutcomeAudit(em, context, {
+          id: claim.id,
+          event: 'notification.failed',
+        });
         return {
           id: claim.id,
           status: 'blocked_consent' as const,
@@ -207,6 +225,11 @@ export class NotificationDispatchService {
           consentVersion: decision.consentVersion,
           deadLettered: next.status === 'dead_lettered',
         }),
+      });
+
+      await this.writeOutcomeAudit(em, context, {
+        id: claim.id,
+        event: next.status === 'dispatched' ? 'notification.sent' : 'notification.failed',
       });
 
       return {
@@ -258,6 +281,31 @@ export class NotificationDispatchService {
         throw claimConflict(basis, id);
       }
       return { id, status: next.status, version: next.version };
+    });
+  }
+
+  /**
+   * tx2 sonuç geçişinin dayanıcı audit'i — aynı `EntityManager` ile yazılır;
+   * domain geçişi rollback olursa audit kaydı da yazılmaz (Madde III).
+   */
+  private async writeOutcomeAudit(
+    em: EntityManager,
+    context: RequestContext,
+    input: Readonly<{
+      id: string;
+      event: 'notification.sent' | 'notification.failed';
+    }>,
+  ): Promise<void> {
+    await this.audit.write(em, input.event, {
+      schemaVersion: 1,
+      tenantId: context.tenantId!,
+      actorUserId: context.userId ?? context.user?.userId ?? null,
+      actorSessionId: null,
+      requestId: context.requestId,
+      entityType: 'notification',
+      entityId: input.id,
+      result: input.event === 'notification.sent' ? 'success' : 'failure',
+      changedFields: ['status'],
     });
   }
 
