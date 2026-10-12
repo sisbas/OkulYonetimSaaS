@@ -825,8 +825,9 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       expect(first.status).toBe('failed');
       expect(first.receipt!.outcome).toBe('provider_rejected');
 
-      const blocked = await failingService.execute(ctx, id);
-      expect(blocked).toBeInstanceOf(ConflictException);
+      await expect(failingService.execute(ctx, id)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
 
       await dataSource.query(
         `UPDATE notification_outbox SET available_at = now() - interval '1 second' WHERE id = $1`,
