@@ -356,6 +356,7 @@ async function login(event) {
     state.accessToken = result.accessToken || '';
     state.tenantId = tenantId;
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
+    announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
     updateWorkflowProgress();
   } catch (error) {
     state.accessToken = '';
@@ -364,7 +365,7 @@ async function login(event) {
     renderError($('#teacher-output'), error);
     return;
   }
-  await loadCatalog({ announceOnSuccess: 'Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.' });
+  await loadCatalog();
 }
 
 async function retryCatalog() {
