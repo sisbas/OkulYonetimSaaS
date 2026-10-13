@@ -110,6 +110,18 @@ export const NON_ACCEPTANCE_EXEMPTIONS: ReadonlyArray<{
       'bound to the P0 acceptance check.',
     mustContain: 'INSERT INTO notification_outbox',
   },
+  {
+    file: path.join('test', 'database', 'notification-bulk-approve.db.spec.ts'),
+    reason:
+      'N2-bulk non-acceptance real-PostgreSQL bulk-approve regression (#389): it seeds ' +
+      'reference fixtures plus locked attendance sessions and notification drafts through ' +
+      'SQL to prove server-derived session-set completeness of transitionDraftsForSession ' +
+      '(20-row page truncation, one missing draft, oversized version list), atomic ' +
+      'mixed-status approval and stale-version rollback. The seeded rows are repository-test ' +
+      'scaffolding, not genuine business/UI journeys, delivery or pilot acceptance, and this ' +
+      'spec is never bound to the P0 acceptance check.',
+    mustContain: 'INSERT INTO notification_outbox',
+  },
 ]);
 
 /**

@@ -41,6 +41,12 @@ export type NotificationDraftRow = {
   createdAt: Date;
 };
 
+/** Toplu onay için istemci listesi ve sunucu-kümesi üst sınırı (#389). */
+export const MAX_BULK_VERSIONS = 200;
+
+/** Taslak geçişlerindeki kaynak durumlar (pending|blocked_consent). */
+const DRAFT_TRANSITION_STATUSES = ['pending', 'blocked_consent'];
+
 /**
  * TypeORM 0.3.30 postgres QueryRunner dönüş şeklini normalize eder:
  * UPDATE/DELETE sorguları `[rows, rowCount]` tuple'ı döner;
@@ -262,13 +268,16 @@ const rows = (await entityManager.query(
   }
 
   /**
-   * Session düzeyinde toplu draft onayı (P1B-FINAL Stage 5).
+   * Session düzeyinde toplu draft onayı (P1B-FINAL Stage 5, #389).
    *
-   * Aynı attendance session'ının tüm bekleyen/bloke draftlarını tek
-   * işlemde `approved`'a geçirir. Optimistic concurrency satır başına
-   * `(id, version)` eşleşmesiyle korunur; istemcinin gördüğü tüm
-   * versionlar birebir eşleşmezse 0 satır döner → all-or-nothing
-   * ConflictException (HTTP 409) → işlem geri alınır.
+   * Yetkili draft kümesi SUNUCU tarafında attendance session'ın
+   * pending|blocked_consent satırlarından türetilir; istemci listesi
+   * yalnızca bir "tam-küme" kontrolüdür,gerçek kaynağı değildir.
+   * Eksik (sayfa kırpması), fazla veya oturum-kapsamı dışı id →
+   * `NOTIFICATION_BULK_INCOMPLETE_LIST` (HTTP 409); sınırdan büyük
+   * istemci listesi → `NOTIFICATION_BULK_VERSIONS_TOO_LARGE` (HTTP 400);
+   * sessiz slice yok. UPDATE all-or-nothing koruması (satır sayısı
+   * eşleşmezse ConflictException) stale version için son savunmadır.
    * Tenant + branch predicate zorunludur.
    */
   async transitionDraftsForSession(
@@ -289,10 +298,42 @@ const rows = (await entityManager.query(
     if (!Array.isArray(input.expectedVersions) || input.expectedVersions.length === 0) {
       throw new BadRequestException('NOTIFICATION_BULK_VERSIONS_REQUIRED');
     }
-    const bounded = input.expectedVersions.slice(0, 200);
-    const ids = bounded.map((v) => v.id);
-    const versions = bounded.map((v) => v.version);
-    const fromStatuses = ['pending', 'blocked_consent'];
+    if (input.expectedVersions.length > MAX_BULK_VERSIONS) {
+      throw new BadRequestException('NOTIFICATION_BULK_VERSIONS_TOO_LARGE');
+    }
+    const clientIds = input.expectedVersions.map((v) => v.id);
+    if (new Set(clientIds).size !== clientIds.length) {
+      throw new BadRequestException('NOTIFICATION_BULK_VERSIONS_DUPLICATE');
+    }
+
+    const sessionDrafts = extractRows<{ id: string; version: number }>(
+      await entityManager.query(
+        `SELECT o.id, o.version
+           FROM notification_outbox o
+           JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+          WHERE o.tenant_id = $1
+            AND o.session_id = $2
+            AND s.branch_id = $3
+            AND o.status = ANY($4::varchar[])
+          LIMIT $5`,
+        [input.tenantId, input.sessionId, input.branchId, DRAFT_TRANSITION_STATUSES, MAX_BULK_VERSIONS + 1],
+      ),
+    );
+    if (sessionDrafts.length > MAX_BULK_VERSIONS) {
+      throw new ConflictException('NOTIFICATION_BULK_SESSION_TOO_LARGE');
+    }
+
+    const clientById = new Map(input.expectedVersions.map((v) => [v.id, v.version]));
+    const serverIds = new Set(sessionDrafts.map((row) => row.id));
+    const missing = sessionDrafts.some((row) => !clientById.has(row.id));
+    const extra = clientIds.some((id) => !serverIds.has(id));
+    if (missing || extra) {
+      throw new ConflictException('NOTIFICATION_BULK_INCOMPLETE_LIST');
+    }
+
+    const ids = input.expectedVersions.map((v) => v.id);
+    const versions = input.expectedVersions.map((v) => v.version);
+    const fromStatuses = DRAFT_TRANSITION_STATUSES;
 
     const updated = extractRows<{ id: string; status: string; version: number }>(
       await entityManager.query(
@@ -318,7 +359,7 @@ const rows = (await entityManager.query(
       ),
     );
 
-    if (updated.length !== bounded.length) {
+    if (updated.length !== input.expectedVersions.length) {
       throw new ConflictException(
         'Notification draft bulk version conflict, not found, or in invalid status',
       );
