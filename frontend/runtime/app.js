@@ -671,10 +671,6 @@ async function clearAssignment() {
   }
 }
 
-function renderLeaveEtag(leaveId, version) {
-  return `"leave:${leaveId}:v${version}"`;
-}
-
 async function loadLeaves() {
   if (!requireSession()) return;
   const branchId = getBranchId();
@@ -697,7 +693,7 @@ function renderLeaveDecisionCard(leave) {
   const decision = String(pick(leave, ['decisionStatus'], 'unknown')).toLowerCase();
   const coverage = String(pick(leave, ['coverageStatus'], 'unknown')).toLowerCase();
   const pending = decision === 'pending' || decision === 'unknown';
-  const etag = renderLeaveEtag(leaveId, Number(pick(leave, ['version'], 1)));
+  const etag = pick(leave, ['etag', 'leaveEtag'], '');
   return `<article class="card">
     <h3>İzin talebi · ${escapeHtml(displayStatus(decision))}</h3>
     <p class="card-meta">
