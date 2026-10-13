@@ -1,26 +1,4 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as vm from 'node:vm';
-
-const source = fs.readFileSync(path.join(process.cwd(), 'frontend/runtime/app.js'), 'utf8');
-
-function runtime() {
-  const elements = new Map<string, Record<string, unknown>>();
-  const element = (id: string) => {
-    if (!elements.has(id)) elements.set(id, { value: '', innerHTML: '', textContent: '', disabled: false,
-      dataset: {}, addEventListener: () => {}, focus: () => {} });
-    return elements.get(id)!;
-  };
-  const fetch = jest.fn();
-  const context = vm.createContext({ document: { querySelector: element, querySelectorAll: () => [], addEventListener: () => {} },
-    fetch, URLSearchParams });
-  vm.runInContext(source + '\nthis.probe = { state, applyCatalog, login, updateContext, apiRequest };', context);
-  return { element, fetch, probe: context.probe };
-}
-
-function response(body: unknown, status = 200) {
-  return { ok: status === 200, status, text: async () => JSON.stringify(body), headers: { get: () => null } };
-}
+import { runtime, response } from './runtime-harness';
 
 const catalog = { branches: [{ name: 'Merkez', code: 'ANKARA' }, { name: 'Merkez', code: 'IZMIR' }], activeBranch: null };
 

@@ -297,6 +297,10 @@ function clearBranchWork() {
 }
 
 function applyCatalog(catalog) {
+  const institutionEl = $('#context-institution');
+  if (institutionEl) {
+    institutionEl.textContent = pick(catalog?.institution, ['name'], '');
+  }
   state.branches = asArray(catalog, ['branches']);
   const selector = $('#branch-id');
   selector.innerHTML = '<option value="">Şube seçin</option>' + state.branches.map((branch) =>
@@ -312,6 +316,22 @@ function toIso8601(value) {
   return new Date(value).toISOString();
 }
 
+async function loadCatalog({ announceOnSuccess = '' } = {}) {
+  const retryEl = $('#context-retry');
+  try {
+    const { body: catalog } = await apiRequest('/context');
+    applyCatalog(catalog);
+    if (retryEl) retryEl.hidden = true;
+    if (announceOnSuccess) announce(announceOnSuccess, 'success');
+    return true;
+  } catch (catalogError) {
+    setStatus('Kurum bilgisi alınamadı', 'warning');
+    if (retryEl) retryEl.hidden = false;
+    renderError($('#teacher-output'), catalogError);
+    return false;
+  }
+}
+
 async function login(event) {
   event.preventDefault();
   state.accessToken = '';
@@ -321,6 +341,10 @@ async function login(event) {
   clearBranchWork();
   $('#branch-id').disabled = true;
   $('#branch-id').innerHTML = '<option value="">Önce oturum açın</option>';
+  const institutionEl = $('#context-institution');
+  if (institutionEl) institutionEl.textContent = '';
+  const retryEl = $('#context-retry');
+  if (retryEl) retryEl.hidden = true;
   const body = {
     email: $('#email').value.trim(),
     password: $('#password').value,
@@ -334,14 +358,20 @@ async function login(event) {
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
     announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
     updateWorkflowProgress();
-    const { body: catalog } = await apiRequest('/context');
-    applyCatalog(catalog);
   } catch (error) {
     state.accessToken = '';
     setStatus('Oturum başarısız', 'danger');
     updateWorkflowProgress('session', 'Kimlik bilgilerini kontrol edin');
     renderError($('#teacher-output'), error);
+    return;
   }
+  await loadCatalog();
+}
+
+async function retryCatalog() {
+  if (!requireSession()) return;
+  const loaded = await loadCatalog({ announceOnSuccess: 'Kurum bilgisi güncellendi.' });
+  if (loaded) setStatus('Oturum aktif', 'success');
 }
 
 async function updateContext(event) {
@@ -353,16 +383,20 @@ async function updateContext(event) {
   state.branchLabel = '';
   clearBranchWork();
   state.date = $('#operation-date').value;
+  let selection;
   try {
-    const { body: catalog } = await apiRequest('/context/branch', {
+    selection = await apiRequest('/context/branch', {
       method: 'POST', body: { branchName: branch.name, branchCode: branch.code },
     });
-    applyCatalog(catalog);
-    await loadQueue();
   } catch (error) {
+    if (error && error.status === 404) {
+      error = { ...error, reasonCode: 'BRANCH_NOT_VISIBLE', uiState: 'forbidden_non_enumerating' };
+    }
     updateWorkflowProgress('context', 'Şube seçimi doğrulanamadı');
-    renderError($('#queue-output'), error);
+    return renderError($('#queue-output'), error);
   }
+  applyCatalog(selection.body);
+  await loadQueue();
 }
 
 function activateTab(name) {
@@ -637,6 +671,7 @@ document.addEventListener('click', (event) => {
 
 $('#login-form').addEventListener('submit', login);
 $('#context-form').addEventListener('submit', updateContext);
+$('#context-retry').addEventListener('click', retryCatalog);
 $('#leave-form').addEventListener('submit', createLeave);
 $('#load-own-leave').addEventListener('click', loadOwnLeave);
 $('#refresh-queue').addEventListener('click', loadQueue);

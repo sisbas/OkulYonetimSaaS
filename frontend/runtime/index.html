@@ -16,6 +16,7 @@
           <p class="eyebrow">Faz 1 runtime</p>
           <h1>Okul iş akışı</h1>
           <p class="topbar-subtitle">İzin talebi, ders etkisi ve yedek öğretmen görevlendirmesini tek güvenli akışta yönetin.</p>
+          <p id="context-institution" class="topbar-institution" aria-live="polite"></p>
         </div>
         <div id="session-status" class="status-pill" aria-live="polite">Oturum bekleniyor</div>
       </header>
@@ -58,6 +59,7 @@
           <p id="branch-help" class="hint">Yalnızca erişiminiz olan şubeler için işlem yapılabilir.</p>
           <button type="submit">Günlük işleri getir</button>
         </form>
+        <button id="context-retry" type="button" hidden>Kurum bilgisini yeniden dene</button>
       </aside>
 
       <nav class="tabs" aria-label="Runtime akışları">
