@@ -23,17 +23,19 @@ import {
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 const describeWithPostgres = DATABASE_URL ? describe : describe.skip;
 
-const EFFECTIVE_TENANT_SLUG = process.env.SEED_TENANT_SLUG ?? 'system-seed';
+const BUILT_IN_DEFAULT_TENANT_SLUG = 'system-seed';
 const ADMIN_EMAIL = 'cli-admin@okul.example';
 const ADMIN_PASSWORD = 'cli-bootstrap-pass-2026';
 const ADMIN_FULL_NAME = 'CLI Kurum Yoneticisi';
 
 function runNpmScript(script: string, extraEnv: Record<string, string> = {}): SpawnSyncReturns<string> {
+  const childEnv: NodeJS.ProcessEnv = { ...process.env };
+  delete childEnv.SEED_TENANT_SLUG;
   return spawnSync('npm', ['run', script], {
     cwd: `${__dirname}/../..`,
     encoding: 'utf8',
     env: {
-      ...process.env,
+      ...childEnv,
       ...extraEnv,
     },
     shell: true,
@@ -78,7 +80,7 @@ describeWithPostgres('db:seed:admin CLI on real PostgreSQL (#388)', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/First admin user created/);
 
-    const state = await queryAdminSeedState(dataSource, ADMIN_EMAIL, EFFECTIVE_TENANT_SLUG);
+    const state = await queryAdminSeedState(dataSource, ADMIN_EMAIL, BUILT_IN_DEFAULT_TENANT_SLUG);
     expect(state.user).not.toBeNull();
     expect(state.user?.full_name).toBe(ADMIN_FULL_NAME);
     expect(state.user?.status).toBe('active');
