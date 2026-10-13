@@ -71,12 +71,14 @@ Her üretilen değeri geçici bir yerde (parola yöneticisi) sakla; düz metin d
 | `AUDIT_HMAC_KEY_ID` | Sabit sürüm etiketi; ilk kurulum için `key-1` |
 | `DATABASE_URL` | Prod PostgreSQL connection string (bkz. §5) |
 | `KVKK_PSEUDONYM_KEY` | ≥32 byte, rastgele |
+| `KVKK_CONTACT_KEY` | **Tam 32 karakter** UTF-8 string (N1a/#380). `raw.length === 32` kontrolü — base64 (44 karakter) DEĞİL; hex (64 karakter) DEĞİL. `node -e` ile base64 üretirsen 44 karakter olur ve boot FATAL. Örnek: her biri ASCII aralığından seçilen 32 rastgele karakter |
 
 ### 3.2 Önerilen / opsiyonel
 
 | Değişken (AD) | Not |
 |---|---|
 | `KVKK_PSEUDONYM_KEY_VERSION` | Örn. `p1`; anahtar rotasyonunda sürüm izi |
+| `KVKK_CONTACT_KEY_ID` | Varsayılan `contact-p1`; ilk kurulumda boş bırakılabilir |
 | `JWT_ISSUER` | Varsayılanlar mevcut; değiştirme zorunlu değil |
 | `JWT_ACCESS_AUDIENCE` / `JWT_REFRESH_AUDIENCE` | Varsayılanlar mevcut |
 
@@ -171,6 +173,8 @@ ayrıca test edilir.
 | Health **500** | Ortam/config (anayasal VI) | Zorunlu env eksik veya DB erişilemiyor | Vercel Function loglarında fail-closed hata adını kontrol et (loglar yalnız **değişken adını** ve uzunluk ihlalini gösterir — değer asla); §3.1 listesinden tek tek doğrula; `DATABASE_URL` host/TLS kontrolü |
 | Boot reddi: JWT hatası | Config | `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET` eksik veya <32 karakter | Her ikisini de ≥32 karakter ayrı rastgele değerle yenile; Redeploy |
 | Boot reddi: KVKK hatası | Config | `KVKK_PSEUDONYM_KEY` eksik veya <32 byte | Yeni ≥32 byte değer üret; `KVKK_PSEUDONYM_KEY_VERSION`'ı koru; Redeploy |
+| Boot FATAL: `KVKK_CONTACT_KEY ... missing` | Config | N1a (#380) parent-contact anahtarı eksik | `KVKK_CONTACT_KEY` ekle (§3.1 — tam 32 karakter); Redeploy |
+| Boot FATAL: `KVKK_CONTACT_KEY must be exactly 32 bytes (got 44)` | Config | Değer base64 (44 karakter) üretilmiş | Yeni **32 karakter** ASCII değere çevir (hex/base64 DEĞİL); mevcut değeri sil → yeniden ekle; Redeploy |
 | Health **500**, log yok / cold start hatası | Deploy | Env sonrası redeploy tetiklenmedi veya build başarısız | Deployments sekmesinde son deploy durumu; Redeploy |
 | **404** | Routing | Yanlış path | Doğru path `/api/v1/health`; rewrite'lar repo `vercel.json`'da tanımlı |
 | **401/403** korumalı route'larda | Beklenen | Kimliksiz istek | §7.2 — hata değil |
