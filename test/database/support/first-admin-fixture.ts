@@ -17,7 +17,7 @@ async function runIfTableExists(
   if (rows[0].ok) await manager.query(sql);
 }
 
-async function wipeSharedUserReferences(manager: EntityManager): Promise<void> {
+export async function wipeSharedUserReferences(manager: EntityManager): Promise<void> {
   await runIfTableExists(
     manager,
     'audit_logs',

@@ -5,37 +5,35 @@ import { DataSource } from 'typeorm';
 import {
   createAdminSeedDataSource,
   queryAdminSeedState,
-  resetAdminSeedFixture,
+  wipeSharedUserReferences,
 } from './support/first-admin-fixture';
 
 /**
  * #388 — belgelenen operatör komutunun (`npm run db:seed:admin`) uçtan uca kanıtı.
  *
  * admin-user-seed.spec.ts seed fonksiyonunu (seedFirstAdminUser) doğrudan çağırır;
- * bu suite ise README'de document edilen CLI yolunu gerçek child process olarak
- * çalıştırır: env girdileri, AppDataSource bağlantısı, exit kodları ve stdout/stderr
- * mesajları dahil. DB Smoke (test:database:required) kapsamında gerçek PostgreSQL
- * üzerinde koşar.
+ * bu suite ise README'de document edilen gerçek kurulum akışını child process olarak
+ * çalıştırır: önce `npm run db:seed:permissions`, sonra tenant slug override'ı OLMADAN
+ * `npm run db:seed:admin` — yani iki komutun paylaştığı default tenant (system-seed)
+ * sözleşmesi dahil. Env girdileri, AppDataSource bağlantısı, exit kodları ve
+ * stdout/stderr mesajları doğrulanır. DB Smoke (test:database:required) kapsamında
+ * gerçek PostgreSQL üzerinde koşar.
  */
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 const describeWithPostgres = DATABASE_URL ? describe : describe.skip;
 
-const TENANT_SLUG = 'admin-cli-tenant';
+const EFFECTIVE_TENANT_SLUG = process.env.SEED_TENANT_SLUG ?? 'system-seed';
 const ADMIN_EMAIL = 'cli-admin@okul.example';
 const ADMIN_PASSWORD = 'cli-bootstrap-pass-2026';
 const ADMIN_FULL_NAME = 'CLI Kurum Yoneticisi';
 
-function runSeedCli(extraEnv: Record<string, string> = {}): SpawnSyncReturns<string> {
-  return spawnSync('npm', ['run', 'db:seed:admin'], {
+function runNpmScript(script: string, extraEnv: Record<string, string> = {}): SpawnSyncReturns<string> {
+  return spawnSync('npm', ['run', script], {
     cwd: `${__dirname}/../..`,
     encoding: 'utf8',
     env: {
       ...process.env,
-      SEED_TENANT_SLUG: TENANT_SLUG,
-      SEED_ADMIN_EMAIL: ADMIN_EMAIL,
-      SEED_ADMIN_PASSWORD: ADMIN_PASSWORD,
-      SEED_ADMIN_FULL_NAME: ADMIN_FULL_NAME,
       ...extraEnv,
     },
     shell: true,
@@ -43,13 +41,26 @@ function runSeedCli(extraEnv: Record<string, string> = {}): SpawnSyncReturns<str
   });
 }
 
+function runSeedCli(extraEnv: Record<string, string> = {}): SpawnSyncReturns<string> {
+  return runNpmScript('db:seed:admin', {
+    SEED_ADMIN_EMAIL: ADMIN_EMAIL,
+    SEED_ADMIN_PASSWORD: ADMIN_PASSWORD,
+    SEED_ADMIN_FULL_NAME: ADMIN_FULL_NAME,
+    ...extraEnv,
+  });
+}
+
 describeWithPostgres('db:seed:admin CLI on real PostgreSQL (#388)', () => {
-  jest.setTimeout(120_000);
+  jest.setTimeout(180_000);
 
   let dataSource: DataSource;
 
   beforeAll(async () => {
     dataSource = await createAdminSeedDataSource(DATABASE_URL as string);
+    const permissionsSeed = runNpmScript('db:seed:permissions');
+    expect(permissionsSeed.error).toBeUndefined();
+    expect(permissionsSeed.status).toBe(0);
+    expect(permissionsSeed.stdout + permissionsSeed.stderr).not.toMatch(/ERR!/);
   });
 
   afterAll(async () => {
@@ -57,7 +68,7 @@ describeWithPostgres('db:seed:admin CLI on real PostgreSQL (#388)', () => {
   });
 
   beforeEach(async () => {
-    await dataSource.transaction((manager) => resetAdminSeedFixture(manager, TENANT_SLUG));
+    await dataSource.transaction((manager) => wipeSharedUserReferences(manager));
   });
 
   it('creates the first loginable admin via npm run db:seed:admin', async () => {
@@ -67,7 +78,7 @@ describeWithPostgres('db:seed:admin CLI on real PostgreSQL (#388)', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/First admin user created/);
 
-    const state = await queryAdminSeedState(dataSource, ADMIN_EMAIL, TENANT_SLUG);
+    const state = await queryAdminSeedState(dataSource, ADMIN_EMAIL, EFFECTIVE_TENANT_SLUG);
     expect(state.user).not.toBeNull();
     expect(state.user?.full_name).toBe(ADMIN_FULL_NAME);
     expect(state.user?.status).toBe('active');
