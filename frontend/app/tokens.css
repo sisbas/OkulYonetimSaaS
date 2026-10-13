@@ -1,0 +1,208 @@
+/* ==========================================================================
+   OkulYonetimSaaS — Design Tokens (Notion-inspired, education-adapted)
+   Source: ux-ui-agent-skills Notion design system
+   Philosophy: warm minimalism, whisper borders, layered shadows, Inter
+   ========================================================================== */
+
+:root {
+  /* ── Primitive: Warm Neutral Scale (yellow-brown undertones) ─────────── */
+  --warm-white: #f6f5f4;
+  --warm-dark: #31302e;
+  --warm-gray-500: #615d59;
+  --warm-gray-300: #a39e98;
+  --near-black: rgba(0, 0, 0, 0.95);
+  --pure-white: #ffffff;
+
+  /* ── Primitive: Brand Blues ──────────────────────────────────────────── */
+  --notion-blue: #0075de;
+  --active-blue: #005bab;
+  --focus-blue: #097fe8;
+  --badge-blue-bg: #f2f9ff;
+  --badge-blue-text: #097fe8;
+  --deep-navy: #213183;
+
+  /* ── Primitive: Semantic Accents ─────────────────────────────────────── */
+  --accent-teal: #2a9d99;
+  --accent-green: #1aae39;
+  --accent-orange: #dd5b00;
+  --accent-red: #dc2626;
+  --accent-purple: #391c57;
+
+  /* ── Semantic: Core Roles ────────────────────────────────────────────── */
+  --color-bg-canvas: var(--pure-white);
+  --color-bg-surface: var(--pure-white);
+  --color-bg-alt: var(--warm-white);
+  --color-bg-muted: rgba(0, 0, 0, 0.04);
+
+  --color-text-primary: var(--near-black);
+  --color-text-secondary: var(--warm-gray-500);
+  --color-text-muted: var(--warm-gray-300);
+  --color-text-inverse: var(--pure-white);
+
+  --color-border-whisper: rgba(0, 0, 0, 0.1);
+  --color-border-default: #dddddd;
+  --color-border-strong: rgba(0, 0, 0, 0.18);
+
+  /* ── Semantic: Interactive ───────────────────────────────────────────── */
+  --color-interactive-primary: var(--notion-blue);
+  --color-interactive-primary-hover: var(--active-blue);
+  --color-interactive-primary-active: #004a8f;
+  --color-interactive-link: var(--notion-blue);
+  --color-interactive-link-hover: var(--active-blue);
+  --color-interactive-focus: var(--focus-blue);
+
+  /* ── Semantic: Status (education context) ────────────────────────────── */
+  --color-status-success: var(--accent-green);
+  --color-status-success-bg: #e8f5e9;
+  --color-status-warning: var(--accent-orange);
+  --color-status-warning-bg: #fff3e0;
+  --color-status-danger: var(--accent-red);
+  --color-status-danger-bg: #fef2f2;
+  --color-status-info: var(--notion-blue);
+  --color-status-info-bg: var(--badge-blue-bg);
+
+  /* ── Typography ──────────────────────────────────────────────────────── */
+  --font-primary: Inter, -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-feature-settings: "lnum", "locl";
+
+  --text-display: 2.5rem;        /* 40px */
+  --text-display-tight: 1.0;
+  --text-display-tracking: -0.05em;
+
+  --text-h1: 1.75rem;            /* 28px */
+  --text-h1-tight: 1.15;
+  --text-h1-tracking: -0.02em;
+
+  --text-h2: 1.375rem;           /* 22px */
+  --text-h2-tight: 1.25;
+  --text-h2-tracking: -0.015em;
+
+  --text-h3: 1.125rem;           /* 18px */
+  --text-body: 1rem;             /* 16px */
+  --text-body-sm: 0.875rem;      /* 14px */
+  --text-caption: 0.8125rem;     /* 13px */
+  --text-badge: 0.75rem;         /* 12px */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ── Spacing (8px base, organic scale) ───────────────────────────────── */
+  --space-0: 0;
+  --space-1: 0.125rem;   /* 2px */
+  --space-2: 0.25rem;    /* 4px */
+  --space-3: 0.375rem;   /* 6px */
+  --space-4: 0.5rem;     /* 8px */
+  --space-5: 0.625rem;   /* 10px */
+  --space-6: 0.75rem;    /* 12px */
+  --space-8: 1rem;       /* 16px */
+  --space-10: 1.25rem;   /* 20px */
+  --space-12: 1.5rem;    /* 24px */
+  --space-16: 2rem;      /* 32px */
+  --space-20: 2.5rem;    /* 40px */
+  --space-24: 3rem;      /* 48px */
+  --space-32: 4rem;      /* 64px */
+
+  /* ── Border Radius ───────────────────────────────────────────────────── */
+  --radius-micro: 4px;       /* buttons, inputs */
+  --radius-subtle: 5px;      /* links, list items */
+  --radius-standard: 8px;    /* small cards */
+  --radius-comfortable: 12px;/* standard cards */
+  --radius-large: 16px;      /* hero cards */
+  --radius-pill: 9999px;     /* badges, pills */
+
+  /* ── Shadows (multi-layer, sub-0.05 opacity) ─────────────────────────── */
+  --shadow-card:
+    rgba(0, 0, 0, 0.04) 0px 4px 18px,
+    rgba(0, 0, 0, 0.027) 0px 2.025px 7.84688px,
+    rgba(0, 0, 0, 0.02) 0px 0.8px 2.925px,
+    rgba(0, 0, 0, 0.01) 0px 0.175px 1.04062px;
+
+  --shadow-deep:
+    rgba(0, 0, 0, 0.01) 0px 1px 3px,
+    rgba(0, 0, 0, 0.02) 0px 3px 7px,
+    rgba(0, 0, 0, 0.02) 0px 7px 15px,
+    rgba(0, 0, 0, 0.04) 0px 14px 28px,
+    rgba(0, 0, 0, 0.05) 0px 23px 52px;
+
+  --shadow-focus: 0 0 0 2px var(--color-interactive-focus);
+
+  /* ── Motion ──────────────────────────────────────────────────────────── */
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* ── Z-index ─────────────────────────────────────────────────────────── */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-drawer: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+}
+
+/* ── Dark Mode (respects prefers-color-scheme) ────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-canvas: #191919;
+    --color-bg-surface: #202020;
+    --color-bg-alt: #252525;
+    --color-bg-muted: rgba(255, 255, 255, 0.06);
+
+    --color-text-primary: rgba(255, 255, 255, 0.95);
+    --color-text-secondary: #9b9a97;
+    --color-text-muted: #6b6a67;
+    --color-text-inverse: #191919;
+
+    --color-border-whisper: rgba(255, 255, 255, 0.12);
+    --color-border-default: #373737;
+    --color-border-strong: rgba(255, 255, 255, 0.2);
+
+    --color-interactive-primary: #2383e2;
+    --color-interactive-primary-hover: #1a6fc4;
+    --color-interactive-link: #2383e2;
+
+    --color-status-success-bg: #1a2e1c;
+    --color-status-warning-bg: #2e2416;
+    --color-status-danger-bg: #2e1a1a;
+    --color-status-info-bg: #162032;
+
+    --shadow-card:
+      rgba(0, 0, 0, 0.2) 0px 4px 18px,
+      rgba(0, 0, 0, 0.15) 0px 2px 8px,
+      rgba(0, 0, 0, 0.1) 0px 1px 3px;
+
+    --shadow-deep:
+      rgba(0, 0, 0, 0.3) 0px 1px 3px,
+      rgba(0, 0, 0, 0.35) 0px 3px 7px,
+      rgba(0, 0, 0, 0.35) 0px 7px 15px,
+      rgba(0, 0, 0, 0.4) 0px 14px 28px,
+      rgba(0, 0, 0, 0.45) 0px 23px 52px;
+  }
+}
+
+/* ── Reduced Motion ────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 0ms;
+  }
+}
+
+/* ── Print ─────────────────────────────────────────────────────────────── */
+@media print {
+  :root {
+    --color-bg-canvas: #ffffff;
+    --color-text-primary: #000000;
+    --shadow-card: none;
+    --shadow-deep: none;
+  }
+}
