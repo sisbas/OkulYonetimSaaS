@@ -167,7 +167,7 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain('empty-state');
     expect(app).toContain('error-state');
     expect(html).toContain('role="region"');
-    expect(html).toContain('aria-label="Günlük operasyon kuyruğu"');
+    expect(html).toContain('aria-label="Günlük iş listesi"');
   });
 
   it('does not expose internal labels, transport versions or backend jargon in visible runtime copy', () => {
