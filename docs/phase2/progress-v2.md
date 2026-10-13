@@ -43,8 +43,8 @@ Kabul kuralı (bağlayıcı): bir dilim yalnız **runtime|pilot-ready + exact he
 | **#359** | docs(phase2): plan-of-record + progress board (bu PR) | `04d8c2c` | `BLOCKED` | Vercel (H2) + Codex review thread'leri (aşağıda `fixed:` kaydı) · Backend CI düzeltmesi `04d8c2c` ile |
 | — | açık başka PR yok (2026-09-24 doğrulaması: `gh pr list --state open` = {#356, #357, #359}) | — | — | — |
 
-**R14 thread politikası (governance, pazarlık dışı):** her thread yalnız `fixed:<sha>` kanıtıyla kapatılır ve yalnız o commit **main'e merge olduktan sonra** resolve edilir.
-`deferred`/susturma yorumuyla kapatma yasak (`master-prompt-v2.md` §11-8). Kanıt: `artifacts/R14/evidence.md`.
+**Thread politikası (governance, pazarlık dışı; K-16 / #368 kararı, 2026-10-13):** her thread yalnız `fixed:<sha>` kanıtıyla kapatılır; o commit resolve anında PR'ın **mevcut head'inde** bulunmalı, testler gerçekten koşmuş ve verification failure olmamalıdır. Resolve **pre-merge** yapılır (ruleset 19052349 `required_review_thread_resolution` gereği) ve sonrası `isResolved` API ile teyit edilir.
+`deferred`/susturma yorumuyla kapatma yasak (`master-prompt-v2.md` §11-8). Force-push ile fix commit'inin head'den çekilmesi kural ihlalidir; required checks her push'ta yeniden koşar. Kanıt: `artifacts/R14/evidence.md`.
 
 ---
 

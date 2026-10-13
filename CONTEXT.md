@@ -118,9 +118,16 @@ kapanır. "PR merge edildi" kapanış kanıtı değildir. Zorunlu check
 
 ---
 
+## Thread politikası — karar (2026-10-13, #368)
+
+| # | Karar | Gerekçe |
+|---|---|---|
+| K-16 | **Review thread resolve'u pre-merge standarttır; kanıt disiplini değişmez.** Bir thread yalnız `fixed:<sha>` ile kapatılır; o commit resolve anında PR'ın mevcut head'inde bulunmalı, testler gerçekten koşmuş, verification failure olmamalıdır; resolve sonrası `isResolved` API teyidi alınır. `deferred`/kanıtsız kapatma yasağı (§11-8) aynen sürer. Force-push ile fix'in head'den çekilmesi kural ihlalidir. Eski metindeki "yalnız merge sonrası resolve" hükmü (progress-v2.md eski §2) ruleset 19052349 ile deadlock üretiyordu (#368); fiili pratik zaten pre-merge'di (PR365 scoped yetkisi, #392, #394). | Ruleset merge kapısını GitHub-native zorlar: pre-merge resolve + head'de fix, squash anında main'de garanti demektir; "merge sonrası resolve" ise merge sonrasında kimseyi resolve'a zorlayamaz — garanti kağıt üstünde kalır. Eski iki şart birbirini kilitliyordu (resolve için merge'i, merge için resolve'u şart koşmak); K-16 ikisini tek doğrulukta birleştirir: main'e girecek commit head'de kanıtlanır, sonra resolve edilir. |
+
 ## Oturum geçmişi
 
 | Tarih | Olay |
 |---|---|
 | 2026-10-07 | İlk `/grill-with-docs`: Faz 1b kapanışı grilling (7 karar K-1…K-7); v2 plan bayat tespiti (R1, R2, R4–R7, R12, R14 merge); dosya kuruldu. |
 | 2026-10-11 | `/grill-with-docs` #382 kapsam kilidi grilling: **8 karar (K-8…K-15), 5 wayfinder biletinin tamamı kapatıldı** (#383→K-14, #384→K-15, #385→K-8, #386→K-9, #387→K-10). Q-3 kapandı; Q-1 kısmen (kilide önkoşul değil, kararı hâlâ açık). Glossary'ye "Kapsam kilidi" + "Pilot-enabler" eklendi. ADR: değerlendirdim, barajı geçmedi (plan artefaktı, mimari kilit değil) — atlandı. |
+| 2026-10-13 | Triage oturumu: #393 spec → PR #394 shipped (H1 operatör rehberi + codex P2 test hijyeni fix); #336 governance incident kapatıldı (kök neden #335, fix #343 main'de); #344/#345 `enhancement`, #368 `ready-for-human`. Aynı gün #368 owner kararı: **K-16** thread politikası (pre-merge resolve + kanıt disiplini) — progress-v2.md hizalandı, deadlock bitti. `ready-for-human` triage etiketi oluşturuldu. |
