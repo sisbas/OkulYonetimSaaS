@@ -54,7 +54,9 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(app).toContain("reasonCode: $('#leave-reason-code').value");
     expect(app).toContain("startsAt: toIso8601($('#leave-starts-at').value)");
     expect(app).toContain("endsAt: toIso8601($('#leave-ends-at').value)");
-    for (const forbidden of ['startDate', 'endDate', 'startTime', 'endTime', 'leave-note', 'leave-start-time', 'leave-end-time']) {
+    // 'startTime'/'endTime' artık çizelge (schedule) alan adları olarak meşru;
+    // izin DTO'su startsAt/endsAt ile yukarıdaki pozitif assert'lerle sabitlendi.
+    for (const forbidden of ['startDate', 'endDate', 'leave-note', 'leave-start-time', 'leave-end-time']) {
       expect(app).not.toContain(forbidden);
       expect(html).not.toContain(forbidden);
     }
@@ -90,6 +92,8 @@ describe('WP-07F runtime frontend boundary', () => {
   it('uses only server-returned ETag for assignment mutations', () => {
     expect(app).toContain("headers: { 'If-Match': state.activeLeaveEtag }");
     expect(app).toContain("pick(body, ['leaveEtag', 'etag'], etag || state.activeLeaveEtag)");
+    // İzin karar akışı da jetonu sunucudan alır; istemci asla kendisi kurmaz.
+    expect(app).toContain("pick(leave, ['etag', 'leaveEtag'], '')");
     expect(app).not.toContain('leave:${');
     expect(app).not.toContain('v${');
     expect(app).not.toContain('resourceVersion +');

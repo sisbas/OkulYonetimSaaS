@@ -79,6 +79,18 @@ describe('LeaveService', () => {
     );
   });
 
+  it('attaches the server-format etag token to operations list rows', async () => {
+    const leaves = {
+      list: jest.fn(async () => [decidedLeave({ decisionStatus: LeaveDecisionStatus.PENDING, version: 3 })]),
+    };
+    const service = new LeaveService(leaves as any, {} as any);
+
+    const rows = await service.listForOperations(ctx, {} as any);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.etag).toBe('"leave:90000000-0000-4000-8000-000000000001:v3"');
+  });
+
   describe('approval returns the server-computed impact (#263 R1)', () => {
     function approvalSetup(outcome: unknown) {
       const leaves = {

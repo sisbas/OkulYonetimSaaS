@@ -40,6 +40,8 @@ export type LeaveResponse = {
   endsAt: Date;
   decidedAt: Date | null;
   version: number;
+  /** If-Match için sunucu üretimi opak sürüm jetonu; istemci asla kendisi kurmaz. */
+  etag: string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -222,6 +224,7 @@ export class LeaveService {
       endsAt: leave.endsAt,
       decidedAt: leave.decidedAt,
       version: leave.version,
+      etag: leaveEtag(leave.id, leave.version),
       createdAt: leave.createdAt,
       updatedAt: leave.updatedAt,
     };
