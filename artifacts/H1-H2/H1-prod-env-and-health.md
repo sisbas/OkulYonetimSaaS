@@ -123,5 +123,5 @@ anahtar içindedir). Bu nedenle:
 
 ---
 
-**İlişkili:** `artifacts/H1-H2/H2-vercel-waiver.md` · `docs/phase2/progress-v2.md` §3 (H1)
+**İlişkili:** `artifacts/H1-H2/H1-vercel-prod-kurulum-rehberi.md` (adım adım operatör rehberi, #393) · `artifacts/H1-H2/H2-vercel-waiver.md` · `docs/phase2/progress-v2.md` §3 (H1)
 **Sahiplik:** paket A6 (docs/governance); **uygulama** insan operatör + DPO (H5).
