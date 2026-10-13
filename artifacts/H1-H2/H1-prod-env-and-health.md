@@ -23,8 +23,11 @@ geldiğinde bu satır `tamamlandı (insan)` yapılır ve kanıt URL'i işlenir.
 | `DATABASE_URL` | ✔ | PostgreSQL bağlantısı (prod runtime için zorunlu) |
 | `KVKK_PSEUDONYM_KEY` | ✔ | **>= 32 byte** · pseudonym/redaction anahtarı (A3 dilimi; #266) |
 | `KVKK_PSEUDONYM_KEY_VERSION` | opsiyonel | Pseudonym anahtar sürümü (key-id tabanlı doğrulama/rotasyon) |
+| `KVKK_CONTACT_KEY` | ✔ | **N1a (#380) ile gelen yeni zorunlu anahtar.** Parent contact AES-256-GCM anahtarı; `parseKey` env değerini **doğrudan 32 tek-byte ASCII karakter** olarak kabul eder (UTF-8 byte cinsinden tam 32 byte; base64/hex DEĞİL). 32 Türkçe/çok-byte karakter `raw.length === 32` kontrolünden geçer ama `Buffer.from(raw, 'utf8')` >32 byte üretir ve AES-256'da FATAL olur — bu tür değerler rehber dışıdır. Eksikse süreç bootstrap'ta FATAL (`src/kvkk/contact-crypto.ts`) |
+| `KVKK_CONTACT_KEY_ID` | opsiyonel | Key-id etiketi; varsayılan `contact-p1` |
 
 - `KVKK_PSEUDONYM_KEY` **zorunlu ve yeni**dir (A3 R5/redaction dilimiyle gelir); >= 32 byte entropi.
+- `KVKK_CONTACT_KEY` N1a parent-contact crypto dilimiyle gelmiştir; **tam 32 tek-byte ASCII karakter** (UTF-8 byte cinsinden tam 32 byte) olmalı (hex/base64 değil — `raw.length === 32` kontrolü; `Buffer.from(raw, 'utf8').length` de 32 olmalı).
 - Anahtar değerleri yalnız ortamın secret store'unda tutulur; repoda `.env.example` **dahi** gerçek değer içermez.
 
 ## 1.1 Audit HMAC rotasyonu — **kod wiring'i main'de; operasyonel kabul BLOKLU** (#366 / #369 / #367 / #373)
@@ -100,13 +103,31 @@ curl -sS https://<prod-host>/api/v1/health | tee /tmp/health.json
 
 ```text
 H1 KANIT
-- Tarih/saat (UTC):
-- Prod host:                     (ör. https://<prod-host>)
-- curl -w '%{http_code}' çıktısı: 200
-- Kanıt URL / ekran görüntüsü:    (health 200; secret DEĞERLERİ görünmez)
-- Doğrulayan (insan):             <ad / rol>
-- Ortam:                          prod
+- Tarih/saat (UTC):                2026-10-13T16:17:58Z
+- Prod host:                       https://okulyonetimsaas.vercel.app
+- curl -w '%{http_code}' çıktısı:  200
+- Yanıt gövdesi:                   {"status":"ok","service":"okul-yonetim-saas-api","applicationType":"backend-api","databaseRequired":true,"timestamp":"2026-10-13T16:17:58.579Z","uptimeSeconds":145}
+- Smoke (auth guard):              /api/v1/courses → 401 · /api/v1/users → 401 · /api/v1/attendance/sessions → 401
+- Root:                            https://okulyonetimsaas.vercel.app/app/ → 200
+- Migration:                       db:migrate tamamlandı (Neon prod DB, 2026-10-13)
+- Permission seed:                 123 izin, 6 rol upsert edildi
+- Admin seed:                      1 yönetici oluşturuldu (#388 bootstrap)
+- Kanıt URL / ekran görüntüsü:     (health 200; secret DEĞERLERİ görünmez)
+- Doğrulayan (insan):              ______________________ (ad / rol)
+- Ortam:                           prod
 ```
+
+> Not: Health 200 yalnızca **prod Neon DB bağlantısı + zorunlu env yüklü** olduğunu gösterir
+> (`KVKK_CONTACT_KEY` dahil). Health endpoint'i static metadata döndürür ve
+> `synchronize: false` olduğundan **schema/migration doğrulaması yapmaz**; migration
+> kanıtı ayrı olarak `db:migrate` + `db:verify` çıktısıyla kaydedilir (bkz. §3 satırları).
+> 2026-10-13'te A6
+> tarafından üretilip Vercel Production secret store'a eklenen anahtarlar:
+> `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `AUDIT_HMAC_KEY`,
+> `AUDIT_HMAC_KEY_ID`, `KVKK_PSEUDONYM_KEY`, `KVKK_PSEUDONYM_KEY_VERSION`,
+> `KVKK_CONTACT_KEY`. `DATABASE_URL` Vercel storage integration (Neon) ile
+> zaten Provision edilmiştir. **İnsan doğrulama satırı boş bırakılmıştır** —
+> H1 insan kapısı yalnız operatör tarafından kapatılır.
 
 ## 4. H5 / DPO notu — pseudonym anahtar rotasyonu (geri döndürülemez)
 
