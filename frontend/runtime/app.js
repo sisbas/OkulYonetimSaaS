@@ -16,6 +16,7 @@ const state = {
   impactCount: 0,
   candidateCount: 0,
   activeLessonLabel: '',
+  authLabel: '',
   lastAction: 'Henüz işlem yapılmadı.',
 };
 
@@ -301,6 +302,7 @@ function applyCatalog(catalog) {
   if (institutionEl) {
     institutionEl.textContent = pick(catalog?.institution, ['name'], '');
   }
+  state.authLabel = pick(catalog?.role, ['label'], '');
   state.branches = asArray(catalog, ['branches']);
   const selector = $('#branch-id');
   selector.innerHTML = '<option value="">Şube seçin</option>' + state.branches.map((branch) =>
@@ -309,6 +311,7 @@ function applyCatalog(catalog) {
   state.branchId = catalog.activeBranch?.code || '';
   state.branchLabel = catalog.activeBranch ? `${catalog.activeBranch.name} · ${catalog.activeBranch.code}` : '';
   selector.value = state.branchId;
+  renderNavigation();
   updateWorkflowProgress();
 }
 
@@ -399,13 +402,51 @@ async function updateContext(event) {
   await loadQueue();
 }
 
-function activateTab(name) {
+const ROLE_NAV = {
+  'Öğretmen': ['bugun', 'teacher', 'program', 'attendance'],
+  'Operasyon Yöneticisi': ['bugun', 'ops', 'program', 'attendance', 'notifications'],
+  'Kurum Yöneticisi': ['bugun', 'teacher', 'ops', 'program', 'attendance', 'notifications'],
+};
+const DEFAULT_NAV = ['bugun'];
+
+function navSectionsFor(authLabel) {
+  if (!authLabel) return [...DEFAULT_NAV];
+  return [...(ROLE_NAV[authLabel] || DEFAULT_NAV)];
+}
+
+function renderNavigation() {
+  const allowed = new Set(navSectionsFor(state.authLabel));
   document.querySelectorAll('.tab').forEach((tab) => {
-    const active = tab.dataset.tab === name;
-    tab.setAttribute('aria-selected', String(active));
+    tab.classList.toggle('hidden', !allowed.has(tab.dataset.tab));
+  });
+  document.querySelectorAll('.quick-actions button[data-section]').forEach((btn) => {
+    btn.classList.toggle('hidden', !allowed.has(btn.dataset.section));
+  });
+  const current = document.querySelector('.tab[aria-selected="true"]');
+  if (current && !allowed.has(current.dataset.tab)) {
+    activateTab('bugun');
+  }
+}
+
+function setActiveTab(name) {
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
   });
   document.querySelectorAll('.runtime-panel').forEach((panel) => panel.classList.toggle('hidden', panel.dataset.panel !== name));
   $('#runtime-main').focus();
+}
+
+function activateTab(name) {
+  const allowed = new Set(navSectionsFor(state.authLabel));
+  if (state.authLabel && !allowed.has(name)) {
+    announce('Bu işlem için yetkiniz yok. Güvenli şekilde Bugün ekranına dönebilirsiniz.', 'warning');
+    const bugunTab = document.querySelector('.tab[data-tab="bugun"]');
+    if (bugunTab && !bugunTab.classList.contains('hidden')) {
+      setActiveTab('bugun');
+    }
+    return;
+  }
+  setActiveTab(name);
 }
 
 async function createLeave(event) {
@@ -675,4 +716,5 @@ $('#context-retry').addEventListener('click', retryCatalog);
 $('#leave-form').addEventListener('submit', createLeave);
 $('#load-own-leave').addEventListener('click', loadOwnLeave);
 $('#refresh-queue').addEventListener('click', loadQueue);
+renderNavigation();
 updateWorkflowProgress();

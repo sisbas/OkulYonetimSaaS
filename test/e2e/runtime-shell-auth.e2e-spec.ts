@@ -238,18 +238,23 @@ describe('S0-A1 acceptance — runtime shell auth (fresh DB, real backend, real 
   });
 
   it('sekme ve panel görünürlüğü gerçek tıklamayla doğrulanıyor', async () => {
-    expect(await session!.isVisible('#teacher-panel')).toBe(true);
+    // Bugün rol-bağımsız default landing tab
+    expect(await session!.isVisible('#bugun-panel')).toBe(true);
     expect(await session!.isVisible('#ops-panel')).toBe(false);
+
+    // Ops kullanıcısı öğretmen sekmesini göremez (yetkisiz)
+    expect(await session!.isVisible('.tab[data-tab="teacher"]')).toBe(false);
+    expect(await session!.isVisible('#teacher-panel')).toBe(false);
 
     await session!.clickElement('.tab[data-tab="ops"]');
     expect(await session!.isVisible('#ops-panel')).toBe(true);
-    expect(await session!.isVisible('#teacher-panel')).toBe(false);
+    expect(await session!.isVisible('#bugun-panel')).toBe(false);
     expect(await session!.attribute('.tab[data-tab="ops"]', 'aria-selected')).toBe('true');
-    expect(await session!.attribute('.tab[data-tab="teacher"]', 'aria-selected')).toBe('false');
+    expect(await session!.attribute('.tab[data-tab="bugun"]', 'aria-selected')).toBe('false');
     expect(await session!.activeElementId()).toBe('runtime-main');
 
-    await session!.clickElement('.tab[data-tab="teacher"]');
-    expect(await session!.isVisible('#teacher-panel')).toBe(true);
+    await session!.clickElement('.tab[data-tab="bugun"]');
+    expect(await session!.isVisible('#bugun-panel')).toBe(true);
     expect(await session!.isVisible('#ops-panel')).toBe(false);
 
     screenshots.push(await session!.screenshot('tab-visibility-contract'));

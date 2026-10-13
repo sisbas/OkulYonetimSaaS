@@ -63,13 +63,29 @@
       </aside>
 
       <nav class="tabs" aria-label="Runtime akışları">
-        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="true">
-          <strong>Öğretmen</strong>
-          <small>İzin talebi</small>
+        <button class="tab" data-tab="bugun" aria-controls="bugun-panel" aria-selected="true">
+          <strong>Bugün</strong>
+          <small>Görev merkezi</small>
+        </button>
+        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="false">
+          <strong>İzin</strong>
+          <small>Talep oluştur</small>
         </button>
         <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">
-          <strong>Operasyon yöneticisi</strong>
+          <strong>Operasyon</strong>
           <small>Ders karşılığı</small>
+        </button>
+        <button class="tab" data-tab="program" aria-controls="program-panel" aria-selected="false">
+          <strong>Ders Programı</strong>
+          <small>Çizelge</small>
+        </button>
+        <button class="tab" data-tab="attendance" aria-controls="attendance-panel" aria-selected="false">
+          <strong>Yoklama</strong>
+          <small>Oturum ve kayıt</small>
+        </button>
+        <button class="tab" data-tab="notifications" aria-controls="notifications-panel" aria-selected="false">
+          <strong>Bildirim</strong>
+          <small>Gönderim</small>
         </button>
       </nav>
 
@@ -112,8 +128,8 @@
             <li>Yedek öğretmen seçimi ders ve zaman uygunluğuna göre yapılır</li>
           </ul>
           <div class="quick-actions" aria-label="Hızlı geçişler">
-            <button type="button" data-action="focus-teacher">İzin ekranına git</button>
-            <button type="button" data-action="focus-ops">Operasyon ekranına git</button>
+            <button type="button" data-action="focus-teacher" data-section="teacher">İzin ekranına git</button>
+            <button type="button" data-action="focus-ops" data-section="ops">Operasyon ekranına git</button>
           </div>
         </section>
 
@@ -152,7 +168,25 @@
           </ol>
         </section>
 
-        <section id="teacher-panel" class="panel runtime-panel" data-panel="teacher">
+        <section id="bugun-panel" class="panel runtime-panel" data-panel="bugun">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Bugün</p>
+              <h2>Bugün size ne lazım?</h2>
+            </div>
+          </div>
+          <div class="panel-intro">
+            <strong>Görev merkezi</strong>
+            <p class="hint">Rolünüze uygun görevler burada listelenir. Şube ve tarih seçtikten sonra günlük işler otomatik yüklenir.</p>
+            <ul class="checklist">
+              <li>Şube ve tarih seçerek günlük işleri getirin.</li>
+              <li>Bekleyen izin taleplerinizi inceleyin.</li>
+              <li>Ders programınızı kontrol edin.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section id="teacher-panel" class="panel runtime-panel hidden" data-panel="teacher">
           <div class="section-head">
             <div>
               <p class="eyebrow">Öğretmen işlemleri</p>
@@ -208,13 +242,55 @@
               <li>Uygun adayı seç veya mevcut görevlendirmeyi temizle.</li>
             </ol>
           </div>
-          <div id="queue-output" class="cards" role="region" aria-label="Günlük operasyon kuyruğu"></div>
+          <div id="queue-output" class="cards" role="region" aria-label="Günlük iş listesi"></div>
           <div id="selected-lesson-context" class="selected-context" role="region" aria-label="Seçili ders bağlamı">
             <strong>Seçili ders yok</strong>
             <p>Günlük iş listesinden bir dersin etkisini açtığınızda aday seçimi burada bağlama oturur.</p>
           </div>
           <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
           <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve görevlendirme durumu"></div>
+        </section>
+
+        <section id="program-panel" class="panel runtime-panel hidden" data-panel="program">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Ders Programı</p>
+              <h2>Haftalık çizelge</h2>
+            </div>
+          </div>
+          <div class="panel-intro">
+            <strong>Program bağlamı</strong>
+            <p class="hint">Seçili şube için ders çizelgesini görüntüleyin. İzin etkisi ve günlük işler bu bağlamdan derinleştirilir.</p>
+          </div>
+          <div id="schedule-output" class="cards" role="region" aria-label="Ders çizelgesi"></div>
+        </section>
+
+        <section id="attendance-panel" class="panel runtime-panel hidden" data-panel="attendance">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Yoklama</p>
+              <h2>Oturum ve kayıt</h2>
+            </div>
+          </div>
+          <div class="panel-intro">
+            <strong>Yoklama oturumları</strong>
+            <p class="hint">Yayınlanmış derslerden yoklama oturumu açın ve öğrenci kayıtlarını işaretleyin.</p>
+          </div>
+          <div id="attendance-output" class="cards" role="region" aria-label="Yoklama oturumları"></div>
+        </section>
+
+        <section id="notifications-panel" class="panel runtime-panel hidden" data-panel="notifications">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Bildirim</p>
+              <h2>Gönderim operasyonu</h2>
+            </div>
+          </div>
+          <div class="panel-intro">
+            <strong>Bildirim listesi</strong>
+            <p class="hint">Veli bilgilendirme bildirimlerini taslak olarak oluşturun, onaylayın ve gönderin.</p>
+          </div>
+          <div id="notifications-output" class="cards" role="region" aria-label="Bildirim listesi"></div>
         </section>
       </main>
     </div>

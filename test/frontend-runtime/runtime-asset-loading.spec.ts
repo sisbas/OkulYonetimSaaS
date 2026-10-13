@@ -84,13 +84,18 @@ describe('WP-07F #185 runtime asset loading (hosted smoke)', () => {
   });
 
   // --- Assertion 7: Browser smoke — yalnız selected tab panel görünür ---
-  it('yalnız selected tab panel görünür (ops panel başlangıçta .hidden)', () => {
+  it('yalnız selected tab panel görünür (bugun panel default görünür, diğerleri gizli)', () => {
+    expect(html).toContain('id="bugun-panel"');
     expect(html).toContain('id="teacher-panel"');
     expect(html).toContain('id="ops-panel"');
-    // teacher-panel .hidden class'ı TAŞIMAMALI (default görünür)
+    // bugun-panel .hidden class'ı TAŞIMAMALI (default görünür)
+    const bugunMatch = html.match(/id="bugun-panel" class="([^"]*)"/);
+    expect(bugunMatch).not.toBeNull();
+    expect(bugunMatch![1]).not.toContain('hidden');
+    // teacher-panel .hidden class'ı TAŞIMALI (bugun default olduğu için gizli)
     const teacherMatch = html.match(/id="teacher-panel" class="([^"]*)"/);
     expect(teacherMatch).not.toBeNull();
-    expect(teacherMatch![1]).not.toContain('hidden');
+    expect(teacherMatch![1]).toContain('hidden');
     // ops-panel .hidden class'ı TAŞIMALI (başlangıçta gizli)
     const opsMatch = html.match(/id="ops-panel" class="([^"]*)"/);
     expect(opsMatch).not.toBeNull();
