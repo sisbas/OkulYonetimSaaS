@@ -3,6 +3,7 @@
 const API_ROOT = '/api/v1';
 const state = {
   accessToken: '',
+  refreshToken: '',
   tenantId: '',
   branchId: '',
   branches: [],
@@ -17,6 +18,9 @@ const state = {
   candidateCount: 0,
   activeLessonLabel: '',
   authLabel: '',
+  pendingRoute: '',
+  pendingBranch: '',
+  pendingDraft: null,
   lastAction: 'Henüz işlem yapılmadı.',
 };
 
@@ -94,6 +98,11 @@ function setStatus(text, tone = 'neutral') {
   const el = $('#session-status');
   el.textContent = text;
   el.dataset.tone = tone;
+  const logoutBtn = $('#logout-button');
+  if (logoutBtn) {
+    if (state.accessToken) logoutBtn.classList.remove('hidden');
+    else logoutBtn.classList.add('hidden');
+  }
 }
 
 function announce(message, tone = 'neutral') {
@@ -176,20 +185,35 @@ function pick(value, keys, fallback = '') {
   return fallback;
 }
 
-async function apiRequest(path, options = {}) {
+async function apiRequest(path, options = {}, _refreshAttempted = false) {
   const headers = { Accept: 'application/json', ...(options.headers || {}) };
   if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
   if (state.branchId && !path.startsWith('/context') && !path.startsWith('/auth/')) {
     headers['x-branch-code'] = state.branchId;
   }
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await fetch(`${API_ROOT}${path}`, {
-    method: options.method || 'GET',
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
+  let response;
+  try {
+    response = await fetch(`${API_ROOT}${path}`, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+  } catch {
+    handleNetworkError();
+    throw normalizeApiError({ status: 0, headers: { get: () => null } }, { message: '' });
+  }
   const text = await response.text();
   const body = text ? JSON.parse(text) : null;
+  // On 401, attempt silent refresh once per request (skip auth endpoints and
+  // cap recursion so a persistently-401 endpoint cannot loop refresh forever)
+  if (response.status === 401 && !_refreshAttempted && !path.startsWith('/auth/') && state.refreshToken) {
+    const refreshed = await trySilentRefresh();
+    if (refreshed) {
+      return apiRequest(path, options, true);
+    }
+    handleAuthRequired();
+  }
   if (!response.ok) throw normalizeApiError(response, body);
   return { body, etag: response.headers.get('etag') || pick(body, ['leaveEtag', 'etag']) };
 }
@@ -357,18 +381,133 @@ async function login(event) {
   try {
     const { body: result } = await apiRequest('/auth/login', { method: 'POST', body });
     state.accessToken = result.accessToken || '';
+    state.refreshToken = result.refreshToken || '';
     state.tenantId = tenantId;
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
     announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
     updateWorkflowProgress();
   } catch (error) {
     state.accessToken = '';
+    state.refreshToken = '';
     setStatus('Oturum başarısız', 'danger');
     updateWorkflowProgress('session', 'Kimlik bilgilerini kontrol edin');
     renderError($('#teacher-output'), error);
     return;
   }
-  await loadCatalog();
+  // Catalog fetch is outside the login try block: a catalog failure must not
+  // invalidate the already-granted session (retryable Turkish error instead).
+  try {
+    const { body: catalog } = await apiRequest('/context');
+    applyCatalog(catalog);
+    // Consume pending intent after successful re-auth
+    const returnRoute = state.pendingRoute;
+    const returnBranch = state.pendingBranch;
+    const returnDraft = state.pendingDraft;
+    state.pendingRoute = '';
+    state.pendingBranch = '';
+    state.pendingDraft = null;
+    if (returnRoute) {
+      activateTab(returnRoute);
+      if (returnBranch) {
+        state.branchId = returnBranch;
+        const branchEntry = state.branches.find((b) => b.code === returnBranch);
+        state.branchLabel = branchEntry ? `${branchEntry.name} · ${branchEntry.code}` : '';
+        const selector = $('#branch-id');
+        if (selector) selector.value = returnBranch;
+      }
+      if (returnDraft) {
+        if (returnDraft.start && $('#leave-start')) $('#leave-start').value = returnDraft.start;
+        if (returnDraft.end && $('#leave-end')) $('#leave-end').value = returnDraft.end;
+        if (returnDraft.reason && $('#leave-reason')) $('#leave-reason').value = returnDraft.reason;
+      }
+    }
+  } catch (catalogError) {
+    setStatus('Kurum bilgisi alınamadı', 'warning');
+    const retryEl = $('#context-retry');
+    if (retryEl) retryEl.hidden = false;
+    renderError($('#teacher-output'), catalogError);
+    announce('Kurum bilgisi tamamlanamadı. Lütfen tekrar deneyin.', 'warning');
+  }
+}
+
+async function trySilentRefresh() {
+  if (!state.refreshToken) return false;
+  try {
+    const { body: result } = await apiRequest('/auth/refresh', {
+      method: 'POST',
+      body: { refreshToken: state.refreshToken },
+    });
+    if (result?.accessToken) {
+      state.accessToken = result.accessToken;
+      state.refreshToken = result.refreshToken || state.refreshToken;
+      return true;
+    }
+    return false;
+  } catch (error) {
+    // Network failure already showed the offline state via handleNetworkError;
+    // keep tokens so the session can recover when connectivity returns.
+    if (error?.status === 0) return false;
+    // Actual auth rejection: clear tokens so handleAuthRequired can prompt re-auth.
+    state.accessToken = '';
+    state.refreshToken = '';
+    return false;
+  }
+}
+
+function handleAuthRequired() {
+  const activeTab = document.querySelector('.tab[aria-selected="true"]');
+  state.pendingRoute = activeTab?.dataset.tab || 'bugun';
+  state.pendingBranch = state.branchId || '';
+  const startEl = $('#leave-start');
+  const endEl = $('#leave-end');
+  const reasonEl = $('#leave-reason');
+  if (startEl?.value || endEl?.value || reasonEl?.value) {
+    state.pendingDraft = {
+      start: startEl?.value || '',
+      end: endEl?.value || '',
+      reason: reasonEl?.value || '',
+    };
+  }
+  state.accessToken = '';
+  state.refreshToken = '';
+  setStatus('Oturum sona erdi', 'warning');
+  announce('Oturumunuz sona erdi. Lütfen yeniden giriş yapın; kaldığınız yerden devam edeceksiniz.', 'warning');
+  updateWorkflowProgress('session', 'Yeniden giriş yapın');
+}
+
+function handleNetworkError() {
+  setStatus('Bağlantı hatası', 'warning');
+  announce('Bağlantı kurulamadı. Lütfen tekrar deneyin.', 'warning');
+}
+
+function logout() {
+  state.accessToken = '';
+  state.refreshToken = '';
+  state.authLabel = '';
+  state.branchId = '';
+  state.branchLabel = '';
+  state.branches = [];
+  state.tenantId = '';
+  state.pendingRoute = '';
+  state.pendingBranch = '';
+  state.pendingDraft = null;
+  clearBranchWork();
+  const institutionEl = $('#context-institution');
+  if (institutionEl) institutionEl.textContent = '';
+  const summaryScope = $('#summary-scope');
+  if (summaryScope) summaryScope.textContent = '';
+  const selector = $('#branch-id');
+  if (selector) {
+    selector.disabled = true;
+    selector.innerHTML = '<option value="">Önce oturum açın</option>';
+    selector.value = '';
+  }
+  const retryEl = $('#context-retry');
+  if (retryEl) retryEl.hidden = true;
+  updateWorkflowProgress('session', 'Çıkış yapıldı');
+  setStatus('Oturum kapatıldı', 'success');
+  announce('Oturum kapatıldı. Tekrar giriş yapabilirsiniz.', 'success');
+  renderNavigation();
 }
 
 async function retryCatalog() {
@@ -708,6 +847,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();
+  if (target.dataset.action === 'logout') logout();
 });
 
 $('#login-form').addEventListener('submit', login);

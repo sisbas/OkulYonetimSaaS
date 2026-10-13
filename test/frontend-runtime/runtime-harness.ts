@@ -114,8 +114,22 @@ export function runtime(
   };
 
   const fetch = jest.fn();
+  const querySelector = (sel: string) => {
+    // Handle attribute selectors like .tab[aria-selected="true"]
+    const attrMatch = sel.match(/^\.tab\[aria-selected="(.+)"\]$/);
+    if (attrMatch) {
+      const wanted = attrMatch[1];
+      for (const [key, el] of elements) {
+        if (key.startsWith('.tab[data-tab=') && el.getAttribute('aria-selected') === wanted) {
+          return el;
+        }
+      }
+      return null;
+    }
+    return element(sel);
+  };
   const document = {
-    querySelector: element,
+    querySelector,
     querySelectorAll,
     addEventListener: () => {},
     getElementById: (id: string) => element(`#${id}`),
