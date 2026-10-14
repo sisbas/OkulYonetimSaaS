@@ -204,7 +204,20 @@ async function apiRequest(path, options = {}, _refreshAttempted = false) {
     throw normalizeApiError({ status: 0, headers: { get: () => null } }, { message: '' });
   }
   const text = await response.text();
-  const body = text ? JSON.parse(text) : null;
+  let body = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // Non-JSON response (e.g. HTML error page from a proxy). A failed
+      // response is normalized into an operational error; a 200 with an
+      // undecodable body is a server fault, never a fabricated empty state.
+      if (response.ok) {
+        throw normalizeApiError({ status: 502, headers: { get: () => null } }, { message: '' });
+      }
+      body = { message: text.slice(0, 200) };
+    }
+  }
   // On 401, attempt silent refresh once per request (skip auth endpoints and
   // cap recursion so a persistently-401 endpoint cannot loop refresh forever)
   if (response.status === 401 && !_refreshAttempted && !path.startsWith('/auth/') && state.refreshToken) {
@@ -650,7 +663,7 @@ async function loadQueue() {
     const { body } = await apiRequest(`/daily-operations/today?${query.toString()}`);
     const items = asArray(body, ['items', 'lessons', 'queue']);
     state.queueCount = items.length;
-    target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı kapsamda açık ders bulunmuyor.');
+    target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı kapsamda açık ders bulunmuyor. Şube veya tarih değiştirip yeniden deneyin.');
     announce('Günlük işler yenilendi.', 'success');
     updateWorkflowProgress();
   } catch (error) {
@@ -747,7 +760,7 @@ async function loadCandidates(eventId, courseLabel = '') {
     }
     const candidates = asArray(body, ['candidates', 'items']);
     state.candidateCount = candidates.length;
-    target.innerHTML = candidates.length ? candidates.map(renderCandidate).join('') : empty('Aynı scope içinde uygun aday yok.');
+    target.innerHTML = candidates.length ? candidates.map(renderCandidate).join('') : empty('Bu ders için uygun aday bulunamadı. Farklı bir ders veya kapsam seçip yeniden deneyin.');
     updateWorkflowProgress();
   } catch (error) {
     updateWorkflowProgress('assignment', 'Aday listesi alınamadı');
@@ -757,13 +770,21 @@ async function loadCandidates(eventId, courseLabel = '') {
 
 function renderCandidate(candidate) {
   const teacherId = pick(candidate, ['teacherId', 'candidateId']);
-  const available = displayStatus(pick(candidate, ['availabilityStatus'], 'unknown'));
+  const availability = String(pick(candidate, ['availabilityStatus'], '')).toLowerCase();
+  // Contract only returns already-filtered eligible candidates (no
+  // availabilityStatus field). Absent availability means the backend has
+  // already resolved conflicts — treat as available. Only explicit busy
+  // statuses block selection.
+  const available = !availability || availability === 'available' || availability === 'free' || availability === 'musait';
   const eligible = Boolean(pick(candidate, ['courseEligible', 'eligible'], false));
-  const disabled = !eligible || !state.activeLeaveEtag;
+  const selectable = eligible && available;
+  const disabled = !selectable || !state.activeLeaveEtag;
+  const eligibleText = eligible ? 'Bu dersi verebilir' : 'Bu dersi veremez';
+  const availableText = available ? 'Bu saat müsait' : 'Bu saat meşgul';
   return `<article class="card candidate">
     <h3>${escapeHtml(pick(candidate, ['displayName', 'name'], 'Aday öğretmen'))}</h3>
-    <p>Uygunluk: ${eligible ? 'Uygun' : 'Uygun değil'} · Durum: ${escapeHtml(available)}</p>
-    <span class="tag" data-tone="${eligible ? 'success' : 'danger'}">${eligible ? 'Seçilebilir aday' : 'Seçilemez aday'}</span>
+    <p>${eligibleText} · ${availableText}</p>
+    <span class="tag" data-tone="${selectable ? 'success' : 'danger'}">${selectable ? 'Seçilebilir aday' : eligible ? 'Şu an seçilemez' : 'Seçilemez aday'}</span>
     <button type="button" data-action="assign" data-teacher-id="${escapeHtml(teacherId)}" ${disabled ? 'disabled aria-describedby="etag-help"' : ''}>Bu öğretmeni görevlendir</button>
     <button type="button" data-action="clear" ${state.activeAssignmentId && state.activeLeaveEtag ? '' : 'disabled'}>Görevlendirmeyi temizle</button>
   </article>`;

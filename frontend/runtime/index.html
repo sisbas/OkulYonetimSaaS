@@ -279,7 +279,12 @@
             <strong>Yoklama oturumları</strong>
             <p class="hint">Yayınlanmış derslerden yoklama oturumu açın ve öğrenci kayıtlarını işaretleyin.</p>
           </div>
-          <div id="attendance-output" class="cards" role="region" aria-label="Yoklama oturumları"></div>
+          <div id="attendance-output" class="cards" role="region" aria-label="Yoklama oturumları">
+            <div class="empty-state" data-state="attendance_not_ready">
+              <strong>Yoklama yakında kullanılabilir</strong>
+              <p>Oturum açma ve kayıt adımları tamamlandığında bu alanda aktif olacaktır. Şimdilik program ve günlük işler üzerinden ilerleyebilirsiniz.</p>
+            </div>
+          </div>
         </section>
 
         <section id="notifications-panel" class="panel runtime-panel hidden" data-panel="notifications">
@@ -291,9 +296,14 @@
           </div>
           <div class="panel-intro">
             <strong>Bildirim listesi</strong>
-            <p class="hint">Veli bilgilendirme bildirimlerini taslak olarak oluşturun, onaylayın ve gönderin.</p>
+            <p class="hint">Veli bilgilendirme bildirimlerini planlama modunda yönetin. Gönderim altyapısı hazır olduğunda aktif olacaktır.</p>
           </div>
-          <div id="notifications-output" class="cards" role="region" aria-label="Bildirim listesi"></div>
+          <div id="notifications-output" class="cards" role="region" aria-label="Bildirim listesi">
+            <div class="empty-state" data-state="notification_planning">
+              <strong>Bildirim planlama modu</strong>
+              <p>Gönderim (SMS/e-posta) altyapısı bağlandığında gerçek gönderim mümkün olacaktır. Şimdilik bu alan planlama içindir.</p>
+            </div>
+          </div>
         </section>
       </main>
     </div>
