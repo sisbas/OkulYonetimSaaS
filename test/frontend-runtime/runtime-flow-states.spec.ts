@@ -102,7 +102,8 @@ describe('runtime core flow state coverage (#400)', () => {
   });
 
   describe('non-JSON server response handled gracefully', () => {
-    it('apiRequest handles non-JSON response without crashing', () => {
+    it('apiRequest handles non-JSON error response without crashing', () => {
+      expect.assertions(3);
       const ui = runtime(PROBE);
       ui.probe.state.accessToken = 'token';
       // Mock a non-JSON response (HTML error page)
@@ -119,10 +120,28 @@ describe('runtime core flow state coverage (#400)', () => {
         expect(error.message).toBeTruthy();
       });
     });
+
+    it('apiRequest treats 200 non-JSON as server fault, not empty state', () => {
+      expect.assertions(2);
+      const ui = runtime(PROBE);
+      ui.probe.state.accessToken = 'token';
+      ui.fetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => '<html>unexpected</html>',
+        headers: { get: () => null },
+      });
+      return ui.probe.apiRequest('/daily-operations/today').catch((error: { reasonCode?: string; message?: string }) => {
+        // A 200 with undecodable body is a server fault, never a fabricated empty state
+        expect(error.reasonCode).toBe('SERVER_ERROR');
+        expect(error.message).not.toMatch(/boş|bulunmuyor/i);
+      });
+    });
   });
 
   describe('edge: stale data / concurrent edit', () => {
     it('version mismatch error shows operational Turkish, preserves selection', () => {
+      expect.assertions(6);
       const ui = runtime(PROBE);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.activeLeaveId = 'leave-1';
@@ -130,7 +149,7 @@ describe('runtime core flow state coverage (#400)', () => {
       ui.probe.state.activeLeaveEtag = 'old-etag';
       ui.probe.state.activeLessonLabel = 'Matematik 9-A';
       ui.fetch.mockResolvedValueOnce(response({ message: 'Leave version mismatch' }, 412));
-      return ui.probe.loadCandidates('event-1', 'Matematik').catch(() => {
+      return ui.probe.loadCandidates('event-1', 'Matematik 9-A').then(() => {
         // Selection preserved
         expect(ui.probe.state.activeLeaveId).toBe('leave-1');
         expect(ui.probe.state.activeScheduleEventId).toBe('event-1');
@@ -150,11 +169,13 @@ describe('runtime core flow state coverage (#400)', () => {
       const ariaLabels = [...html.matchAll(/aria-label="([^"]+)"/g)].map((m) => m[1]);
       const strongTexts = [...html.matchAll(/<strong>([^<]+)<\/strong>/g)].map((m) => m[1]);
       const smallTexts = [...html.matchAll(/<small>([^<]+)<\/small>/g)].map((m) => m[1]);
-      const allVisible = [...ariaLabels, ...strongTexts, ...smallTexts].join(' ');
+      const pTexts = [...html.matchAll(/<p[^>]*>([^<]+)<\/p>/g)].map((m) => m[1]);
+      const allVisible = [...ariaLabels, ...strongTexts, ...smallTexts, ...pTexts].join(' ');
       expect(allVisible).not.toMatch(/\bqueue\b/i);
       expect(allVisible).not.toMatch(/kuyruk/i);
       expect(allVisible).not.toMatch(/coverage/i);
       expect(allVisible).not.toMatch(/etag/i);
+      expect(allVisible).not.toMatch(/lifecycle/i);
       expect(allVisible).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
       expect(allVisible).not.toMatch(/_[a-z]/); // snake_case
     });

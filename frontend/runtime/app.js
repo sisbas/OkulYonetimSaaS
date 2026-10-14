@@ -209,9 +209,13 @@ async function apiRequest(path, options = {}, _refreshAttempted = false) {
     try {
       body = JSON.parse(text);
     } catch {
-      // Non-JSON response (e.g. HTML error page from a proxy) — normalize into
-      // an operational error instead of crashing the caller.
-      body = { message: response.ok ? '' : text.slice(0, 200) };
+      // Non-JSON response (e.g. HTML error page from a proxy). A failed
+      // response is normalized into an operational error; a 200 with an
+      // undecodable body is a server fault, never a fabricated empty state.
+      if (response.ok) {
+        throw normalizeApiError({ status: 502, headers: { get: () => null } }, { message: '' });
+      }
+      body = { message: text.slice(0, 200) };
     }
   }
   // On 401, attempt silent refresh once per request (skip auth endpoints and
