@@ -143,6 +143,8 @@ input, textarea {
   display: grid;
   gap: 0.15rem;
   text-align: left;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
 }
 .tab small { color: inherit; opacity: 0.78; }
 .tab[aria-selected="true"] { background: #244f99; color: #fff; }
@@ -366,4 +368,22 @@ main { display: grid; gap: 1rem; }
   .topbar, .section-head { align-items: flex-start; flex-direction: column; }
   .tabs { position: sticky; top: 0; z-index: 10; }
   .grid-form, .impact-list li, .workflow-steps, .summary-grid, .trust-strip { grid-template-columns: 1fr; }
+}
+
+.shell-footer {
+  grid-column: 1 / -1;
+  padding: 0.75rem 1rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-body-sm);
+  border-top: 1px solid var(--color-border-whisper);
+}
+.shell-footer p { margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
