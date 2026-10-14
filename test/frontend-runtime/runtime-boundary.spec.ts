@@ -93,7 +93,9 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(app).not.toContain('leave:${');
     expect(app).not.toContain('v${');
     expect(app).not.toContain('resourceVersion +');
-    expect(app).not.toContain('Version:');
+    // 'Version:' jargon yalnız string kopyasında yasak; tanımlayıcı (DTO/alan)
+    // bağlamındaki `expectedVersion:` / `activeNotificationVersion:` değildir.
+    expect(app.replace(/\w+Version:/g, '')).not.toContain('Version:');
     expect(app).not.toContain('ETag:');
   });
 
