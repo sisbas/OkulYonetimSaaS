@@ -62,6 +62,10 @@ const DATA_PROTECTION_CHANGED_FIELDS = [
   'redactionStrategy',
   'legalBasis',
   'erasureScope',
+  // Consent revoke (PR #414 Q5): revoke'un gerçekte değiştirdiği kolonlar.
+  'status',
+  'revokedAt',
+  'version',
 ] as const;
 const STUDENT_CHANGED_FIELDS = [
   'status',
@@ -324,6 +328,7 @@ const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> 
   'dataprotection.erasure.requested': DATA_PROTECTION_POLICY,
   'dataprotection.erasure.completed': DATA_PROTECTION_POLICY,
   'dataprotection.consent.revoked': DATA_PROTECTION_POLICY,
+  'dataprotection.consent.read': DATA_PROTECTION_POLICY,
   'student.created': STUDENT_POLICY,
   'student.updated': STUDENT_POLICY,
   'student.deactivated': STUDENT_POLICY,
@@ -599,6 +604,7 @@ export const DATA_PROTECTION_AUDIT_EVENT_NAMES_SAFE: readonly DataProtectionAudi
   'dataprotection.erasure.requested',
   'dataprotection.erasure.completed',
   'dataprotection.consent.revoked',
+  'dataprotection.consent.read',
 ];
 export const STUDENT_AUDIT_EVENT_NAMES_SAFE: readonly StudentAuditEventName[] = [
   'student.created',

@@ -78,17 +78,17 @@
           <strong>Operasyon</strong>
           <small>Ders karşılığı</small>
         </button>
+        <button class="tab" data-tab="notifications" aria-controls="notifications-panel" aria-selected="false">
+          <strong>Bildirimler</strong>
+          <small>Gönderim operasyonu</small>
+        </button>
         <button class="tab" data-tab="program" aria-controls="program-panel" aria-selected="false">
-          <strong>Ders Programı</strong>
-          <small>Çizelge</small>
+          <strong>Program</strong>
+          <small>Ders çizelgesi</small>
         </button>
         <button class="tab" data-tab="attendance" aria-controls="attendance-panel" aria-selected="false">
           <strong>Yoklama</strong>
           <small>Oturum ve kayıt</small>
-        </button>
-        <button class="tab" data-tab="notifications" aria-controls="notifications-panel" aria-selected="false">
-          <strong>Bildirim</strong>
-          <small>Gönderim</small>
         </button>
       </nav>
 
@@ -232,6 +232,22 @@
         <section id="ops-panel" class="panel runtime-panel hidden" data-panel="ops">
           <div class="section-head">
             <div>
+              <p class="eyebrow">İzin kararları</p>
+              <h2>Bekleyen izin talepleri</h2>
+            </div>
+            <button id="refresh-leaves" type="button">İzin listesini yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Karar hattı</strong>
+            <ol class="checklist">
+              <li>Bekleyen talebi inceleyin (karar aynı güncel kayıt sürümüyle verilir).</li>
+              <li>Onay ders karşılığı akışını başlatır; ret talebi kapatır.</li>
+              <li>Kayıt değişmişse yenileme gerekir.</li>
+            </ol>
+          </div>
+          <div id="leaves-output" class="cards" role="region" aria-label="Bekleyen izin talebi kararları"></div>
+          <div class="section-head">
+            <div>
               <p class="eyebrow">Operasyon yöneticisi işlemleri</p>
               <h2>Günlük iş listesi</h2>
             </div>
@@ -254,56 +270,130 @@
           <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve görevlendirme durumu"></div>
         </section>
 
+        <section id="notifications-panel" class="panel runtime-panel hidden" data-panel="notifications">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Bildirim operasyonu</p>
+              <h2>Gönderim kuyruğu</h2>
+            </div>
+            <button id="refresh-notifications" type="button">Listeyi yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Sunucu otoriter gönderim akışı</strong>
+            <ul class="checklist">
+              <li>Onay, gönderim, yeniden deneme ve iptal eylemleri yalnızca sunucunun izin verdiği eylemlerdir.</li>
+              <li>Her işlem güncel kayıt sürümüyle doğrulanır; sürüm değişmişse yenileme gerekir.</li>
+              <li>Sağlayıcı etkisi simülasyon modunda üretilir; kanıt dayanıklı gönderim receipt'inde saklanır.</li>
+            </ul>
+          </div>
+          <div class="grid-form">
+            <label>Durum filtresi
+              <select id="notification-status-filter">
+                <option value="">Tüm durumlar</option>
+                <option value="pending">Beklemede</option>
+                <option value="approved">Onaylandı</option>
+                <option value="blocked_consent">Onay engelli</option>
+                <option value="dispatched">Gönderildi</option>
+                <option value="delivered">Teslim edildi</option>
+                <option value="failed">Başarısız</option>
+                <option value="dead_lettered">Durduruldu</option>
+                <option value="uncertain">Belirsiz</option>
+                <option value="cancelled">İptal edildi</option>
+                <option value="closed">Kapatıldı</option>
+              </select>
+            </label>
+            <button id="apply-notification-filter" type="button">Filtreyi uygula</button>
+          </div>
+          <div id="notifications-list" class="cards" role="region" aria-label="Bildirim operasyon listesi"></div>
+          <div id="notification-detail" class="state-box" role="region" aria-label="Seçili bildirim detayı ve eylemleri"></div>
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">KVKK onay yönetimi</p>
+              <h2>Veli bilgilendirme onayları</h2>
+            </div>
+            <button id="refresh-consents" type="button">Onayları yenile</button>
+          </div>
+          <div class="panel-intro">
+            <strong>Consent otoritesi</strong>
+            <ul class="checklist">
+              <li>Onay listesi yalnız ürün kayıtlarına erişen roller tarafından görüntülenir.</li>
+              <li>Geri çekme, onayın otorite kaydını günceller; bekleyen bildirimler yeniden değerlendirilir.</li>
+            </ul>
+          </div>
+          <div id="consents-output" class="cards" role="region" aria-label="Konsent listesi"></div>
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Toplu onay</p>
+              <h2>Oturum düzeyinde toplu gönderim onayı</h2>
+            </div>
+            <p class="hint">Aynı yoklama oturumunun tüm bekleyen bildirimleri, her satırın güncel sürümüyle tek işlemde onaylanır.</p>
+          </div>
+          <div id="bulk-approve-output" class="cards" role="region" aria-label="Oturum düzeyinde toplu onay eylemleri"></div>
+        </section>
+
         <section id="program-panel" class="panel runtime-panel hidden" data-panel="program">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Ders Programı</p>
-              <h2>Haftalık çizelge</h2>
+              <p class="eyebrow">Ders çizelgesi</p>
+              <h2>Program yönetimi</h2>
             </div>
+            <button id="refresh-schedule-status" type="button">Durumu yenile</button>
           </div>
           <div class="panel-intro">
-            <strong>Program bağlamı</strong>
-            <p class="hint">Seçili şube için ders çizelgesini görüntüleyin. İzin etkisi ve günlük işler bu bağlamdan derinleştirilir.</p>
+            <strong>Sunucu otoriter yayın akışı</strong>
+            <ol class="checklist">
+              <li>Dönem aralığıyla çizelge oluşturun.</li>
+              <li>Ders olaylarını ekleyin ve taslağı kaydedin.</li>
+              <li>Doğrulayın; çakışmasız olanı yayınlayın.</li>
+            </ol>
           </div>
-          <div id="schedule-output" class="cards" role="region" aria-label="Ders çizelgesi"></div>
+          <form id="schedule-create-form" class="grid-form">
+            <label>Şube kodu <input id="schedule-branch" name="branchCode" autocomplete="off" /></label>
+            <label>Geçerlilik başlangıcı <input id="schedule-effective-from" type="date" required /></label>
+            <label>Geçerlilik sonu <input id="schedule-effective-to" type="date" /></label>
+            <p class="hint wide">Çizelge oluşturulunca oturumdaki şube seçimiyle karşılaştırılır.</p>
+            <button type="submit">Çizelge oluştur</button>
+          </form>
+          <div id="schedule-status" class="state-box" role="region" aria-label="Program durumu ve olay listesi"></div>
+          <form id="schedule-event-form" class="stack">
+            <div id="schedule-events" class="cards" role="region" aria-label="Program olayları"></div>
+            <button id="add-schedule-event" type="button">Olay satırı ekle</button>
+            <div class="quick-actions">
+              <button id="save-schedule-draft" type="button">Taslağı kaydet</button>
+              <button id="validate-schedule" type="button">Doğrula</button>
+              <button id="publish-schedule" type="button">Yayınla</button>
+              <button id="unpublish-schedule" type="button">Yayından kaldır</button>
+            </div>
+          </form>
         </section>
 
         <section id="attendance-panel" class="panel runtime-panel hidden" data-panel="attendance">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Yoklama</p>
-              <h2>Oturum ve kayıt</h2>
+              <p class="eyebrow">Yoklama oturumları</p>
+              <h2>Oturum açma ve kayıt</h2>
             </div>
+            <button id="refresh-attendance" type="button">Kayıtları yenile</button>
           </div>
           <div class="panel-intro">
-            <strong>Yoklama oturumları</strong>
-            <p class="hint">Yayınlanmış derslerden yoklama oturumu açın ve öğrenci kayıtlarını işaretleyin.</p>
+            <strong>Sunucu otoriter yoklama zinciri</strong>
+            <ol class="checklist">
+              <li>Yayınlanmış ders olayından oturum açın (roster sabitlenir).</li>
+              <li>Öğretmen öğrenci kayıtlarını işaretler.</li>
+              <li>Kilitlenince devamsızlık bildirim kuyruğu oluşturulur.</li>
+            </ol>
           </div>
-          <div id="attendance-output" class="cards" role="region" aria-label="Yoklama oturumları">
-            <div class="empty-state" data-state="attendance_not_ready">
-              <strong>Yoklama yakında kullanılabilir</strong>
-              <p>Oturum açma ve kayıt adımları tamamlandığında bu alanda aktif olacaktır. Şimdilik program ve günlük işler üzerinden ilerleyebilirsiniz.</p>
-            </div>
-          </div>
-        </section>
-
-        <section id="notifications-panel" class="panel runtime-panel hidden" data-panel="notifications">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Bildirim</p>
-              <h2>Gönderim operasyonu</h2>
-            </div>
-          </div>
-          <div class="panel-intro">
-            <strong>Bildirim listesi</strong>
-            <p class="hint">Veli bilgilendirme bildirimlerini planlama modunda yönetin. Gönderim altyapısı hazır olduğunda aktif olacaktır.</p>
-          </div>
-          <div id="notifications-output" class="cards" role="region" aria-label="Bildirim listesi">
-            <div class="empty-state" data-state="notification_planning">
-              <strong>Bildirim planlama modu</strong>
-              <p>Gönderim (SMS/e-posta) altyapısı bağlandığında gerçek gönderim mümkün olacaktır. Şimdilik bu alan planlama içindir.</p>
-            </div>
-          </div>
+          <form id="attendance-generate-form" class="grid-form">
+            <label>Ders olayı ID <input id="attendance-event-id" autocomplete="off" aria-describedby="attendance-event-help" /></label>
+            <p id="attendance-event-help" class="hint wide">Yayınlanmış program olayının kimliği (UUID).</p>
+            <label>Oturum tarihi <input id="attendance-session-date" type="date" aria-describedby="attendance-date-help" /></label>
+            <p id="attendance-date-help" class="hint wide">Boş bırakılırsa seçili işlem tarihi/kayıt tarihi kullanılır.</p>
+            <label>Öğrenci listesi <textarea id="attendance-student-ids" rows="2" aria-describedby="attendance-roster-help"></textarea></label>
+            <p id="attendance-roster-help" class="hint wide">Roster: her satırda veya virgülle ayırarak öğrenci UUID'leri.</p>
+            <button type="submit">Yoklama oturumu aç</button>
+          </form>
+          <div id="attendance-sessions" class="cards" role="region" aria-label="Yoklama oturumları listesi"></div>
+          <div id="attendance-detail" class="cards" role="region" aria-label="Yoklama oturumu detayı ve kayıt eylemleri"></div>
         </section>
       </main>
       <footer class="shell-footer">
