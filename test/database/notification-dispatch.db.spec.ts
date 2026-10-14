@@ -6,6 +6,7 @@ import { CreateAttendanceSessions1824000000000 } from '../../src/database/migrat
 import { CreateNotificationOutbox1829000000000 } from '../../src/database/migrations/1829000000000-CreateNotificationOutbox';
 import { AddNotificationSnapshot1860000000000 } from '../../src/database/migrations/1860000000000-AddNotificationSnapshot';
 import { AddNotificationDispatch1870000000000 } from '../../src/database/migrations/1870000000000-AddNotificationDispatch';
+import { AddConsentLegalBasisAndDeliveredStatus1880000000000 } from '../../src/database/migrations/1880000000000-AddConsentLegalBasisAndDeliveredStatus';
 import { RequestContext } from '../../src/common/context/request-context';
 import { AuditLogRepository } from '../../src/common/audit/audit-log.repository';
 import { TypeOrmTransactionalAuditWriter } from '../../src/common/audit/transactional-audit-writer';
@@ -74,6 +75,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       await new CreateNotificationOutbox1829000000000().up(runner);
       await new AddNotificationSnapshot1860000000000().up(runner);
       await new AddNotificationDispatch1870000000000().up(runner);
+      await new AddConsentLegalBasisAndDeliveredStatus1880000000000().up(runner);
     } finally {
       await runner.release();
     }
