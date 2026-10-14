@@ -66,7 +66,6 @@ export const PERMISSION_SEED = [
   { code: 'role:permission:update', description: 'role:permission:update' },
   { code: 'role:audit:read', description: 'role:audit:read' },
   { code: 'audit_log:read', description: 'audit_log:read' },
-  { code: 'audit_log:operations:read', description: 'audit_log:operations:read' },
   // #259: audit retention kırpma koşusu (yıkıcı işlem; yalnız tenant_admin).
   { code: 'audit_log:retention:run', description: 'audit_log:retention:run' },
   { code: 'audit_log:security:read', description: 'audit_log:security:read' },
@@ -142,7 +141,6 @@ export const ROLE_PERMISSION_SEED = {
     'attendance:report:read',
     'attendance:submit',
     'attendance:update',
-    'audit_log:operations:read',
     'consent:read',
     'consent:revoke',
     'course:archive',
