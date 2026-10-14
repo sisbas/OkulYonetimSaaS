@@ -770,8 +770,12 @@ async function loadCandidates(eventId, courseLabel = '') {
 
 function renderCandidate(candidate) {
   const teacherId = pick(candidate, ['teacherId', 'candidateId']);
-  const availability = String(pick(candidate, ['availabilityStatus'], 'unknown')).toLowerCase();
-  const available = availability === 'available' || availability === 'free' || availability === 'musait';
+  const availability = String(pick(candidate, ['availabilityStatus'], '')).toLowerCase();
+  // Contract only returns already-filtered eligible candidates (no
+  // availabilityStatus field). Absent availability means the backend has
+  // already resolved conflicts — treat as available. Only explicit busy
+  // statuses block selection.
+  const available = !availability || availability === 'available' || availability === 'free' || availability === 'musait';
   const eligible = Boolean(pick(candidate, ['courseEligible', 'eligible'], false));
   const selectable = eligible && available;
   const disabled = !selectable || !state.activeLeaveEtag;
