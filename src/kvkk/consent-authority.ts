@@ -12,6 +12,24 @@ export const CHANNEL_CONSENT_TYPES: Readonly<
   email: 'email_notification',
 };
 
+/**
+ * Consent türü → (hukuki dayanak, saklama süresi) eşleşmesi (PR #414 Q3).
+ *
+ * Onay satırı oluşturulurken map'ten okunup `legal_basis`/`retention_days`
+ * kolonlarına consent-time yazılır; amaç (`purpose`) zaten `consent_type`
+ * kolonudur — ayrı `purpose` kolonu yoktur. Saklama süresi, KVKK zamanaşımı
+ * uygulamalarıyla uyumlu olarak audit retention (3650 gün) ile hizalıdır.
+ * Map tek kaynaktır: üretim yazıcıları ve E2E fixture'ları aynı değeri kullanır.
+ */
+export const CONSENT_TYPE_METADATA: Readonly<
+  Record<string, Readonly<{ legalBasis: 'consent'; retentionDays: 3650 }>>
+> = Object.freeze({
+  parent_notification: Object.freeze({ legalBasis: 'consent', retentionDays: 3650 }),
+  sms_notification: Object.freeze({ legalBasis: 'consent', retentionDays: 3650 }),
+  whatsapp_notification: Object.freeze({ legalBasis: 'consent', retentionDays: 3650 }),
+  email_notification: Object.freeze({ legalBasis: 'consent', retentionDays: 3650 }),
+});
+
 /** Karar nedenleri (outbox `reason` sütunuyla aynı sözleşme). */
 export const BLOCKED_CONSENT = 'blocked_consent';
 export const BLOCKED_CHANNEL_CONSENT = 'blocked_channel_consent';

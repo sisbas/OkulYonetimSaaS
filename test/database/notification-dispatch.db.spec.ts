@@ -756,17 +756,18 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
   });
 
   describe('NotificationDispatchService end-to-end (real PostgreSQL)', () => {
-    it('approved + consent granted → dispatched with durable simulated receipt', async () => {
+    it('approved + consent granted → delivered with durable simulated receipt', async () => {
       await seedConsent(true);
       const id = await insertOutboxRow('approved', 'dedupe-e2e-ok');
 
       const result = await service.execute(ctx, id);
 
-      expect(result.status).toBe('dispatched');
+      // PR #414 Q6: accept modu simüle teslim onayı (provider_delivered) üretir.
+      expect(result.status).toBe('delivered');
       expect(result.idempotent).toBe(false);
       expect(result.receipt).not.toBeNull();
       expect(result.receipt!.simulated).toBe(true);
-      expect(result.receipt!.outcome).toBe('provider_accepted');
+      expect(result.receipt!.outcome).toBe('provider_delivered');
       expect(result.receipt!.providerRef).toBe(`sim:${id}:1`);
 
       const stored = (await dataSource.query(
@@ -804,7 +805,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       });
     });
 
-    it('second execute on dispatched row is idempotent (same receipt, no new effect)', async () => {
+    it('second execute on delivered row is idempotent (same receipt, no new effect)', async () => {
       await seedConsent(true);
       const id = await insertOutboxRow('approved', 'dedupe-e2e-idem');
 
@@ -859,7 +860,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       });
     });
 
-    it('fail_first mode: rejection schedules backoff, then acceptance dispatches (attempt 2)', async () => {
+    it('fail_first mode: rejection schedules backoff, then delivery completes (attempt 2)', async () => {
       await seedConsent(true);
       process.env.NOTIFICATION_SIMULATOR_MODE = 'fail_first:1';
       const failingService = new NotificationDispatchService(
@@ -884,7 +885,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
         [id],
       );
       const second = await failingService.execute(ctx, id);
-      expect(second.status).toBe('dispatched');
+      expect(second.status).toBe('delivered');
       expect(second.attempt).toBe(2);
       expect(second.receipt!.attempt).toBe(2);
 
@@ -895,7 +896,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       )) as Array<{ attempt: number; outcome: string }>;
       expect(receipts).toEqual([
         { attempt: 1, outcome: 'provider_rejected' },
-        { attempt: 2, outcome: 'provider_accepted' },
+        { attempt: 2, outcome: 'provider_delivered' },
       ]);
     });
 
@@ -910,7 +911,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
         [id],
       );
       const result = await service.execute(ctx, id);
-      expect(result.status).toBe('dispatched');
+      expect(result.status).toBe('delivered');
     });
 
     it('execute from another branch context is rejected without touching the row (branch predicate)', async () => {

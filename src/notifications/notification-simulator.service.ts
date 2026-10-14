@@ -13,8 +13,11 @@ import { DispatchOutcome } from './notification-dispatch-receipt.entity';
  *   tek seferlik API çağrısıyla değiştirilemez).
  * - Modlar boot'da bir kez okunur (fail-closed): bilinmeyen değer uygulamanın
  *   başlamasını engeller.
- * - `NOTIFICATION_SIMULATOR_MODE=accept` (varsayılan) her denemeyi kabul eder.
- *   Reddedilen sonuçlar dahili test kapsamındadır (scenarios 4/5/9/10).
+ * - `NOTIFICATION_SIMULATOR_MODE=accept` (varsayılan) her denemeyi kabul eder
+ *   ve `provider_delivered` (teslim edildi) outcome'u üretir — PR #414 Q6:
+ *   simüle sağlayıcı yalnız bu modda teslim onayı verir; `provider_accepted`
+ *   artık yalnızca dahili/geriye dönük senaryolarda kalır. Reddedilen
+ *   sonuçlar dahili test kapsamındadır (scenarios 4/5/9/10).
  *
  * Bozucu (destructive) değildir: dış sisteme yazılmaz, ağ çağrısı yapmaz.
  */
@@ -61,7 +64,7 @@ export class NotificationSimulatorService {
   /**
    * Tek deneme için simüle sağlayıcı sonucu (saf fonksiyon — yan etki yok).
    *
-   * `fail_first:N` → ilk N deneme reddedilir, sonrası kabul edilir.
+   * `fail_first:N` → ilk N deneme reddedilir, sonrası teslim edilir.
    * Provider ref deterministiktir (`sim:<outboxId>:<attempt>`) ki tekrar
    * okumalarda kanıt aynı kalsın.
    */
@@ -76,10 +79,10 @@ export class NotificationSimulatorService {
   }
 
   private outcomeFor(attempt: number): DispatchOutcome {
-    if (this.mode === 'accept') return 'provider_accepted';
+    if (this.mode === 'accept') return 'provider_delivered';
     if (this.mode === 'reject') return 'provider_rejected';
     if (this.mode === 'uncertain') return 'uncertain';
     const failFirst = Number(this.mode.split(':')[1]);
-    return attempt <= failFirst ? 'provider_rejected' : 'provider_accepted';
+    return attempt <= failFirst ? 'provider_rejected' : 'provider_delivered';
   }
 }

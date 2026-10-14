@@ -82,6 +82,29 @@ kapanır. "PR merge edildi" kapanış kanıtı değildir. Zorunlu check
 
 ---
 
+## PR #414 review kararları — grilling (2026-10-14, #266/#269)
+
+Numaralandırma K-1…K-15'ten devam eder. Bu kararlar PR #414'ün yorum
+sınırlarıdır; sonraki oturumlar bunları yeniden açmaz (kanıt: bu tablo).
+
+| # | Karar | Gerekçe |
+|---|---|---|
+| K-16 | **#414 tam teslim taahhüdü: #266/#269 AC'leri kod tarafında gerçekten kapatılır; "kısmi teslim" çerçevesi reddedildi.** Review'da bulunan 7 kod boşluğu bu PR'da düzeltilir; süreç kalemleri (#266 AC9 verdict'leri, #269 video/canary/axe) PR body'de "Kapsam dışı" olarak deklare edilir ve post-merge takip eder. | Yanlış-yeşil riski (K-1 ruhu): AC kapatıldı iddiası kodla desteklenmiyorsa merge edilmez. |
+| K-17 | **`kvkk_consents` hukuki zemin modeli (Q3-C):** `legal_basis` + `retention_days` kolonları eklenir; consent-time'da `CONSENT_TYPE_METADATA` map'inden (`src/kvkk/consent-authority.ts`, tek kaynak) yazılır. `purpose` = mevcut `consent_type` kolonudur — ayrı `purpose` kolonu YOK. Snapshot/API/UI bu alanları taşır. Değerler: `legalBasis: 'consent'`, `retentionDays: 3650` (audit retention ile hizalı). | KVKK şeffaflık: consent satırının hukuki dayanağı ve saklama süresi denetlenebilir olmalı; amaç zaten consent_type. |
+| K-18 | **`delivered` durumu (Q6-A):** outbox'a `delivered` status + receipt'e `provider_delivered` outcome eklenir; simulator accept modunda (ve `fail_first` başarı denemesinde) `provider_delivered` üretir → satır `delivered` olur. `provider_accepted → dispatched` eşlemesi korunur. `simulated = true` CHECK'i DEĞİŞMEZ (gerçek dış teslimat yine imkânsız, fail-closed). | "Gönderildi" (accepted) ile "Teslim edildi" (delivered) ayrımı; UI/DB/testler bu ayrımı yansıtır. |
+| K-19 | **Revoke audit dürüstlüğü (Q5-A):** `dataprotection.consent.revoked` için `changedFields` = gerçek değişen kolonlar (`status`, `revokedAt`, `version` — allowlist'e eklendi); `redactionReceipt` payload'dan ölçülür (`noneRedactionReceipt`: evaluated = metadata anahtar sayısı, redacted 0, skipped = evaluated). Uydurma `purpose`/`legalBasis` iddiası ve sabit `evaluatedFieldCount: 6` kaldırıldı. | CLAUDE.md Verification Protocol: audit kanıtı uydurulamaz; denetçi `redacted+skipped=evaluated` muhasebesini doğrulayabilmeli. |
+| K-20 | **Hassas okuma audit'i yalnız consent yüzeyi (Q7-B):** `GET /consents` listesi aynı transaction'da `dataprotection.consent.read` (yeni event; `DATA_PROTECTION_POLICY` — receipt zorunlu, actor zorunlu) yazar; `entityId` = tenant. Notification listeleri PII taşımaz ve audit yazmaz (mevcut davranış korunur). | KVKK madde 12: hassas yüzeye erişim kayda geçmeli; her PII'sız notification okumasını audit'e sokmak audit zincirini boğar. |
+| K-21 | **Scope creep korunur, iddia düzeltilir (Q8-A):** landing page, `/` rewrite, login UI, `admin-user.seed.ts` bu PR'da kalır; PR body'deki "Varsayılan davranış değişikliği yok" cümlesi yanlıştır — `/` route değişikliği + bu kalemler Kapsam'a açıkça yazılır. | Değişiklikler küçük ve geri alınabilir; gizlemek review riskini büyütür. |
+| K-22 | **S10b revoke gerçek UI yolundan (Q9-C):** consent kartı "Onayı geri çek" butonu (`data-subject-ref-id` + `data-consent-type`) ile UI revoke; re-grant (SQL `seedConsentPreconditions`) yalnız **önkoşul geri yükleme** (precondition restore) olarak sınıflandırılır ve `acceptance-tables.ts` yorumu ile PR body'de belgelenir. Consent API'sinde grant endpoint'i/UI'ı YOK (dokümante önkoşul). | Kabul kanıtı gerçek kullanıcı yolundan üretilmeli (K-1); re-grant bir iş sonucu değil, bozulan journey önkoşulunun yeniden kurulması. |
+| K-23 | **R10 AC(b) dürüst sıralama (Q10-A):** `test:e2e` ikiye bölünür — stage5 JOURNEY ilk koşar (tek jest çağrısı), sonra diğer spec'ler; stage5 `beforeAll` job-outcome tablolarının (outbox + receipts) tenant için boş olduğunu assert eder (`JOB_OUTCOME_PRECONDITION_FAILED`). `waitForCountAtLeast` "alt sınır" telafisi yorumu kaldırılır. | Kirletilmiş paylaşımlı DB'de journey kanıtı güvensizdi; sıralama + assert ile boşluk kanıtlanır. |
+| K-24 | **fillField kalır, sınır deklare edilir (Q11-B):** `fillField` (page.evaluate set value + input event) E2E'de kalır; yasak olan R3 (fetch/XHR enjeksiyonu) ve R4 (DOM'a iş sonucu yazma) kapsam dışıdır — kanıt: `acceptance-evidence.guard.spec.ts` R3/R4 kuralları. PR body'de bu sınır yazılır; bulgu `rejected:<counter-evidence>` ile kapatılır. | Guard zaten AC2'nin yasakladığı iki ihlali kodlar; 20 çağrı sitesi + headless datetime-local typing gerçekçiliği. |
+| K-25 | **Consent kartı hukuki zemin gösterir (Q12-A):** kart-meta'ya `Hukuki sebep: <legal_basis> · Saklama: <retention_days> gün` span'ları eklenir (backend snapshot alanlarından). | Operatör/DPO, onayın dayanağını ve saklama süresini UI'da görebilmeli (K-17'nin yüzey karşılığı). |
+| K-26 | **Standards smell'leri follow-up issue'ya (Q4-B):** bu PR yalnız review'un hard violation'ını (K-19 sahte audit) düzeltir; `extractRows` 4 kopyası, `REQUEST_FAILURE_CATEGORIES` (main.ts vs audit.interceptor) drift'i, outbox scope-check 5 inline sitesi, app.js divergent change, `{tenantId,branchId,id}` data clump'ı tek follow-up issue'da toplanır. | Boyut/odak: smell temizliği review kanıtını geciktirmemeli; hepsi davranış-değiştirmeyen refactor. |
+| K-27 | **HCO evidence contract (#266):** review bulguları issue #266'ya `fixed:<commit>` / `rejected:<counter-evidence>` formatında comment olarak yazılır; terminal verdict'ler PR head_sha'ya bağlanır. | HCO sözleşmesi: bulgu yaşam döngüsü izlenebilir olmalı. |
+| K-28 | **Bu kararlar bu dosyada yaşar (Q13-A):** grilling çıktısı CONTEXT.md'nin tarihli karar bölümüdür; ADR altyapısı yok, ayrı dosya ikinci doğruluk kaynağı yaratır (K-6 prensibi). | Gelecek agent aynı review'u yeniden açmaz; CONTEXT.md kanonik karar evidir. |
+
+---
+
 ## Açık sorular
 
 | # | Soru | Durum |
@@ -124,3 +147,4 @@ kapanır. "PR merge edildi" kapanış kanıtı değildir. Zorunlu check
 |---|---|
 | 2026-10-07 | İlk `/grill-with-docs`: Faz 1b kapanışı grilling (7 karar K-1…K-7); v2 plan bayat tespiti (R1, R2, R4–R7, R12, R14 merge); dosya kuruldu. |
 | 2026-10-11 | `/grill-with-docs` #382 kapsam kilidi grilling: **8 karar (K-8…K-15), 5 wayfinder biletinin tamamı kapatıldı** (#383→K-14, #384→K-15, #385→K-8, #386→K-9, #387→K-10). Q-3 kapandı; Q-1 kısmen (kilide önkoşul değil, kararı hâlâ açık). Glossary'ye "Kapsam kilidi" + "Pilot-enabler" eklendi. ADR: değerlendirdim, barajı geçmedi (plan artefaktı, mimari kilit değil) — atlandı. |
+| 2026-10-14 | PR #414 review grilling: **13 karar (K-16…K-28)** — #414 tam teslim (K-16), consent hukuki zemin (K-17/K-25), delivered durumu (K-18), revoke audit dürüstlüğü (K-19), consent.read audit'i (K-20), scope creep deklarasyonu (K-21), S10b UI revoke (K-22), stage5-first + job-outcome assert (K-23), fillField sınırı (K-24), smell follow-up (K-26), HCO evidence (K-27). Kod tarafı bu PR'da uygulandı. |

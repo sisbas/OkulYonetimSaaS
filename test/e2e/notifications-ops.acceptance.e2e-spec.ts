@@ -181,6 +181,64 @@ async function waitForCount(
   throw new Error(`waitForCount timeout: ${selector} expected ${expected}, last ${last}.`);
 }
 
+/** Liste yeniden render'ı sırasında kopan tıklamaları toleranslı hale getirir (consent kartları). */
+async function clickRetry(
+  session: UiSession,
+  selector: string,
+  attempts = 5,
+  delayMs = 400,
+): Promise<void> {
+  let last: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await session.clickElement(selector);
+      return;
+    } catch (error) {
+      last = error;
+      await sleep(delayMs);
+    }
+  }
+  throw last instanceof Error ? last : new Error(String(last));
+}
+
+/**
+ * Öznenin en güncel (max-version) consent satırının durumunu DB'den salt-okunur
+ * doğrular (S10b UI revoke sonrası bekleyici).
+ */
+async function waitForConsentStatusDb(
+  studentId: string,
+  consentType: string,
+  status: string,
+  timeoutMs = 20_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let last = '';
+  while (Date.now() < deadline) {
+    const result = await dbClient!
+      .query(
+        `SELECT c.status
+           FROM kvkk_consents c
+           JOIN kvkk_consent_subjects s
+             ON s.id = c.subject_id
+            AND s.tenant_id = c.tenant_id
+            AND s.subject_ref_id = $2::uuid
+            AND s.subject_type = 'student'
+            AND s.deleted_at IS NULL
+          WHERE c.tenant_id = $1::uuid AND c.consent_type = $3
+          ORDER BY c.version DESC, c.created_at DESC, c.id DESC
+          LIMIT 1`,
+        [fixture.tenantId, studentId, consentType],
+      )
+      .catch(() => null);
+    last = String((result?.rows[0] as { status?: string } | undefined)?.status ?? '');
+    if (last === status) return;
+    await sleep(300);
+  }
+  throw new Error(
+    `waitForConsentStatusDb timeout: ${studentId}/${consentType} expected ${status}, last=${last || 'okunamadi'}`,
+  );
+}
+
 async function openCard(session: UiSession, key: string): Promise<void> {
   const id = rows[key];
   if (!id) throw new Error(`No outbox id for row ${key}.`);
@@ -671,26 +729,26 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await sessionA!.waitForText('#notification-detail h3', /· Onaylandı/, 20_000);
 
     await runAction(sessionA!, 'execute');
-    await sessionA!.waitForText('#notification-detail h3', /· Gönderildi/, 20_000);
+    await sessionA!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
     const liTexts = await sessionA!.queryTexts('#notification-detail ul.impact-list li');
     expect(liTexts.length).toBe(1);
-    expect(liTexts[0]).toContain('Deneme 1 · provider_accepted');
+    expect(liTexts[0]).toContain('Deneme 1 · provider_delivered');
     expect(liTexts[0]).toContain('simüle');
 
     const row = await expectRow('r0', {
-      status: 'dispatched',
+      status: 'delivered',
       attempts: 1,
       dispatchedAt: expect.any(String) as unknown as string | null,
       receipts: [expect.any(Object) as unknown as ReadonlyArray<unknown>],
     });
     const receipt = row.receipts[0];
-    expect(receipt.outcome).toBe('provider_accepted');
+    expect(receipt.outcome).toBe('provider_delivered');
     expect(receipt.simulated).toBe(true);
     expect(receipt.providerRef).toMatch(/^sim:/);
     expect(liTexts[0]).toContain(`Sağlayıcı: ${receipt.providerRef}`);
     recordEvidence(
       currentScenario,
-      'UI li "Deneme 1 · provider_accepted · simüle · Sağlayıcı: sim:..." ↔ DB receipt (outcome/simulated/providerRef birebir)',
+      'UI li "Deneme 1 · provider_delivered · simüle · Sağlayıcı: sim:..." ↔ DB receipt (outcome/simulated/providerRef birebir)',
     );
     await snap(sessionA!, '04-dispatched-receipt-consistency');
     recordScenario(SCENARIO_NAMES[3], 'PASS');
@@ -711,21 +769,21 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     expect(await actionButtonCount(sessionB!)).toBe(2);
 
     await runAction(sessionA!, 'execute');
-    await sessionA!.waitForText('#notification-detail h3', /· Gönderildi/, 20_000);
-    await expectRow('r2', { status: 'dispatched', attempts: 1, receipts: [expect.any(Object) as unknown as ReadonlyArray<unknown>] });
+    await sessionA!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
+    await expectRow('r2', { status: 'delivered', attempts: 1, receipts: [expect.any(Object) as unknown as ReadonlyArray<unknown>] });
 
     // İkinci tarayıcı oturumu aynı execute'i tekrarlar (duplicate click).
     await runAction(sessionB!, 'execute');
-    await sessionB!.waitForText('#notification-detail h3', /· Gönderildi/, 20_000);
-    const afterDup = await expectRow('r2', { status: 'dispatched', attempts: 1 });
+    await sessionB!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
+    const afterDup = await expectRow('r2', { status: 'delivered', attempts: 1 });
     expect(afterDup.receipts.length).toBe(1);
 
     // Response-loss simülasyonu: istemci aynı isteği tekrar gönderir → idempotent 200.
     const second = await apiCall(opsApi, 'POST', `/notifications/${rows.r2}/execute`);
     const secondJson = second.json as { idempotent?: boolean; status?: string };
     expect(secondJson.idempotent).toBe(true);
-    expect(secondJson.status).toBe('dispatched');
-    const afterLoss = await expectRow('r2', { status: 'dispatched', attempts: 1 });
+    expect(secondJson.status).toBe('delivered');
+    const afterLoss = await expectRow('r2', { status: 'delivered', attempts: 1 });
     expect(afterLoss.receipts.length).toBe(1);
     recordEvidence(
       currentScenario,
@@ -852,21 +910,29 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await expectRow('r4', { status: 'cancelled', attempts: 0 });
     recordEvidence(currentScenario, 'S10a: r4 approve → cancel → İptal edildi, eylemler [], DB cancelled');
 
-    // S10b — düzeltme: revoke → blocked (attempt 1, kanıt yok) → onay geri gelir → dispatch.
+    // S10b — düzeltme: revoke (UI'dan) → blocked (attempt 1, kanıt yok) → onay
+    // geri gelir (precondition restore) → dispatch. PR #414 Q9: revoke, gerçek
+    // kullanıcı yolundan (consent kartı "Onayı geri çek" butonu) yapılır; SQL
+    // revoke yalnız re-grant (önkoşul geri yükleme) adımında kalır.
     await openCard(sessionA!, 'r6');
     await sessionA!.waitForText('#notification-detail h3', /· Beklemede/, 20_000);
     await runAction(sessionA!, 'approve');
     await sessionA!.waitForText('#notification-detail h3', /· Onaylandı/, 20_000);
 
-    await revokeConsent(dbClient!, {
-      tenantId: fixture.tenantId,
-      studentId: students[6].studentId,
-    });
-    await revokeConsent(dbClient!, {
-      tenantId: fixture.tenantId,
-      studentId: students[6].studentId,
-      consentType: 'sms_notification',
-    });
+    await sessionA!.clickElement('#refresh-consents');
+    for (const consentType of ['parent_notification', 'sms_notification']) {
+      const revokeButton = `#consents-output button[data-action="consent-revoke"][data-subject-ref-id="${students[6].studentId}"][data-consent-type="${consentType}"]`;
+      await clickRetry(sessionA!, revokeButton);
+      try {
+        await waitForConsentStatusDb(students[6].studentId, consentType, 'revoked');
+      } catch (error) {
+        throw new Error(
+          `S10b UI revoke failed for ${consentType}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    recordEvidence(currentScenario, 'S10b: consent kartından UI revoke (parent_notification + sms_notification, DB revoked)');
+
     await openCard(sessionA!, 'r6');
     await sessionA!.waitForText('#notification-detail h3', /· Onaylandı/, 20_000);
     await runAction(sessionA!, 'execute');
@@ -879,6 +945,9 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     });
     recordEvidence(currentScenario, 'S10b: revoke sonrası execute → blocked_consent, attempts 1, receipt yok');
 
+    // Önkoşul geri yükleme (precondition restore — PR #414 Q9): re-grant bir
+    // İŞ SONUCU değil, bozulan journey önkoşulunun SQL ile yeniden kurulmasıdır;
+    // bu nedenle referans fixture yolundan (seedConsentPreconditions) yapılır.
     await seedConsentPreconditions(dbClient!, {
       tenantId: fixture.tenantId,
       students: [students[6]],
@@ -891,9 +960,9 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await runAction(sessionA!, 'approve');
     await sessionA!.waitForText('#notification-detail h3', /· Onaylandı/, 20_000);
     await runAction(sessionA!, 'execute');
-    await sessionA!.waitForText('#notification-detail h3', /· Gönderildi/, 20_000);
+    await sessionA!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
     const finalRow = await expectRow('r6', {
-      status: 'dispatched',
+      status: 'delivered',
       attempts: 2,
       receipts: [expect.any(Object) as unknown as ReadonlyArray<unknown>],
     });
@@ -915,7 +984,7 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     expect(finalRow.receipts.length).toBe(1);
     recordEvidence(
       currentScenario,
-      'S10b: re-grant → approve (blocked_consent geçişli) → execute → dispatched, attempts 2, receipt 1 (düzeltme UI/DB tutarlı)',
+      'S10b: re-grant → approve (blocked_consent geçişli) → execute → delivered, attempts 2, receipt 1 (düzeltme UI/DB tutarlı)',
     );
     await snap(sessionA!, '09-correction-cancellation');
     recordScenario(SCENARIO_NAMES[8], 'PASS');
@@ -930,8 +999,8 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     const tagText = await sessionA!.queryTexts(
       `#notifications-list article.card:has(button[data-notification-id="${rows.r0}"]) .tag`,
     );
-    expect(tagText.join(' ')).toContain('Gönderildi');
-    recordEvidence(currentScenario, 'restart sonrası liste canlı: 11 kart, r0 Gönderildi (token+veri kalıcılığı)');
+    expect(tagText.join(' ')).toContain('Teslim edildi');
+    recordEvidence(currentScenario, 'restart sonrası liste canlı: 11 kart, r0 Teslim edildi (token+veri kalıcılığı)');
 
     await openCard(sessionA!, 'r5');
     await sessionA!.waitForText('#notification-detail h3', /· Beklemede/, 20_000);
@@ -956,24 +1025,24 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await thisRowReceiptCount('r5', 3);
     await expectRow('r5', { status: 'dead_lettered', attempts: 3 });
 
-    // Recovery: retry → approved (available_at=now) → execute → dispatched.
+    // Recovery: retry → approved (available_at=now) → execute → delivered.
     await runAction(sessionA!, 'retry');
     await sessionA!.waitForText('#notification-detail h3', /· Onaylandı/, 20_000);
     await runAction(sessionA!, 'execute');
-    await sessionA!.waitForText('#notification-detail h3', /· Gönderildi/, 20_000);
+    await sessionA!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
     await sessionA!.waitForText('#notification-detail', /Deneme: 4/, 10_000);
-    const final = await expectRow('r5', { status: 'dispatched', attempts: 4 });
+    const final = await expectRow('r5', { status: 'delivered', attempts: 4 });
     expect(final.receipts.length).toBe(4);
     expect(final.receipts.map((r) => r.outcome)).toEqual([
       'provider_rejected',
       'provider_rejected',
       'provider_rejected',
-      'provider_accepted',
+      'provider_delivered',
     ]);
     expect(final.receipts.every((r) => r.simulated)).toBe(true);
     recordEvidence(
       currentScenario,
-      'r5: rejected+5s → rejected+10s → dead_lettered → retry(approved) → accepted; 4 receipt (hepsi simüle)',
+      'r5: rejected+5s → rejected+10s → dead_lettered → retry(approved) → delivered; 4 receipt (hepsi simüle)',
     );
     await snap(sessionA!, '10-retry-deadletter-recovery');
     recordScenario(SCENARIO_NAMES[9], 'PASS');
@@ -986,17 +1055,17 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await openNotificationsAndWait(sessionA!, STUDENT_COUNT);
 
     const counts = await readOutboxStatusCounts();
-    const dispatched = counts.dispatched ?? 0;
+    const delivered = counts.delivered ?? 0;
     const cancelled = counts.cancelled ?? 0;
     recordEvidence(
       currentScenario,
-      `DB türevli durum sayıları: dispatched=${dispatched}, cancelled=${cancelled}, toplam=${STUDENT_COUNT}`,
+      `DB türevli durum sayıları: delivered=${delivered}, cancelled=${cancelled}, toplam=${STUDENT_COUNT}`,
     );
 
-    await sessionA!.selectValue('#notification-status-filter', 'dispatched');
+    await sessionA!.selectValue('#notification-status-filter', 'delivered');
     await sessionA!.clickElement('#apply-notification-filter');
-    await waitForCount(sessionA!, '#notifications-list article.card', dispatched);
-    await sessionA!.waitForText('#message-region', new RegExp(`${dispatched} bildirim listelendi`), 10_000);
+    await waitForCount(sessionA!, '#notifications-list article.card', delivered);
+    await sessionA!.waitForText('#message-region', new RegExp(`${delivered} bildirim listelendi`), 10_000);
 
     await sessionA!.selectValue('#notification-status-filter', 'cancelled');
     await sessionA!.clickElement('#apply-notification-filter');
@@ -1008,7 +1077,7 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await waitForCount(sessionA!, '#notifications-list article.card', STUDENT_COUNT);
 
     await openCard(sessionA!, 'r0');
-    await sessionA!.waitForText('#notification-detail h3', /· Gönderildi/, 20_000);
+    await sessionA!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
     const lis = await sessionA!.queryTexts('#notification-detail ul.impact-list li');
     expect(lis.length).toBeGreaterThanOrEqual(1);
 
@@ -1018,7 +1087,7 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     expect(storage.cookie).toBe('');
     recordEvidence(
       currentScenario,
-      'filtreler DB türevli sayılarla eşleşti; r0 Gönderildi + kalıcı receipt; token/PII depolamada yok',
+      'filtreler DB türevli sayılarla eşleşti; r0 Teslim edildi + kalıcı receipt; token/PII depolamada yok',
     );
     await snap(sessionA!, '11-refresh-relogin-persistence');
     recordScenario(SCENARIO_NAMES[10], 'PASS');
@@ -1069,11 +1138,12 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     expect(liTexts.length).toBe(2);
     const detailText = await sessionA!.text('#notification-detail');
     expect(detailText).not.toContain('Gönderildi');
+    expect(detailText).not.toContain('Teslim edildi');
     const afterSecond = await expectRow('r9', { status: 'uncertain', attempts: 2, dispatchedAt: null });
     expect(afterSecond.dispatchedAt).toBeNull();
     recordEvidence(
       currentScenario,
-      'uncertain: receipt kayıtlı ama dispatchedAt NULL ve UI "→ Belirsiz" (sahte Gönderildi yok), 2 deneme, tetiklenen tüm receiptler uncertain',
+      'uncertain: receipt kayıtlı ama dispatchedAt NULL ve UI "→ Belirsiz" (sahte Gönderildi/Teslim edildi yok), 2 deneme, tetiklenen tüm receiptler uncertain',
     );
     await snap(sessionA!, '13-uncertain-no-fake-success');
     recordScenario(SCENARIO_NAMES[12], 'PASS');

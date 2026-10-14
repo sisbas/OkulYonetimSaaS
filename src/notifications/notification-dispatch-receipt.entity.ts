@@ -6,7 +6,11 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-export type DispatchOutcome = 'provider_accepted' | 'provider_rejected' | 'uncertain';
+export type DispatchOutcome =
+  | 'provider_accepted'
+  | 'provider_delivered'
+  | 'provider_rejected'
+  | 'uncertain';
 
 /**
  * Dayanıklı (durable) sağlayıcı receipt'i (#266 N2).

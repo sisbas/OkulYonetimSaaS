@@ -4,6 +4,7 @@ export type NotificationOutboxStatus =
   | 'pending'
   | 'blocked_consent'
   | 'dispatched'
+  | 'delivered'
   | 'failed'
   | 'approved'
   | 'closed'

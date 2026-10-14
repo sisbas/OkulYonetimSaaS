@@ -319,6 +319,9 @@ export class NotificationDispatchRepository {
    *
    * Hedefler:
    * - `provider_accepted` → `dispatched` (kalıcı)
+   * - `provider_delivered` → `delivered` (kalıcı; simüle sağlayıcı teslim
+   *   onayı verdi — `dispatched_at` hâlâ yazılır çünkü teslim gönderimin
+   *   üzerindedir)
    * - `provider_rejected` → attempts ≥ MAX ise `dead_lettered`,
    *   değilse `failed` + backoff (`available_at` = now + backoff)
    * - `uncertain` → `uncertain`
@@ -343,11 +346,13 @@ export class NotificationDispatchRepository {
         `UPDATE notification_outbox
             SET status = CASE $3
                   WHEN 'provider_accepted' THEN 'dispatched'
+                  WHEN 'provider_delivered' THEN 'delivered'
                   WHEN 'uncertain' THEN 'uncertain'
                   WHEN 'provider_rejected' THEN
                         CASE WHEN attempts >= $4 THEN 'dead_lettered' ELSE 'failed' END
                 END,
-                dispatched_at = CASE WHEN $3 = 'provider_accepted' THEN now() ELSE dispatched_at END,
+                dispatched_at = CASE WHEN $3 IN ('provider_accepted', 'provider_delivered')
+                                     THEN now() ELSE dispatched_at END,
                 dead_lettered_at = CASE
                         WHEN $3 = 'provider_rejected' AND attempts >= $4 THEN now()
                         ELSE dead_lettered_at END,
@@ -431,7 +436,7 @@ export class NotificationDispatchRepository {
   }
 
   /**
-   * Idempotent tekrar okuma: `dispatched` satırın mevcut kanıtı.
+   * Idempotent tekrar okuma: `dispatched`/`delivered` satırın mevcut kanıtı.
    * (İkinci execute çağrısı yeni etki üretmez, mevcut receipt'i döner.)
    */
   async findLatestReceipt(
@@ -479,7 +484,7 @@ export class NotificationDispatchRepository {
   }
 
   /**
-   * Cancel — `dispatched`/`cancelled`/`closed` DIŞINDA her durumdan iptal.
+   * Cancel — `dispatched`/`delivered`/`cancelled`/`closed` DIŞINDA her durumdan iptal.
    * Koşullu UPDATE sayesinde execute ile yarışı kaybeden taraf 0 satır görür.
    */
   async cancel(
@@ -499,7 +504,7 @@ export class NotificationDispatchRepository {
             AND session_id IN (
               SELECT id FROM attendance_sessions
                WHERE tenant_id = $1 AND branch_id = $3)
-            AND status NOT IN ('dispatched', 'cancelled', 'closed')
+            AND status NOT IN ('dispatched', 'delivered', 'cancelled', 'closed')
           RETURNING status, version`,
         [tenantId, input.id, branchId],
       ),
@@ -521,7 +526,7 @@ export function claimConflict(
   if (!basis) {
     throw new ForbiddenException('Notification dispatch row not found');
   }
-  if (basis.status === 'dispatched') {
+  if (basis.status === 'dispatched' || basis.status === 'delivered') {
     throw new ConflictException(`IDEMPOTENT_DISPATCHED:${id}`);
   }
   if (basis.claimActive) {

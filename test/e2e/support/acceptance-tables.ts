@@ -17,8 +17,10 @@
  *
  * `kvkk_consent_subjects` / `kvkk_consents`: N3 senaryo önkoşullarıdır —
  * izin (consent) satırları bir İŞ SONUCU değil, yetki otoritesinin girdisidir;
- * bu yüzden referans fixture olarak SQL ile seed edilir ve senaryo 3'teki
- * revoke, otorite olayıdır (dispatch sonucu üretmez).
+ * bu yüzden referans fixture olarak SQL ile seed edilir. Revoke, PR #414 Q9
+ * gereği gerçek kullanıcı yolundan (consent kartı UI butonu) yapılır; SQL
+ * yalnız re-grant (önkoşul geri yükleme) adımında kalır — o da bir İŞ SONUCU
+ * değil, bozulan journey önkoşulunun yeniden kurulmasıdır.
  *
  * `students`: "kim" verisidir (yoklama/bildirim satırı ÜRETMEZ); ürün
  * yüzeyinde öğrenci CRUD API'si bulunmadığından N3 kabul harness'ı

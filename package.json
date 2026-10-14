@@ -17,7 +17,7 @@
     "check:migrations": "ts-node scripts/check-migrations-idempotent.ts",
     "test:openclaw-canary": "node --test test-fixtures/openclaw-review-canary/*.test.js",
     "test:unit": "jest --runInBand src --passWithNoTests",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "jest --config ./test/jest-e2e.json --runTestsByPath test/e2e/stage5-full-journey.acceptance.e2e-spec.ts && jest --config ./test/jest-e2e.json --testPathIgnorePatterns stage5-full-journey",
     "test:e2e:guard": "jest --config ./test/jest-acceptance-guard.json",
     "test:runtime-integration": "jest --runInBand test/runtime-integration",
     "typeorm": "typeorm-ts-node-commonjs",

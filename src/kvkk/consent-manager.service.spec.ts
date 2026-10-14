@@ -37,6 +37,8 @@ describe('ConsentManagerService', () => {
             revoked_at: null,
             expires_at: null,
             created_at: new Date('2026-10-05T12:00:00Z'),
+            legal_basis: 'consent',
+            retention_days: 3650,
           },
         ]),
       } as any;
@@ -58,8 +60,29 @@ describe('ConsentManagerService', () => {
           revokedAt: null,
           expiresAt: null,
           createdAt: '2026-10-05T12:00:00.000Z',
+          legalBasis: 'consent',
+          retentionDays: 3650,
         },
       ]);
+      // PR #414 Q7: hassas consent yüzeyine dayanıklı okuma audit'i (aynı transaction).
+      expect(audit.write).toHaveBeenCalledTimes(1);
+      expect(audit.write).toHaveBeenCalledWith(
+        em,
+        'dataprotection.consent.read',
+        expect.objectContaining({
+          schemaVersion: 1,
+          tenantId: ctx.tenantId,
+          actorUserId: ACTOR_USER_ID,
+          entityType: 'dataprotection',
+          entityId: ctx.tenantId,
+          result: 'success',
+          changedFields: ['purpose'],
+          redactionReceipt: expect.objectContaining({
+            strategy: 'none',
+            redactedFieldCount: 0,
+          }),
+        }),
+      );
     });
 
     it('throws when tenant scope is missing', async () => {
@@ -109,12 +132,13 @@ describe('ConsentManagerService', () => {
           entityType: 'dataprotection',
           entityId: CONSENT_ID,
           result: 'success',
-          changedFields: ['purpose', 'legalBasis'],
+          // PR #414 Q5: revoke'un gerçekte değiştirdiği kolonlar (dürüst kanıt).
+          changedFields: ['status', 'revokedAt', 'version'],
           redactionReceipt: expect.objectContaining({
             strategy: 'none',
-            evaluatedFieldCount: 6,
+            evaluatedFieldCount: 9,
             redactedFieldCount: 0,
-            skippedFieldCount: 6,
+            skippedFieldCount: 9,
           }),
         }),
       );

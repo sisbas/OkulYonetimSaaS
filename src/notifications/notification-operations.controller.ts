@@ -22,6 +22,7 @@ const VALID_STATUSES: ReadonlySet<string> = new Set<NotificationOutboxStatus>([
   'blocked_consent',
   'approved',
   'dispatched',
+  'delivered',
   'failed',
   'dead_lettered',
   'uncertain',

@@ -97,6 +97,7 @@ const statusLabels = {
   cancelled: 'İptal edildi',
   blocked_consent: 'Onay engelli',
   dispatched: 'Gönderildi',
+  delivered: 'Teslim edildi',
   failed: 'Başarısız',
   dead_lettered: 'Durduruldu',
   uncertain: 'Belirsiz',
@@ -125,6 +126,7 @@ const statusTones = {
   failed: 'danger',
   dead_lettered: 'danger',
   dispatched: 'success',
+  delivered: 'success',
   blocked_consent: 'warning',
   uncertain: 'warning',
   cancelled: 'neutral',
@@ -980,11 +982,17 @@ function renderConsentCard(row) {
   const consentType = pick(row, ['consentType'], '');
   const status = String(pick(row, ['status'], 'unknown')).toLowerCase();
   const revocable = status === 'approved';
+  const legalBasis = pick(row, ['legalBasis'], '');
+  const retentionDays = pick(row, ['retentionDays'], null);
   return `<article class="card">
     <h3>${escapeHtml(consentType)} · ${escapeHtml(displayStatus(status))}</h3>
     <p class="card-meta">
       <span>Özne: ${escapeHtml(subjectType)}</span>
       <span>Sürüm: ${escapeHtml(pick(row, ['version'], 0))}</span>
+      ${legalBasis ? `<span>Hukuki sebep: ${escapeHtml(legalBasis)}</span>` : ''}
+      ${retentionDays !== null && retentionDays !== undefined && retentionDays !== ''
+        ? `<span>Saklama: ${escapeHtml(retentionDays)} gün</span>`
+        : ''}
       <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
     </p>
     ${revocable

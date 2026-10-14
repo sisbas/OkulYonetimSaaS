@@ -195,8 +195,10 @@ function networkTail(label: string, urlPattern: RegExp, limit = 6): string {
     .join('\n---\n');
 }
 
-/** Exact-count yerine alt sınır bekler — aynı fresh DB'yi paylaşan ancak bu spec'ten
- * ÖNCE koşan suite'lerin (N3) ürettiği kalıntı satırlar toplamı yukarı çeker. */
+/** Alt sınır (minimum) eşiği bekler — asenkron render'da satırların tamamı
+ * hemen görünmeyebilir; stage5 artık test:e2e içinde İLK koşar (PR #414 Q10)
+ * ve beforeAll job-outcome boşluğunu assert eder, bu yüzden bu yardımcı yalnız
+ * timing toleransıdır, kirletilmiş DB telafisi değil. */
 async function waitForCountAtLeast(
   session: UiSession,
   selector: string,
@@ -822,6 +824,26 @@ beforeAll(async () => {
   });
   substituteTeacherId = await seedSubstituteTeacher(dbClient);
 
+  // R10 AC(b) dürüstlüğü (PR #414 Q10): stage5, test:e2e içinde İLK koşar ve
+  // job-outcome tablolarının (outbox + receipts) bu tenant için BOŞ olmasını
+  // assert eder. Journey boyunca oluşacak jobOutcomes yalnız gerçek kullanıcı
+  // yolundan (UI/API) doğar; sıralama + bu assert, alt-sınır telafisi olmadan
+  // kanıtlanabilir boşluk sağlar.
+  const outcomeCounts = await dbClient.query(
+    `SELECT (SELECT count(*) FROM notification_outbox WHERE tenant_id = $1::uuid)::int AS outbox,
+            (SELECT count(*) FROM notification_dispatch_receipts WHERE tenant_id = $1::uuid)::int AS receipts`,
+    [fixture.tenantId],
+  );
+  const outboxCount = Number(outcomeCounts.rows[0].outbox);
+  const receiptCount = Number(outcomeCounts.rows[0].receipts);
+  if (outboxCount !== 0 || receiptCount !== 0) {
+    throw new Error(
+      `JOB_OUTCOME_PRECONDITION_FAILED: expected empty job-outcome tables for tenant ${fixture.tenantId} ` +
+        `before stage5 journey, found outbox=${outboxCount} receipts=${receiptCount}. ` +
+        'stage5 must run first on a fresh DB (test:e2e order — PR #414 Q10).',
+    );
+  }
+
   server = await startRuntimeServer({
     baseUrl: environment.baseUrl,
     port: environment.port,
@@ -1236,28 +1258,28 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await openCard(sessionA!, 'r0');
     await detailHeading(sessionA!);
     await runAction(sessionA!, 'execute');
-    await sessionA!.waitForText('#notification-detail h3', /· Gönderildi/, 20_000);
+    await sessionA!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
     const liTexts0 = await sessionA!.queryTexts('#notification-detail ul.impact-list li');
     expect(liTexts0.length).toBe(1);
-    expect(liTexts0[0]).toContain('provider_accepted');
+    expect(liTexts0[0]).toContain('provider_delivered');
     expect(liTexts0[0]).toContain('simüle');
     const row0 = await expectRow('r0', {
-      status: 'dispatched',
+      status: 'delivered',
       attempts: 1,
       dispatchedAt: expect.any(String) as unknown as string | null,
       receipts: [expect.any(Object) as unknown as ReadonlyArray<unknown>],
     });
     const receipt0 = row0.receipts[0];
-    expect(receipt0.outcome).toBe('provider_accepted');
+    expect(receipt0.outcome).toBe('provider_delivered');
     expect(receipt0.simulated).toBe(true);
     expect(receipt0.providerRef).toMatch(/^sim:/);
 
     await openCard(sessionA!, 'r1');
     await detailHeading(sessionA!);
     await runAction(sessionA!, 'execute');
-    await sessionA!.waitForText('#notification-detail h3', /· Gönderildi/, 20_000);
+    await sessionA!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
     const row1 = await expectRow('r1', {
-      status: 'dispatched',
+      status: 'delivered',
       attempts: 1,
       dispatchedAt: expect.any(String) as unknown as string | null,
       receipts: [expect.any(Object) as unknown as ReadonlyArray<unknown>],
@@ -1270,12 +1292,12 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     const second = await apiCall(opsApi, 'POST', `/notifications/${rows.r1}/execute`);
     const secondJson = second.json as { idempotent?: boolean; status?: string };
     expect(secondJson.idempotent).toBe(true);
-    expect(secondJson.status).toBe('dispatched');
-    const afterLoss = await expectRow('r1', { status: 'dispatched', attempts: 1 });
+    expect(secondJson.status).toBe('delivered');
+    const afterLoss = await expectRow('r1', { status: 'delivered', attempts: 1 });
     expect(afterLoss.receipts.length).toBe(1);
 
     negatives['dup-execute'] = 'execute tekrarı (response-loss) → 200 idempotent, attempts 1, receipt 1; UI dispatch sonrası ikinci execute sunmaz';
-    recordEvidence(currentScenario, 'SIMULATED execute → dispatched; receipt provider_accepted/simüle/sim:... ↔ DB birebir; execute tekrarı idempotent');
+    recordEvidence(currentScenario, 'SIMULATED execute → delivered; receipt provider_delivered/simüle/sim:... ↔ DB birebir; execute tekrarı idempotent');
     await snap(sessionA!, '04-bulk-approved-simulated-dispatched');
     recordScenario(SCENARIO_NAMES[3], 'PASS');
   });
@@ -1389,7 +1411,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     const tags0 = await sessionA!.queryTexts(
       `#notifications-list article.card:has(button[data-notification-id="${rows.r0}"]) .tag`,
     );
-    expect(tags0.join(' ')).toContain('Gönderildi');
+    expect(tags0.join(' ')).toContain('Teslim edildi');
 
     await sessionA!.clickElement('.tab[data-tab="attendance"]');
     await sessionA!.clickElement('#refresh-attendance');
@@ -1401,7 +1423,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     const persistedConsents = await sessionA!.countElements('#consents-output article.card').catch(() => -1);
     recordEvidence(
       currentScenario,
-      `relogin sonrası: notifications >=3 kart (Gönderildi dahil), attendance >=2 oturum, consents kart=${persistedConsents} (öznemiz: students[0] revoke 2, students[2] revoke 0) — kalıcılık`,
+      `relogin sonrası: notifications >=3 kart (Teslim edildi dahil), attendance >=2 oturum, consents kart=${persistedConsents} (öznemiz: students[0] revoke 2, students[2] revoke 0) — kalıcılık`,
     );
 
     // PII taraması (DOM).

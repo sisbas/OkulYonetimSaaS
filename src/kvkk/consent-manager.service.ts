@@ -10,6 +10,7 @@ import {
   TRANSACTIONAL_AUDIT_WRITER,
   TransactionalAuditWriter,
 } from '../common/audit/transactional-audit-writer';
+import { RedactionReceipt } from '../common/audit/transactional-audit.types';
 import { ConsentSubjectType } from './consent-authority';
 
 export type ConsentRowSnapshot = Readonly<{
@@ -22,6 +23,8 @@ export type ConsentRowSnapshot = Readonly<{
   revokedAt: string | null;
   expiresAt: string | null;
   createdAt: string;
+  legalBasis: string | null;
+  retentionDays: number | null;
 }>;
 
 export type ConsentRevokeResult = Readonly<{
@@ -43,6 +46,8 @@ export type ConsentRowRecord = {
   revoked_at: Date | null;
   expires_at: Date | null;
   created_at: Date | null;
+  legal_basis: string | null;
+  retention_days: number | null;
 };
 
 function toSnapshot(row: ConsentRowRecord): ConsentRowSnapshot {
@@ -56,6 +61,28 @@ function toSnapshot(row: ConsentRowRecord): ConsentRowSnapshot {
     revokedAt: row.revoked_at ? new Date(row.revoked_at).toISOString() : null,
     expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
     createdAt: new Date(String(row.created_at)).toISOString(),
+    legalBasis: row.legal_basis === null ? null : String(row.legal_basis),
+    retentionDays:
+      row.retention_days === null ? null : Number(row.retention_days),
+  });
+}
+
+/**
+ * KVKK redaction kanıtı: audit metadata'sının kendisi PII taşımaz —
+ * `redactionReceipt`, yazılan metadata anahtarları üzerinden DÜRÜSTçe
+ * ölçülür (PR #414 Q5): evaluated = anahtar sayısı, redacted = 0,
+ * skipped = evaluated (hiçbir alan maskelenmedi çünkü hiçbiri PII değil).
+ */
+function noneRedactionReceipt(
+  metadata: Readonly<Record<string, unknown>>,
+): RedactionReceipt {
+  const evaluatedFieldCount = Object.keys(metadata).length;
+  return Object.freeze({
+    strategy: 'none' as const,
+    evaluatedFieldCount,
+    redactedFieldCount: 0,
+    skippedFieldCount: evaluatedFieldCount,
+    appliedAt: new Date().toISOString(),
   });
 }
 
@@ -104,7 +131,8 @@ export class ConsentManagerService {
       `SELECT c.id AS consent_id,
               s.subject_type, s.subject_ref_id,
               c.consent_type, c.status, c.version,
-              c.revoked_at, c.expires_at, c.created_at
+              c.revoked_at, c.expires_at, c.created_at,
+              c.legal_basis, c.retention_days
          FROM kvkk_consents c
          JOIN kvkk_consent_subjects s
            ON s.id = c.subject_id AND s.tenant_id = c.tenant_id
@@ -114,6 +142,27 @@ export class ConsentManagerService {
         ORDER BY s.subject_ref_id, c.consent_type, c.version DESC`,
       [tenantId, subjectType ?? null],
     )) as ConsentRowRecord[];
+
+    // Dayanıklı okuma audit'i (PR #414 Q7): hassas consent yüzeyine erişim
+    // KVKK madde 12 gereği kayda geçer. `entityId` = tenant (consent
+    // yüzeyinin sahibi); yanıt PII taşımaz (yalnızca ref UUID + statü).
+    // Aynı transaction (Madde III): domain okuması rollback olursa audit de gitmez.
+    const readMetadata = {
+      schemaVersion: 1 as const,
+      tenantId,
+      actorUserId: context.userId ?? context.user?.userId ?? null,
+      actorSessionId: null,
+      requestId: context.requestId,
+      entityType: 'dataprotection' as const,
+      entityId: tenantId,
+      result: 'success' as const,
+      changedFields: ['purpose'] as const,
+    };
+    await this.audit.write(entityManager, 'dataprotection.consent.read', {
+      ...readMetadata,
+      redactionReceipt: noneRedactionReceipt(readMetadata),
+    });
+
     return rows.map(toSnapshot);
   }
 
@@ -175,23 +224,23 @@ export class ConsentManagerService {
     }
 
     const row = updated[0];
-    await this.audit.write(entityManager, 'dataprotection.consent.revoked', {
-      schemaVersion: 1,
+    // Dürüst audit kanıtı (PR #414 Q5): revoke'un gerçekte değiştirdiği
+    // kolonlar (`status`, `revoked_at`, `version`) + payload'dan ölçülmüş
+    // redactionReceipt. Uydurma `purpose`/`legalBasis` iddiası yoktur.
+    const revokeMetadata = {
+      schemaVersion: 1 as const,
       tenantId,
       actorUserId: context.userId ?? context.user?.userId ?? null,
       actorSessionId: null,
       requestId: context.requestId,
-      entityType: 'dataprotection',
+      entityType: 'dataprotection' as const,
       entityId: String(row.id),
-      result: 'success',
-      changedFields: ['purpose', 'legalBasis'],
-      redactionReceipt: {
-        strategy: 'none',
-        evaluatedFieldCount: 6,
-        redactedFieldCount: 0,
-        skippedFieldCount: 6,
-        appliedAt: new Date().toISOString(),
-      },
+      result: 'success' as const,
+      changedFields: ['status', 'revokedAt', 'version'] as const,
+    };
+    await this.audit.write(entityManager, 'dataprotection.consent.revoked', {
+      ...revokeMetadata,
+      redactionReceipt: noneRedactionReceipt(revokeMetadata),
     });
 
     return Object.freeze({

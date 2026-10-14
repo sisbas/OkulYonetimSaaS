@@ -54,6 +54,7 @@ export function availableActionsFor(status: NotificationOutboxStatus): readonly 
     case 'uncertain':
       return ['retry', 'cancel'];
     case 'dispatched':
+    case 'delivered':
     case 'cancelled':
     case 'closed':
       return [];
@@ -73,13 +74,15 @@ export function availableActionsFor(status: NotificationOutboxStatus): readonly 
  * - Onay yalnız bu servisten yeniden doğrulanır; enqueue-time snapshot
  *   kararı DEĞİŞTİRMEZ (proof-of-chain: her adım kayıtlı).
  * - `blocked_consent` → receipt YOK, sağlayıcı etkisi SIFIR.
- * - `dispatched` yalnız `provider_accepted` ile yazılır; "teslim edildi"
- *   iddiası asla yapılmaz (simülasyonun ötesinde delivery sinyali yoktur).
+ * - `dispatched` yalnız `provider_accepted` ile, `delivered` yalnız
+ *   `provider_delivered` ile yazılır; "teslim edildi" iddiası yalnız
+ *   sağlayıcı teslim onayı (`provider_delivered`) geldiğinde yapılır
+ *   (simülasyonun ötesinde delivery sinyali yoktur).
  * - Idempotentlik: `dispatched` satıra ikinci execute → yeni etki üretmez,
  *   mevcut receipt'i döner (200).
  * - Cancel yarışı: koşullu UPDATE; tx2 0 satır görürse rollback → etki yok.
  * - Dayanıcı audit (#266 review P1): tx2'deki her sonuç geçişi
- *   (`blocked_consent`/`dispatched`/`failed`/`dead_lettered`/`uncertain`)
+ *   (`blocked_consent`/`dispatched`/`delivered`/`failed`/`dead_lettered`/`uncertain`)
  *   actor + requestId ile `audit_logs` zincirine AYNI transaction'da yazılır.
  */
 @Injectable()
@@ -136,13 +139,16 @@ export class NotificationDispatchService {
       const basis = await this.dataSource.transaction((em) =>
         this.outbox.currentClaimBasis(em, { tenantId, branchId, id }),
       );
-      if (basis?.status === 'dispatched') {
+      if (
+        basis !== null &&
+        (basis.status === 'dispatched' || basis.status === 'delivered')
+      ) {
         const receipt = await this.dataSource.transaction((em) =>
           this.outbox.findLatestReceipt(em, tenantId, id),
         );
         return {
           id,
-          status: 'dispatched',
+          status: basis.status,
           version: basis.version,
           attempt: basis.attempts,
           reason: null,
@@ -229,7 +235,10 @@ export class NotificationDispatchService {
 
       await this.writeOutcomeAudit(em, context, {
         id: claim.id,
-        event: next.status === 'dispatched' ? 'notification.sent' : 'notification.failed',
+        event:
+          next.status === 'dispatched' || next.status === 'delivered'
+            ? 'notification.sent'
+            : 'notification.failed',
       });
 
       return {

@@ -1,4 +1,5 @@
 import * as bcrypt from 'bcryptjs';
+import { CONSENT_TYPE_METADATA } from '../../../src/kvkk/consent-authority';
 import { isReferenceTable } from './acceptance-tables';
 import { columnText, isUniqueViolation, PgClient, PgRow, redactDatabaseError } from './pg-client';
 
@@ -585,15 +586,33 @@ async function ensureApprovedConsent(
   );
   if (latest !== null) return regrant(latest);
 
+  // PR #414 Q3: hukuki zemin + saklama süresi consent-time yazılır; map tek
+  // kaynak (src/kvkk/consent-authority CONSENT_TYPE_METADATA).
+  const metadata = CONSENT_TYPE_METADATA[input.consentType];
+  if (metadata === undefined) {
+    throw new FixtureContractError(
+      `No consent metadata mapping for consent type '${input.consentType}'.`,
+    );
+  }
+
   try {
     const inserted = await client.query(
       `
         INSERT INTO kvkk_consents
-          (tenant_id, subject_id, consent_type, status, channel, source, granted_at, version)
-        VALUES ($1::uuid, $2::uuid, $3, 'approved', $4, $5, now(), 1)
+          (tenant_id, subject_id, consent_type, status, channel, source, granted_at, version,
+           legal_basis, retention_days)
+        VALUES ($1::uuid, $2::uuid, $3, 'approved', $4, $5, now(), 1, $6, $7)
         RETURNING id::text AS id, version
       `,
-      [input.tenantId, input.subjectId, input.consentType, channel, input.source],
+      [
+        input.tenantId,
+        input.subjectId,
+        input.consentType,
+        channel,
+        input.source,
+        metadata.legalBasis,
+        metadata.retentionDays,
+      ],
     );
     const out = inserted.rows[0];
     return Object.freeze({

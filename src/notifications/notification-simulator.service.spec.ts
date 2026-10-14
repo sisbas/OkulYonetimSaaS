@@ -30,7 +30,8 @@ describe('NotificationSimulatorService', () => {
   it('defaults to accept mode when env is unset', () => {
     const service = withMode(undefined);
     expect(service.mode).toBe('accept');
-    expect(service.simulate(input).outcome).toBe('provider_accepted');
+    // PR #414 Q6: accept modu simüle teslim onayı üretir (provider_delivered).
+    expect(service.simulate(input).outcome).toBe('provider_delivered');
   });
 
   it('reject mode rejects every attempt with allowlisted error code', () => {
@@ -48,11 +49,11 @@ describe('NotificationSimulatorService', () => {
     expect(result.errorCode).toBeNull();
   });
 
-  it('fail_first:N rejects the first N attempts then accepts', () => {
+  it('fail_first:N rejects the first N attempts then delivers', () => {
     const service = withMode('fail_first:2');
     expect(service.simulate({ ...input, attempt: 1 }).outcome).toBe('provider_rejected');
     expect(service.simulate({ ...input, attempt: 2 }).outcome).toBe('provider_rejected');
-    expect(service.simulate({ ...input, attempt: 3 }).outcome).toBe('provider_accepted');
+    expect(service.simulate({ ...input, attempt: 3 }).outcome).toBe('provider_delivered');
   });
 
   it('fails closed on unknown mode values', () => {

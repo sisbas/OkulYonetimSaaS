@@ -92,6 +92,7 @@ describe('NotificationDispatchService', () => {
       expect(availableActionsFor('dead_lettered')).toEqual(['retry', 'cancel']);
       expect(availableActionsFor('uncertain')).toEqual(['retry', 'cancel']);
       expect(availableActionsFor('dispatched')).toEqual([]);
+      expect(availableActionsFor('delivered')).toEqual([]);
       expect(availableActionsFor('cancelled')).toEqual([]);
       expect(availableActionsFor('closed')).toEqual([]);
     });
@@ -215,6 +216,27 @@ describe('NotificationDispatchService', () => {
 
       expect(result.idempotent).toBe(true);
       expect(result.receipt).toEqual({ id: 'r1' });
+      expect(simulator.simulate).not.toHaveBeenCalled();
+      expect(outbox.insertReceipt).not.toHaveBeenCalled();
+      expect(audit.write).not.toHaveBeenCalled();
+    });
+
+    it('idempotent: claim miss on delivered row returns existing receipt (no new effect)', async () => {
+      outbox.claim.mockResolvedValue(null);
+      outbox.currentClaimBasis.mockResolvedValue({
+        status: 'delivered',
+        version: 4,
+        attempts: 1,
+        claimActive: false,
+        backoffUntil: new Date(),
+      });
+      outbox.findLatestReceipt.mockResolvedValue({ id: 'r2' } as never);
+
+      const result = await service.execute(ctx, 'o2');
+
+      expect(result.idempotent).toBe(true);
+      expect(result.status).toBe('delivered');
+      expect(result.receipt).toEqual({ id: 'r2' });
       expect(simulator.simulate).not.toHaveBeenCalled();
       expect(outbox.insertReceipt).not.toHaveBeenCalled();
       expect(audit.write).not.toHaveBeenCalled();
