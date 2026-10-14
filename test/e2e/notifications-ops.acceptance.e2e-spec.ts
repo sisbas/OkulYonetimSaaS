@@ -823,6 +823,9 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await loginViaUi(sessionC!, fixture.teacherUser.email, fixture.teacherUser.credential);
     await ensureBranch(sessionC!, fixture.branchCode);
     await waitForNetworkIdle(sessionC!);
+    // Tab tıklaması için kısa bekleme: sayfa render'ı tamamlanmadan
+    // clickablePoint hesaplanamayabilir (CI headless Chrome).
+    await new Promise((resolve) => setTimeout(resolve, 500));
     await sessionC!.clickElement('.tab[data-tab="notifications"]');
     try {
       await sessionC!.waitForText('#notifications-list .error-state', /Bu işlem için yetkiniz yok/, 20_000);
