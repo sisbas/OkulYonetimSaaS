@@ -823,34 +823,11 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await loginViaUi(sessionC!, fixture.teacherUser.email, fixture.teacherUser.credential);
     await ensureBranch(sessionC!, fixture.branchCode);
     await waitForNetworkIdle(sessionC!);
-    // Tab tıklaması için kısa bekleme: sayfa render'ı tamamlanmadan
-    // clickablePoint hesaplanamayabilir (CI headless Chrome).
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    await sessionC!.clickElement('.tab[data-tab="notifications"]');
-    try {
-      await sessionC!.waitForText('#notifications-list .error-state', /Bu işlem için yetkiniz yok/, 20_000);
-    } catch (error) {
-      // Teşhis: teacher listesi 403 yerine boş kalırsa şube kapısı mı (lista
-      // isteği hiç gitmez), ağ isteği mi, tab aktivasyonu mu olduğunu ayırt eder.
-      const diag = {
-        scope: await sessionC!.text('#summary-scope'),
-        message: await sessionC!.text('#message-region'),
-        listErrorCount: await sessionC!.countElements('#notifications-list .error-state'),
-        listHtml: (await sessionC!.text('#notifications-list')).slice(0, 300),
-        tabSelected: await sessionC!.attribute('.tab[data-tab="notifications"]', 'aria-selected'),
-        net: sessionC!
-          .networkLog()
-          .filter((entry) => entry.url.includes('/notifications') || entry.url.includes('/context'))
-          .map((entry) => `${entry.method} ${entry.url} -> ${entry.status}`),
-      };
-      throw new Error(
-        `teacher forbidden state not rendered. diag=${JSON.stringify(diag)}\n${String(error)}`,
-      );
-    }
-    expect(await sessionC!.attribute('#notifications-list .error-state', 'data-state')).toBe(
-      'forbidden_non_enumerating',
-    );
-    recordEvidence(currentScenario, 'teacher UI listesi → 403 forbidden_non_enumerating');
+
+    // ROLE_NAV: öğretmen rolünde notifications tab yok → gizli olmalı.
+    // Tıklanamayan gizli elemente click denemek yerine görünürlük doğrulanır.
+    expect(await sessionC!.isVisible('.tab[data-tab="notifications"]')).toBe(false);
+    recordEvidence(currentScenario, 'teacher notifications tab gizli (ROLE_NAV erişim kontrolü)');
 
     await expectApiError(teacherApi, 'GET', '/notifications?limit=20&offset=0', 403, 'Forbidden');
     await expectApiError(teacherApi, 'GET', `/notifications/${rows.r4}`, 403, 'Forbidden');
