@@ -168,11 +168,21 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
     expect(typeof body.uptimeSeconds).toBe('number');
   });
 
-  it.each(['logs', 'verify'])('registers audit/%s with authentication enforced', async (route) => {
-    assertNestJson(await requestJson(`/api/v1/audit/${route}`), 401);
-    assertNestJson(await requestJson(`/api/v1/audit/${route}`, {
+  it('registers audit/logs with authentication enforced', async () => {
+    assertNestJson(await requestJson('/api/v1/audit/logs'), 401);
+    assertNestJson(await requestJson('/api/v1/audit/logs', {
       headers: { authorization: `Bearer ${accessToken as string}` },
     }), 403); // Authenticated user has no audit read permission.
+  });
+
+  it('quarantines audit/verify as unregistered route (#373 permanent quarantine)', async () => {
+    // #373: global verification is permanently quarantined. The route is
+    // removed entirely — not registered, not 403. A registered 403 would
+    // imply a permission-gated surface exists; no such surface is approved.
+    assertNestJson(await requestJson('/api/v1/audit/verify'), 404);
+    assertNestJson(await requestJson('/api/v1/audit/verify', {
+      headers: { authorization: `Bearer ${accessToken as string}` },
+    }), 404);
   });
 
   it.each(['plan', 'run'])('quarantines global retention/%s even with legacy DB permissions', async (route) => {
@@ -204,21 +214,12 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
     }
   });
 
-  it('denies global verification even with legacy tenant operations permission without scanning', async () => {
-    const verify = jest.spyOn(bootedApp!.get(AuditQueryService), 'verify');
-    const permissions = authenticatedUser.permissions;
-    authenticatedUser.permissions = ['audit_log:operations:read'];
-    try {
-      const body = assertNestJson(await requestJson('/api/v1/audit/verify?limit=50000', {
-        headers: { authorization: `Bearer ${accessToken as string}` },
-      }), 403);
-      expect(body).not.toHaveProperty('checkedRows');
-      expect(body).not.toHaveProperty('lastCheckpoint');
-      expect(verify).not.toHaveBeenCalled();
-    } finally {
-      authenticatedUser.permissions = permissions;
-      verify.mockRestore();
-    }
+  it('does not expose AuditQueryService.verify as a runtime method (#373)', () => {
+    const service = bootedApp!.get(AuditQueryService);
+    // The verify method was removed in #373 — global chain verification is
+    // not reachable via any runtime surface. verifyAuditChain remains as a
+    // pure function for internal use and future platform authority.
+    expect(typeof (service as unknown as Record<string, unknown>).verify).toBe('undefined');
   });
 
   it.each([

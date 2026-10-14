@@ -38,9 +38,13 @@ describe('permission seed', () => {
     'attendance:unlock',
   ];
 
-  it('contains exactly 123 unique permissions', () => {
-    expect(permissionCodes).toHaveLength(123);
-    expect(permissionSet.size).toBe(123);
+  it('contains exactly 122 unique permissions', () => {
+    expect(permissionCodes).toHaveLength(122);
+    expect(permissionSet.size).toBe(122);
+  });
+
+  it('does not contain audit_log:operations:read (#373 removed)', () => {
+    expect(permissionCodes).not.toContain('audit_log:operations:read');
   });
 
   it('uses colon-delimited seeded permission keys', () => {
