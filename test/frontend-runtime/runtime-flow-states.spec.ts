@@ -53,23 +53,28 @@ describe('runtime core flow state coverage (#400)', () => {
     });
   });
 
-  describe('attendance not-ready state', () => {
-    it('attendance panel shows explicit not-ready when lifecycle unavailable', () => {
+  describe('attendance operations state', () => {
+    it('attendance panel shows server-authoritative session management UI', () => {
       const html = readShellHtml();
-      expect(html).toContain('id="attendance-output"');
-      // The attendance panel intro should mention lifecycle unavailability honestly
-      expect(html).toMatch(/hazırlanıyor|yakında|kullanıma açılacak/i);
+      // n3 merge: attendance artık gerçek oturum yönetimi paneli
+      expect(html).toContain('id="attendance-sessions"');
+      expect(html).toContain('id="attendance-detail"');
+      expect(html).toContain('id="attendance-generate-form"');
+      // Sunucu otoriter yoklama zinciri açıklaması
+      expect(html).toMatch(/sunucu otoriter yoklama|oturum açma/i);
     });
   });
 
-  describe('notification planning-only state', () => {
-    it('notification panel shows planning-only state, no send button without backend path', () => {
+  describe('notification operations state', () => {
+    it('notification panel shows server-authoritative operations UI', () => {
       const html = readShellHtml();
-      expect(html).toContain('id="notifications-output"');
-      // Must NOT contain a send/submit button for notifications (no backend path)
+      // n3 merge: notifications artık gerçek backend operasyon paneli
+      expect(html).toContain('id="notifications-list"');
+      expect(html).toContain('id="notification-detail"');
+      // Notification-send butonu yok (dispatch execute üzerinden)
       expect(html).not.toMatch(/<button[^>]*data-action="notification-send"/i);
-      // Planning-only indicator
-      expect(html).toMatch(/planlama|taslak|yakında/i);
+      // Sunucu otoriter gönderim akışı açıklaması
+      expect(html).toMatch(/sunucu otoriter|gönderim kuyruğu/i);
     });
   });
 

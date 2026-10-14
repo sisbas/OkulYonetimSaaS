@@ -4,7 +4,12 @@ export type NotificationOutboxStatus =
   | 'pending'
   | 'blocked_consent'
   | 'dispatched'
-  | 'failed';
+  | 'failed'
+  | 'approved'
+  | 'closed'
+  | 'dead_lettered'
+  | 'uncertain'
+  | 'cancelled';
 
 /**
  * Transactional outbox satırı (#266).
@@ -50,8 +55,39 @@ export class NotificationOutboxItem {
   @Column({ name: 'consent_version', type: 'integer', nullable: true })
   consentVersion!: number | null;
 
+  /** Immutable snapshot (source/contact/consent/template). PII taşımaz. */
+  @Column({ name: 'snapshot', type: 'jsonb', nullable: true })
+  snapshot!: Record<string, unknown> | null;
+
+  /** Optimistic concurrency version — monotonik ilerler. */
+  @Column({ name: 'version', type: 'integer', default: 0 })
+  version!: number;
+
   @Column({ name: 'attempts', type: 'integer', default: 0 })
   attempts!: number;
+
+  /** Aktif kiralama (lease) token'ı — claim/skip koşullu UPDATE'te kullanılır. */
+  @Column({ name: 'claim_token', type: 'uuid', nullable: true })
+  claimToken!: string | null;
+
+  @Column({ name: 'claimed_at', type: 'timestamptz', nullable: true })
+  claimedAt!: Date | null;
+
+  @Column({ name: 'claim_expires_at', type: 'timestamptz', nullable: true })
+  claimExpiresAt!: Date | null;
+
+  /** Monotonik fencing token — her kiralamada +1; stale işleyiciyi bloklar. */
+  @Column({ name: 'fencing_token', type: 'integer', default: 0 })
+  fencingToken!: number;
+
+  @Column({ name: 'cancelled_at', type: 'timestamptz', nullable: true })
+  cancelledAt!: Date | null;
+
+  @Column({ name: 'dead_lettered_at', type: 'timestamptz', nullable: true })
+  deadLetteredAt!: Date | null;
+
+  @Column({ name: 'last_error_code', type: 'varchar', length: 64, nullable: true })
+  lastErrorCode!: string | null;
 
   @Column({ name: 'available_at', type: 'timestamptz', default: () => 'now()' })
   availableAt!: Date;

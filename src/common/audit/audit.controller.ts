@@ -149,18 +149,10 @@ export class AuditController {
     return this.query.list(query, actorOf(context));
   }
 
-  /** Global chain verification requires platform authority, not tenant grants. */
-  @Get('verify')
-  @Permissions('audit_log:operations:read')
-  verify(@Req() request: RequestWithContext) {
-    contextOf(request);
-    // The global hash chain cannot be tenant-filtered. Existing tenant DB grants
-    // must not expose other tenants' counts/checkpoints or trigger global scans.
-    // Keep a registered, controlled denial until platform authority is approved.
-    throw new ForbiddenException('Audit verification is unavailable');
-  }
-
-  // #367: retention is platform-global, not a tenant operation. No HTTP
-  // route is published, even for existing DB-granted retention permissions.
-  // Internal retention policy/prune semantics remain in AuditRetentionService.
+  // #367/#373: retention and global verification are platform-global, not
+  // tenant operations. No HTTP route is published for either, even for
+  // existing DB-granted permissions. Internal retention policy/prune
+  // semantics remain in AuditRetentionService. verifyAuditChain remains
+  // as a pure function in audit-chain.ts for internal use and future
+  // platform authority (#358).
 }
