@@ -54,7 +54,9 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(app).toContain("reasonCode: $('#leave-reason-code').value");
     expect(app).toContain("startsAt: toIso8601($('#leave-starts-at').value)");
     expect(app).toContain("endsAt: toIso8601($('#leave-ends-at').value)");
-    for (const forbidden of ['startDate', 'endDate', 'startTime', 'endTime', 'leave-note', 'leave-start-time', 'leave-end-time']) {
+    // Not: startTime/endTime artık schedule formunda da kullanılıyor (n3 merge);
+    // leave formu hala startsAt/endsAt gönderiyor — DTO sınırı korunuyor.
+    for (const forbidden of ['startDate', 'endDate', 'leave-note', 'leave-start-time', 'leave-end-time']) {
       expect(app).not.toContain(forbidden);
       expect(html).not.toContain(forbidden);
     }

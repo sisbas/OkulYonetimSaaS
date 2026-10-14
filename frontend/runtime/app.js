@@ -453,11 +453,6 @@ async function login(event) {
     state.tenantId = tenantId;
     setStatus(state.accessToken ? 'Oturum aktif' : 'Token alınamadı', state.accessToken ? 'success' : 'warning');
     updateWorkflowProgress();
-    const { body: catalog } = await apiRequest('/context');
-    applyCatalog(catalog);
-    // Başarı bildirimi ancak katalog uygulandıktan sonra yayınlanır; aksi halde
-    // şube seçimi yapılmaya hazır görünürken applyCatalog seçimi sıfırlar.
-    announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
   } catch (error) {
     state.accessToken = '';
     state.refreshToken = '';
@@ -471,6 +466,7 @@ async function login(event) {
   try {
     const { body: catalog } = await apiRequest('/context');
     applyCatalog(catalog);
+    announce('Oturum açıldı. Rol ve yetkileriniz sistem tarafından uygulanır.', 'success');
     // Consume pending intent after successful re-auth
     const returnRoute = state.pendingRoute;
     const returnBranch = state.pendingBranch;
@@ -908,10 +904,6 @@ async function clearAssignment() {
   }
 }
 
-function renderLeaveEtag(leaveId, version) {
-  return `"leave:${leaveId}:v${version}"`;
-}
-
 async function loadLeaves() {
   if (!requireSession()) return;
   const branchId = getBranchId();
@@ -934,7 +926,7 @@ function renderLeaveDecisionCard(leave) {
   const decision = String(pick(leave, ['decisionStatus'], 'unknown')).toLowerCase();
   const coverage = String(pick(leave, ['coverageStatus'], 'unknown')).toLowerCase();
   const pending = decision === 'pending' || decision === 'unknown';
-  const etag = renderLeaveEtag(leaveId, Number(pick(leave, ['version'], 1)));
+  const etag = String(pick(leave, ['etag'], '') || '');
   return `<article class="card">
     <h3>İzin talebi · ${escapeHtml(displayStatus(decision))}</h3>
     <p class="card-meta">
