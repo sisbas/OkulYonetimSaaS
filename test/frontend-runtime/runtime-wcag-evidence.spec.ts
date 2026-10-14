@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { runtime } from './runtime-harness';
 
-const PROBE = 'state, applyCatalog, login, renderNavigation, activateTab';
+const PROBE = 'state, applyCatalog, renderNavigation';
 
 function readShellHtml(): string {
   return fs.readFileSync(path.join(process.cwd(), 'frontend/runtime/index.html'), 'utf8');
@@ -77,15 +77,10 @@ describe('WCAG 2.2 AA evidence suite (#401)', () => {
       expect(html).toMatch(/id="context-institution"[^>]*aria-live="polite"/);
     });
 
-    it('runtime announce() writes into the live region', () => {
-      const ui = runtime(PROBE);
-      ui.probe.state.accessToken = 'token';
-      // announce is exercised via login flow; verify the region exists and is live
-      const region = ui.element('#message-region');
-      expect(region).toBeDefined();
-      // Simulate announce by setting innerHTML the way app.js does
-      region.innerHTML = '<p>Test duyurusu</p>';
-      expect(region.innerHTML).toContain('Test duyurusu');
+    it('message region is present and wired as a live region in source', () => {
+      const html = readShellHtml();
+      // Verify the region is declared with aria-live in the static markup
+      expect(html).toMatch(/id="message-region"[^>]*aria-live="polite"/);
     });
   });
 
@@ -130,42 +125,41 @@ describe('WCAG 2.2 AA evidence suite (#401)', () => {
     it('prefers-reduced-motion disables non-essential transitions', () => {
       const css = readStylesCss();
       expect(css).toMatch(/@media\s*\(prefers-reduced-motion\s*:\s*reduce\)/);
-      // The block should disable animations/transitions
-      const reducedBlock = css.match(/@media\s*\(prefers-reduced-motion\s*:\s*reduce\)\s*\{[\s\S]*?\}/);
+      // The block must disable animations and transitions with none or ~0 duration
+      const reducedBlock = css.match(/@media\s*\(prefers-reduced-motion\s*:\s*reduce\)\s*\{[\s\S]*?\n\}/);
       expect(reducedBlock).toBeTruthy();
       if (reducedBlock) {
-        expect(reducedBlock[0]).toMatch(/animation\s*:\s*none|transition\s*:\s*none|animation-duration\s*:\s*0|transition-duration\s*:\s*0/);
+        expect(reducedBlock[0]).toMatch(/animation(?:-duration)?\s*:\s*(none|0[\d.]*m?s)/);
+        expect(reducedBlock[0]).toMatch(/transition(?:-duration)?\s*:\s*(none|0[\d.]*m?s)/);
       }
     });
   });
 
   describe('no focus-visible suppression', () => {
-    it('no global outline:none without focus-visible replacement', () => {
+    it('focus-visible outline is defined with a visible pixel value', () => {
       const css = readStylesCss();
-      // Global outline suppression is only acceptable if :focus-visible provides a visible indicator
-      const globalOutlineNone = /(?<!:focus[^{]*)\{[^}]*outline\s*:\s*none\b[^}]*\}/g;
-      const hasFocusVisible = /:focus-visible\s*\{[^}]*outline\s*:\s*[^;]*[1-9]/.test(css);
-      // If any outline:none exists globally, focus-visible must provide replacement
-      if (globalOutlineNone.test(css)) {
-        expect(hasFocusVisible).toBe(true);
+      // Primary assertion: focus-visible provides a non-zero outline
+      expect(css).toMatch(/:focus-visible\s*\{[^}]*outline\s*:\s*(\d+)px/);
+      const match = css.match(/:focus-visible\s*\{[^}]*outline\s*:\s*(\d+)px/);
+      if (match) {
+        expect(Number(match[1])).toBeGreaterThanOrEqual(1);
       }
-      // Primary assertion: focus-visible outline is defined
-      expect(css).toMatch(/:focus-visible\s*\{[^}]*outline\s*:\s*[^;]*[1-9]/);
     });
   });
 
   describe('runtime landmark wiring', () => {
-    it('navigation renders inside the nav landmark', () => {
+    it('navigation renders tab buttons inside the nav landmark', () => {
       const ui = runtime(PROBE);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.authLabel = 'Okul müdürü';
       ui.probe.applyCatalog({ branches: [{ code: 'ANKARA', name: 'Ankara Kampüsü' }], roles: ['school_admin'] });
-      return Promise.resolve().then(() => {
+      return new Promise((resolve) => setTimeout(resolve, 0)).then(() => {
         const nav = ui.element('nav.tabs');
         expect(nav).toBeDefined();
-        // Tab buttons rendered inside nav
-        const tabs = ui.probe.renderNavigation ? true : true;
-        expect(tabs).toBe(true);
+        // renderNavigation must have inserted at least one tab button
+        const bugunTab = ui.element('.tab[data-tab="bugun"]');
+        expect(bugunTab).toBeDefined();
+        expect(bugunTab.getAttribute('aria-selected')).toBe('true');
       });
     });
 
