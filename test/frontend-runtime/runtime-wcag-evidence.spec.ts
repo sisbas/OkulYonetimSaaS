@@ -99,24 +99,26 @@ describe('WCAG 2.2 AA evidence suite (#401)', () => {
   });
 
   describe('44px interactive targets', () => {
-    it('button and interactive styles meet 44px minimum on mobile', () => {
+    it('buttons meet 44px minimum via min-height', () => {
       const css = readStylesCss();
-      // Buttons should have min-height or padding achieving 44px
-      // Accept min-height: 44px+ or padding that sums to 44px (2rem = 32px + line-height)
-      const hasMinHeight = /min-height\s*:\s*(4[4-9]|[5-9]\d|\d{3,})px/.test(css);
-      const hasButtonPadding = /button\s*\{[^}]*padding\s*:\s*[^;]*(?:[2-9]\d|[3-9]\d)px/.test(css);
-      // Either explicit min-height or generous padding on buttons
-      expect(hasMinHeight || hasButtonPadding || /\.tab\s*\{[^}]*min-height/.test(css)).toBe(true);
+      // The base button rule must declare min-height >= 44px
+      const buttonBlock = css.match(/(^|\n)\s*button\s*\{[^}]*\}/);
+      expect(buttonBlock).toBeTruthy();
+      if (buttonBlock) {
+        const minHeight = buttonBlock[0].match(/min-height\s*:\s*(\d+)px/);
+        expect(minHeight).toBeTruthy();
+        if (minHeight) expect(Number(minHeight[1])).toBeGreaterThanOrEqual(44);
+      }
     });
 
-    it('tab controls have adequate touch target sizing', () => {
+    it('tab controls meet 44px minimum via min-height', () => {
       const css = readStylesCss();
-      // Tabs are primary mobile navigation — must have min-height or padding
       const tabBlock = css.match(/\.tab\s*\{[^}]*\}/);
       expect(tabBlock).toBeTruthy();
       if (tabBlock) {
-        const hasSize = /min-height|padding/.test(tabBlock[0]);
-        expect(hasSize).toBe(true);
+        const minHeight = tabBlock[0].match(/min-height\s*:\s*(\d+)px/);
+        expect(minHeight).toBeTruthy();
+        if (minHeight) expect(Number(minHeight[1])).toBeGreaterThanOrEqual(44);
       }
     });
   });
@@ -149,16 +151,17 @@ describe('WCAG 2.2 AA evidence suite (#401)', () => {
 
   describe('runtime landmark wiring', () => {
     it('navigation renders tab buttons inside the nav landmark', () => {
+      // Verify nav landmark exists in static HTML (harness MockElement would
+      // fabricate an element for any selector, so don't rely on ui.element here)
+      const html = readShellHtml();
+      expect(html).toMatch(/<nav\b[^>]*class="tabs"[^>]*aria-label=/);
+      // Verify renderNavigation inserts the bugun tab as default-selected
       const ui = runtime(PROBE);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.authLabel = 'Okul müdürü';
       ui.probe.applyCatalog({ branches: [{ code: 'ANKARA', name: 'Ankara Kampüsü' }], roles: ['school_admin'] });
       return new Promise((resolve) => setTimeout(resolve, 0)).then(() => {
-        const nav = ui.element('nav.tabs');
-        expect(nav).toBeDefined();
-        // renderNavigation must have inserted at least one tab button
         const bugunTab = ui.element('.tab[data-tab="bugun"]');
-        expect(bugunTab).toBeDefined();
         expect(bugunTab.getAttribute('aria-selected')).toBe('true');
       });
     });
