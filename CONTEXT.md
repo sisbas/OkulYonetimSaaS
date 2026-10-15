@@ -137,7 +137,15 @@ sınırlarıdır; sonraki oturumlar bunları yeniden açmaz (kanıt: bu tablo).
 | **DoD (bar)** | Faz 1b kapanış tanımı — K-1. |
 | **İnsan kapısı (H#)** | Ajanın yapamadığı iş (secret kurulumu, review/merge, pilot imzası, DPO onayı); `progress-v2.md` §3'te izlenir, ajan "yapıldı" diyemez. |
 | **Kapsam kilidi** | Faz 1 kapsamının dondurulması (K-14 tablosu); yalnız owner revizyon prosedürüyle (K-15) değiştirilebilir. Yeri CONTEXT.md. Kilitli olan yalnız kapsam listesi — kanıt olgunluğu (K-1) ve zamanlama (K-7) kapsam kilidine bağlı değildir. |
-| **Pilot-enabler** | Pilotu (K-1: 2–3 okul + Go/No-Go) doğrudan bloklayan Faz 1 kalemi (ör. #332 H1 prod health, #388 ilk kullanıcı bootstrap). |
+| **Published schedule occurrence** | Yalnız aktif yayınlanmış schedule version ve effective tarih aralığı içindeki, izinle pozitif süre kesişen somut ders oturumu; taslak, arşiv veya historical published version occurrence üretmez. |
+| **Leave impact occurrence key** | `leave + schedule version + schedule event + occurrence date`; aynı gün iki ders veya replay'de tekrar işlenen satır için occurrence kimliğidir. |
+| **Zero impact** | Etkilenen ders sıfır ve publication/DB/lookup hatası olmadığı açık sonuç (`NO_PUBLISHED_SCHEDULE_EVENT` veya `NO_OVERLAPPING_OCCURRENCE`); “hiç bakılmamış” durumundan ayırt edilir. |
+| **Lookup failure** | Publication, eligibility veya veritabanı kaynağı okunamadığında ortaya çıkan açık hata; boş/yetersiz aday ya da sıfır etki sonucu gibi başarılı gibi lanse edilemez. |
+| **Eligibility finalization** | Aday sorgusu yalnız eligibility authority hazır ve başarılı olduğunda `finalized=true` olur; boş aday listesi gerçek “uygun öğretmen yok” sonucudur. |
+| **Leave requester identity** | Leave talebini açan kullanıcı hesabı; öğretmen subject (`teacherId`) ile birleştirilemez ve self-decision guard ikisini de ayrı karşılaştırır. |
+| **Branch scope** | Tenant içinde aktörün şube görünürlüğü; görünmeyen branch izninde kaynak non-enumerating `not found` (404) döner ve mutasyon transaction'ında yeniden doğrulanır. |
+| **Daily Operations projection** | Aynı occurrence key ile idempotent yazılan açık/rezerve operasyon satırı kümeleri; coverage bu satırlar ve assignment sayılarından türetilir, ikinci karar API oluşturmaz. |
+| **Assignment replay** | Aktif assignment set korunarak aynı occurrence key için projection upsert; clear transition (`assigned → cleared`) aynı transaction'da coverage'ı recompute eder. |
 
 ---
 
@@ -148,3 +156,4 @@ sınırlarıdır; sonraki oturumlar bunları yeniden açmaz (kanıt: bu tablo).
 | 2026-10-07 | İlk `/grill-with-docs`: Faz 1b kapanışı grilling (7 karar K-1…K-7); v2 plan bayat tespiti (R1, R2, R4–R7, R12, R14 merge); dosya kuruldu. |
 | 2026-10-11 | `/grill-with-docs` #382 kapsam kilidi grilling: **8 karar (K-8…K-15), 5 wayfinder biletinin tamamı kapatıldı** (#383→K-14, #384→K-15, #385→K-8, #386→K-9, #387→K-10). Q-3 kapandı; Q-1 kısmen (kilide önkoşul değil, kararı hâlâ açık). Glossary'ye "Kapsam kilidi" + "Pilot-enabler" eklendi. ADR: değerlendirdim, barajı geçmedi (plan artefaktı, mimari kilit değil) — atlandı. |
 | 2026-10-14 | PR #414 review grilling: **13 karar (K-16…K-28)** — #414 tam teslim (K-16), consent hukuki zemin (K-17/K-25), delivered durumu (K-18), revoke audit dürüstlüğü (K-19), consent.read audit'i (K-20), scope creep deklarasyonu (K-21), S10b UI revoke (K-22), stage5-first + job-outcome assert (K-23), fillField sınırı (K-24), smell follow-up (K-26), HCO evidence (K-27). Kod tarafı bu PR'da uygulandı. |
+| 2026-10-15 | `/grilling` + `/domain-modeling`: Leave vertical slice terimleri netleştirildi — published occurrence/impact key, zero impact vs lookup failure, eligibility finalization, requester/teacher identity, branch scope, projection idempotency, timezone, substitution clear/recompute. ADR 0001 eklendi (decision ve coverage ayrılığı). |
