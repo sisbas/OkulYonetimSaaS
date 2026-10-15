@@ -141,8 +141,44 @@
   dialog p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
   dialog .dlg-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--bg); border-radius: 0 0 var(--radius) var(--radius); }
 
+  /* --- daily ops prototypes (#433) --- */
+  .opscols { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0,1fr)); align-items: start; }
+  .colhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .colhead h2 { margin: 0; }
+  .colhead .count { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel); }
+  .card + .card { margin-top: 10px; }
+  .card.focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+  .card .ttl { font-size: 13px; font-weight: 600; }
+  .card .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .focuswrap { display: grid; grid-template-columns: 250px minmax(0,1fr); gap: 16px; align-items: start; }
+  .progress { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .step { display: flex; gap: 8px; align-items: baseline; padding: 8px 10px; border-radius: 8px; font-size: 12px; color: var(--muted); cursor: pointer; border: 1px solid transparent; }
+  .step:hover { background: var(--bg); }
+  .step.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; border-color: #99f6e4; }
+  .step.done { color: var(--ok); }
+  .step .n { font-variant-numeric: tabular-nums; }
+  .roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px,1fr)); gap: 6px; margin-top: 12px; }
+  .stu { border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; gap: 6px; background: var(--panel); }
+  .stu.absent { border-color: #fecdca; background: var(--danger-soft); color: var(--danger); }
+  .preview { border: 1px dashed var(--line); border-radius: 8px; padding: 10px; font-size: 12px; background: var(--bg); margin-top: 10px; }
+  .impact { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 8px 10px; border-radius: 6px; font-size: 12px; }
+  .impact.block { border-left-color: var(--danger); background: var(--danger-soft); }
+  .tlrow { display: grid; grid-template-columns: 62px minmax(0,1fr); gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .tlrow:last-child { border-bottom: 0; }
+  .tlrow .when { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .rail { display: flex; flex-direction: column; gap: 10px; }
+  .strip { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-end; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); font-size: 12px; color: var(--muted); }
+  .strip b { display: block; font-size: 19px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .strip .note { margin-left: auto; max-width: 340px; text-align: right; }
+  select.mini { font: inherit; font-size: 12px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+
   @media (max-width: 860px) {
-    .g2, .g3 { grid-template-columns: 1fr; }
+    .g2, .g3, .opscols { grid-template-columns: 1fr; }
+    .focuswrap { grid-template-columns: 1fr; }
+    .strip .note { margin-left: 0; text-align: left; }
     .cal { grid-template-columns: 58px repeat(5, minmax(110px, 1fr)); overflow-x: auto; }
     .switcher .l { min-width: 150px; }
   }
@@ -182,6 +218,7 @@
   <button id="prev" aria-label="Önceki varyant">←</button>
   <div class="l" id="switchLabel"></div>
   <select id="stateSelect" aria-label="Durum"></select>
+  <select id="opsSelect" aria-label="Operasyon varyantı" hidden></select>
   <button id="next" aria-label="Sonraki varyant">→</button>
 </div>
 
@@ -200,6 +237,11 @@ const VARIANTS = {
   B: "Program öncelikli",
   C: "Operasyon öncelikli",
 };
+const OPS_VARIANTS = {
+  A: "Sıra kuyruğu",
+  B: "Üç kollu pano",
+  C: "Bölünmüş gün",
+};
 const STATES = {
   empty: "Boş durumlar (ilk gün)",
   normal: "Dolu durumlar",
@@ -210,6 +252,7 @@ const STATES = {
 
 const state = {
   variant: VARIANTS[qs.get("variant")] ? qs.get("variant") : "A",
+  opsVariant: OPS_VARIANTS[qs.get("ops")] ? qs.get("ops") : "A",
   view: STATES[qs.get("state")] ? qs.get("state") : "empty",
   screen: "today",
   role: "admin",
@@ -217,6 +260,13 @@ const state = {
   goalUnlocked: false,
   filter: "all",
   openRecord: null,
+  opsIndex: 0,
+  impactBlocked: null,
+  sessionState: {},
+  absent: {},
+  assigned: {},
+  decision: {},
+  expanded: null,
 };
 
 const branches = [
@@ -245,6 +295,52 @@ const notifications = [
   { id: "N-31", course: "Fizik",      group: "10-B", consent: true,  state: "Onay bekliyor" },
   { id: "N-32", course: "İngilizce",  group: "9-B",  consent: false, state: "İletişim izni eksik" },
 ];
+
+// --- Daily ops data (#433) — sentetik, kalıcılık yok ---
+const sessions = [
+  { id: "S-01", time: "08:30", course: "Matematik", group: "9-A",   teacher: "Elif Demir",    room: "101",   state: "done",     marked: 26, total: 26, absent: [] },
+  { id: "S-02", time: "09:20", course: "Fizik",     group: "10-B",  teacher: "Ahmet Yılmaz", room: "201",   state: "partial",  marked: 18, total: 24, absent: ["Ceren Demir", "Kaan Yıldız"] },
+  { id: "S-03", time: "10:10", course: "Tarih",     group: "11-A",  teacher: "İzinli",        room: "301",   state: "coverage", marked: 0,  total: 24, absent: [] },
+  { id: "S-04", time: "11:00", course: "İngilizce", group: "9-B",   teacher: "Murat Çelik",   room: "102",   state: "waiting",  marked: 0,  total: 22, absent: [] },
+  { id: "S-05", time: "13:00", course: "Biyoloji",  group: "12-A",  teacher: "Elif Demir",    room: "Lab-1", state: "done",     marked: 25, total: 25, absent: [] },
+  { id: "S-06", time: "13:50", course: "Kimya",     group: "10-A",  teacher: "İzinli",        room: "Lab-2", state: "waiting",  marked: 0,  total: 22, absent: [] },
+];
+
+const leaveOps = [
+  {
+    id: "L-118", teacher: "Ahmet Yılmaz", period: "15–17 Ekim", kind: "Üç günlük", status: "pending",
+    affected: [
+      { time: "09:20", course: "Fizik",     group: "10-B" },
+      { time: "13:50", course: "Kimya",     group: "10-A" },
+      { time: "10:40", course: "Matematik", group: "9-C" },
+    ],
+    uncovered: 1,
+    candidates: ["Elif Demir", "Murat Çelik"],
+  },
+  {
+    id: "L-119", teacher: "Zeynep Kaya", period: "16 Ekim", kind: "Tam gün", status: "pending",
+    affected: [
+      { time: "08:30", course: "Sosyal Bil.", group: "11-C" },
+      { time: "11:00", course: "İngilizce",  group: "9-B" },
+    ],
+    uncovered: 0,
+    candidates: [],
+  },
+  { id: "L-112", teacher: "Murat Çelik", period: "10 Ekim", kind: "Saatlik", status: "approved", affected: [{ time: "13:00", course: "Biyoloji", group: "12-A" }], uncovered: 0, candidates: [] },
+];
+
+const notices = [
+  {
+    id: "N-31", course: "Fizik", group: "10-B", time: "09:20", consent: true, status: "pending",
+    preview: "Sayın veli, 10-B sınıfında 09:20 Fizik dersinde öğrenciniz yoklama listesinde bulunmamaktadır. Bilginize sunarız.",
+  },
+  {
+    id: "N-32", course: "İngilizce", group: "9-B", time: "11:00", consent: false, status: "pending",
+    preview: "Sayın veli, 9-B sınıfında 11:00 İngilizce dersinde öğrenciniz yoklama listesinde bulunmamaktadır.",
+  },
+];
+
+const stats = { sessions: 5, absent: 6, late: 3, unmarked: 2 };
 
 const goals = [
   { metric: "Devamlılık oranı",              target: 92,   current: 89,   unit: "%" },
@@ -387,39 +483,255 @@ function screenSchedule() {
     <div class="panel" style="margin-top:14px"><h2>Yayınlama kapısı</h2>${gate}</div>`;
 }
 
-function screenOps() {
-  if (state.view === "empty") {
-    return `<h1>Operasyon</h1><p class="lead">Yoklama öncelikli</p>${banners()}
-      <div class="grid g2">
-        <div class="panel"><h2>Yoklama</h2>${emptyBox("Tamamlanmış yoklama kaydı yok", "Yoklama tamamlandıkça burada görünür.")}</div>
-        <div class="panel"><h2>İzin talepleri</h2>${emptyBox("Bekleyen talep yok", "Onay bekleyen izin talebi bulunmuyor.")}</div>
-      </div>
-      <div class="panel" style="margin-top:14px"><h2>Devamsızlık istatistiği</h2>${emptyBox("İstatistik için yoklama kaydı yok", "İstatistikler tamamlanan yoklamalardan okunur.")}</div>`;
-  }
-  if (state.view === "forbidden") return `<h1>Operasyon</h1>${banners()}<div class="panel">${emptyBox("Bu ekran görüntülenemiyor", "Yetkili olduğunuz ekranlardan devam edin.")}</div>`;
-  if (state.view === "offline") return `<h1>Operasyon</h1>${banners()}<div class="panel">${emptyBox("Sunucuya ulaşılamıyor", "Veriler bağlantı gelince yenilenir.")}</div>`;
-  return `<h1>Operasyon</h1><p class="lead">Yoklama öncelikli</p>${banners()}
-    <div class="grid g2">
-      <div class="panel"><h2>Yoklama</h2>
-        ${lessons.filter((l) => l.state !== "ok").map((l) => `<div class="row"><div class="t"><b>${esc(l.course)} · ${esc(l.group)}</b><div class="m">${esc(l.teacher === "—" ? "Öğretmen atanmadı" : l.teacher)} · ${esc(l.time)}</div></div><span class="badge ${l.state === "teachermissing" ? "b-danger" : "b-warn"}">${l.state === "teachermissing" ? "Görevlendirme bekliyor" : "Yoklama bekliyor"}</span></div>`).join("")}
-      </div>
-      <div class="panel"><h2>İzin talepleri</h2>
-        ${leaves.map((l) => `<div class="row"><div class="t"><b>${esc(l.teacher)}</b><div class="m">${esc(l.period)} · ${l.impact} ders etkileniyor</div></div><span class="badge ${l.status === "pending" ? "b-warn" : "b-ok"}">${l.status === "pending" ? "Onay bekliyor" : "Onaylandı"}</span></div>`).join("")}
-      </div>
+/* --- daily ops helpers (#433) --- */
+function sessState(s) { return state.sessionState[s.id] || s.state; }
+function sessBadge(s) {
+  const st = sessState(s);
+  if (st === "done") return `<span class="badge b-ok">Tamamlandı</span>`;
+  if (st === "partial") return `<span class="badge b-warn">Kısmi · ${s.marked}/${s.total}</span>`;
+  if (st === "coverage") return `<span class="badge b-danger">Görevlendirme bekliyor</span>`;
+  if (st === "locked") return `<span class="badge b-info">Kilitli</span>`;
+  return `<span class="badge b-warn">Yoklama bekliyor</span>`;
+}
+function openSessions() { return sessions.filter((s) => sessState(s) !== "done"); }
+function pendingLeaves() { return leaveOps.filter((l) => l.status === "pending"); }
+function pendingNotices() { return notices.filter((n) => n.status === "pending"); }
+function coverageCandidates() {
+  const l = leaveOps.find((x) => x.uncovered > 0);
+  return l ? l.candidates : [];
+}
+function rosterOf(s) {
+  const names = ["Ada Yılmaz", "Berk Kaya", "Ceren Demir", "Deniz Arslan", "Ece Şahin", "Furkan Çelik", "Gizem Aydın", "Hakan Öztürk"];
+  const abs = state.absent[s.id] || s.absent || [];
+  return names.map((n) => ({ name: n, absent: abs.includes(n) }));
+}
+function opsQueue() {
+  const q = [];
+  openSessions().forEach((s) => q.push({ type: "attendance", ref: s }));
+  pendingLeaves().forEach((l) => q.push({ type: "leave", ref: l }));
+  pendingNotices().forEach((n) => q.push({ type: "notice", ref: n }));
+  return q;
+}
+function itemLabel(it) {
+  if (it.type === "attendance") return `${it.ref.course} · ${it.ref.group} yoklama`;
+  if (it.type === "leave") return `${it.ref.teacher} izin talebi`;
+  return `${it.ref.course} veli bildirimi`;
+}
+function opsBlocked() {
+  const m = state.view === "offline"
+    ? ["Sunucuya ulaşılamıyor", "Veriler bağlantı gelince yenilenir."]
+    : ["Bu ekran görüntülenemiyor", "Yetkili olduğunuz ekranlardan devam edin."];
+  return `<h1>Operasyon</h1>${banners()}<div class="panel">${emptyBox(m[0], m[1])}</div>`;
+}
+function opsAreasEmpty() {
+  return `<div class="grid g3">
+    <div class="panel"><h2>Yoklama</h2>${emptyBox("Tamamlanmış yoklama kaydı yok", "Yoklama tamamlandıkça burada görünür.")}</div>
+    <div class="panel"><h2>İzin talepleri</h2>${emptyBox("Bekleyen talep yok", "Onay bekleyen izin talebi bulunmuyor.")}</div>
+    <div class="panel"><h2>Bildirimler</h2>${emptyBox("Onay bekleyen bildirim yok", "Veli bildirimi için bekleyen onay bulunmuyor.")}</div>
+  </div>`;
+}
+function coverageBlock(s) {
+  const sel = state.assigned[s.id] || "";
+  return `<div class="impact block" style="margin-top:10px">
+    <b>Görevlendirme gerekli.</b> Aday listesi sunucudan gelir; uygunluk istemcide hesaplanmaz.
+    <div class="acts">
+      <select class="mini" data-cand="${esc(s.id)}" ${isAdmin() ? "" : "disabled"}>
+        <option value="">Aday seçin</option>
+        ${coverageCandidates().map((c) => `<option ${sel === c ? "selected" : ""}>${esc(c)}</option>`).join("")}
+      </select>
+      <button class="btn" data-assign="${esc(s.id)}" ${isAdmin() && sel ? "" : "disabled"}>Görevlendir</button>
     </div>
-    <div class="grid g2" style="margin-top:14px">
-      <div class="panel"><h2>Veli bildirimi onayı</h2>
-        ${notifications.map((n) => `<div class="row"><div class="t"><b>${esc(n.course)} · ${esc(n.group)}</b><div class="m">${esc(n.consent ? "İletişim izni uygun" : "İletişim izni eksik")}</div></div>${n.consent ? `<button class="btn">Onayla</button>` : `<button class="btn" disabled>Onayla</button>`}</div>`).join("")}
-        <p class="lead" style="margin:12px 0 0">Bildirim yalnız yönetici onayıyla gönderilir.</p>
+    ${state.assigned[s.id] ? `<div class="mutednote">Atanan öğretmen: ${esc(state.assigned[s.id])}</div>` : ""}
+  </div>`;
+}
+function impactBlock(l) {
+  const rows = l.affected.map((a) => `${esc(a.time)} · ${esc(a.course)} · ${esc(a.group)}`).join("<br>");
+  const gate = state.impactBlocked === l.id
+    ? `<div class="banner warn" style="margin:10px 0 0">Onaylamak için önce görevlendirme adayı seçin. Karar, etki netleşmeden tamamlanamaz.</div>`
+    : "";
+  return `<div class="impact${l.uncovered ? " block" : ""}" style="margin-top:10px">
+    <b>${l.affected.length} ders etkileniyor</b>${l.uncovered ? ` · ${l.uncovered} derste öğretmen yok` : " · görevlendirme gerekmiyor"}<br>${rows}${gate}
+  </div>`;
+}
+function decisionActs(kind, id, disabled) {
+  return `<div class="acts">
+    <button class="btn primary" data-dec="${esc(kind)}|${esc(id)}|approve" ${disabled ? "disabled" : ""}>Onayla</button>
+    <button class="btn" data-dec="${esc(kind)}|${esc(id)}|reject" ${disabled ? "disabled" : ""}>Reddet</button>
+  </div>`;
+}
+function liveStats() {
+  const done = sessions.filter((s) => sessState(s) === "done").length;
+  const absent = sessions.reduce((n, s) => n + (state.absent[s.id] || s.absent || []).length, 0);
+  const unmarked = openSessions().filter((s) => sessState(s) === "waiting").length;
+  return { sessions: done, absent, late: stats.late, unmarked };
+}
+function statsStrip() {
+  if (state.view === "empty") {
+    return `<div class="panel"><h2>Devamsızlık istatistiği</h2>${emptyBox("İstatistik için yoklama kaydı yok", "İstatistikler tamamlanan yoklamalardan okunur.")}</div>`;
+  }
+  const s = liveStats();
+  return `<div class="strip" aria-label="Devamsızlık istatistiği">
+    <div><b>${s.sessions}</b>oturum</div>
+    <div><b>${s.absent}</b>gelmedi</div>
+    <div><b>${s.late}</b>geç</div>
+    <div><b>${s.unmarked}</b>işaretlenmemiş</div>
+    <div class="note">Salt görüntüleme. Canlı yoklama kaydından okunur; gün kapatma işlemi yoktur.</div>
+  </div>`;
+}
+function rosterPeek(s) {
+  return `<div class="roster">${rosterOf(s).map((p) => `<button class="stu ${p.absent ? "absent" : ""}" data-absent="${esc(s.id)}|${esc(p.name)}" ${isAdmin() ? "" : "disabled"}>${esc(p.name)}<span>${p.absent ? "Gelmedi" : "Geldi"}</span></button>`).join("")}</div>`;
+}
+function readOnlyNote() {
+  return isAdmin() ? "" : `<div class="mutednote">Öğretmen görünümü salt okunurdur; karar yetkisi yöneticidedir.</div>`;
+}
+
+/* --- OPS A · Sıra kuyruğu: tek iş, tam ekran karar --- */
+function attnFocus(s) {
+  const locked = sessState(s) === "locked";
+  return `<div class="card focus">
+    <div class="ttl">${esc(s.course)} · ${esc(s.group)} · ${esc(s.time)}</div>
+    <div class="sub">${esc(s.teacher)} · ${esc(s.room)} · ${s.marked}/${s.total} işaretlendi</div>
+    <div class="chips">${sessBadge(s)}</div>
+    ${s.state === "coverage" ? coverageBlock(s) : ""}
+    ${rosterPeek(s)}
+    <div class="acts">
+      <button class="btn" data-assign-all="${esc(s.id)}" ${isAdmin() && !locked ? "" : "disabled"}>Tümü geldi</button>
+      <button class="btn primary" data-complete="${esc(s.id)}" ${isAdmin() && !locked ? "" : "disabled"}>Oturumu tamamla</button>
+    </div>
+    ${readOnlyNote()}
+  </div>`;
+}
+function leaveFocus(l) {
+  return `<div class="card focus">
+    <div class="ttl">${esc(l.teacher)} · ${esc(l.kind)} izin talebi</div>
+    <div class="sub">${esc(l.period)} · onay bekliyor</div>
+    ${impactBlock(l)}
+    ${l.uncovered ? `<div class="acts">
+      <select class="mini" data-cand="L-${esc(l.id)}" ${isAdmin() ? "" : "disabled"}>
+        <option value="">Görevlendirme adayı</option>
+        ${l.candidates.map((c) => `<option ${state.assigned[l.id] === c ? "selected" : ""}>${esc(c)}</option>`).join("")}
+      </select>
+    </div>` : ""}
+    ${decisionActs("leave", l.id, !isAdmin())}
+    ${readOnlyNote()}
+  </div>`;
+}
+function noticeFocus(n) {
+  return `<div class="card focus">
+    <div class="ttl">Veli bildirimi · ${esc(n.course)} · ${esc(n.group)}</div>
+    <div class="sub">${esc(n.time)} · gönderim için yönetici onayı gerekir</div>
+    <div class="chips"><span class="badge ${n.consent ? "b-warn" : "b-danger"}">${n.consent ? "İletişim izni uygun" : "İletişim izni eksik"}</span></div>
+    <div class="preview">${esc(n.preview)}</div>
+    ${decisionActs("notice", n.id, !isAdmin() || !n.consent)}
+    ${n.consent ? "" : `<div class="mutednote">İletişim izni olmadan gönderim yapılamaz.</div>`}
+    ${readOnlyNote()}
+  </div>`;
+}
+function opsA() {
+  if (state.view === "forbidden" || state.view === "offline") return opsBlocked();
+  const head = `<h1>Operasyon</h1><p class="lead">Sıra kuyruğu · günün işleri tek tek</p>${banners()}`;
+  if (state.view === "empty") return head + opsAreasEmpty();
+  const q = opsQueue();
+  if (!q.length) return head + `<div class="panel">${emptyBox("Açık operasyon işi yok", "Bekleyen yoklama, izin veya bildirim kalmadı.")}</div>` + `<div style="margin-top:14px">${statsStrip()}</div>`;
+  const i = Math.min(state.opsIndex, q.length - 1);
+  const item = q[i];
+  const steps = q.map((it, k) => `<div class="step ${k === i ? "active" : ""} ${k < i ? "done" : ""}" data-step="${k}"><span class="n">${k + 1}</span><span>${esc(itemLabel(it))}</span></div>`).join("");
+  const card = item.type === "attendance" ? attnFocus(item.ref) : item.type === "leave" ? leaveFocus(item.ref) : noticeFocus(item.ref);
+  return `${head}<div class="focuswrap">
+    <div class="panel"><h2>Kuyruk</h2><div class="progress">${i}/${q.length} iş tamamlandı</div>${steps}
+      <div class="mutednote">Her iş tek ekranda biter. Bitince kuyruktan düşer.</div></div>
+    <div>${card}<div style="margin-top:14px">${statsStrip()}</div></div>
+  </div>`;
+}
+
+/* --- OPS B · Üç kollu pano: kuyruklar yan yana, karar kart üstünde --- */
+function opsB() {
+  if (state.view === "forbidden" || state.view === "offline") return opsBlocked();
+  const head = `<h1>Operasyon</h1><p class="lead">Üç kollu pano · kuyruklar birbirinden bağımsız</p>${banners()}`;
+  if (state.view === "empty") return head + opsAreasEmpty();
+  const att = openSessions(), lv = pendingLeaves(), nt = pendingNotices();
+  const attCol = att.map((s) => `<div class="card">
+      <div class="ttl">${esc(s.time)} · ${esc(s.course)}</div>
+      <div class="sub">${esc(s.group)} · ${esc(s.teacher === "İzinli" ? "öğretmen yok" : s.teacher)} · ${s.marked}/${s.total}</div>
+      <div class="chips">${sessBadge(s)}</div>
+      ${s.state === "coverage" ? coverageBlock(s) : ""}
+      <div class="acts">
+        ${sessState(s) === "waiting" || sessState(s) === "partial" ? `<button class="btn" data-expand="${esc(s.id)}">${state.expanded === s.id ? "Listeyi kapat" : "Yoklama al"}</button>` : ""}
+        <button class="btn primary" data-complete="${esc(s.id)}" ${isAdmin() ? "" : "disabled"}>Oturumu tamamla</button>
       </div>
-      <div class="panel"><h2>Devamsızlık istatistiği</h2>
-        <div class="metric"><span>Gelmedi</span><b>${absences.absent}</b></div>
-        <div class="metric"><span>Geç</span><b>${absences.late}</b></div>
-        <div class="metric"><span>İşaretlenmemiş</span><b>${absences.unmarked}</b></div>
-        <div class="metric"><span>Oturum</span><b>${absences.sessions}</b></div>
-        <p class="lead" style="margin:12px 0 0">İstatistikler canlıdır ve tamamlanan yoklamalardan okunur.</p>
+      ${state.expanded === s.id ? rosterPeek(s) : ""}
+    </div>`).join("") || emptyBox("Bekleyen yoklama yok", "Tamamlanan oturumlar listeden düşer.");
+  const lvCol = lv.map((l) => `<div class="card">
+      <div class="ttl">${esc(l.teacher)} · ${esc(l.kind)}</div>
+      <div class="sub">${esc(l.period)} · <b>${l.affected.length} ders</b>${l.uncovered ? ` · ${l.uncovered} görevlendirme` : ""}</div>
+      ${impactBlock(l)}
+      ${l.uncovered ? `<div class="acts"><select class="mini" data-cand="L-${esc(l.id)}" ${isAdmin() ? "" : "disabled"}><option value="">Aday seçin</option>${l.candidates.map((c) => `<option ${state.assigned[l.id] === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>` : ""}
+      ${decisionActs("leave", l.id, !isAdmin())}
+    </div>`).join("") || emptyBox("Bekleyen talep yok", "Onay bekleyen izin talebi bulunmuyor.");
+  const ntCol = nt.map((n) => `<div class="card">
+      <div class="ttl">${esc(n.course)} · ${esc(n.group)} · ${esc(n.time)}</div>
+      <div class="sub">Veliye devamsızlık bildirimi</div>
+      <div class="chips"><span class="badge ${n.consent ? "b-warn" : "b-danger"}">${n.consent ? "İletişim izni uygun" : "İletişim izni eksik"}</span></div>
+      <div class="preview">${esc(n.preview)}</div>
+      ${decisionActs("notice", n.id, !isAdmin() || !n.consent)}
+    </div>`).join("") || emptyBox("Onay bekleyen bildirim yok", "Veli bildirimi için bekleyen onay bulunmuyor.");
+  return `${head}<div class="opscols">
+    <div class="panel"><div class="colhead"><h2>Yoklama</h2><span class="count">${att.length} bekleyen</span></div>${attCol}${readOnlyNote()}</div>
+    <div class="panel"><div class="colhead"><h2>İzin talepleri</h2><span class="count">${lv.length} bekleyen</span></div>${lvCol}</div>
+    <div class="panel"><div class="colhead"><h2>Veli bildirimi</h2><span class="count">${nt.length} bekleyen</span></div>${ntCol}</div>
+  </div><div style="margin-top:14px">${statsStrip()}</div>`;
+}
+
+/* --- OPS C · Bölünmüş gün: solda akış, sağda karar rayı --- */
+function opsC() {
+  if (state.view === "forbidden" || state.view === "offline") return opsBlocked();
+  const head = `<h1>Operasyon</h1><p class="lead">Bölünmüş gün · solda günün akışı, sağda kararlar</p>${banners()}`;
+  if (state.view === "empty") return head + opsAreasEmpty();
+  const rows = sessions.map((s) => {
+    const open = state.expanded === s.id;
+    return `<div class="tlrow">
+      <div class="when">${esc(s.time)}</div>
+      <div>
+        <div class="ttl" style="font-size:13px;font-weight:600">${esc(s.course)} · ${esc(s.group)}</div>
+        <div class="sub" style="font-size:12px;color:var(--muted)">${esc(s.teacher === "İzinli" ? "öğretmen yok" : s.teacher)} · ${esc(s.room)} · ${s.marked}/${s.total}</div>
+        <div class="chips">${sessBadge(s)}${sessState(s) !== "done" ? `<button class="btn" data-expand="${esc(s.id)}">${open ? "Kapat" : "Yoklama al"}</button>` : ""}</div>
+        ${s.state === "coverage" ? coverageBlock(s) : ""}
+        ${open && sessState(s) !== "done" ? `${rosterPeek(s)}<div class="acts"><button class="btn primary" data-complete="${esc(s.id)}" ${isAdmin() ? "" : "disabled"}>Oturumu tamamla</button></div>` : ""}
       </div>
     </div>`;
+  }).join("");
+  const lv = pendingLeaves().map((l) => {
+    const todayHits = l.affected.filter((a) => sessions.some((s) => s.time === a.time && s.group === a.group));
+    return `<div class="card">
+      <div class="ttl">${esc(l.teacher)} · ${esc(l.kind)}</div>
+      <div class="sub">${esc(l.period)}</div>
+      <div class="chips">
+        <span class="badge ${l.affected.length > 2 ? "b-danger" : "b-warn"}">${l.affected.length} ders</span>
+        ${l.uncovered ? `<span class="badge b-danger">${l.uncovered} görevlendirme</span>` : ""}
+        ${todayHits.length ? `<span class="badge b-info">Bugün ${todayHits.length} ders</span>` : `<span class="badge b-ok">Bugün etkisi yok</span>`}
+      </div>
+      ${impactBlock(l)}
+      ${decisionActs("leave", l.id, !isAdmin())}
+    </div>`;
+  }).join("") || emptyBox("Bekleyen talep yok", "Onay bekleyen izin talebi bulunmuyor.");
+  const nt = pendingNotices().map((n) => `<div class="card">
+      <div class="ttl">${esc(n.course)} · ${esc(n.group)}</div>
+      <div class="sub">${esc(n.time)} · veli bildirimi</div>
+      <div class="chips"><span class="badge ${n.consent ? "b-warn" : "b-danger"}">${n.consent ? "İletişim izni uygun" : "İletişim izni eksik"}</span></div>
+      <div class="preview">${esc(n.preview)}</div>
+      ${decisionActs("notice", n.id, !isAdmin() || !n.consent)}
+    </div>`).join("") || emptyBox("Onay bekleyen bildirim yok", "Veli bildirimi için bekleyen onay bulunmuyor.");
+  return `${head}<div class="grid top" style="grid-template-columns: minmax(0,1.4fr) minmax(0,1fr)">
+    <div class="panel"><div class="colhead"><h2>Günün akışı</h2><span class="count">yoklama yerinde alınır</span></div>${rows}${readOnlyNote()}</div>
+    <div class="rail">
+      <div class="panel"><div class="colhead"><h2>Karar bekleyenler</h2><span class="count">izin + bildirim</span></div>${lv}${nt}</div>
+    </div>
+  </div><div style="margin-top:14px">${statsStrip()}</div>`;
+}
+
+function screenOps() {
+  const head = { A: opsA, B: opsB, C: opsC }[state.opsVariant];
+  return head();
 }
 
 function screenGoals() {
@@ -471,21 +783,32 @@ function render() {
   const local = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "::1";
   const swr = document.getElementById("switcher");
   swr.classList.toggle("hidden", !local);
-  document.getElementById("switchLabel").innerHTML =
-    `<b>${esc(state.variant)} · ${esc(VARIANTS[state.variant])}</b> · ${esc(state.screen)}`;
+  const onOps = state.screen === "ops";
+  document.getElementById("switchLabel").innerHTML = onOps
+    ? `<b>${esc(state.opsVariant)} · ${esc(OPS_VARIANTS[state.opsVariant])}</b> · operasyon varyantı`
+    : `<b>${esc(state.variant)} · ${esc(VARIANTS[state.variant])}</b> · ana ekran varyantı`;
   document.getElementById("stateSelect").innerHTML = Object.entries(STATES)
     .map(([k, v]) => `<option value="${k}" ${state.view === k ? "selected" : ""}>${esc(v)}</option>`).join("");
+  const opsSel = document.getElementById("opsSelect");
+  opsSel.hidden = !onOps;
+  opsSel.innerHTML = Object.entries(OPS_VARIANTS)
+    .map(([k, v]) => `<option value="${k}" ${state.opsVariant === k ? "selected" : ""}>${esc(v)}</option>`).join("");
 }
 
+function variantKeys() { return state.screen === "ops" ? Object.keys(OPS_VARIANTS) : Object.keys(VARIANTS); }
+function currentKey() { return state.screen === "ops" ? state.opsVariant : state.variant; }
+
 function cycleVariant(dir) {
-  const keys = Object.keys(VARIANTS);
-  state.variant = keys[(keys.indexOf(state.variant) + dir + keys.length) % keys.length];
+  const keys = variantKeys();
+  const next = keys[(keys.indexOf(currentKey()) + dir + keys.length) % keys.length];
+  if (state.screen === "ops") state.opsVariant = next; else state.variant = next;
   syncUrl(); render();
 }
 
 function syncUrl() {
   const p = new URLSearchParams(location.search);
   p.set("variant", state.variant);
+  p.set("ops", state.opsVariant);
   p.set("state", state.view);
   history.replaceState({}, "", `${location.pathname}?${p}`);
 }
@@ -493,6 +816,46 @@ function syncUrl() {
 document.addEventListener("click", (e) => {
   const nav = e.target.closest("[data-screen]");
   if (nav) { state.screen = nav.dataset.screen; render(); return; }
+
+  // --- daily ops (#433): in-memory stubs, no real mutation ---
+  const step = e.target.closest("[data-step]");
+  if (step) { state.opsIndex = Number(step.dataset.step); render(); return; }
+
+  const exp = e.target.closest("[data-expand]");
+  if (exp) { state.expanded = state.expanded === exp.dataset.expand ? null : exp.dataset.expand; render(); return; }
+
+  const ab = e.target.closest("[data-absent]");
+  if (ab) {
+    const [id, name] = ab.dataset.absent.split("|");
+    const s = sessions.find((x) => x.id === id);
+    const cur = state.absent[id] || s.absent || [];
+    state.absent[id] = cur.includes(name) ? cur.filter((n) => n !== name) : [...cur, name];
+    render(); return;
+  }
+
+  const all = e.target.closest("[data-assign-all]");
+  if (all) { const s = sessions.find((x) => x.id === all.dataset.assignAll); state.absent[s.id] = []; state.sessionState[s.id] = "partial"; render(); return; }
+
+  const done = e.target.closest("[data-complete]");
+  if (done) { state.sessionState[done.dataset.complete] = "done"; render(); return; }
+
+  const asg = e.target.closest("[data-assign]");
+  if (asg) { state.sessionState[asg.dataset.assign] = "waiting"; render(); return; }
+
+  const dec = e.target.closest("[data-dec]");
+  if (dec) {
+    const [kind, id, act] = dec.dataset.dec.split("|");
+    if (kind === "leave") {
+      const l = leaveOps.find((x) => x.id === id);
+      if (l && l.uncovered && !state.assigned[l.id]) { state.impactBlocked = id; render(); return; }
+      if (l) l.status = act === "approve" ? "approved" : "rejected";
+    } else {
+      const n = notices.find((x) => x.id === id);
+      if (n) n.status = act === "approve" ? "sent" : "declined";
+    }
+    state.opsIndex = 0;
+    render(); return;
+  }
 
   const rec = e.target.closest("[data-record]");
   if (rec) { state.openRecord = { name: rec.dataset.name }; render(); return; }
@@ -524,6 +887,12 @@ document.getElementById("branchSelect").addEventListener("change", (e) => {
   state.openRecord = null;
   state.screen = "today";
   state.filter = "all";
+  state.opsIndex = 0;
+  state.sessionState = {};
+  state.absent = {};
+  state.assigned = {};
+  state.impactBlocked = null;
+  state.expanded = null;
   if (had) {
     document.getElementById("scopeRec").textContent = had.name;
     document.getElementById("scopeDlg").showModal();
