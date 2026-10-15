@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE — Admin Gerçek Akış</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --ink: #182026;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --brand: #0f766e;
+    --brand-ink: #ffffff;
+    --warn: #b45309;
+    --danger: #b91c1c;
+    --ok: #15803d;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .06);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  .prototype-banner {
+    background: #111827;
+    color: #f9fafb;
+    font-size: 12px;
+    letter-spacing: .04em;
+    padding: 8px 16px;
+    text-transform: uppercase;
+  }
+  .prototype-banner strong { color: #fbbf24; }
+  header.context {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  .context .tenant { font-size: 13px; color: var(--muted); }
+  .context .branch { font-weight: 700; }
+  .context .right { display: flex; align-items: center; gap: 12px; }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--brand); color: var(--brand-ink);
+    display: grid; place-items: center; font-weight: 700;
+  }
+  .layout { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 120px); }
+  .sidebar { border-right: 1px solid var(--line); background: var(--panel); padding: 16px; }
+  .sidebar .brand { font-weight: 800; margin-bottom: 16px; }
+  .nav { display: grid; gap: 6px; }
+  .nav button {
+    text-align: left; border: 0; background: transparent; padding: 10px 12px;
+    border-radius: 10px; font: inherit; cursor: pointer; color: var(--ink);
+  }
+  .nav button.active { background: #ecfdf5; color: var(--brand); font-weight: 700; }
+  main { padding: 24px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .grid { display: grid; gap: 16px; }
+  .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
+  .panel h2 { font-size: 15px; margin: 0 0 12px; }
+  .metric { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+  .metric:last-child { border-bottom: 0; }
+  .metric strong { font-size: 18px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); }
+  .badge.ok { color: var(--ok); border-color: #bbf7d0; background: #f0fdf4; }
+  .badge.warn { color: var(--warn); border-color: #fde68a; background: #fffbeb; }
+  .badge.danger { color: var(--danger); border-color: #fecaca; background: #fef2f2; }
+  .badge.info { color: var(--brand); border-color: #99f6e4; background: #f0fdfa; }
+  .list { display: grid; gap: 10px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row .meta { color: var(--muted); font-size: 13px; }
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; }
+  .btn.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+  .btn.danger { color: var(--danger); border-color: #fecaca; }
+  .calendar { display: grid; grid-template-columns: 80px repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .calendar .head { font-weight: 700; font-size: 13px; color: var(--muted); }
+  .calendar .time { font-size: 12px; color: var(--muted); }
+  .event { border: 1px solid var(--line); border-radius: 10px; padding: 8px; font-size: 12px; background: #f0fdfa; }
+  .event strong { display: block; }
+  .event span { color: var(--muted); }
+  .setup-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .setup-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #fff; }
+  .setup-card strong { display: block; font-size: 18px; }
+  .checklist { display: grid; gap: 10px; }
+  .check { display: flex; gap: 10px; align-items: flex-start; }
+  .check input { margin-top: 3px; }
+  .state-panel { margin-top: 24px; font-size: 12px; color: var(--muted); }
+  .switcher {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: #111827; color: #fff; border-radius: 999px; padding: 8px 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25); z-index: 20;
+  }
+  .switcher button { border: 0; background: #1f2937; color: #fff; border-radius: 999px; width: 32px; height: 32px; cursor: pointer; }
+  .switcher .label { min-width: 190px; text-align: center; font-size: 13px; }
+  .switcher .label strong { color: #fbbf24; }
+  .hidden { display: none !important; }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
+    .grid.two, .grid.three, .setup-grid { grid-template-columns: 1fr; }
+    .calendar { grid-template-columns: 60px repeat(5, minmax(120px, 1fr)); overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+  <div class="prototype-banner"><strong>PROTOTYPE</strong> · throwaway · gerçek veri yok · demo/full-vision değil</div>
+  <header class="context">
+    <div>
+      <div class="tenant">ÖRNEK EĞİTİM KURUMU · SENTETİK VERİ</div>
+      <div class="branch">Merkez Şube</div>
+    </div>
+    <div class="right">
+      <div>
+        <div class="branch">Kurum Yöneticisi</div>
+        <div class="tenant">15 Ekim 2026, Çarşamba</div>
+      </div>
+      <div class="avatar" aria-hidden="true">OY</div>
+    </div>
+  </header>
+  <div id="app"></div>
+  <div id="switcher" class="switcher hidden" aria-label="Prototip varyantı">
+    <button id="prev" aria-label="Önceki varyant">←</button>
+    <div class="label" id="label"></div>
+    <button id="next" aria-label="Sonraki varyant">→</button>
+  </div>
+  <script>
+    const state = {
+      tenant: "Örnek Eğitim Kurumu",
+      branch: "Merkez Şube",
+      role: "Kurum Yöneticisi",
+      variant: new URLSearchParams(location.search).get("variant") || "A",
+      screen: "today"
+    };
+    const lessons = [
+      { time: "08:30–09:10", group: "9-A", course: "Matematik", teacher: "Elif Demir", room: "101", status: "completed" },
+      { time: "09:20–10:00", group: "10-B", course: "Fizik", teacher: "Ahmet Yılmaz", room: "201", status: "attendance_pending" },
+      { time: "10:10–10:50", group: "11-A", course: "Tarih", teacher: "Zeynep Kaya", room: "301", status: "needs_teacher" },
+      { time: "11:00–11:40", group: "9-B", course: "İngilizce", teacher: "Murat Çelik", room: "102", status: "attendance_pending" },
+      { time: "13:00–13:40", group: "12-A", course: "Biyoloji", teacher: "Elif Demir", room: "Lab-1", status: "completed" },
+      { time: "13:50–14:30", group: "10-A", course: "Kimya", teacher: "—", room: "Lab-2", status: "needs_teacher" }
+    ];
+    const leaves = [
+      { teacher: "Ahmet Yılmaz", date: "15–17 Ekim", type: "Üç günlük", lessons: 3, status: "pending" },
+      { teacher: "Zeynep Kaya", date: "16 Ekim", type: "Tam gün", lessons: 2, status: "pending" },
+      { teacher: "Murat Çelik", date: "10 Ekim", type: "Saatlik", lessons: 1, status: "approved" }
+    ];
+    const attendance = [
+      { course: "Fizik", group: "10-B", teacher: "Ahmet Yılmaz", time: "09:20", status: "Yoklama bekliyor" },
+      { course: "İngilizce", group: "9-B", teacher: "Murat Çelik", time: "11:00", status: "Yoklama bekliyor" }
+    ];
+    const notices = [
+      { student: "—", course: "Matematik", status: "Taslak", consent: true },
+      { student: "—", course: "Fizik", status: "Bekliyor", consent: false }
+    ];
+    const setup = [
+      { key: "Şube", value: 3 },
+      { key: "Derslik", value: 8 },
+      { key: "Öğretmen", value: 12 },
+      { key: "Ders", value: 15 },
+      { key: "Sınıf / Şube", value: 6 },
+      { key: "Zaman dilimi", value: 8 }
+    ];
+    const screens = [
+      ["today", "Bugün"],
+      ["setup", "Kurulum"],
+      ["schedule", "Program"],
+      ["operations", "Operasyon"]
+    ];
+    const variants = {
+      A: "A · İş akışı öncelikli",
+      B: "B · Takvim öncelikli",
+      C: "C · Kurulum öncelikli"
+    };
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    const badge = (s) => {
+      const map = { completed: "ok", attendance_pending: "warn", needs_teacher: "danger", pending: "warn", approved: "ok", Taslak: "info", Bekliyor: "warn" };
+      return `<span class="badge ${map[s] || ""}">${esc(s)}</span>`;
+    };
+    function nav(active) {
+      return `<nav class="nav" aria-label="Admin ekranları">${screens.map(([k, l]) => `<button data-screen="${k}" class="${state.screen === k ? "active" : ""}">${l}</button>`).join("")}</nav>`;
+    }
+    function todayContent() {
+      const open = lessons.filter((l) => l.status !== "completed").length;
+      return `<div class="grid two">
+        <section class="panel">
+          <h2>Bugünün ritmi</h2>
+          <div class="metric"><span>Ders</span><strong>${lessons.length}</strong></div>
+          <div class="metric"><span>Açık iş</span><strong>${open}</strong></div>
+          <div class="metric"><span>Onay bekleyen izin</span><strong>${leaves.filter((l) => l.status === "pending").length}</strong></div>
+          <div class="metric"><span>Eksik yoklama</span><strong>${attendance.length}</strong></div>
+        </section>
+        <section class="panel">
+          <h2>Sıradaki adım</h2>
+          <div class="list">
+            <div class="row"><div><strong>İzin taleplerini incele</strong><div class="meta">2 talep · ders etkisiyle birlikte</div></div><button class="btn primary" data-goto="operations">Aç</button></div>
+            <div class="row"><div><strong>Yoklamaları tamamla</strong><div class="meta">2 oturum bekliyor</div></div><button class="btn" data-goto="operations">Aç</button></div>
+            <div class="row"><div><strong>Programı doğrula ve yayınla</strong><div class="meta">Taslak hazır · çakışma yok</div></div><button class="btn" data-goto="schedule">Aç</button></div>
+          </div>
+        </section>
+      </div>`;
+    }
+    function setupContent() {
+      return `<div class="setup-grid">${setup.map((s) => `<div class="setup-card"><strong>${s.value}</strong><span>${s.key}</span></div>`).join("")}</div>
+      <p class="state-panel">Kurulum ekranı: şube, derslik, öğretmen, ders, sınıf ve zaman dilimi kayıtları. Backend'de bu kaynakların çalışma zamanı denetleyicisi henüz yok; bu prototip yalnız akışı gösterir.</p>`;
+    }
+    function scheduleContent() {
+      const days = ["Pzt", "Sal", "Çar", "Per", "Cum"];
+      return `<div class="calendar"><div class="head">Saat</div>${days.map((d) => `<div class="head">${d}</div>`).join("")}${lessons.map((l) => `<div class="time">${esc(l.time.split("–")[0])}</div>${days.map((_, i) => `<div>${i === 2 ? `<div class="event"><strong>${esc(l.course)}</strong><span>${esc(l.group)}</span><span>${esc(l.teacher)}</span></div>` : ""}</div>`).join("")}`).join("")}</div>
+      <div class="panel" style="margin-top:16px"><h2>Yayınlama kapısı</h2><div class="row"><div><strong>Taslak program</strong><div class="meta">Doğrulama: FULL · çakışma yok · revizyon güncel</div></div><button class="btn primary">Programı yayınla</button></div></div>`;
+    }
+    function operationsContent() {
+      return `<div class="grid two">
+        <section class="panel"><h2>İzin talepleri</h2><div class="list">${leaves.map((l) => `<div class="row"><div><strong>${esc(l.teacher)}</strong><div class="meta">${esc(l.date)} · ${esc(l.type)} · ${l.lessons} ders etkileniyor</div></div>${badge(l.status)}</div>`).join("")}</div></section>
+        <section class="panel"><h2>Yoklama ve bildirimler</h2><div class="list">${attendance.map((a) => `<div class="row"><div><strong>${esc(a.course)} · ${esc(a.group)}</strong><div class="meta">${esc(a.teacher)} · ${esc(a.time)}</div></div>${badge("warn")}</div>`).join("")}${notices.map((n) => `<div class="row"><div><strong>${esc(n.course)}</strong><div class="meta">${n.consent ? "İletişim izni uygun" : "İzin eksik"}</div></div>${badge(n.status)}</div>`).join("")}</div></section>
+      </div>`;
+    }
+    function screenContent() {
+      if (state.screen === "setup") return setupContent();
+      if (state.screen === "schedule") return scheduleContent();
+      if (state.screen === "operations") return operationsContent();
+      return todayContent();
+    }
+    function variantA() {
+      return `<div class="layout"><aside class="sidebar"><div class="brand">Okul Yönetim</div>${nav()}<p class="state-panel">İş akışı öncelikli: sıradaki adım her zaman önce görünür.</p></aside><main><h1>Bugüne odaklan</h1><p class="sub">Önce karar, sonra kayıt.</p>${screenContent()}</main></div>`;
+    }
+    function variantB() {
+      return `<main style="grid-column: 1 / -1"><h1>Haftalık plan</h1><p class="sub">Takvim öncelikli: ders dağılımı ve yayınlama tek ekranda.</p>${state.screen === "today" || state.screen === "operations" ? scheduleContent() + `<div style="height:16px"></div>` + todayContent() : screenContent()}</main>`;
+    }
+    function variantC() {
+      return `<div class="layout"><aside class="sidebar"><div class="brand">Kurulum sihirbazı</div><div class="checklist">${["Şubeleri oluştur", "Derslikleri ekle", "Öğretmenleri davet et", "Dersleri tanımla", "Sınıfları oluştur", "Programı yayınla"].map((x, i) => `<label class="check"><input type="checkbox" ${i < 2 ? "checked" : ""} /> <span>${x}</span></label>`).join("")}</div>${nav()}</aside><main><h1>Kurulumu tamamla</h1><p class="sub">Gerçek okul akışı: önce kurulum, sonra haftalık plan, sonra günlük operasyon.</p>${screenContent()}</main></div>`;
+    }
+    function render() {
+      const app = document.getElementById("app");
+      if (state.variant === "B") app.innerHTML = variantB();
+      else if (state.variant === "C") app.innerHTML = variantC();
+      else app.innerHTML = variantA();
+      const local = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "::1";
+      const switcher = document.getElementById("switcher");
+      if (local) {
+        switcher.classList.remove("hidden");
+        document.getElementById("label").innerHTML = `<strong>${esc(variants[state.variant])}</strong> · ${esc(state.screen)}`;
+      } else {
+        switcher.classList.add("hidden");
+      }
+    }
+    function setVariant(v) {
+      state.variant = v;
+      const p = new URLSearchParams(location.search);
+      p.set("variant", v);
+      history.replaceState({}, "", `${location.pathname}?${p}`);
+      render();
+    }
+    function cycle(dir) {
+      const keys = Object.keys(variants);
+      const i = keys.indexOf(state.variant);
+      setVariant(keys[(i + dir + keys.length) % keys.length]);
+    }
+    document.addEventListener("click", (e) => {
+      const screen = e.target.closest("[data-screen]");
+      if (screen) { state.screen = screen.dataset.screen; render(); return; }
+      const goto = e.target.closest("[data-goto]");
+      if (goto) { state.screen = goto.dataset.goto; render(); return; }
+      if (e.target.id === "prev") cycle(-1);
+      if (e.target.id === "next") cycle(1);
+    });
+    document.addEventListener("keydown", (e) => {
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key === "ArrowLeft") cycle(-1);
+      if (e.key === "ArrowRight") cycle(1);
+    });
+    render();
+  </script>
+</body>
+</html>
