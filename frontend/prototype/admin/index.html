@@ -175,11 +175,68 @@
   .strip .note { margin-left: auto; max-width: 340px; text-align: right; }
   select.mini { font: inherit; font-size: 12px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 
+  /* --- schedule editing / publish prototypes (#432) --- */
+  .gatebar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); margin-bottom: 14px; }
+  .gatebar.blocked { border-color: #fecdca; background: var(--danger-soft); }
+  .gatebar.ready { border-color: #a6f4c5; background: var(--ok-soft); }
+  .gatebar.readonly { border-color: #b2ddff; background: #eff8ff; }
+  .gatebar .gs { display: flex; flex-direction: column; gap: 3px; font-size: 12px; max-width: 340px; }
+  .gatebar .gs b { font-size: 13px; }
+  .gatebar .glist { display: flex; flex-direction: column; gap: 5px; font-size: 11px; }
+  .gatebar .glist .note { display: inline; margin: 0; }
+  .grid-week { display: grid; grid-template-columns: 66px repeat(5, minmax(0,1fr)); gap: 6px; }
+  .gw-h { font-size: 12px; color: var(--muted); font-weight: 600; text-align: center; }
+  .gw-t { font-size: 12px; color: var(--muted); padding-top: 10px; font-variant-numeric: tabular-nums; }
+  .gw-c { min-height: 62px; border: 1px solid var(--line); border-radius: 8px; padding: 4px; background: var(--panel); display: flex; flex-direction: column; gap: 4px; }
+  .gw-c.warn { border-color: #fde68a; background: var(--warn-soft); }
+  .gw-c.bad { border-color: #fecdca; background: var(--danger-soft); }
+  .chip { border-radius: 6px; border: 1px solid #99f6e4; background: var(--brand-soft); padding: 4px 5px; font: inherit; font-size: 11px; cursor: pointer; text-align: left; color: inherit; }
+  .chip[disabled] { cursor: not-allowed; opacity: .92; }
+  .chip.s1 { border-color: #fecdca; background: #fff; }
+  .chip.s2 { border-color: #fde68a; background: #fff; }
+  .chip .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; background: var(--ok); vertical-align: middle; }
+  .chip.s1 .dot { background: var(--danger); }
+  .chip.s2 .dot { background: var(--warn); }
+  .chip b { display: block; font-size: 11px; }
+  .chip .sm { display: block; font-size: 10px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .gw-add { border: 1px dashed var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; padding: 3px; margin-top: auto; }
+  .gw-add[disabled] { opacity: .4; cursor: not-allowed; }
+  .evrow { display: grid; grid-template-columns: 86px minmax(0,1fr) 172px; gap: 10px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--line); text-align: left; width: 100%; background: transparent; border-left: 0; border-right: 0; border-top: 0; font: inherit; color: inherit; }
+  .evrow:last-child { border-bottom: 0; }
+  .evrow[disabled] { cursor: default; }
+  .evrow .slot { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .evrow .ttl2 { font-size: 13px; font-weight: 600; }
+  .evrow .tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .ledger { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+  .ledger .li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .ledger .li:last-child { border-bottom: 0; }
+  .ledger .li.err { background: var(--danger-soft); }
+  .ledger .li code { font-size: 10px; color: var(--muted); }
+  .ledger .li .msg { font-size: 12px; }
+  .ledger .li .n { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+  .filterbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .daystrip { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 6px; margin-bottom: 14px; }
+  .daybtn { border: 1px solid var(--line); border-radius: 10px; padding: 9px 8px; background: var(--panel); cursor: pointer; font: inherit; color: inherit; }
+  .daybtn.sel { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+  .daybtn b { display: block; font-size: 13px; }
+  .daybtn .n { display: block; font-size: 11px; color: var(--muted); }
+  .daybtn .bad { display: block; font-size: 10px; color: var(--danger); }
+  .editor { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; margin-top: 10px; }
+  .editor label { font-size: 12px; color: var(--muted); display: block; }
+  .editor select { display: block; width: 100%; font: inherit; font-size: 13px; padding: 7px; margin-top: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .evi { font-size: 11px; color: var(--muted); width: 100%; }
+  .evi b { color: var(--ink); }
+  .acts-inline { display: flex; flex-wrap: wrap; gap: 8px; }
+
   @media (max-width: 860px) {
     .g2, .g3, .opscols { grid-template-columns: 1fr; }
     .focuswrap { grid-template-columns: 1fr; }
     .strip .note { margin-left: 0; text-align: left; }
     .cal { grid-template-columns: 58px repeat(5, minmax(110px, 1fr)); overflow-x: auto; }
+    .grid-week { grid-template-columns: 52px repeat(5, minmax(104px, 1fr)); overflow-x: auto; }
+    .evrow { grid-template-columns: 1fr; }
+    .evrow .tags { justify-content: flex-start; }
+    .editor { grid-template-columns: 1fr; }
     .switcher .l { min-width: 150px; }
   }
 </style>
@@ -219,6 +276,7 @@
   <div class="l" id="switchLabel"></div>
   <select id="stateSelect" aria-label="Durum"></select>
   <select id="opsSelect" aria-label="Operasyon varyantı" hidden></select>
+  <select id="schedSelect" aria-label="Program varyantı" hidden></select>
   <button id="next" aria-label="Sonraki varyant">→</button>
 </div>
 
@@ -228,6 +286,22 @@
     <p>Aktif kayıt <b id="scopeRec"></b> seçili şubeye ait değil. Şube değiştirildiğinde açık kayıt, filtreler ve seçimler sıfırlanır.</p>
   </div>
   <div class="dlg-foot"><button class="btn primary" id="scopeOk">Anladım</button></div>
+</dialog>
+
+<dialog id="editDlg">
+  <div class="dlg-body">
+    <h3 id="edTitle">Ders ekle</h3>
+    <p>Ders kaydı sunucu doğrulamasına girer. Sürüm başlığı sunucudan gelir, tarayıcı üretmez.</p>
+    <div class="editor">
+      <label>Gün<select id="edDay"></select></label>
+      <label>Zaman dilimi<select id="edSlot"></select></label>
+      <label>Ders<select id="edCourse"></select></label>
+      <label>Öğrenci grubu<select id="edGroup"></select></label>
+      <label>Öğretmen<select id="edTeacher"></select></label>
+      <label>Derslik<select id="edRoom"></select></label>
+    </div>
+  </div>
+  <div class="dlg-foot"><button class="btn" id="edDelete" hidden>Sil</button><span style="flex:1"></span><button class="btn" id="edCancel">Vazgeç</button><button class="btn primary" id="edSave">Kaydet</button></div>
 </dialog>
 
 <script>
@@ -242,17 +316,82 @@ const OPS_VARIANTS = {
   B: "Üç kollu pano",
   C: "Bölünmüş gün",
 };
+const SCHED_VARIANTS = {
+  A: "Haftalık ızgara",
+  B: "Ders listesi",
+  C: "Gün takvimi",
+};
 const STATES = {
   empty: "Boş durumlar (ilk gün)",
   normal: "Dolu durumlar",
   forbidden: "Yasak (non-enumerating)",
   stale: "Bayat sürüm (412)",
   offline: "Çevrimdışı",
+  period: "Program: dönem çakışması (409)",
+  noversion: "Program: sürüm gerekli (428)",
+  published: "Program: yayınlandı",
 };
+
+// --- Program taslağı verisi (#432) — sentetik, sunucu tarafından doğrulanır ---
+const SCHED_DAYS = ["Pzt", "Sal", "Çar", "Per", "Cum"];
+const SCHED_DATES = ["12.10", "13.10", "14.10", "15.10", "16.10"];
+const SCHED_SLOTS = ["08:30", "09:20", "10:10", "11:00", "13:00", "13:50"];
+const SCHED_TEACHERS = ["Elif Demir", "Ahmet Yılmaz", "Zeynep Kaya", "Murat Çelik", "Ayşe Korkmaz", "Deniz Arslan", "—"];
+const SCHED_COURSES = ["Matematik", "Fizik", "Tarih", "İngilizce", "Biyoloji", "Kimya", "Türkçe", "Fen"];
+const SCHED_GROUPS = ["9-A", "9-B", "9-C", "10-A", "10-B", "11-A", "11-B", "12-A", "12-B"];
+const SCHED_ROOMS = ["101", "102", "103", "104", "201", "301", "Lab-1", "Lab-2"];
+
+const SCHED_SEED = [
+  { id: "E-01", day: 0, slot: "08:30", course: "Matematik", group: "9-A",  teacher: "Elif Demir",    room: "101" },
+  { id: "E-02", day: 0, slot: "09:20", course: "Fizik",      group: "10-B", teacher: "Ahmet Yılmaz", room: "201" },
+  { id: "E-03", day: 0, slot: "09:20", course: "Matematik", group: "9-C",  teacher: "Ahmet Yılmaz", room: "102", flags: ["course_mismatch"] },
+  { id: "E-04", day: 1, slot: "10:10", course: "Tarih",      group: "11-A", teacher: "Zeynep Kaya",  room: "301", flags: ["no_branch_assignment"] },
+  { id: "E-05", day: 1, slot: "11:00", course: "Tarih",      group: "11-B", teacher: "Zeynep Kaya",  room: "201", flags: ["group_inactive"] },
+  { id: "E-06", day: 2, slot: "11:00", course: "İngilizce",  group: "9-B",  teacher: "Murat Çelik",  room: "102" },
+  { id: "E-07", day: 2, slot: "11:00", course: "Türkçe",     group: "10-A", teacher: "Elif Demir",   room: "102" },
+  { id: "E-08", day: 3, slot: "13:00", course: "Biyoloji",   group: "12-A", teacher: "Elif Demir",   room: "Lab-1" },
+  { id: "E-09", day: 3, slot: "13:00", course: "Fizik",      group: "12-B", teacher: "Ayşe Korkmaz", room: "Lab-2", flags: ["teacher_inactive"] },
+  { id: "E-10", day: 4, slot: "13:50", course: "Kimya",      group: "10-A", teacher: "Deniz Arslan", room: "Lab-2", flags: ["slot_inactive"] },
+  { id: "E-11", day: 4, slot: "08:30", course: "Türkçe",     group: "9-A",  teacher: "—",            room: "103", flags: ["not_found"] },
+  { id: "E-12", day: 4, slot: "10:10", course: "Fen",        group: "9-C",  teacher: "Elif Demir",   room: "101" },
+  { id: "E-13", day: 4, slot: "10:10", course: "Tarih",      group: "9-C",  teacher: "Murat Çelik",  room: "104" },
+];
+
+// Yayınlanmış program: çatışmasız. Yayın sonrası değiştirilemez.
+const SCHED_PUBLISHED = [
+  { id: "P-01", day: 0, slot: "08:30", course: "Matematik", group: "9-A",  teacher: "Elif Demir",    room: "101" },
+  { id: "P-02", day: 0, slot: "09:20", course: "Fizik",      group: "10-B", teacher: "Ahmet Yılmaz", room: "201" },
+  { id: "P-03", day: 0, slot: "09:20", course: "Matematik", group: "9-C",  teacher: "Elif Demir",   room: "102" },
+  { id: "P-04", day: 1, slot: "10:10", course: "Tarih",      group: "11-A", teacher: "Deniz Arslan", room: "301" },
+  { id: "P-05", day: 1, slot: "11:00", course: "Tarih",      group: "11-B", teacher: "Deniz Arslan", room: "201" },
+  { id: "P-06", day: 2, slot: "11:00", course: "İngilizce",  group: "9-B",  teacher: "Murat Çelik",  room: "102" },
+  { id: "P-07", day: 2, slot: "11:00", course: "Türkçe",     group: "10-A", teacher: "Elif Demir",   room: "104" },
+  { id: "P-08", day: 3, slot: "13:00", course: "Biyoloji",   group: "12-A", teacher: "Elif Demir",   room: "Lab-1" },
+  { id: "P-09", day: 3, slot: "13:00", course: "Fizik",      group: "12-B", teacher: "Murat Çelik",  room: "Lab-2" },
+  { id: "P-10", day: 4, slot: "08:30", course: "Türkçe",     group: "9-A",  teacher: "Zeynep Kaya",  room: "103" },
+  { id: "P-11", day: 4, slot: "10:10", course: "Fen",        group: "9-C",  teacher: "Elif Demir",   room: "101" },
+  { id: "P-12", day: 4, slot: "13:00", course: "Kimya",      group: "10-A", teacher: "Deniz Arslan", room: "Lab-2" },
+];
+
+// M3 Contract v1 §5 — sunucu yazarlı neden kodları ve kanonik UI durumları
+const SCHED_REFERENCE_FLAGS = {
+  course_mismatch:      { code: "TEACHER_COURSE_MISMATCH",           ui: "reference_teacher_course_mismatch",  kind: "reference", msg: "Öğretmen seçilen ders için geçerli branş eşleşmesine sahip değil." },
+  no_branch_assignment: { code: "TEACHER_BRANCH_ASSIGNMENT_MISSING", ui: "reference_teacher_branch_missing",  kind: "reference", msg: "Öğretmenin bu şube için aktif görevlendirmesi bulunmuyor." },
+  group_inactive:       { code: "STUDENT_GROUP_INACTIVE",           ui: "reference_group_inactive",           kind: "reference", msg: "Seçilen öğrenci grubu aktif değil." },
+  teacher_inactive:     { code: "TEACHER_INACTIVE",                 ui: "reference_teacher_inactive",         kind: "reference", msg: "Seçilen öğretmen aktif değil." },
+  slot_inactive:        { code: "TIMESLOT_INACTIVE",                ui: "reference_timeslot_inactive",        kind: "reference", msg: "Seçilen zaman dilimi aktif değil." },
+  not_found:            { code: "BRANCH_REFERENCE_MISMATCH",       ui: "reference_not_found",                kind: "reference", msg: "İlgili kayıt bulunamadı." },
+};
+const SCHED_OVERLAPS = [
+  { field: "teacher", code: "TEACHER_TIME_OVERLAP",       ui: "event_conflict_teacher", kind: "conflict", msg: "Öğretmen seçilen zaman aralığında başka bir derse atanmış." },
+  { field: "group",   code: "STUDENT_GROUP_TIME_OVERLAP", ui: "event_conflict_group",   kind: "conflict", msg: "Öğrenci grubu seçilen zaman aralığında başka bir derse atanmış." },
+  { field: "room",    code: "ROOM_TIME_OVERLAP",          ui: "event_conflict_room",    kind: "conflict", msg: "Derslik seçilen zaman aralığında kullanılıyor." },
+];
 
 const state = {
   variant: VARIANTS[qs.get("variant")] ? qs.get("variant") : "A",
   opsVariant: OPS_VARIANTS[qs.get("ops")] ? qs.get("ops") : "A",
+  schedVariant: SCHED_VARIANTS[qs.get("sched")] ? qs.get("sched") : "A",
   view: STATES[qs.get("state")] ? qs.get("state") : "empty",
   screen: "today",
   role: "admin",
@@ -267,6 +406,14 @@ const state = {
   assigned: {},
   decision: {},
   expanded: null,
+  schedEvents: SCHED_SEED.map((e) => ({ ...e })),
+  schedRev: 7,
+  schedDirty: false,
+  schedFull: null,
+  schedPublished: false,
+  schedDay: 0,
+  schedFilter: "all",
+  schedEdit: null,
 };
 
 const branches = [
@@ -463,24 +610,337 @@ function banners() {
   return "";
 }
 
+/* --- Program düzenleme ve yayınlama (#432) — M3 Contract v1'e göre --- */
+const isPub = () => state.schedPublished || state.view === "published";
+
+function schedSource() {
+  if (isPub()) return SCHED_PUBLISHED;
+  if (state.view === "empty") return [];
+  return state.schedEvents;
+}
+
+function schedReasons(events) {
+  const map = {};
+  const push = (e, r) => { (map[e.id] = map[e.id] || []).push(r); };
+  for (const e of events) for (const f of e.flags || []) push(e, { ...SCHED_REFERENCE_FLAGS[f] });
+  for (const o of SCHED_OVERLAPS) {
+    for (const a of events) {
+      for (const b of events) {
+        if (a === b || a.day !== b.day || a.slot !== b.slot) continue;
+        if (!a[o.field] || a[o.field] !== b[o.field]) continue;
+        push(a, { code: o.code, ui: o.ui, kind: o.kind, msg: o.msg, with: b });
+      }
+    }
+  }
+  return map;
+}
+
+function schedUiStates(map) {
+  const seen = new Map();
+  for (const e of schedSource()) {
+    for (const r of map[e.id] || []) {
+      if (!seen.has(r.ui)) seen.set(r.ui, { ui: r.ui, code: r.code, kind: r.kind, msg: r.msg, count: 0, events: [] });
+      const g = seen.get(r.ui);
+      g.count++;
+      g.events.push(e);
+    }
+  }
+  return [...seen.values()];
+}
+
+function schedGate(events) {
+  const map = schedReasons(events);
+  const hard = events.reduce((n, e) => n + (map[e.id] || []).length, 0);
+  const list = [];
+  if (events.length === 0) list.push({ ui: "publish_blocked_empty", http: "422", msg: "Boş program yayınlanamaz." });
+  if (hard > 0) list.push({ ui: "publish_blocked_conflicts", http: "422", msg: `Programdaki zorunlu çatışmalar giderilmeden yayınlanamaz. (${hard} bulgu)` });
+  if (state.schedDirty) list.push({ ui: "publish_blocked_stale", http: "422", msg: "Program değiştiği için doğrulama güncel değil." });
+  else if (!state.schedFull && !isPub()) list.push({ ui: "publish_blocked_stale", http: "422", msg: "Bu sürüm için güncel FULL doğrulama kanıtı yok." });
+  if (state.view === "period") list.push({ ui: "publish_blocked_period", http: "409", msg: "Bu şube ve tarih aralığında başka bir yayınlanmış program bulunuyor." });
+  return { map, hard, list };
+}
+
+function schedEvidence(gate) {
+  if (isPub()) return { mode: "FULL", evidenceStatus: "authoritative", canPublish: false, note: "Yayın tamamlandı. Yayınlanmış program değiştirilemez; değişiklik yeni taslakta yapılır." };
+  if (state.schedDirty) return { mode: "INCREMENTAL", evidenceStatus: "editor_feedback", canPublish: false, note: "INCREMENTAL yalnızca düzenleyici geri bildirimidir; yayın kanıtı değildir." };
+  if (!state.schedFull) return { mode: "—", evidenceStatus: "yok", canPublish: false, note: "Yayın kanıtı yalnızca FULL doğrulama üretir." };
+  return { mode: "FULL", evidenceStatus: "authoritative", canPublish: gate.hard === 0, note: "FULL kanıtı sürüm ve parmak izine bağlıdır; sonraki her düzenleme onu bayatlatır." };
+}
+
+function stateTag(ui) {
+  const cls = ui.startsWith("event_conflict") ? "b-danger"
+    : ui.startsWith("reference") ? "b-warn"
+    : ui.startsWith("publish_blocked") ? "b-danger"
+    : ui === "published_read_only" ? "b-info"
+    : ui === "stale_version" || ui === "version_required" ? "b-warn"
+    : "b-ok";
+  return `<span class="badge ${cls}">${esc(ui)}</span>`;
+}
+
+function schedFingerprint() {
+  return `fp_${state.schedRev}${String((schedSource().length * 17 + gateHardCache()) % 89).padStart(2, "0")}`;
+}
+let _hard = 0;
+function gateHardCache() { return _hard; }
+
+function schedVersionState() {
+  let v = null;
+  if (state.view === "stale") v = { ui: "stale_version", http: 412, msg: "Program başka bir işlemle güncellendi. Ekranı yenileyin.", hint: "Eski sürümle işlem yeniden denemez; önce ekran yenilenir." };
+  if (state.view === "noversion") v = { ui: "version_required", http: 428, msg: "İşlem için güncel program sürümü gerekli.", hint: "Sürüm istemcide üretilmez; sunucudan gelir. 412 ve 428 ayrı durumlardır." };
+  if (!v) return "";
+  return `<div class="banner ${v.ui === "stale_version" ? "warn" : "danger"}" style="margin-bottom:14px">
+    <div>${stateTag(v.ui)} <span class="badge b-info" style="margin-left:6px">HTTP ${v.http}</span></div>
+    <div style="margin-top:5px"><b>${esc(v.msg)}</b></div>
+    <div class="note">${esc(v.hint)}</div>
+  </div>`;
+}
+
+function schedMutationBlocked() {
+  return state.view === "offline" || state.view === "stale" || state.view === "noversion" || state.view === "forbidden" || !isAdmin() || isPub();
+}
+
+function evidenceCard(gate) {
+  const ev = schedEvidence(gate);
+  return `<div class="evi">
+    <div><b>Mod:</b> ${esc(ev.mode)} · <b>Kanıt:</b> ${esc(ev.evidenceStatus)} · <b>canPublish:</b> ${ev.canPublish}</div>
+    <div><b>Sürüm:</b> v${state.schedRev} · <b>Parmak izi:</b> ${esc(schedFingerprint())} · <b>Zorunlu çatışma:</b> ${gate.hard}</div>
+    <div class="note">${esc(ev.note)}</div>
+  </div>`;
+}
+
+function publishGate(gate) {
+  const blocked = gate.list.length > 0;
+  const mut = schedMutationBlocked();
+  const ready = !blocked && !!state.schedFull;
+  const cls = isPub() ? "readonly" : blocked ? "blocked" : ready ? "ready" : "blocked";
+  const title = isPub() ? "Program yayınlandı" : blocked ? "Yayınlama kapısı kapalı" : ready ? "Yayınlanabilir" : "Doğrulama kanıtı bekleniyor";
+  const acts = isPub()
+    ? `<button class="btn primary" data-newdraft ${isAdmin() ? "" : "disabled"}>Yeni taslak oluştur</button>`
+    : `<button class="btn" data-full ${mut ? "disabled" : ""}>Tam doğrulama (FULL)</button>
+       <button class="btn primary" data-publish ${ready ? "" : "disabled"}>Programı yayınla</button>`;
+  return `<div class="gatebar ${cls}">
+    <div class="gs">
+      <b>${esc(title)}</b>
+      <span>${isPub() ? "weekly_grid_ready_published" : "weekly_grid_ready_draft"} · şube: ${esc(activeBranch().name)} · sürüm v${state.schedRev}</span>
+      ${isPub() ? `<div style="margin-top:5px">${stateTag("published_read_only")}</div>` : ""}
+    </div>
+    <div class="glist">
+      ${isPub()
+        ? `<div>${stateTag("published_read_only")} <span class="note" style="display:inline">Yayınlanmış program değiştirilemez. Değişiklik yeni taslakta yapılır.</span></div>`
+        : gate.list.length
+          ? gate.list.map((r) => `<div>${stateTag(r.ui)} <span class="badge b-info">HTTP ${esc(r.http)}</span> <span class="note" style="display:inline">${esc(r.msg)}</span></div>`).join("")
+          : `<div>${stateTag("publish_ready")} <span class="note" style="display:inline">FULL kanıtı güncel, zorunlu çatışma yok.</span></div>`}
+    </div>
+    <div class="acts-inline">${acts}</div>
+    ${evidenceCard(gate)}
+  </div>`;
+}
+
+function stateLedger(map) {
+  const groups = schedUiStates(map);
+  if (!groups.length) return emptyBox("Zorunlu çatışma yok", "Bulgu yok. Yayın kanıtı için tam doğrulama gerekir.");
+  return `<div class="ledger">${groups.map((g) => `<div class="li ${g.kind === "conflict" ? "err" : ""}" data-code="${esc(g.code)}">
+    <div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${stateTag(g.ui)}<span class="msg">${esc(g.msg)}</span></div>
+    <code>${esc(g.events.map((e) => `${e.course} · ${e.group} · ${SCHED_DAYS[e.day]} ${e.slot}`).join(" | "))}</code></div>
+    <div class="n">${g.count}</div>
+  </div>`).join("")}</div>`;
+}
+
+function gridStateBadge() {
+  return isPub() ? "weekly_grid_ready_published" : "weekly_grid_ready_draft";
+}
+
+function schedHead() {
+  const sub = {
+    empty: "Haftalık program taslağı",
+    normal: "Haftalık program · taslak sürüm v" + state.schedRev,
+    forbidden: "Bu ekran görüntülenemiyor",
+    stale: "Program sürümü bayat",
+    offline: "Sunucuya ulaşılamıyor",
+    period: "Yayın dönemi çakışması",
+    noversion: "Sürüm doğrulanmadan işlem yapılamaz",
+    published: "Yayınlanmış program",
+  }[state.view];
+  const banner = state.view === "offline"
+    ? `<div class="banner danger">Sunucuya ulaşılamıyor. Kayıt işlemleri devre dışı; bağlantı gelince veriler yenilenir.</div>`
+    : state.view === "forbidden" ? `<div class="banner neutral">Bu ekran için yetkiniz bulunmuyor.</div>` : "";
+  return `<h1>Program</h1><p class="lead">${esc(sub)}</p>${banner}${schedVersionState()}`;
+}
+
+function schedTeacherRead() {
+  return schedHead() + `<div class="panel"><h2>Yayınlanmış program</h2>
+    <div style="margin-bottom:10px">${stateTag("weekly_grid_ready_published")} ${stateTag("published_read_only")}</div>
+    ${schedTeacherGrid()}
+    <div class="note" style="margin-top:10px">Öğretmen yalnızca kendisine bağlı yayınlanmış programı görür. Taslak, taslak listesi ve yayınlama yüzeyi öğretmene gösterilmez.</div>
+  </div>`;
+}
+
+function schedTeacherGrid() {
+  let grid = `<div class="grid-week"><div class="gw-h">Saat</div>${SCHED_DAYS.map((d) => `<div class="gw-h">${d}</div>`).join("")}`;
+  for (const slot of SCHED_SLOTS) {
+    grid += `<div class="gw-t">${slot}</div>`;
+    for (let d = 0; d < 5; d++) {
+      const cell = SCHED_PUBLISHED.filter((e) => e.day === d && e.slot === slot);
+      grid += `<div class="gw-c">${cell.map((e) => `<div class="chip" style="cursor:default"><span class="dot"></span><b>${esc(e.course)}</b><span class="sm">${esc(e.group)} · ${esc(e.teacher === e.teacher ? e.teacher : "")} · ${esc(e.room)}</span></div>`).join("")}</div>`;
+    }
+  }
+  return grid + `</div>`;
+}
+
+function schedChip(e, reasons) {
+  const cls = reasons.some((r) => r.kind === "conflict") ? "s1" : reasons.length ? "s2" : "";
+  const ro = schedMutationBlocked();
+  return `<button class="chip ${cls}" data-sevent="${esc(e.id)}" ${ro ? "disabled" : ""}>
+    <span class="dot"></span><b>${esc(e.course)}</b>
+    <span class="sm">${esc(e.group)} · ${esc(e.teacher)} · ${esc(e.room)}</span>
+    ${reasons.length ? `<span class="sm">${esc(reasons[0].ui)}</span>` : ""}
+  </button>`;
+}
+
+function schedAddBtn(d, slot) {
+  return schedMutationBlocked() ? "" : `<button class="gw-add" data-scell="${d}|${esc(slot)}">+ ders ekle</button>`;
+}
+
+function findingsByDay(map) {
+  const days = SCHED_DAYS.map((label, i) => {
+    const dayEvents = schedSource().filter((e) => e.day === i);
+    const rows = dayEvents.flatMap((e) => (map[e.id] || []).map((r) => ({ e, r })));
+    if (!rows.length) return "";
+    const uis = [...new Set(rows.map((x) => x.r.ui))];
+    return `<div class="li" style="padding:9px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><b style="font-size:12px">${esc(label)}</b>${uis.map(stateTag).join("")}</div>
+      <div class="note">${esc(rows.map((x) => `${x.e.course} · ${x.e.group}: ${x.r.msg}`).join(" "))}</div>
+    </div>`;
+  }).join("");
+  return days || emptyBox("Zorunlu çatışma yok", "Bulgu yok. Yayın kanıtı için tam doğrulama gerekir.");
+}
+
+/* --- PROGRAM A · Haftalık ızgara: çatışma hücrede, kapı üstte --- */
+function schedA() {
+  const events = schedSource();
+  const gate = schedGate(events);
+  _hard = gate.hard;
+  let grid = `<div class="grid-week"><div class="gw-h">Saat</div>${SCHED_DAYS.map((d) => `<div class="gw-h">${d}</div>`).join("")}`;
+  for (const slot of SCHED_SLOTS) {
+    grid += `<div class="gw-t">${slot}</div>`;
+    for (let d = 0; d < 5; d++) {
+      const cell = events.filter((e) => e.day === d && e.slot === slot);
+      const rs = cell.flatMap((e) => gate.map[e.id] || []);
+      const cls = rs.some((r) => r.kind === "conflict") ? "bad" : rs.length ? "warn" : "";
+      grid += `<div class="gw-c ${cls}">${cell.map((e) => schedChip(e, gate.map[e.id] || [])).join("")}${schedAddBtn(d, slot)}</div>`;
+    }
+  }
+  grid += `</div>`;
+  const legend = events.length
+    ? `<div class="note">Dokunulan hücredeki bulgu, sunucunun verdiği kanonik durumdur. Aynı anda birden çok bulgu varsa en üstteki gösterilir, tamamı aşağıdaki listede ayrı ayrı yer alır.</div>`
+    : `<div class="note" style="margin-bottom:10px">Bu programda henüz ders kaydı yok.</div>`;
+  return `${publishGate(gate)}
+    <div class="panel"><h2>Haftalık ızgara · ${esc(gridStateBadge())}</h2>${grid}${legend}</div>
+    <div class="panel" style="margin-top:14px"><h2>Doğrulama özeti</h2>${stateLedger(gate.map)}</div>`;
+}
+
+/* --- PROGRAM B · Ders listesi: tablo + doğrulama masası --- */
+function schedB() {
+  const events = schedSource();
+  const gate = schedGate(events);
+  _hard = gate.hard;
+  const filters = [["all", "Tümü"], ["conflict", "Çakışmalı"], ["reference", "Referans"], ["clean", "Sorunsuz"]];
+  const counts = {
+    all: events.length,
+    conflict: events.filter((e) => (gate.map[e.id] || []).some((r) => r.kind === "conflict")).length,
+    reference: events.filter((e) => (gate.map[e.id] || []).some((r) => r.kind === "reference")).length,
+    clean: events.filter((e) => !(gate.map[e.id] || []).length).length,
+  };
+  const shown = events.filter((e) => {
+    const rs = gate.map[e.id] || [];
+    if (state.schedFilter === "conflict") return rs.some((r) => r.kind === "conflict");
+    if (state.schedFilter === "reference") return rs.some((r) => r.kind === "reference");
+    if (state.schedFilter === "clean") return !rs.length;
+    return true;
+  }).sort((a, b) => a.day - b.day || a.slot.localeCompare(b.slot));
+  const ro = schedMutationBlocked();
+  const rows = shown.map((e) => {
+    const rs = gate.map[e.id] || [];
+    const tags = rs.length ? rs.map((r) => stateTag(r.ui)).join("") : `<span class="badge b-ok">uygun</span>`;
+    return `<div class="evrow"><div class="slot">${SCHED_DAYS[e.day]} · ${esc(e.slot)}</div>
+      <div><div class="ttl2">${esc(e.course)} · ${esc(e.group)}</div><div class="note">${esc(e.teacher)} · derslik ${esc(e.room)} · kayıt ${esc(e.id)}</div></div>
+      <div class="tags">${tags}${ro ? "" : `<button class="btn" data-sevent="${esc(e.id)}">Düzenle</button>`}</div></div>`;
+  }).join("");
+  const emptyLine = events.length === 0
+    ? `<div class="note" style="margin-bottom:10px">Bu programda henüz ders kaydı yok.</div>`
+    : shown.length === 0 ? `<div class="note" style="margin-bottom:10px">Bu filtreye uyan ders kaydı yok.</div>` : "";
+  return `<div class="grid top" style="grid-template-columns: minmax(0,1.5fr) minmax(0,1fr)">
+    <div>
+      <div class="panel"><h2>Ders listesi · ${esc(gridStateBadge())}</h2>${emptyLine}
+        <div class="filterbar">${filters.map(([k, t]) => `<button class="btn ${state.schedFilter === k ? "primary" : ""}" data-sfilter="${k}">${esc(t)} (${counts[k]})</button>`).join("")}</div>
+        ${rows || ""}
+      </div>
+    </div>
+    <div class="rail">
+      ${publishGate(gate)}
+      <div class="panel"><h2>Doğrulama masası</h2>${stateLedger(gate.map)}</div>
+    </div>
+  </div>`;
+}
+
+/* --- PROGRAM C · Gün takvimi: güne in, kapı rayda --- */
+function schedC() {
+  const events = schedSource();
+  const gate = schedGate(events);
+  _hard = gate.hard;
+  const ro = schedMutationBlocked();
+  const strip = SCHED_DAYS.map((d, i) => {
+    const dayEvents = events.filter((e) => e.day === i);
+    const bad = dayEvents.filter((e) => (gate.map[e.id] || []).some((r) => r.kind === "conflict")).length;
+    const ref = dayEvents.filter((e) => (gate.map[e.id] || []).some((r) => r.kind === "reference")).length;
+    return `<button class="daybtn ${state.schedDay === i ? "sel" : ""}" data-sday="${i}">
+      <b>${esc(d)}</b><span class="n">${SCHED_DATES[i]}</span>
+      <span class="n">${dayEvents.length} ders</span>
+      ${bad ? `<span class="bad">${bad} çakışma</span>` : ""}${ref ? `<span class="bad">${ref} referans</span>` : ""}
+    </button>`;
+  }).join("");
+  const dayEvents = events.filter((e) => e.day === state.schedDay).sort((a, b) => a.slot.localeCompare(b.slot));
+  const agenda = dayEvents.map((e) => {
+    const rs = gate.map[e.id] || [];
+    return `<div class="tlrow">
+      <div class="when">${esc(e.slot)}</div>
+      <div>
+        <div class="ttl" style="font-size:13px;font-weight:600">${esc(e.course)} · ${esc(e.group)}</div>
+        <div class="sub" style="font-size:12px;color:var(--muted)">${esc(e.teacher)} · derslik ${esc(e.room)}</div>
+        <div class="chips">${rs.length ? rs.map((r) => stateTag(r.ui)).join("") : `<span class="badge b-ok">uygun</span>`}
+          ${ro ? "" : `<button class="btn" data-sevent="${esc(e.id)}">Düzenle</button>`}</div>
+        ${rs.filter((r) => r.with).map((r) => `<div class="impact block" style="margin-top:8px">${esc(r.msg)} <b>${esc(r.with.course)} · ${esc(r.with.group)}</b> ile çakışıyor.</div>`).join("")}
+      </div>
+    </div>`;
+  }).join("") || emptyBox(state.schedDay === 0 ? "Bu gün için ders kaydı yok" : "Bu gün için ders kaydı yok", "Günlük program bu ekranda görünür.");
+  const railRows = gate.list.length
+    ? gate.list.map((r) => `<div class="checkline"><span class="mark">✕</span><span><b>${esc(r.msg)}</b><br>${stateTag(r.ui)} <span class="badge b-info">HTTP ${esc(r.http)}</span></span></div>`).join("")
+    : `<div class="checkline"><span class="mark">✓</span><span><b>Tam doğrulama güncel ve zorunlu çatışma yok.</b><br>${stateTag("publish_ready")}</span></div>`;
+  return `<div class="daystrip">${strip}</div>
+    <div class="grid top" style="grid-template-columns: minmax(0,1.4fr) minmax(0,1fr)">
+      <div class="panel"><h2>${SCHED_DAYS[state.schedDay]} günü · ${esc(gridStateBadge())}</h2>${agenda}${schedAddBtn(state.schedDay, state.schedDay === 0 ? "08:30" : "11:00")}</div>
+      <div class="rail">
+        ${publishGate(gate)}
+        <div class="panel"><h2>Yayınlama kapısı</h2>${railRows}
+          <div class="note">Boş, bayat, çatışmalı ve dönem çakışmalı durumlar ayrı ayrı gösterilir; tek bir genel gerekçeye indirgenmez.</div>
+        </div>
+        <div class="panel"><h2>Günlere göre bulgular</h2>${findingsByDay(gate.map)}
+          <div class="note">Bulgular gün başına toplanır; her bulgu kendi kanonik durumunu korur.</div>
+        </div>
+      </div>
+    </div>`;
+}
+
 function screenSchedule() {
-  const draft = state.view !== "empty";
-  const grid = draft ? dayCalendar() : emptyBox("Henüz yayınlanmış program yok", "Program taslağı veya yayınlanmış kayıt bulunmuyor.");
-  const gate = state.view === "empty"
-    ? emptyBox("Programı yayınlayın", "Yayınlama kapısı kapalı.")
-    : state.view === "stale"
-      ? `<div class="grid" style="gap:8px">
-           <span class="badge b-warn">publish_blocked_stale</span>
-           <p class="lead" style="margin:0">Program değiştiği için doğrulama güncel değil. Yeniden doğrulayın.</p>
-         </div>`
-      : `<div class="grid" style="gap:8px">
-           <span class="badge b-ok">weekly_grid_ready_draft</span>
-           <p class="lead" style="margin:0">Doğrulama: FULL · çakışma yok · revizyon güncel</p>
-           <div><button class="btn primary">Programı yayınla</button></div>
-         </div>`;
-  return `<h1>Program</h1><p class="lead">Haftalık ders dağılımı</p>${banners()}
-    <div class="panel"><h2>Haftalık görünüm</h2>${grid}</div>
-    <div class="panel" style="margin-top:14px"><h2>Yayınlama kapısı</h2>${gate}</div>`;
+  if (state.view === "forbidden" || state.view === "offline") {
+    const m = state.view === "offline"
+      ? ["Sunucuya ulaşılamıyor", "Bağlantı gelince veriler yenilenir."]
+      : ["Bu ekran görüntülenemiyor", "Yetkili olduğunuz ekranlardan devam edin."];
+    return schedHead() + `<div class="panel">${emptyBox(m[0], m[1])}</div>`;
+  }
+  if (!isAdmin()) return schedTeacherRead();
+  const body = { A: schedA, B: schedB, C: schedC }[state.schedVariant];
+  return schedHead() + body();
 }
 
 /* --- daily ops helpers (#433) --- */
@@ -775,6 +1235,7 @@ function render() {
   const main = document.getElementById("main");
   main.innerHTML = page();
   main.setAttribute("data-branch", activeBranch().name);
+  main.setAttribute("data-sched", `${state.schedVariant}/${gridStateBadge()}`);
 
   document.getElementById("goalsHint").textContent = state.goalUnlocked
     ? "Stratejik Hedefler açık."
@@ -784,24 +1245,41 @@ function render() {
   const swr = document.getElementById("switcher");
   swr.classList.toggle("hidden", !local);
   const onOps = state.screen === "ops";
-  document.getElementById("switchLabel").innerHTML = onOps
-    ? `<b>${esc(state.opsVariant)} · ${esc(OPS_VARIANTS[state.opsVariant])}</b> · operasyon varyantı`
-    : `<b>${esc(state.variant)} · ${esc(VARIANTS[state.variant])}</b> · ana ekran varyantı`;
+  const onSched = state.screen === "schedule";
+  document.getElementById("switchLabel").innerHTML = onSched
+    ? `<b>${esc(state.schedVariant)} · ${esc(SCHED_VARIANTS[state.schedVariant])}</b> · program varyantı`
+    : onOps
+      ? `<b>${esc(state.opsVariant)} · ${esc(OPS_VARIANTS[state.opsVariant])}</b> · operasyon varyantı`
+      : `<b>${esc(state.variant)} · ${esc(VARIANTS[state.variant])}</b> · ana ekran varyantı`;
   document.getElementById("stateSelect").innerHTML = Object.entries(STATES)
     .map(([k, v]) => `<option value="${k}" ${state.view === k ? "selected" : ""}>${esc(v)}</option>`).join("");
   const opsSel = document.getElementById("opsSelect");
   opsSel.hidden = !onOps;
   opsSel.innerHTML = Object.entries(OPS_VARIANTS)
     .map(([k, v]) => `<option value="${k}" ${state.opsVariant === k ? "selected" : ""}>${esc(v)}</option>`).join("");
+  const schedSel = document.getElementById("schedSelect");
+  schedSel.hidden = !onSched;
+  schedSel.innerHTML = Object.entries(SCHED_VARIANTS)
+    .map(([k, v]) => `<option value="${k}" ${state.schedVariant === k ? "selected" : ""}>${esc(v)}</option>`).join("");
 }
 
-function variantKeys() { return state.screen === "ops" ? Object.keys(OPS_VARIANTS) : Object.keys(VARIANTS); }
-function currentKey() { return state.screen === "ops" ? state.opsVariant : state.variant; }
+function variantKeys() {
+  if (state.screen === "ops") return Object.keys(OPS_VARIANTS);
+  if (state.screen === "schedule") return Object.keys(SCHED_VARIANTS);
+  return Object.keys(VARIANTS);
+}
+function currentKey() {
+  if (state.screen === "ops") return state.opsVariant;
+  if (state.screen === "schedule") return state.schedVariant;
+  return state.variant;
+}
 
 function cycleVariant(dir) {
   const keys = variantKeys();
   const next = keys[(keys.indexOf(currentKey()) + dir + keys.length) % keys.length];
-  if (state.screen === "ops") state.opsVariant = next; else state.variant = next;
+  if (state.screen === "ops") state.opsVariant = next;
+  else if (state.screen === "schedule") state.schedVariant = next;
+  else state.variant = next;
   syncUrl(); render();
 }
 
@@ -809,6 +1287,7 @@ function syncUrl() {
   const p = new URLSearchParams(location.search);
   p.set("variant", state.variant);
   p.set("ops", state.opsVariant);
+  p.set("sched", state.schedVariant);
   p.set("state", state.view);
   history.replaceState({}, "", `${location.pathname}?${p}`);
 }
@@ -816,6 +1295,23 @@ function syncUrl() {
 document.addEventListener("click", (e) => {
   const nav = e.target.closest("[data-screen]");
   if (nav) { state.screen = nav.dataset.screen; render(); return; }
+
+  // --- schedule edit / publish (#432): in-memory stubs, no real mutation ---
+  const cell = e.target.closest("[data-scell]");
+  if (cell) { const [d, slot] = cell.dataset.scell.split("|"); openEditor(null, Number(d), slot); return; }
+
+  const ev = e.target.closest("[data-sevent]");
+  if (ev) { openEditor(ev.dataset.sevent); return; }
+
+  const day = e.target.closest("[data-sday]");
+  if (day) { state.schedDay = Number(day.dataset.sday); render(); return; }
+
+  const flt = e.target.closest("[data-sfilter]");
+  if (flt) { state.schedFilter = flt.dataset.sfilter; render(); return; }
+
+  if (e.target.closest("[data-full]")) { runFullValidation(); return; }
+  if (e.target.closest("[data-publish]")) { publishDraft(); return; }
+  if (e.target.closest("[data-newdraft]")) { newDraft(); return; }
 
   // --- daily ops (#433): in-memory stubs, no real mutation ---
   const step = e.target.closest("[data-step]");
@@ -893,6 +1389,14 @@ document.getElementById("branchSelect").addEventListener("change", (e) => {
   state.assigned = {};
   state.impactBlocked = null;
   state.expanded = null;
+  state.schedEvents = SCHED_SEED.map((x) => ({ ...x }));
+  state.schedRev = 7;
+  state.schedDirty = false;
+  state.schedFull = null;
+  state.schedPublished = false;
+  state.schedDay = 0;
+  state.schedFilter = "all";
+  state.schedEdit = null;
   if (had) {
     document.getElementById("scopeRec").textContent = had.name;
     document.getElementById("scopeDlg").showModal();
@@ -903,6 +1407,101 @@ document.getElementById("branchSelect").addEventListener("change", (e) => {
 document.getElementById("stateSelect").addEventListener("change", (e) => {
   state.view = e.target.value; syncUrl(); render();
 });
+
+/* --- schedule editor dialog (#432) --- */
+const edDlg = document.getElementById("editDlg");
+const edFields = {
+  day: document.getElementById("edDay"),
+  slot: document.getElementById("edSlot"),
+  course: document.getElementById("edCourse"),
+  group: document.getElementById("edGroup"),
+  teacher: document.getElementById("edTeacher"),
+  room: document.getElementById("edRoom"),
+};
+const edOpts = (sel, list, cur) => list.map((v) => `<option ${String(v) === String(cur) ? "selected" : ""}>${esc(v)}</option>`).join("");
+
+function openEditor(id, day, slot) {
+  if (schedMutationBlocked()) return;
+  const e = id ? state.schedEvents.find((x) => x.id === id) : null;
+  state.schedEdit = { id: e ? e.id : null };
+  const model = e || { day, slot, course: SCHED_COURSES[0], group: SCHED_GROUPS[0], teacher: SCHED_TEACHERS[0], room: SCHED_ROOMS[0] };
+  edFields.day.innerHTML = SCHED_DAYS.map((d, i) => `<option value="${i}" ${i === model.day ? "selected" : ""}>${esc(d)}</option>`).join("");
+  edFields.slot.innerHTML = edOpts(edFields.slot, SCHED_SLOTS, model.slot);
+  edFields.course.innerHTML = edOpts(edFields.course, SCHED_COURSES, model.course);
+  edFields.group.innerHTML = edOpts(edFields.group, SCHED_GROUPS, model.group);
+  edFields.teacher.innerHTML = edOpts(edFields.teacher, SCHED_TEACHERS, model.teacher);
+  edFields.room.innerHTML = edOpts(edFields.room, SCHED_ROOMS, model.room);
+  document.getElementById("edTitle").textContent = e ? "Dersi düzenle" : "Ders ekle";
+  document.getElementById("edDelete").hidden = !e;
+  edDlg.showModal();
+}
+
+function saveEditor() {
+  const st = state.schedEdit;
+  if (!st) return;
+  const patch = {
+    day: Number(edFields.day.value),
+    slot: edFields.slot.value,
+    course: edFields.course.value,
+    group: edFields.group.value,
+    teacher: edFields.teacher.value,
+    room: edFields.room.value,
+  };
+  if (st.id) {
+    const e = state.schedEvents.find((x) => x.id === st.id);
+    if (e) Object.assign(e, patch);
+  } else {
+    const n = state.schedEvents.length + 1;
+    state.schedEvents.push({ id: `E-${String(n).padStart(2, "0")}`, ...patch, flags: [] });
+  }
+  markDirty();
+  state.schedEdit = null;
+  edDlg.close();
+  render();
+}
+
+function deleteEditor() {
+  const st = state.schedEdit;
+  if (!st || !st.id) return;
+  state.schedEvents = state.schedEvents.filter((x) => x.id !== st.id);
+  markDirty();
+  state.schedEdit = null;
+  edDlg.close();
+  render();
+}
+
+function markDirty() {
+  state.schedDirty = true;
+  state.schedRev += 1;
+}
+
+function runFullValidation() {
+  if (schedMutationBlocked()) return;
+  const gate = schedGate(schedSource());
+  state.schedFull = { at: "15.10.2026 14:32", rev: state.schedRev, hard: gate.hard };
+  state.schedDirty = false;
+  render();
+}
+
+function publishDraft() {
+  const gate = schedGate(schedSource());
+  if (gate.list.length || !state.schedFull || schedMutationBlocked()) return;
+  state.schedPublished = true;
+  render();
+}
+
+function newDraft() {
+  state.schedPublished = false;
+  state.schedEvents = SCHED_PUBLISHED.map((e, i) => ({ ...e, id: `D-${String(i + 1).padStart(2, "0")}`, flags: [] }));
+  state.schedRev += 1;
+  state.schedFull = null;
+  state.schedDirty = false;
+  render();
+}
+
+document.getElementById("edSave").addEventListener("click", saveEditor);
+document.getElementById("edDelete").addEventListener("click", deleteEditor);
+document.getElementById("edCancel").addEventListener("click", () => { state.schedEdit = null; edDlg.close(); });
 
 document.addEventListener("keydown", (e) => {
   const el = document.activeElement;
