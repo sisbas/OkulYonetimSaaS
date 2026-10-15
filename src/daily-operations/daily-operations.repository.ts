@@ -10,6 +10,7 @@ import {
 import { LeaveApprovalImpactPort } from '../leaves/leave-approval-impact.port';
 import { LeaveImpactRangeTooLargeException } from '../leaves/leave-errors';
 import { LeaveCoverageStatus, LeaveDecisionStatus } from '../leaves/leave-request.entity';
+import { PublishedOccurrenceLimitExceededError, PublishedScheduleEventDescriptor, expandPublishedOccurrences } from './published-occurrence-expansion';
 import {
   CANDIDATE_AVAILABLE_LABEL,
   CANDIDATE_DECISION_SUPPORT_DETAIL,
@@ -37,11 +38,11 @@ import {
 import {
   CandidateResponse,
   DailyOperationsQueueResponse,
+  DEFAULT_TENANT_TIME_ZONE,
   EventOccurrence,
   LeaveImpactEvent,
   LeaveImpactResponse,
   computeCoverageStatus,
-  eventOccurrencesForRange,
   leaveEtag,
   projectionKey,
 } from './leave-impact.types';
@@ -58,28 +59,11 @@ type LeaveRow = {
   version: number;
 };
 
-type PublishedScheduleEventRow = {
-  scheduleEventId: string;
-  scheduleId: string;
-  scheduleVersionId: string;
-  teacherId: string;
-  teacherBranchId: string;
-  studentGroupId: string;
-  courseId: string;
-  roomId: string;
-  timeSlotId: string;
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
-  effectiveFrom: string;
-  effectiveTo: string | null;
-  /** R1 (#263): onay yanıtı için okunabilir ad çözümlemesi (ham UUID değil). */
-  courseLabel: string | null;
-  groupLabel: string | null;
-  roomLabel: string | null;
-};
+type PublishedScheduleEventRow = PublishedScheduleEventDescriptor;
 
 type ImpactedScheduleEventRow = PublishedScheduleEventRow & EventOccurrence;
+
+/** R1 (#263): labels on publishing description and schedule traversal stay in the seam descriptor. */
 
 type AssignmentRow = {
   id: string;
@@ -343,8 +327,9 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     leave: LeaveApprovalImpactRequest,
   ): Promise<LeaveApprovalImpactResult> {
     assertTenantScope(ctx, 'daily_operations_leave_impact');
+    const timeZone = await this.loadTenantTimeZone(manager, leave.tenantId);
     const published = await this.loadPublishedEvents(manager, leave);
-    const events = this.expandOccurrences(published, leave);
+    const events = this.expandOccurrences(published, leave, timeZone);
     const coverage = computeCoverageStatus(events.length, 0);
     await this.project(manager, leave, events, []);
     const teacherLabel = await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId);
@@ -542,31 +527,40 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
   private expandOccurrences(
     rows: PublishedScheduleEventRow[],
     leave: LeaveRow,
+    timeZone: string = DEFAULT_TENANT_TIME_ZONE,
   ): ImpactedScheduleEventRow[] {
-    const impacted: ImpactedScheduleEventRow[] = [];
-    for (const row of rows) {
-      for (const occurrence of eventOccurrencesForRange({
+    try {
+      const expanded = expandPublishedOccurrences({
         leaveStartsAt: leave.startsAt,
         leaveEndsAt: leave.endsAt,
-        effectiveFrom: row.effectiveFrom,
-        effectiveTo: row.effectiveTo,
-        dayOfWeek: Number(row.dayOfWeek),
-        startTime: row.startTime,
-        endTime: row.endTime,
-      })) {
-        // #263 review P1: sınırsız genişleme YASAK. Sessiz kırpma yerine açık
-        // hata: aksi hâlde event loop bloke olur ve transaction gereksiz büyür.
-        if (impacted.length >= MAX_APPROVAL_OCCURRENCES) {
-          throw new LeaveImpactRangeTooLargeException(MAX_APPROVAL_OCCURRENCES);
-        }
-        impacted.push({ ...row, dayOfWeek: Number(row.dayOfWeek), ...occurrence });
+        timeZone,
+        maximumOccurrences: MAX_APPROVAL_OCCURRENCES,
+        publishedEvents: rows.map((row) => ({
+          ...row,
+          dayOfWeek: Number(row.dayOfWeek),
+        })),
+      });
+      return expanded.map((occurrence) => occurrence);
+    } catch (error) {
+      if (error instanceof PublishedOccurrenceLimitExceededError) {
+        throw new LeaveImpactRangeTooLargeException(error.maximumOccurrences);
       }
+      throw error;
     }
-    return impacted;
   }
 
+
   private async loadImpactedEvents(manager: EntityManager, leave: LeaveRow): Promise<ImpactedScheduleEventRow[]> {
-    return this.expandOccurrences(await this.loadPublishedEvents(manager, leave), leave);
+    const timeZone = await this.loadTenantTimeZone(manager, leave.tenantId);
+    return this.expandOccurrences(await this.loadPublishedEvents(manager, leave), leave, timeZone);
+  }
+
+  private async loadTenantTimeZone(manager: EntityManager, tenantId: string): Promise<string> {
+    const rows: Array<{ timezone: string | null }> = await manager.query(
+      `SELECT timezone FROM tenants WHERE id = $1`,
+      [tenantId],
+    );
+    return rows[0]?.timezone ?? DEFAULT_TENANT_TIME_ZONE;
   }
 
   private async loadAssignments(manager: EntityManager, leave: LeaveRow): Promise<AssignmentRow[]> {
