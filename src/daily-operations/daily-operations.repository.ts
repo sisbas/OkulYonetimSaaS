@@ -46,6 +46,9 @@ import {
   leaveEtag,
   projectionKey,
 } from './leave-impact.types';
+import {
+  dateStringInTimeZone,
+} from './leave-impact.types';
 
 type LeaveRow = {
   id: string;
@@ -328,7 +331,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
   ): Promise<LeaveApprovalImpactResult> {
     assertTenantScope(ctx, 'daily_operations_leave_impact');
     const timeZone = await this.loadTenantTimeZone(manager, leave.tenantId);
-    const published = await this.loadPublishedEvents(manager, leave);
+    const published = await this.loadPublishedEvents(manager, leave, timeZone);
     const events = this.expandOccurrences(published, leave, timeZone);
     const coverage = computeCoverageStatus(events.length, 0);
     await this.project(manager, leave, events, []);
@@ -484,7 +487,13 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     return rows[0] ?? null;
   }
 
-  private async loadPublishedEvents(manager: EntityManager, leave: LeaveRow): Promise<PublishedScheduleEventRow[]> {
+  private async loadPublishedEvents(
+    manager: EntityManager,
+    leave: LeaveRow,
+    timeZone: string,
+  ): Promise<PublishedScheduleEventRow[]> {
+    const leaveStartDate = dateStringInTimeZone(leave.startsAt, timeZone);
+    const leaveEndDate = dateStringInTimeZone(leave.endsAt, timeZone);
     return manager.query(
       `SELECT event.id AS "scheduleEventId", event.schedule_id AS "scheduleId",
               event.version_id AS "scheduleVersionId", event.teacher_id AS "teacherId",
@@ -520,7 +529,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
          AND event.teacher_id = $3
          AND schedule.effective_from <= $5::date
          AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= $4::date`,
-      [leave.tenantId, leave.branchId, leave.teacherId, leave.startsAt, leave.endsAt],
+      [leave.tenantId, leave.branchId, leave.teacherId, leaveStartDate, leaveEndDate],
     );
   }
 
@@ -552,7 +561,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
 
   private async loadImpactedEvents(manager: EntityManager, leave: LeaveRow): Promise<ImpactedScheduleEventRow[]> {
     const timeZone = await this.loadTenantTimeZone(manager, leave.tenantId);
-    return this.expandOccurrences(await this.loadPublishedEvents(manager, leave), leave, timeZone);
+    return this.expandOccurrences(await this.loadPublishedEvents(manager, leave, timeZone), leave, timeZone);
   }
 
   private async loadTenantTimeZone(manager: EntityManager, tenantId: string): Promise<string> {
