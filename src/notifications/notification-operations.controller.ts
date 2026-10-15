@@ -13,7 +13,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
-import { RequestWithContext } from '../common/context/request-context';
+import { RequestContext, RequestWithContext } from '../common/context/request-context';
 import { NotificationDispatchService } from './notification-dispatch.service';
 import { NotificationOutboxStatus } from './notification-outbox.entity';
 
@@ -72,6 +72,11 @@ export class NotificationOperationsController {
   /**
    * Bildirim detayı — sunucu hesaplı `availableActions` + `version`.
    * Receipt'ler yalnız `parent_notification:failure:read` yetkisinde döner.
+   *
+   * Receipt görünürlüğü route kapısı DEĞİLDİR: rota `notification:draft:read`
+   * ile açılır, receipt'ler ise yanıt alanı bazında koşullu eklenir. Bu yüzden
+   * karar guard'ın kullandığı TEK sunucu-çözülmüş kaynaktan (`context.permissions`)
+   * verilir; JWT beyanı hiçbir durumda yetki kaynağı değildir (#462).
    */
   @Get(':id')
   @Permissions('notification:draft:read')
@@ -81,7 +86,7 @@ export class NotificationOperationsController {
   ) {
     const ctx = req.context;
     if (!ctx) throw new ForbiddenException('Request context required');
-    const includeReceipts = this.hasPermission(req, 'parent_notification:failure:read');
+    const includeReceipts = hasPermission(ctx, 'parent_notification:failure:read');
     return this.dispatchService.detail(ctx, id, includeReceipts);
   }
 
@@ -129,12 +134,22 @@ export class NotificationOperationsController {
     if (!ctx) throw new ForbiddenException('Request context required');
     return this.dispatchService.cancel(ctx, id);
   }
+}
 
-  /** Sunucu çözülmüş yetki — istemci beyanı asla kaynak değildir. */
-  private hasPermission(req: RequestWithContext, code: string): boolean {
-    const fromContext =
-      req.context?.authorization?.permissions ?? req.context?.permissions ?? [];
-    const fromUser = req.user?.permissions ?? [];
-    return fromContext.includes(code) || fromUser.includes(code);
-  }
+/**
+ * Koşullu alan görünürlüğü için sunucu-çözülmüş yetki kaynağı (#462).
+ *
+ * `PermissionGuard` route kapısını `request.context.permissions` üzerinden
+ * karar verir; burada **aynı alan** okunur. Tek kaynak burada bitiyor.
+ *
+ * `req.user.permissions` BİLEREK KULLANILMAZ: bu alan JWT gövdesindeki beyandır
+ * ve oturum boyunca yeniden çözülmez. Argümanın tamamı:
+ * `docs/notifications/dispatch-receipt-visibility.md`.
+ *
+ * `@Permissions(...)` guard'ı tüm route'lar için gerekli izni zorunlu kılar;
+ * koşullu alan ekleme ifadesi bu yüzden route seviyesinde temsil edilemez.
+ */
+function hasPermission(context: RequestContext, code: string): boolean {
+  const permissions = context.permissions ?? [];
+  return permissions.includes(code);
 }
