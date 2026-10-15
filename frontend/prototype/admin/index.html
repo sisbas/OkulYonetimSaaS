@@ -3,288 +3,547 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PROTOTYPE — Admin Gerçek Akış</title>
+<title>PROTOTYPE — Yönetici Arayüzü (throwaway)</title>
 <style>
   :root {
-    --bg: #f6f7f9;
+    --bg: #f5f6f8;
     --panel: #ffffff;
-    --ink: #182026;
-    --muted: #6b7280;
-    --line: #e5e7eb;
+    --ink: #171c20;
+    --muted: #667085;
+    --line: #e4e7ec;
     --brand: #0f766e;
-    --brand-ink: #ffffff;
+    --brand-soft: #ecfdf5;
     --warn: #b45309;
-    --danger: #b91c1c;
-    --ok: #15803d;
-    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .06);
+    --warn-soft: #fffbeb;
+    --danger: #b42318;
+    --danger-soft: #fef3f2;
+    --ok: #027a48;
+    --ok-soft: #ecfdf3;
+    --radius: 12px;
   }
   * { box-sizing: border-box; }
+  html, body { margin: 0; }
   body {
-    margin: 0;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background: var(--bg);
-    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.45;
   }
-  .prototype-banner {
-    background: #111827;
-    color: #f9fafb;
-    font-size: 12px;
-    letter-spacing: .04em;
-    padding: 8px 16px;
-    text-transform: uppercase;
+  .proto-banner {
+    background: #101828; color: #f9fafb; padding: 7px 16px;
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
   }
-  .prototype-banner strong { color: #fbbf24; }
-  header.context {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    padding: 16px 24px;
-    background: var(--panel);
-    border-bottom: 1px solid var(--line);
-    position: sticky;
-    top: 0;
-    z-index: 5;
+  .proto-banner b { color: #fdb022; }
+
+  header.topbar {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 20;
   }
-  .context .tenant { font-size: 13px; color: var(--muted); }
-  .context .branch { font-weight: 700; }
-  .context .right { display: flex; align-items: center; gap: 12px; }
-  .avatar {
-    width: 36px; height: 36px; border-radius: 50%;
-    background: var(--brand); color: var(--brand-ink);
-    display: grid; place-items: center; font-weight: 700;
+  .brand { font-weight: 700; margin-right: 4px; }
+  .tenantline { font-size: 12px; color: var(--muted); }
+
+  .branch-switch {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line); background: var(--panel);
+    border-radius: 999px; padding: 5px 6px 5px 12px; font: inherit;
   }
-  .layout { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 120px); }
-  .sidebar { border-right: 1px solid var(--line); background: var(--panel); padding: 16px; }
-  .sidebar .brand { font-weight: 800; margin-bottom: 16px; }
-  .nav { display: grid; gap: 6px; }
-  .nav button {
-    text-align: left; border: 0; background: transparent; padding: 10px 12px;
-    border-radius: 10px; font: inherit; cursor: pointer; color: var(--ink);
-  }
-  .nav button.active { background: #ecfdf5; color: var(--brand); font-weight: 700; }
-  main { padding: 24px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 20px; }
-  .grid { display: grid; gap: 16px; }
-  .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
-  .panel h2 { font-size: 15px; margin: 0 0 12px; }
-  .metric { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px dashed var(--line); }
-  .metric:last-child { border-bottom: 0; }
-  .metric strong { font-size: 18px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); }
-  .badge.ok { color: var(--ok); border-color: #bbf7d0; background: #f0fdf4; }
-  .badge.warn { color: var(--warn); border-color: #fde68a; background: #fffbeb; }
-  .badge.danger { color: var(--danger); border-color: #fecaca; background: #fef2f2; }
-  .badge.info { color: var(--brand); border-color: #99f6e4; background: #f0fdfa; }
-  .list { display: grid; gap: 10px; }
-  .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .branch-switch .lbl { font-size: 12px; color: var(--muted); }
+  .branch-switch select { font: inherit; border: 0; background: transparent; font-weight: 600; padding: 2px 4px; }
+  .branch-switch[hidden] { display: none; }
+
+  .spacer { flex: 1; }
+  .who { text-align: right; font-size: 12px; color: var(--muted); }
+  .who b { display: block; font-size: 13px; color: var(--ink); }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+
+  .menu-wrap { position: relative; }
+  .menu-btn { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 7px 14px; font: inherit; cursor: pointer; }
+  .menu { position: absolute; right: 0; top: calc(100% + 6px); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 12px 32px rgba(16,24,40,.14); min-width: 240px; padding: 6px; display: none; z-index: 30; }
+  .menu.open { display: block; }
+  .menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 9px 10px; border-radius: 8px; font: inherit; cursor: pointer; }
+  .menu button:hover { background: var(--bg); }
+  .menu button[aria-disabled="true"] { color: var(--muted); cursor: not-allowed; }
+  .menu .hint { font-size: 11px; color: var(--muted); padding: 8px 10px 4px; border-top: 1px solid var(--line); margin-top: 4px; }
+
+  nav.mainnav { display: flex; gap: 6px; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 55px; z-index: 19; overflow-x: auto; }
+  nav.mainnav button { border: 0; background: transparent; padding: 8px 12px; border-radius: 999px; font: inherit; cursor: pointer; white-space: nowrap; }
+  nav.mainnav button[aria-current="page"] { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+
+  main { padding: 20px; max-width: 1180px; margin: 0 auto 110px; }
+  h1 { font-size: 21px; margin: 4px 0 2px; }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .panel h2 { font-size: 14px; margin: 0 0 12px; }
+  .grid { display: grid; gap: 14px; }
+  .grid.top { align-items: start; }
+  .g2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .g3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+
+  .banner { border-radius: var(--radius); padding: 11px 14px; font-size: 13px; margin-bottom: 14px; border: 1px solid; }
+  .banner.warn { background: var(--warn-soft); border-color: #fde68a; color: var(--warn); }
+  .banner.danger { background: var(--danger-soft); border-color: #fecdca; color: var(--danger); }
+  .banner.info { background: #eff8ff; border-color: #b2ddff; color: #175cd3; }
+  .banner.neutral { background: var(--bg); border-color: var(--line); color: var(--muted); }
+
+  .empty { border: 1px dashed var(--line); border-radius: var(--radius); padding: 22px 16px; text-align: center; background: var(--bg); }
+  .empty strong { display: block; font-size: 14px; margin-bottom: 3px; }
+  .empty span { font-size: 13px; color: var(--muted); }
+
+  .row { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
   .row:last-child { border-bottom: 0; }
-  .row .meta { color: var(--muted); font-size: 13px; }
-  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; }
-  .btn.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
-  .btn.danger { color: var(--danger); border-color: #fecaca; }
-  .calendar { display: grid; grid-template-columns: 80px repeat(5, minmax(0, 1fr)); gap: 8px; }
-  .calendar .head { font-weight: 700; font-size: 13px; color: var(--muted); }
-  .calendar .time { font-size: 12px; color: var(--muted); }
-  .event { border: 1px solid var(--line); border-radius: 10px; padding: 8px; font-size: 12px; background: #f0fdfa; }
-  .event strong { display: block; }
-  .event span { color: var(--muted); }
-  .setup-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .setup-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #fff; }
-  .setup-card strong { display: block; font-size: 18px; }
-  .checklist { display: grid; gap: 10px; }
-  .check { display: flex; gap: 10px; align-items: flex-start; }
-  .check input { margin-top: 3px; }
-  .state-panel { margin-top: 24px; font-size: 12px; color: var(--muted); }
+  .row .t { font-size: 13px; }
+  .row .m { font-size: 12px; color: var(--muted); }
+
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+  .b-ok { color: var(--ok); border-color: #a6f4c5; background: var(--ok-soft); }
+  .b-warn { color: var(--warn); border-color: #fde68a; background: var(--warn-soft); }
+  .b-danger { color: var(--danger); border-color: #fecdca; background: var(--danger-soft); }
+  .b-info { color: var(--brand); border-color: #99f6e4; background: #f0fdfa; }
+
+  .cal { display: grid; grid-template-columns: 74px repeat(5, minmax(0,1fr)); gap: 6px; }
+  .cal .h { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .cal .t { font-size: 12px; color: var(--muted); padding-top: 10px; }
+  .cal .cell { min-height: 46px; border: 1px solid var(--line); border-radius: 8px; padding: 5px; background: var(--panel); }
+  .ev { border-radius: 6px; background: var(--brand-soft); border: 1px solid #99f6e4; padding: 5px 6px; font-size: 11px; cursor: pointer; }
+  .ev b { display: block; }
+  .ev.alert { background: var(--danger-soft); border-color: #fecdca; }
+
+  .metric { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .metric:last-child { border-bottom: 0; }
+  .metric b { font-size: 16px; }
+
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+  .goal { border: 1px solid var(--line); border-radius: 10px; padding: 11px; }
+  .goal + .goal { margin-top: 9px; }
+  .goal .top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+  .bar { height: 7px; background: var(--line); border-radius: 999px; margin-top: 8px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--brand); }
+  .goal .sub { font-size: 11px; color: var(--muted); margin-top: 5px; }
+
   .switcher {
-    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-    display: flex; align-items: center; gap: 10px;
-    background: #111827; color: #fff; border-radius: 999px; padding: 8px 12px;
-    box-shadow: 0 10px 30px rgba(0,0,0,.25); z-index: 20;
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px; background: #101828; color: #fff;
+    border-radius: 999px; padding: 7px 10px; box-shadow: 0 10px 30px rgba(16,24,40,.28); z-index: 40;
+    font-size: 12px;
   }
-  .switcher button { border: 0; background: #1f2937; color: #fff; border-radius: 999px; width: 32px; height: 32px; cursor: pointer; }
-  .switcher .label { min-width: 190px; text-align: center; font-size: 13px; }
-  .switcher .label strong { color: #fbbf24; }
-  .hidden { display: none !important; }
-  @media (max-width: 900px) {
-    .layout { grid-template-columns: 1fr; }
-    .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
-    .grid.two, .grid.three, .setup-grid { grid-template-columns: 1fr; }
-    .calendar { grid-template-columns: 60px repeat(5, minmax(120px, 1fr)); overflow-x: auto; }
+  .switcher button { border: 0; background: #1d2939; color: #fff; width: 30px; height: 30px; border-radius: 999px; cursor: pointer; }
+  .switcher .l { min-width: 260px; text-align: center; }
+  .switcher .l b { color: #fdb022; }
+  .switcher select { background: #1d2939; color: #fff; border: 0; border-radius: 6px; font: inherit; font-size: 12px; padding: 4px; }
+
+  dialog::backdrop { background: rgba(16,24,40,.45); }
+  dialog { border: 0; border-radius: var(--radius); padding: 0; max-width: 460px; width: calc(100% - 32px); }
+  dialog .dlg-body { padding: 18px; }
+  dialog h3 { margin: 0 0 8px; font-size: 16px; }
+  dialog p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  dialog .dlg-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--bg); border-radius: 0 0 var(--radius) var(--radius); }
+
+  @media (max-width: 860px) {
+    .g2, .g3 { grid-template-columns: 1fr; }
+    .cal { grid-template-columns: 58px repeat(5, minmax(110px, 1fr)); overflow-x: auto; }
+    .switcher .l { min-width: 150px; }
   }
 </style>
 </head>
 <body>
-  <div class="prototype-banner"><strong>PROTOTYPE</strong> · throwaway · gerçek veri yok · demo/full-vision değil</div>
-  <header class="context">
-    <div>
-      <div class="tenant">ÖRNEK EĞİTİM KURUMU · SENTETİK VERİ</div>
-      <div class="branch">Merkez Şube</div>
-    </div>
-    <div class="right">
-      <div>
-        <div class="branch">Kurum Yöneticisi</div>
-        <div class="tenant">15 Ekim 2026, Çarşamba</div>
-      </div>
-      <div class="avatar" aria-hidden="true">OY</div>
-    </div>
-  </header>
-  <div id="app"></div>
-  <div id="switcher" class="switcher hidden" aria-label="Prototip varyantı">
-    <button id="prev" aria-label="Önceki varyant">←</button>
-    <div class="label" id="label"></div>
-    <button id="next" aria-label="Sonraki varyant">→</button>
+
+<div class="proto-banner"><b>PROTOTYPE</b> · throwaway · sentetik veri · kalıcılık yok · gerçek kayıt veya gönderim yapılmaz</div>
+
+<header class="topbar">
+  <div>
+    <div class="tenantline">ÖRNEK EĞİTİM KURUMU</div>
+    <div class="brand">Okul Yönetim</div>
   </div>
-  <script>
-    const state = {
-      tenant: "Örnek Eğitim Kurumu",
-      branch: "Merkez Şube",
-      role: "Kurum Yöneticisi",
-      variant: new URLSearchParams(location.search).get("variant") || "A",
-      screen: "today"
-    };
-    const lessons = [
-      { time: "08:30–09:10", group: "9-A", course: "Matematik", teacher: "Elif Demir", room: "101", status: "completed" },
-      { time: "09:20–10:00", group: "10-B", course: "Fizik", teacher: "Ahmet Yılmaz", room: "201", status: "attendance_pending" },
-      { time: "10:10–10:50", group: "11-A", course: "Tarih", teacher: "Zeynep Kaya", room: "301", status: "needs_teacher" },
-      { time: "11:00–11:40", group: "9-B", course: "İngilizce", teacher: "Murat Çelik", room: "102", status: "attendance_pending" },
-      { time: "13:00–13:40", group: "12-A", course: "Biyoloji", teacher: "Elif Demir", room: "Lab-1", status: "completed" },
-      { time: "13:50–14:30", group: "10-A", course: "Kimya", teacher: "—", room: "Lab-2", status: "needs_teacher" }
-    ];
-    const leaves = [
-      { teacher: "Ahmet Yılmaz", date: "15–17 Ekim", type: "Üç günlük", lessons: 3, status: "pending" },
-      { teacher: "Zeynep Kaya", date: "16 Ekim", type: "Tam gün", lessons: 2, status: "pending" },
-      { teacher: "Murat Çelik", date: "10 Ekim", type: "Saatlik", lessons: 1, status: "approved" }
-    ];
-    const attendance = [
-      { course: "Fizik", group: "10-B", teacher: "Ahmet Yılmaz", time: "09:20", status: "Yoklama bekliyor" },
-      { course: "İngilizce", group: "9-B", teacher: "Murat Çelik", time: "11:00", status: "Yoklama bekliyor" }
-    ];
-    const notices = [
-      { student: "—", course: "Matematik", status: "Taslak", consent: true },
-      { student: "—", course: "Fizik", status: "Bekliyor", consent: false }
-    ];
-    const setup = [
-      { key: "Şube", value: 3 },
-      { key: "Derslik", value: 8 },
-      { key: "Öğretmen", value: 12 },
-      { key: "Ders", value: 15 },
-      { key: "Sınıf / Şube", value: 6 },
-      { key: "Zaman dilimi", value: 8 }
-    ];
-    const screens = [
-      ["today", "Bugün"],
-      ["setup", "Kurulum"],
-      ["schedule", "Program"],
-      ["operations", "Operasyon"]
-    ];
-    const variants = {
-      A: "A · İş akışı öncelikli",
-      B: "B · Takvim öncelikli",
-      C: "C · Kurulum öncelikli"
-    };
-    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-    const badge = (s) => {
-      const map = { completed: "ok", attendance_pending: "warn", needs_teacher: "danger", pending: "warn", approved: "ok", Taslak: "info", Bekliyor: "warn" };
-      return `<span class="badge ${map[s] || ""}">${esc(s)}</span>`;
-    };
-    function nav(active) {
-      return `<nav class="nav" aria-label="Admin ekranları">${screens.map(([k, l]) => `<button data-screen="${k}" class="${state.screen === k ? "active" : ""}">${l}</button>`).join("")}</nav>`;
+  <div class="branch-switch" id="branchSwitch" hidden>
+    <span class="lbl">Şube</span>
+    <select id="branchSelect" aria-label="Aktif şube"></select>
+  </div>
+  <div class="spacer"></div>
+  <div class="who"><b id="whoName">Ayşe Yılmaz</b><span id="whoRole">Kurum Yöneticisi</span></div>
+  <div class="avatar" id="avatar" aria-hidden="true">AY</div>
+  <div class="menu-wrap">
+    <button class="menu-btn" id="menuBtn" aria-haspopup="true" aria-expanded="false">Ayarlar</button>
+    <div class="menu" id="menu">
+      <button id="goGoals">Stratejik Hedefler</button>
+      <button id="toggleRole">Rolü değiştir (Öğretmen görünümü)</button>
+      <div class="hint" id="goalsHint">Stratejik Hedefler varsayılan olarak kapalıdır.</div>
+    </div>
+  </div>
+</header>
+
+<nav class="mainnav" id="mainnav" aria-label="Ana gezinme"></nav>
+
+<main id="main" tabindex="-1"></main>
+
+<div class="switcher hidden" id="switcher">
+  <button id="prev" aria-label="Önceki varyant">←</button>
+  <div class="l" id="switchLabel"></div>
+  <select id="stateSelect" aria-label="Durum"></select>
+  <button id="next" aria-label="Sonraki varyant">→</button>
+</div>
+
+<dialog id="scopeDlg">
+  <div class="dlg-body">
+    <h3>Açık kayıt bu şubede görünmez</h3>
+    <p>Aktif kayıt <b id="scopeRec"></b> seçili şubeye ait değil. Şube değiştirildiğinde açık kayıt, filtreler ve seçimler sıfırlanır.</p>
+  </div>
+  <div class="dlg-foot"><button class="btn primary" id="scopeOk">Anladım</button></div>
+</dialog>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const VARIANTS = {
+  A: "Takvim öncelikli",
+  B: "Program öncelikli",
+  C: "Operasyon öncelikli",
+};
+const STATES = {
+  empty: "Boş durumlar (ilk gün)",
+  normal: "Dolu durumlar",
+  forbidden: "Yasak (non-enumerating)",
+  stale: "Bayat sürüm (412)",
+  offline: "Çevrimdışı",
+};
+
+const state = {
+  variant: VARIANTS[qs.get("variant")] ? qs.get("variant") : "A",
+  view: STATES[qs.get("state")] ? qs.get("state") : "empty",
+  screen: "today",
+  role: "admin",
+  branchId: "merkez",
+  goalUnlocked: false,
+  filter: "all",
+  openRecord: null,
+};
+
+const branches = [
+  { id: "merkez", name: "Merkez Şube" },
+  { id: "kuzey", name: "Kuzey Şube" },
+];
+
+const lessons = [
+  { day: 0, time: "08:30", course: "Matematik",  group: "9-A",   teacher: "Elif Demir",   room: "101",  state: "ok" },
+  { day: 1, time: "09:20", course: "Fizik",      group: "10-B",  teacher: "Ahmet Yılmaz", room: "201",  state: "pending" },
+  { day: 2, time: "10:10", course: "Tarih",      group: "11-A",  teacher: "Zeynep Kaya",  room: "301",  state: "teachermissing" },
+  { day: 3, time: "11:00", course: "İngilizce",  group: "9-B",   teacher: "Murat Çelik",  room: "102",  state: "pending" },
+  { day: 4, time: "13:00", course: "Biyoloji",   group: "12-A",  teacher: "Elif Demir",   room: "Lab-1", state: "ok" },
+  { day: 0, time: "13:50", course: "Kimya",      group: "10-A",  teacher: "—",            room: "Lab-2", state: "teachermissing" },
+];
+
+const leaves = [
+  { id: "L-118", teacher: "Ahmet Yılmaz", period: "15–17 Ekim", kind: "Üç günlük", impact: 3, status: "pending" },
+  { id: "L-119", teacher: "Zeynep Kaya",   period: "16 Ekim",    kind: "Tam gün",   impact: 2, status: "pending" },
+  { id: "L-112", teacher: "Murat Çelik",   period: "10 Ekim",    kind: "Saatlik",   impact: 1, status: "approved" },
+];
+
+const absences = { absent: 6, late: 3, unmarked: 2, sessions: 5 };
+
+const notifications = [
+  { id: "N-31", course: "Fizik",      group: "10-B", consent: true,  state: "Onay bekliyor" },
+  { id: "N-32", course: "İngilizce",  group: "9-B",  consent: false, state: "İletişim izni eksik" },
+];
+
+const goals = [
+  { metric: "Devamlılık oranı",              target: 92,   current: 89,   unit: "%" },
+  { metric: "Üniversiteye yerleşen öğrenci", target: 120,  current: 74,   unit: "öğrenci" },
+  { metric: "400+ puanla yerleşen öğrenci",  target: 45,   current: 21,   unit: "öğrenci" },
+];
+
+const DAYS = ["Pzt", "Sal", "Çar", "Per", "Cum"];
+
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const isAdmin = () => state.role === "admin";
+const activeBranch = () => branches.find((b) => b.id === state.branchId);
+
+function has(kind) { return state.view === "normal" && kind !== "empty"; }
+function emptyBox(title, note) {
+  return `<div class="empty"><strong>${esc(title)}</strong><span>${esc(note)}</span></div>`;
+}
+
+function dayCalendar() {
+  if (state.view === "empty") return emptyBox("Henüz yayınlanmış program yok", "Bugün için ders kaydı bulunmuyor.");
+  if (state.view === "forbidden") return emptyBox("Bu ekran görüntülenemiyor", "Yetkili olduğunuz ekranlardan devam edin.");
+  if (state.view === "offline") return emptyBox("Sunucuya ulaşılamıyor", "Bağlantı gelince veriler yenilenir.");
+  const slots = ["08:30", "09:20", "10:10", "11:00", "13:00", "13:50"];
+  let html = `<div class="cal"><div class="h">Saat</div>${DAYS.map((d) => `<div class="h">${d}</div>`).join("")}`;
+  for (const slot of slots) {
+    html += `<div class="t">${slot}</div>`;
+    for (let d = 0; d < 5; d++) {
+      const l = lessons.find((x) => x.day === d && x.time === slot);
+      html += `<div class="cell">${l ? lessonCard(l) : ""}</div>`;
     }
-    function todayContent() {
-      const open = lessons.filter((l) => l.status !== "completed").length;
-      return `<div class="grid two">
-        <section class="panel">
-          <h2>Bugünün ritmi</h2>
-          <div class="metric"><span>Ders</span><strong>${lessons.length}</strong></div>
-          <div class="metric"><span>Açık iş</span><strong>${open}</strong></div>
-          <div class="metric"><span>Onay bekleyen izin</span><strong>${leaves.filter((l) => l.status === "pending").length}</strong></div>
-          <div class="metric"><span>Eksik yoklama</span><strong>${attendance.length}</strong></div>
-        </section>
-        <section class="panel">
-          <h2>Sıradaki adım</h2>
-          <div class="list">
-            <div class="row"><div><strong>İzin taleplerini incele</strong><div class="meta">2 talep · ders etkisiyle birlikte</div></div><button class="btn primary" data-goto="operations">Aç</button></div>
-            <div class="row"><div><strong>Yoklamaları tamamla</strong><div class="meta">2 oturum bekliyor</div></div><button class="btn" data-goto="operations">Aç</button></div>
-            <div class="row"><div><strong>Programı doğrula ve yayınla</strong><div class="meta">Taslak hazır · çakışma yok</div></div><button class="btn" data-goto="schedule">Aç</button></div>
-          </div>
-        </section>
-      </div>`;
-    }
-    function setupContent() {
-      return `<div class="setup-grid">${setup.map((s) => `<div class="setup-card"><strong>${s.value}</strong><span>${s.key}</span></div>`).join("")}</div>
-      <p class="state-panel">Kurulum ekranı: şube, derslik, öğretmen, ders, sınıf ve zaman dilimi kayıtları. Backend'de bu kaynakların çalışma zamanı denetleyicisi henüz yok; bu prototip yalnız akışı gösterir.</p>`;
-    }
-    function scheduleContent() {
-      const days = ["Pzt", "Sal", "Çar", "Per", "Cum"];
-      return `<div class="calendar"><div class="head">Saat</div>${days.map((d) => `<div class="head">${d}</div>`).join("")}${lessons.map((l) => `<div class="time">${esc(l.time.split("–")[0])}</div>${days.map((_, i) => `<div>${i === 2 ? `<div class="event"><strong>${esc(l.course)}</strong><span>${esc(l.group)}</span><span>${esc(l.teacher)}</span></div>` : ""}</div>`).join("")}`).join("")}</div>
-      <div class="panel" style="margin-top:16px"><h2>Yayınlama kapısı</h2><div class="row"><div><strong>Taslak program</strong><div class="meta">Doğrulama: FULL · çakışma yok · revizyon güncel</div></div><button class="btn primary">Programı yayınla</button></div></div>`;
-    }
-    function operationsContent() {
-      return `<div class="grid two">
-        <section class="panel"><h2>İzin talepleri</h2><div class="list">${leaves.map((l) => `<div class="row"><div><strong>${esc(l.teacher)}</strong><div class="meta">${esc(l.date)} · ${esc(l.type)} · ${l.lessons} ders etkileniyor</div></div>${badge(l.status)}</div>`).join("")}</div></section>
-        <section class="panel"><h2>Yoklama ve bildirimler</h2><div class="list">${attendance.map((a) => `<div class="row"><div><strong>${esc(a.course)} · ${esc(a.group)}</strong><div class="meta">${esc(a.teacher)} · ${esc(a.time)}</div></div>${badge("warn")}</div>`).join("")}${notices.map((n) => `<div class="row"><div><strong>${esc(n.course)}</strong><div class="meta">${n.consent ? "İletişim izni uygun" : "İzin eksik"}</div></div>${badge(n.status)}</div>`).join("")}</div></section>
-      </div>`;
-    }
-    function screenContent() {
-      if (state.screen === "setup") return setupContent();
-      if (state.screen === "schedule") return scheduleContent();
-      if (state.screen === "operations") return operationsContent();
-      return todayContent();
-    }
-    function variantA() {
-      return `<div class="layout"><aside class="sidebar"><div class="brand">Okul Yönetim</div>${nav()}<p class="state-panel">İş akışı öncelikli: sıradaki adım her zaman önce görünür.</p></aside><main><h1>Bugüne odaklan</h1><p class="sub">Önce karar, sonra kayıt.</p>${screenContent()}</main></div>`;
-    }
-    function variantB() {
-      return `<main style="grid-column: 1 / -1"><h1>Haftalık plan</h1><p class="sub">Takvim öncelikli: ders dağılımı ve yayınlama tek ekranda.</p>${state.screen === "today" || state.screen === "operations" ? scheduleContent() + `<div style="height:16px"></div>` + todayContent() : screenContent()}</main>`;
-    }
-    function variantC() {
-      return `<div class="layout"><aside class="sidebar"><div class="brand">Kurulum sihirbazı</div><div class="checklist">${["Şubeleri oluştur", "Derslikleri ekle", "Öğretmenleri davet et", "Dersleri tanımla", "Sınıfları oluştur", "Programı yayınla"].map((x, i) => `<label class="check"><input type="checkbox" ${i < 2 ? "checked" : ""} /> <span>${x}</span></label>`).join("")}</div>${nav()}</aside><main><h1>Kurulumu tamamla</h1><p class="sub">Gerçek okul akışı: önce kurulum, sonra haftalık plan, sonra günlük operasyon.</p>${screenContent()}</main></div>`;
-    }
-    function render() {
-      const app = document.getElementById("app");
-      if (state.variant === "B") app.innerHTML = variantB();
-      else if (state.variant === "C") app.innerHTML = variantC();
-      else app.innerHTML = variantA();
-      const local = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "::1";
-      const switcher = document.getElementById("switcher");
-      if (local) {
-        switcher.classList.remove("hidden");
-        document.getElementById("label").innerHTML = `<strong>${esc(variants[state.variant])}</strong> · ${esc(state.screen)}`;
-      } else {
-        switcher.classList.add("hidden");
-      }
-    }
-    function setVariant(v) {
-      state.variant = v;
-      const p = new URLSearchParams(location.search);
-      p.set("variant", v);
-      history.replaceState({}, "", `${location.pathname}?${p}`);
-      render();
-    }
-    function cycle(dir) {
-      const keys = Object.keys(variants);
-      const i = keys.indexOf(state.variant);
-      setVariant(keys[(i + dir + keys.length) % keys.length]);
-    }
-    document.addEventListener("click", (e) => {
-      const screen = e.target.closest("[data-screen]");
-      if (screen) { state.screen = screen.dataset.screen; render(); return; }
-      const goto = e.target.closest("[data-goto]");
-      if (goto) { state.screen = goto.dataset.goto; render(); return; }
-      if (e.target.id === "prev") cycle(-1);
-      if (e.target.id === "next") cycle(1);
-    });
-    document.addEventListener("keydown", (e) => {
-      const el = document.activeElement;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
-      if (e.key === "ArrowLeft") cycle(-1);
-      if (e.key === "ArrowRight") cycle(1);
-    });
-    render();
-  </script>
+  }
+  return html + `</div>`;
+}
+
+function lessonCard(l) {
+  const mark = l.state === "teachermissing" ? "İzinli" : l.state === "pending" ? "Yoklama bekliyor" : "Tamamlandı";
+  const cls = l.state === "teachermissing" ? "b-danger" : l.state === "pending" ? "b-warn" : "b-ok";
+  return `<div class="ev${l.state === "teachermissing" ? " alert" : ""}"><b>${esc(l.course)}</b>${esc(l.group)} · ${esc(l.teacher === "—" ? "Görevlendirme bekliyor" : l.teacher)}<br><span class="badge ${cls}">${mark}</span></div>`;
+}
+
+function todayHeader() {
+  const sub = {
+    empty: "Veri yokken ana ekranın nasıl göründüğü.",
+    normal: "15 Ekim 2026, Çarşamba",
+    forbidden: "Bu ekran görüntülenemiyor",
+    stale: "Program güncel değil",
+    offline: "Sunucuya ulaşılamıyor",
+  }[state.view];
+  return `<h1>Bugün</h1><p class="lead">${esc(sub)}</p>`;
+}
+
+function staffStatusPanel() {
+  if (state.view === "empty") return emptyBox("Personel durumu yok", "İzinli personel kaydı bulunmuyor.");
+  if (state.view === "forbidden") return emptyBox("Bu ekran görüntülenemiyor", "Yetkili olduğunuz ekranlardan devam edin.");
+  return `<div class="panel"><h2>Personel durumu</h2>
+    <div class="metric"><span>İzinli personel</span><b>2</b></div>
+    <div class="metric"><span>Görevlendirme bekleyen ders</span><b>2</b></div>
+    <div class="metric"><span>Ders</span><b>${lessons.length}</b></div>
+  </div>`;
+}
+
+function opsSummary() {
+  if (state.view === "empty") {
+    return `<div class="grid g3">
+      <div class="panel"><h2>Yoklama</h2>${emptyBox("Tamamlanmış yoklama kaydı yok", "Yoklama tamamlandıkça burada görünür.")}</div>
+      <div class="panel"><h2>İzin talepleri</h2>${emptyBox("Bekleyen talep yok", "Onay bekleyen izin talebi bulunmuyor.")}</div>
+      <div class="panel"><h2>Bildirimler</h2>${emptyBox("Onay bekleyen bildirim yok", "Veli bildirimi için bekleyen onay bulunmuyor.")}</div>
+    </div>`;
+  }
+  if (state.view === "forbidden") return `<div class="panel">${emptyBox("Bu ekran görüntülenemiyor", "Yetkili olduğunuz ekranlardan devam edin.")}</div>`;
+  if (state.view === "offline") return `<div class="panel">${emptyBox("Sunucuya ulaşılamıyor", "Veriler bağlantı gelince yenilenir.")}</div>`;
+  return `<div class="grid g3">
+    <div class="panel"><h2>Yoklama</h2>
+      <div class="metric"><span>Bekleyen oturum</span><b>2</b></div>
+      <div class="metric"><span>İşaretlenmemiş</span><b>${absences.unmarked}</b></div>
+      <div class="btn-row" style="margin-top:12px"><button class="btn primary" ${state.view === "stale" ? "disabled" : ""}>Yoklama al</button></div>
+    </div>
+    <div class="panel"><h2>İzin talepleri</h2>
+      ${leaves.filter((l) => l.status === "pending").map((l) => `<div class="row"><div class="t"><b>${esc(l.teacher)}</b><div class="m">${esc(l.period)} · ${l.impact} ders etkileniyor</div></div><button class="btn" data-record="${esc(l.id)}" data-name="${esc(l.teacher)} izin talebi">İncele</button></div>`).join("")}
+    </div>
+    <div class="panel"><h2>Bildirimler</h2>
+      ${notifications.map((n) => `<div class="row"><div class="t"><b>${esc(n.course)} · ${esc(n.group)}</b><div class="m">${esc(n.consent ? "İletişim izni uygun" : "İletişim izni eksik")}</div></div><span class="badge ${n.consent ? "b-warn" : "b-danger"}">${esc(n.state)}</span></div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function goalsCard() {
+  if (state.view === "empty") return `<div class="panel"><h2>Stratejik hedefler</h2>${emptyBox("Bu yıl için hedef tanımlanmamış", "Devamlılık, yerleştirme ve benzeri hedefler burada izlenir.")}</div>`;
+  if (state.view === "forbidden" || state.view === "offline") return `<div class="panel">${emptyBox(state.view === "offline" ? "Sunucuya ulaşılamıyor" : "Bu ekran görüntülenemiyor", "Yetkili olduğunuz ekranlardan devam edin.")}</div>`;
+  const canWrite = isAdmin();
+  return `<div class="panel"><h2>Stratejik hedefler · 2026–2027</h2>
+    ${goals.map((g) => {
+      const pct = Math.min(100, Math.round((g.current / g.target) * 100));
+      return `<div class="goal"><div class="top"><span>${esc(g.metric)}</span><span>${g.current} / ${g.target} ${esc(g.unit)}</span></div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="sub">${esc(g.metric)} · 2026–2027${canWrite ? '' : ' · salt görüntüleme'}</div></div>`;
+    }).join("")}
+  </div>`;
+}
+
+function screenToday() {
+  const body = {
+    A: `<div class="grid top" style="grid-template-columns: 2fr 1fr">
+           <div class="panel"><h2>Bugünün takvimi</h2>${dayCalendar()}</div>
+           <div class="grid" style="align-content:start">${staffStatusPanel()}${goalsCard()}</div>
+         </div>${opsSummary()}`,
+    B: `<div class="panel"><h2>Bugünün takvimi</h2>${dayCalendar()}</div>${opsSummary()}`,
+    C: `${opsSummary()}<div class="grid top" style="grid-template-columns: 2fr 1fr">
+           <div class="panel"><h2>Bugünün takvimi</h2>${dayCalendar()}</div>
+           <div class="grid" style="align-content:start">${staffStatusPanel()}${goalsCard()}</div>
+         </div>`,
+  }[state.variant];
+  return todayHeader() + banners() + body;
+}
+
+function banners() {
+  if (state.view === "stale") return `<div class="banner warn"><b>Program başka bir işlemle güncellendi.</b> Ekranı yenileyin ve değişiklikleri tekrar inceleyin.</div>`;
+  if (state.view === "offline") return `<div class="banner danger">Sunucuya ulaşılamıyor. Kayıt işlemleri devre dışı; veriler bağlantı gelince yenilenir.</div>`;
+  if (state.view === "forbidden") return `<div class="banner neutral">Bu ekran için yetkiniz bulunmuyor.</div>`;
+  return "";
+}
+
+function screenSchedule() {
+  const draft = state.view !== "empty";
+  const grid = draft ? dayCalendar() : emptyBox("Henüz yayınlanmış program yok", "Program taslağı veya yayınlanmış kayıt bulunmuyor.");
+  const gate = state.view === "empty"
+    ? emptyBox("Programı yayınlayın", "Yayınlama kapısı kapalı.")
+    : state.view === "stale"
+      ? `<div class="grid" style="gap:8px">
+           <span class="badge b-warn">publish_blocked_stale</span>
+           <p class="lead" style="margin:0">Program değiştiği için doğrulama güncel değil. Yeniden doğrulayın.</p>
+         </div>`
+      : `<div class="grid" style="gap:8px">
+           <span class="badge b-ok">weekly_grid_ready_draft</span>
+           <p class="lead" style="margin:0">Doğrulama: FULL · çakışma yok · revizyon güncel</p>
+           <div><button class="btn primary">Programı yayınla</button></div>
+         </div>`;
+  return `<h1>Program</h1><p class="lead">Haftalık ders dağılımı</p>${banners()}
+    <div class="panel"><h2>Haftalık görünüm</h2>${grid}</div>
+    <div class="panel" style="margin-top:14px"><h2>Yayınlama kapısı</h2>${gate}</div>`;
+}
+
+function screenOps() {
+  if (state.view === "empty") {
+    return `<h1>Operasyon</h1><p class="lead">Yoklama öncelikli</p>${banners()}
+      <div class="grid g2">
+        <div class="panel"><h2>Yoklama</h2>${emptyBox("Tamamlanmış yoklama kaydı yok", "Yoklama tamamlandıkça burada görünür.")}</div>
+        <div class="panel"><h2>İzin talepleri</h2>${emptyBox("Bekleyen talep yok", "Onay bekleyen izin talebi bulunmuyor.")}</div>
+      </div>
+      <div class="panel" style="margin-top:14px"><h2>Devamsızlık istatistiği</h2>${emptyBox("İstatistik için yoklama kaydı yok", "İstatistikler tamamlanan yoklamalardan okunur.")}</div>`;
+  }
+  if (state.view === "forbidden") return `<h1>Operasyon</h1>${banners()}<div class="panel">${emptyBox("Bu ekran görüntülenemiyor", "Yetkili olduğunuz ekranlardan devam edin.")}</div>`;
+  if (state.view === "offline") return `<h1>Operasyon</h1>${banners()}<div class="panel">${emptyBox("Sunucuya ulaşılamıyor", "Veriler bağlantı gelince yenilenir.")}</div>`;
+  return `<h1>Operasyon</h1><p class="lead">Yoklama öncelikli</p>${banners()}
+    <div class="grid g2">
+      <div class="panel"><h2>Yoklama</h2>
+        ${lessons.filter((l) => l.state !== "ok").map((l) => `<div class="row"><div class="t"><b>${esc(l.course)} · ${esc(l.group)}</b><div class="m">${esc(l.teacher === "—" ? "Öğretmen atanmadı" : l.teacher)} · ${esc(l.time)}</div></div><span class="badge ${l.state === "teachermissing" ? "b-danger" : "b-warn"}">${l.state === "teachermissing" ? "Görevlendirme bekliyor" : "Yoklama bekliyor"}</span></div>`).join("")}
+      </div>
+      <div class="panel"><h2>İzin talepleri</h2>
+        ${leaves.map((l) => `<div class="row"><div class="t"><b>${esc(l.teacher)}</b><div class="m">${esc(l.period)} · ${l.impact} ders etkileniyor</div></div><span class="badge ${l.status === "pending" ? "b-warn" : "b-ok"}">${l.status === "pending" ? "Onay bekliyor" : "Onaylandı"}</span></div>`).join("")}
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="panel"><h2>Veli bildirimi onayı</h2>
+        ${notifications.map((n) => `<div class="row"><div class="t"><b>${esc(n.course)} · ${esc(n.group)}</b><div class="m">${esc(n.consent ? "İletişim izni uygun" : "İletişim izni eksik")}</div></div>${n.consent ? `<button class="btn">Onayla</button>` : `<button class="btn" disabled>Onayla</button>`}</div>`).join("")}
+        <p class="lead" style="margin:12px 0 0">Bildirim yalnız yönetici onayıyla gönderilir.</p>
+      </div>
+      <div class="panel"><h2>Devamsızlık istatistiği</h2>
+        <div class="metric"><span>Gelmedi</span><b>${absences.absent}</b></div>
+        <div class="metric"><span>Geç</span><b>${absences.late}</b></div>
+        <div class="metric"><span>İşaretlenmemiş</span><b>${absences.unmarked}</b></div>
+        <div class="metric"><span>Oturum</span><b>${absences.sessions}</b></div>
+        <p class="lead" style="margin:12px 0 0">İstatistikler canlıdır ve tamamlanan yoklamalardan okunur.</p>
+      </div>
+    </div>`;
+}
+
+function screenGoals() {
+  if (!state.goalUnlocked) {
+    return `<h1>Stratejik Hedefler</h1>${banners()}
+      <div class="panel">${emptyBox("Bu ekran varsayılan olarak kapalı", "Stratejik hedefler özelliği Ayarlar menüsünden açılır.")}</div>`;
+  }
+  if (state.view === "forbidden") return `<h1>Stratejik Hedefler</h1>${banners()}<div class="panel">${emptyBox("Bu ekran görüntülenemiyor", "Yetkili olduğunuz ekranlardan devam edin.")}</div>`;
+  if (state.view === "empty") return `<h1>Stratejik Hedefler</h1><p class="lead">2026–2027 ders yılı</p><div class="panel">${emptyBox("Bu yıl için hedef tanımlanmamış", "Devamlılık, yerleştirme ve benzeri hedefler burada izlenir.")}</div>`;
+  return `<h1>Stratejik Hedefler</h1><p class="lead">2026–2027 ders yılı · bir yıl için bir ölçüm tipi tekil</p>${banners()}
+    <div class="grid g2">
+      <div>${goalsCard()}</div>
+      <div class="panel"><h2>${isAdmin() ? "Hedef ve ilerleme yönetimi" : "Hedefler"}</h2>
+        ${isAdmin()
+          ? `<div class="grid" style="gap:8px">
+               <label style="font-size:13px">Ölçüm tipi<input style="display:block;width:100%;padding:8px;margin-top:4px;border:1px solid var(--line);border-radius:8px;font:inherit" value="" placeholder="Örn. mezun başarı oranı"></label>
+               <label style="font-size:13px">Hedef<input style="display:block;width:100%;padding:8px;margin-top:4px;border:1px solid var(--line);border-radius:8px;font:inherit" placeholder="Sayı"></label>
+               <div><button class="btn primary">Hedef ekle</button></div>
+               <p class="lead" style="margin:4px 0 0">Aynı yıl ve aynı ölçüm tipi için ikinci hedef açılamaz.</p>
+             </div>`
+          : `<p class="lead" style="margin:0">Öğretmen görünümü salt okunurdur. Hedef girme ve ilerleme işleme yetkisi yöneticilerdedir.</p>`}
+      </div>
+    </div>`;
+}
+
+function render() {
+  document.getElementById("mainnav").innerHTML = ["today", "schedule", "ops"].map((k) => {
+    const labels = { today: "Bugün", schedule: "Program", ops: "Operasyon" };
+    return `<button data-screen="${k}" ${state.screen === k ? 'aria-current="page"' : ""}>${labels[k]}</button>`;
+  }).join("");
+
+  document.getElementById("whoRole").textContent = isAdmin() ? "Kurum Yöneticisi" : "Öğretmen";
+  document.getElementById("whoName").textContent = isAdmin() ? "Ayşe Yılmaz" : "Elif Demir";
+  document.getElementById("avatar").textContent = isAdmin() ? "AY" : "ED";
+
+  const sw = document.getElementById("branchSwitch");
+  sw.hidden = branches.length < 2;
+  document.getElementById("branchSelect").innerHTML = branches.map((b) => `<option value="${esc(b.id)}" ${b.id === state.branchId ? "selected" : ""}>${esc(b.name)}</option>`).join("");
+
+  const page = { today: screenToday, schedule: screenSchedule, ops: screenOps, goals: screenGoals }[state.screen];
+  const main = document.getElementById("main");
+  main.innerHTML = page();
+  main.setAttribute("data-branch", activeBranch().name);
+
+  document.getElementById("goalsHint").textContent = state.goalUnlocked
+    ? "Stratejik Hedefler açık."
+    : "Stratejik Hedefler varsayılan olarak kapalıdır.";
+
+  const local = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "::1";
+  const swr = document.getElementById("switcher");
+  swr.classList.toggle("hidden", !local);
+  document.getElementById("switchLabel").innerHTML =
+    `<b>${esc(state.variant)} · ${esc(VARIANTS[state.variant])}</b> · ${esc(state.screen)}`;
+  document.getElementById("stateSelect").innerHTML = Object.entries(STATES)
+    .map(([k, v]) => `<option value="${k}" ${state.view === k ? "selected" : ""}>${esc(v)}</option>`).join("");
+}
+
+function cycleVariant(dir) {
+  const keys = Object.keys(VARIANTS);
+  state.variant = keys[(keys.indexOf(state.variant) + dir + keys.length) % keys.length];
+  syncUrl(); render();
+}
+
+function syncUrl() {
+  const p = new URLSearchParams(location.search);
+  p.set("variant", state.variant);
+  p.set("state", state.view);
+  history.replaceState({}, "", `${location.pathname}?${p}`);
+}
+
+document.addEventListener("click", (e) => {
+  const nav = e.target.closest("[data-screen]");
+  if (nav) { state.screen = nav.dataset.screen; render(); return; }
+
+  const rec = e.target.closest("[data-record]");
+  if (rec) { state.openRecord = { name: rec.dataset.name }; render(); return; }
+
+  if (e.target.id === "goGoals") {
+    state.goalUnlocked = true; state.screen = "goals";
+    document.getElementById("menu").classList.remove("open");
+    render(); return;
+  }
+  if (e.target.id === "toggleRole") {
+    state.role = isAdmin() ? "teacher" : "admin";
+    document.getElementById("menu").classList.remove("open");
+    render(); return;
+  }
+  if (e.target.id === "menuBtn") {
+    const m = document.getElementById("menu");
+    m.classList.toggle("open");
+    e.target.setAttribute("aria-expanded", String(m.classList.contains("open")));
+    return;
+  }
+  if (e.target.id === "prev") cycleVariant(-1);
+  if (e.target.id === "next") cycleVariant(1);
+  if (e.target.id === "scopeOk") { document.getElementById("scopeDlg").close(); }
+});
+
+document.getElementById("branchSelect").addEventListener("change", (e) => {
+  const had = state.openRecord;
+  state.branchId = e.target.value;
+  state.openRecord = null;
+  state.screen = "today";
+  state.filter = "all";
+  if (had) {
+    document.getElementById("scopeRec").textContent = had.name;
+    document.getElementById("scopeDlg").showModal();
+  }
+  render();
+});
+
+document.getElementById("stateSelect").addEventListener("change", (e) => {
+  state.view = e.target.value; syncUrl(); render();
+});
+
+document.addEventListener("keydown", (e) => {
+  const el = document.activeElement;
+  if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+  if (e.key === "ArrowLeft") cycleVariant(-1);
+  if (e.key === "ArrowRight") cycleVariant(1);
+});
+
+syncUrl();
+render();
+</script>
 </body>
 </html>
