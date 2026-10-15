@@ -5,7 +5,7 @@ import { TypeOrmTransactionalAuditWriter } from '../../src/common/audit/transact
 import { RequestContext } from '../../src/common/context/request-context';
 import { DailyOperationsRepository } from '../../src/daily-operations/daily-operations.repository';
 import { TransactionalLeaveAuditAdapter } from '../../src/leaves/leave-audit.adapter';
-import { LeaveSelfDecisionException, LeaveStaleVersionException } from '../../src/leaves/leave-errors';
+import { LeaveSelfDecisionException, LeaveOverlapException, LeaveStaleVersionException } from '../../src/leaves/leave-errors';
 import { LeaveIdentityService } from '../../src/leaves/leave-identity.service';
 import { LeaveCoverageStatus, LeaveDecisionStatus, LeaveDurationType, LeaveReasonCode, LeaveRequest } from '../../src/leaves/leave-request.entity';
 import { LeaveRepository } from '../../src/leaves/leave.repository';
@@ -388,6 +388,19 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
     );
     expect(retried.version).toBe(2);
     expect(retried.impact?.impactedLessonCount).toBe(3);
+  });
+
+  it('rejects a second overlapping pending leave for the same teacher', async () => {
+    const existing = await createPendingLeave();
+    expect(existing.decisionStatus).toBe(LeaveDecisionStatus.PENDING);
+
+    await expect(createPendingLeave()).rejects.toBeInstanceOf(LeaveOverlapException);
+
+    const count = await countRows(
+      "SELECT COUNT(*)::int AS n FROM leave_requests WHERE teacher_id = $1 AND decision_status = 'pending'",
+      [TEACHER],
+    );
+    expect(count).toBe(1);
   });
 });
 

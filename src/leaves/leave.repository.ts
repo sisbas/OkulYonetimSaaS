@@ -9,6 +9,7 @@ import { LEAVE_APPROVAL_IMPACT_PORT, LeaveApprovalImpactPort } from './leave-app
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import {
   LeaveNotFoundException,
+  LeaveOverlapException,
   LeaveStaleVersionException,
   LeaveTerminalStateException,
 } from './leave-errors';
@@ -48,6 +49,14 @@ export class LeaveRepository {
     assertTenantScope(ctx, 'leave_requests');
     return this.dataSource.transaction(async (manager) => {
       await this.assertBranchOwnership(manager, values.tenantId, values.branchId);
+      await this.assertNoOverlappingLeaveRequest(
+        manager,
+        values.tenantId,
+        values.branchId,
+        values.teacherId,
+        values.startsAt,
+        values.endsAt,
+      );
 
       const request = manager.create(LeaveRequest, values);
       const saved = await manager.save(LeaveRequest, request);
@@ -146,6 +155,29 @@ export class LeaveRepository {
       await this.insertOutbox(manager, eventName, saved, impact);
       return { leave: saved, impact };
     });
+  }
+
+  private async assertNoOverlappingLeaveRequest(
+    manager: EntityManager,
+    tenantId: string,
+    branchId: string,
+    teacherId: string,
+    startsAt: Date,
+    endsAt: Date,
+  ): Promise<void> {
+    const rows = await manager.query(
+      `SELECT 1
+       FROM leave_requests
+       WHERE tenant_id = $1
+         AND branch_id = $2
+         AND teacher_id = $3
+         AND decision_status IN ('pending', 'approved')
+         AND starts_at < $5
+         AND ends_at > $4
+       LIMIT 1`,
+      [tenantId, branchId, teacherId, startsAt, endsAt],
+    );
+    if (Array.isArray(rows) && rows.length > 0) throw new LeaveOverlapException();
   }
 
   private async assertBranchOwnership(
