@@ -56,6 +56,8 @@ const reasonUi = {
   CLAIM_LOST: ['conflict_blocking', 'Kayıt başka bir işlemle değişti; listeyi yenileyin.'],
   NOTIFICATION_NOT_FOUND: ['empty_or_not_found_same_scope', 'Bildirim bulunamadı veya kapsamınız dışında.'],
   NOTIFICATION_OUTBOX_SCOPE_REQUIRED: ['branch_context_required', 'Bildirim işlemi için şube bağlamı gerekli.'],
+  NOTIFICATION_OUTBOX_BRANCH_REQUIRED: ['branch_context_required', 'Bildirim işlemi için şube bağlamı gerekli.'],
+  NOTIFICATION_OUTBOX_BRANCH_NOT_VISIBLE: ['forbidden_non_enumerating', 'Bu şube görüntülenemiyor.'],
   NOTIFICATION_STATUS_FILTER_INVALID: ['validation_error', 'Durum filtresi geçersiz.'],
   'CONSENT NOT IN AN APPROVED STATE': ['conflict_blocking', 'Onay zaten kapalı veya geçersiz durumda; işlem yapılamaz.'],
   'NOTIFICATION DRAFT BULK VERSION CONFLICT': ['stale_version', 'Liste güncellendi; yenileyip tekrar deneyin.'],

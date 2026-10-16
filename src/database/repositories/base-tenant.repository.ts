@@ -100,6 +100,8 @@ export const TENANT_SCOPED_TABLES = [
   'kvkk_consent_subjects',
   'kvkk_consents',
   'kvkk_consent_events',
+  'notification_outbox',
+  'notification_dispatch_receipts',
 ] as const;
 
 export const GLOBAL_TABLES = ['users', 'permissions', 'migrations'] as const;

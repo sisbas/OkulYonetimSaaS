@@ -24,6 +24,7 @@ const TENANT_ID = '10000000-0000-4000-8000-000000000001';
 const OTHER_TENANT_ID = '10000000-0000-4000-8000-000000000002';
 const BRANCH_ID = '20000000-0000-4000-8000-000000000001';
 const OTHER_BRANCH_ID = '20000000-0000-4000-8000-000000000002';
+const OTHER_TENANT_BRANCH_ID = '20000000-0000-4000-8000-000000000009';
 const SESSION_ID = '30000000-0000-4000-8000-000000000001';
 const OTHER_SESSION_ID = '30000000-0000-4000-8000-000000000009';
 const FIXTURE_USER_ID = '30000000-0000-4000-8000-000000000010';
@@ -52,7 +53,7 @@ const ctx = {
 
 const otherTenantCtx = {
   tenantId: OTHER_TENANT_ID,
-  branchId: BRANCH_ID,
+  branchId: OTHER_TENANT_BRANCH_ID,
   requestId: 'n2-dispatch-req-other-tenant',
 } as RequestContext;
 
@@ -198,8 +199,9 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
   beforeEach(async () => {
     await cleanup();
     await dataSource.query(
-      `INSERT INTO tenants (id, slug, name) VALUES ($1, 'n2-dispatch', 'N2 Dispatch') ON CONFLICT (slug) DO NOTHING`,
-      [TENANT_ID],
+      `INSERT INTO tenants (id, slug, name) VALUES ($1, 'n2-dispatch', 'N2 Dispatch') ON CONFLICT (slug) DO NOTHING,
+            ($2, 'n2-dispatch-other', 'N2 Dispatch Other') ON CONFLICT (slug) DO NOTHING`,
+      [TENANT_ID, OTHER_TENANT_ID],
     );
     await seedSessionFixture();
   });
@@ -210,6 +212,11 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
        VALUES ($1, $2, 'N2 Dispatch Branch A', 'N2-DISP-A', 'active'),
               ($3, $2, 'N2 Dispatch Branch B', 'N2-DISP-B', 'active')`,
       [BRANCH_ID, TENANT_ID, OTHER_BRANCH_ID],
+    );
+    await dataSource.query(
+      `INSERT INTO branches (id, tenant_id, name, code, status)
+       VALUES ($1, $2, 'N2 Dispatch Branch T2', 'N2-DISP-T2', 'active')`,
+      [OTHER_TENANT_BRANCH_ID, OTHER_TENANT_ID],
     );
     await dataSource.query(
       `INSERT INTO rooms (id, tenant_id, branch_id, name, code, status)
@@ -526,18 +533,12 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       }
     });
 
-    it('cross-tenant context denied at the branch-ownership check (fail-closed)', async () => {
+    it('does not claim rows from other tenants (tenant predicate)', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-tenant');
-      await expect(
-        dataSource.transaction((em) => repo.claim(em, otherTenantCtx, id)),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      const row = (await dataSource.query(
-        `SELECT attempts, fencing_token, claim_token FROM notification_outbox WHERE id = $1`,
-        [id],
-      )) as Array<{ attempts: number; fencing_token: number; claim_token: string | null }>;
-      expect(row[0].attempts).toBe(0);
-      expect(row[0].fencing_token).toBe(0);
-      expect(row[0].claim_token).toBeNull();
+      const claim = await dataSource.transaction((em) =>
+        repo.claim(em, otherTenantCtx, id),
+      );
+      expect(claim).toBeNull();
     });
 
     it('does not claim rows from other branches (branch predicate)', async () => {
@@ -750,14 +751,17 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       expect(own!.id).toBe(id);
     });
 
-    it('outbox reads scoped to another tenant fail closed (branch ownership denial)', async () => {
+    it('outbox reads scoped to another tenant return nothing (tenant predicate)', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-read-tenant');
-      await expect(
-        dataSource.transaction((em) => repo.findById(em, otherTenantCtx, id)),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      await expect(
-        dataSource.transaction((em) => repo.findAll(em, otherTenantCtx, { limit: 100, offset: 0 })),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      const crossTenantRow = await dataSource.transaction((em) =>
+        repo.findById(em, otherTenantCtx, id),
+      );
+      expect(crossTenantRow).toBeNull();
+      const crossTenantList = await dataSource.transaction((em) =>
+        repo.findAll(em, otherTenantCtx, { limit: 100, offset: 0 }),
+      );
+      expect(crossTenantList.map((row) => row.id)).not.toContain(id);
+      expect(crossTenantList).toEqual([]);
     });
 
     it('receipt reads scoped to another tenant return nothing (outbox + receipt rows untouched)', async () => {
