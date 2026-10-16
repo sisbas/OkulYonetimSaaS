@@ -105,6 +105,16 @@ sınırlarıdır; sonraki oturumlar bunları yeniden açmaz (kanıt: bu tablo).
 
 ---
 
+## Redaction receipt alan dili (2026-10-16, #462 review bulgusu 3)
+
+Numaralandırma K-1…K-28'den devam eder.
+
+| # | Karar | Gerekçe |
+|---|---|---|
+| K-29 | **`evaluatedFieldCount` = event başına metadata allowlist'ine kabul edilmiş alan sayısı** (incelenmiş/PII taranmış değil). `redactionReceipt` bir PII taraması kanıtı **değil**, allowlist uyum attestation'ıdır. `strategy`'nin `partial-mask`/`full-redact`/`hash` değerleri **rezerve** sözlüktür: runtime yalnız `none` üretir, `redactedFieldCount` yapısal olarak `0`'dır; union daraltılmaz. ADR: `docs/adr/0002`. | K-19 sayımı payload'dan ölçmeye çevirdi ama **terimi tanımsız bıraktı**. Üç okuma (incelenen / incelenen-PII / allowlist-admitted) farklı implementasyonlar gerektiriyordu. Allowlist (`assertExactKeys`) zaten bağımsız bir sınıflandırıcı olarak çalıştığı için C okuması doğru **ve** bedava; "hiçbir alan incelenmiyor" iddiası yanlıştı. Sonuç: muhasebe dürüst, ancak receipt politika dürüstlüğünü **miras** alır ve bağımsız PII kanıtı taşımaz — bu sınır glossary'ye yazıldı ki bir sonraki okuyucu receipt'i tarama kanıtı saymasın. |
+
+---
+
 ## Açık sorular
 
 | # | Soru | Durum |
@@ -112,6 +122,7 @@ sınırlarıdır; sonraki oturumlar bunları yeniden açmaz (kanıt: bu tablo).
 | Q-1 | **#373 — global audit doğrulama platform otoritesi kim?** (Refs #367 #358; trust-anchor #369 main'de) Mimari karar, sahibi insan. | Kilidin önkoşulu DEĞİL (K-8, 2026-10-11): kapsam bağımsız kilitlenir, #373 H-kapısı olarak içinde taşınır. Karar kendisi hâlâ bekliyor — izlek C #259'dan sonra. |
 | Q-2 | Pilot okul sayısı/tarihi (eski K4/K5) — K-7 gereği H1+R10 sonrası | Bekliyor |
 | Q-3 | #268 export güvenlik testleri (formula injection / cross-tenant) — quarantine #371 merge, test kapsamı netleşmedi | KAPANDI (K-10, 2026-10-11): Faz 2'ye defer. Faz 1'de kalan yalnız truth matrix sınıflandırması + mevcut 503 kanıtı. |
+| Q-4 | **K-28 bayatladı: "ADR altyapısı yok" diyor, ama `docs/adr/0001` (2026-10-15) ve `0002` (K-29) var.** ADR dosyasının CONTEXT.md karar tablosuyla **alan dağılımı** yazılı değil: ADR kavramın *niçin böyle* olduğunu mı taşır, her karar kendi ADR'sini mi alır? | Sahibinin kararı (K-6/K-15 ruhu: alan dışı yazım yetkisi insanın). Şimdilik önerilen çizgi: ADR = sürpriz/gereksiz-tersin olan kararlar, CONTEXT.md tablosu = kararın kendisi + gerekçe; ikisi aynı şeyi iki kez yazmaz. |
 
 ## Bilinen boşluklar (düzeltme bekleyen)
 
@@ -146,6 +157,10 @@ sınırlarıdır; sonraki oturumlar bunları yeniden açmaz (kanıt: bu tablo).
 | **Branch scope** | Tenant içinde aktörün şube görünürlüğü; görünmeyen branch izninde kaynak non-enumerating `not found` (404) döner ve mutasyon transaction'ında yeniden doğrulanır. |
 | **Daily Operations projection** | Aynı occurrence key ile idempotent yazılan açık/rezerve operasyon satırı kümeleri; coverage bu satırlar ve assignment sayılarından türetilir, ikinci karar API oluşturmaz. |
 | **Assignment replay** | Aktif assignment set korunarak aynı occurrence key için projection upsert; clear transition (`assigned → cleared`) aynı transaction'da coverage'ı recompute eder. |
+| **Redaction receipt** | KVKK maskeleme kanıt kaydı (`redactionReceipt`): alan sayımı + kullanılan strateji. **Bir PII taraması kanıtı DEĞİLDİR** — event başına metadata allowlist'ine uyum attestation'ıdır ve kendi başına kanıt gücü sınırlıdır (politika doğruysa dürüsttür; politika hatalıysa receipt de hatalı olur, ayırt edilemez). |
+| **Evaluated field (incelenen alan)** | `evaluatedFieldCount` sayar. **Tanım: event başına metadata allowlist'ine kabul edilmiş alan.** Denetçinin "maskelenmeyen alan kalmadı" çıkarımının dayanağı budur — alan sayılır çünkü `assertExactKeys` bağımsız olarak onaylamıştır. |
+| **Maskelenmeyen alan (skipped field)** | Allowlist'e kabul edildiği için PII sayılmayıp maskelenmeden geçen alan; `skippedFieldCount` bunu sayar. `redacted + skipped = evaluated` muhasebesi bu yüzden anlamlıdır. |
+| **Reserved redaction strategy** | `strategy` union'ındaki `partial-mask` / `full-redact` / `hash` değerleri: **runtime'da hiç üretilmez**, gerçek bir maskeleme yolu yazılana kadar rezerve sözlüktür. Bugün tek üretilen değer `none`'dur ve `redactedFieldCount` yapısal olarak her zaman `0`'dır. |
 
 ---
 
@@ -157,3 +172,4 @@ sınırlarıdır; sonraki oturumlar bunları yeniden açmaz (kanıt: bu tablo).
 | 2026-10-11 | `/grill-with-docs` #382 kapsam kilidi grilling: **8 karar (K-8…K-15), 5 wayfinder biletinin tamamı kapatıldı** (#383→K-14, #384→K-15, #385→K-8, #386→K-9, #387→K-10). Q-3 kapandı; Q-1 kısmen (kilide önkoşul değil, kararı hâlâ açık). Glossary'ye "Kapsam kilidi" + "Pilot-enabler" eklendi. ADR: değerlendirdim, barajı geçmedi (plan artefaktı, mimari kilit değil) — atlandı. |
 | 2026-10-14 | PR #414 review grilling: **13 karar (K-16…K-28)** — #414 tam teslim (K-16), consent hukuki zemin (K-17/K-25), delivered durumu (K-18), revoke audit dürüstlüğü (K-19), consent.read audit'i (K-20), scope creep deklarasyonu (K-21), S10b UI revoke (K-22), stage5-first + job-outcome assert (K-23), fillField sınırı (K-24), smell follow-up (K-26), HCO evidence (K-27). Kod tarafı bu PR'da uygulandı. |
 | 2026-10-15 | `/grilling` + `/domain-modeling`: Leave vertical slice terimleri netleştirildi — published occurrence/impact key, zero impact vs lookup failure, eligibility finalization, requester/teacher identity, branch scope, projection idempotency, timezone, substitution clear/recompute. ADR 0001 eklendi (decision ve coverage ayrılığı). |
+| 2026-10-16 | `/domain-modeling` — redaction receipt alan dili (K-29): `evaluatedFieldCount` = allowlist-admitted, receipt PII taraması kanıtı değil; rezerve stratejiler belgelendi. Glossary'ye 4 terim eklendi, ADR 0002 yazıldı. Q-4 açıldı (K-28 bayat: ADR alan dağılımı yazılı değil). Kod değişikliği **yok** — karar mevcut implementasyonu doğruluyor, düzeltmiyor. |
