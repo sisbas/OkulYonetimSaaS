@@ -116,11 +116,7 @@ describe('NotificationDispatchService', () => {
 
       const result = await service.execute(ctx, 'o1');
 
-      expect(outbox.claim).toHaveBeenCalledWith(expect.anything(), {
-        tenantId: 't1',
-        branchId: 'b1',
-        id: 'o1',
-      });
+      expect(outbox.claim).toHaveBeenCalledWith(expect.anything(), ctx, 'o1');
       expect(outbox.transitionToBlockedConsent).not.toHaveBeenCalled();
       expect(simulator.simulate).toHaveBeenCalledWith({
         outboxId: 'o1',
@@ -130,7 +126,12 @@ describe('NotificationDispatchService', () => {
       });
       expect(outbox.applyOutcome).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ claimToken: 'c-1', outcome: 'provider_accepted' }),
+        ctx,
+        'o1',
+        'c-1',
+        'provider_accepted',
+        1,
+        null,
       );
       expect(result.status).toBe('dispatched');
       expect(result.idempotent).toBe(false);

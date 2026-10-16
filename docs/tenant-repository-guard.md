@@ -14,7 +14,7 @@ Tenant IDs must come from `RequestContext.tenantId`, never directly from route p
 
 ## Tenant-scoped tables
 
-New runtime repositories for these tables must extend or follow `BaseTenantRepository` contract: `branches`, `tenant_settings`, `tenant_memberships`, `roles`, `user_roles`, `user_sessions`, `audit_logs`, `teachers`, `teacher_branch_assignments`, `courses`, `rooms`, `student_groups`, `students`, `time_slots`, `teacher_availability`, `group_course_requirements`, `schedule_drafts`, `schedule_draft_events`, `published_schedules`, `published_schedule_events`, `leave_requests`, `leave_request_impacts`, `substitution_assignments`, `attendance_sessions`, `attendance_records`, `message_templates`, `parent_notifications`, `kvkk_consent_subjects`, `kvkk_consents`, and `kvkk_consent_events`.
+New runtime repositories for these tables must extend or follow `BaseTenantRepository` contract: `branches`, `tenant_settings`, `tenant_memberships`, `roles`, `user_roles`, `user_sessions`, `audit_logs`, `teachers`, `teacher_branch_assignments`, `courses`, `rooms`, `student_groups`, `students`, `time_slots`, `teacher_availability`, `group_course_requirements`, `schedule_drafts`, `schedule_draft_events`, `published_schedules`, `published_schedule_events`, `leave_requests`, `leave_request_impacts`, `substitution_assignments`, `attendance_sessions`, `attendance_records`, `message_templates`, `parent_notifications`, `kvkk_consent_subjects`, `kvkk_consents`, `kvkk_consent_events`, `notification_outbox`, and `notification_dispatch_receipts`.
 
 ## Global exceptions
 

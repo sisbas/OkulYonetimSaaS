@@ -50,6 +50,18 @@ const ctx = {
   requestId: 'n2-dispatch-req',
 } as RequestContext;
 
+const otherTenantCtx = {
+  tenantId: OTHER_TENANT_ID,
+  branchId: BRANCH_ID,
+  requestId: 'n2-dispatch-req-other-tenant',
+} as RequestContext;
+
+const otherBranchCtx = {
+  tenantId: TENANT_ID,
+  branchId: OTHER_BRANCH_ID,
+  requestId: 'n2-dispatch-req-other-branch',
+} as RequestContext;
+
 // NON-ACCEPTANCE SQL regression: session-local fixtures, never a genuine
 // business/UI journey or notification delivery/pilot acceptance.
 withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
@@ -457,7 +469,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('claims an approved row: attempts+1, fencing+1, lease set', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-claim');
       const claim = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.claim(em, ctx, id),
       );
       expect(claim).not.toBeNull();
       expect(claim!.attempt).toBe(1);
@@ -478,10 +490,10 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('second claim while lease active is rejected (0 rows)', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-lease');
       await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.claim(em, ctx, id),
       );
       const second = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.claim(em, ctx, id),
       );
       expect(second).toBeNull();
     });
@@ -489,14 +501,14 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('expired lease can be reclaimed with a higher fencing token', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-expire');
       const first = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.claim(em, ctx, id),
       );
       await dataSource.query(
         `UPDATE notification_outbox SET claim_expires_at = now() - interval '1 second' WHERE id = $1`,
         [id],
       );
       const second = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.claim(em, ctx, id),
       );
       expect(second).not.toBeNull();
       expect(second!.fencingToken).toBe(first!.fencingToken + 1);
@@ -508,24 +520,30 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       for (const status of ['pending', 'blocked_consent', 'cancelled', 'closed', 'dead_lettered', 'uncertain']) {
         const id = await insertOutboxRow(status, `dedupe-no-${status}`);
         const claim = await dataSource.transaction((em) =>
-          repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+          repo.claim(em, ctx, id),
         );
         expect(claim).toBeNull();
       }
     });
 
-    it('does not claim rows from other tenants (tenant predicate)', async () => {
+    it('cross-tenant context denied at the branch-ownership check (fail-closed)', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-tenant');
-      const claim = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: OTHER_TENANT_ID, branchId: BRANCH_ID, id }),
-      );
-      expect(claim).toBeNull();
+      await expect(
+        dataSource.transaction((em) => repo.claim(em, otherTenantCtx, id)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      const row = (await dataSource.query(
+        `SELECT attempts, fencing_token, claim_token FROM notification_outbox WHERE id = $1`,
+        [id],
+      )) as Array<{ attempts: number; fencing_token: number; claim_token: string | null }>;
+      expect(row[0].attempts).toBe(0);
+      expect(row[0].fencing_token).toBe(0);
+      expect(row[0].claim_token).toBeNull();
     });
 
     it('does not claim rows from other branches (branch predicate)', async () => {
       const id = await insertOutboxRow('approved', 'dedupe-branch');
       const claim = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, branchId: OTHER_BRANCH_ID, id }),
+        repo.claim(em, otherBranchCtx, id),
       );
       expect(claim).toBeNull();
       const row = (await dataSource.query(
@@ -544,7 +562,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     >;
     async function claimRow(id: string): Promise<ClaimRow> {
       const claim = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.claim(em, ctx, id),
       );
       expect(claim).not.toBeNull();
       return claim!;
@@ -554,14 +572,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       const id = await insertOutboxRow('approved', 'dedupe-accept');
       const claim = await claimRow(id);
       const next = await dataSource.transaction((em) =>
-        repo.applyOutcome(em, {
-          tenantId: TENANT_ID,
-          id,
-          claimToken: claim.claimToken,
-          outcome: 'provider_accepted',
-          attempts: claim.attempt,
-          errorCode: null,
-        }),
+        repo.applyOutcome(em, ctx, id, claim.claimToken, 'provider_accepted', claim.attempt, null),
       );
       expect(next).toEqual({ status: 'dispatched', version: 2 });
       const row = (await dataSource.query(
@@ -577,14 +588,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       const id = await insertOutboxRow('approved', 'dedupe-fail1');
       const claim = await claimRow(id);
       const next = await dataSource.transaction((em) =>
-        repo.applyOutcome(em, {
-          tenantId: TENANT_ID,
-          id,
-          claimToken: claim.claimToken,
-          outcome: 'provider_rejected',
-          attempts: claim.attempt,
-          errorCode: 'SIMULATED_REJECTION',
-        }),
+        repo.applyOutcome(em, ctx, id, claim.claimToken, 'provider_rejected', claim.attempt, 'SIMULATED_REJECTION'),
       );
       expect(next!.status).toBe('failed');
       const row = (await dataSource.query(
@@ -598,7 +602,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       expect(delayMs).toBeLessThanOrEqual(backoffMsForAttempts(1) + 2_000);
 
       const blocked = await dataSource.transaction((em) =>
-        repo.claim(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.claim(em, ctx, id),
       );
       expect(blocked).toBeNull();
     });
@@ -608,14 +612,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       const claim = await claimRow(id);
       expect(claim!.attempt).toBe(3);
       const next = await dataSource.transaction((em) =>
-        repo.applyOutcome(em, {
-          tenantId: TENANT_ID,
-          id,
-          claimToken: claim.claimToken,
-          outcome: 'provider_rejected',
-          attempts: claim.attempt,
-          errorCode: 'SIMULATED_REJECTION',
-        }),
+        repo.applyOutcome(em, ctx, id, claim.claimToken, 'provider_rejected', claim.attempt, 'SIMULATED_REJECTION'),
       );
       expect(next!.status).toBe('dead_lettered');
       const row = (await dataSource.query(
@@ -631,14 +628,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       const id = await insertOutboxRow('approved', 'dedupe-uncertain');
       const claim = await claimRow(id);
       const next = await dataSource.transaction((em) =>
-        repo.applyOutcome(em, {
-          tenantId: TENANT_ID,
-          id,
-          claimToken: claim.claimToken,
-          outcome: 'uncertain',
-          attempts: claim.attempt,
-          errorCode: null,
-        }),
+        repo.applyOutcome(em, ctx, id, claim.claimToken, 'uncertain', claim.attempt, null),
       );
       expect(next!.status).toBe('uncertain');
       const row = (await dataSource.query(
@@ -658,14 +648,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       );
       await claimRow(id);
       const stale = await dataSource.transaction((em) =>
-        repo.applyOutcome(em, {
-          tenantId: TENANT_ID,
-          id,
-          claimToken: first.claimToken,
-          outcome: 'provider_accepted',
-          attempts: first.attempt,
-          errorCode: null,
-        }),
+        repo.applyOutcome(em, ctx, id, first.claimToken, 'provider_accepted', first.attempt, null),
       );
       expect(stale).toBeNull();
       const row = (await dataSource.query(
@@ -679,18 +662,11 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       const id = await insertOutboxRow('approved', 'dedupe-cancel-race');
       const claim = await claimRow(id);
       const cancelled = await dataSource.transaction((em) =>
-        repo.cancel(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.cancel(em, ctx, id),
       );
       expect(cancelled).toEqual({ status: 'cancelled', version: 2 });
       const applied = await dataSource.transaction((em) =>
-        repo.applyOutcome(em, {
-          tenantId: TENANT_ID,
-          id,
-          claimToken: claim.claimToken,
-          outcome: 'provider_accepted',
-          attempts: claim.attempt,
-          errorCode: null,
-        }),
+        repo.applyOutcome(em, ctx, id, claim.claimToken, 'provider_accepted', claim.attempt, null),
       );
       expect(applied).toBeNull();
       const receipts = (await dataSource.query(
@@ -710,7 +686,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('retry rearms dead_lettered preserving attempts', async () => {
       const id = await insertOutboxRow('dead_lettered', 'dedupe-retry', { attempts: 3 });
       const next = await dataSource.transaction((em) =>
-        repo.rearmForRetry(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.rearmForRetry(em, ctx, id),
       );
       expect(next).toEqual({ status: 'approved', version: 1 });
       const row = (await dataSource.query(
@@ -723,7 +699,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('retry rejects dispatched rows', async () => {
       const id = await insertOutboxRow('dispatched', 'dedupe-retry-no');
       const next = await dataSource.transaction((em) =>
-        repo.rearmForRetry(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.rearmForRetry(em, ctx, id),
       );
       expect(next).toBeNull();
     });
@@ -731,7 +707,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('cancel rejects dispatched rows', async () => {
       const id = await insertOutboxRow('dispatched', 'dedupe-cancel-no');
       const next = await dataSource.transaction((em) =>
-        repo.cancel(em, { tenantId: TENANT_ID, branchId: BRANCH_ID, id }),
+        repo.cancel(em, ctx, id),
       );
       expect(next).toBeNull();
     });
@@ -739,12 +715,12 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
     it('retry and cancel cannot touch rows from other branches', async () => {
       const retryId = await insertOutboxRow('dead_lettered', 'dedupe-retry-branch', { attempts: 3 });
       const retried = await dataSource.transaction((em) =>
-        repo.rearmForRetry(em, { tenantId: TENANT_ID, branchId: OTHER_BRANCH_ID, id: retryId }),
+        repo.rearmForRetry(em, otherBranchCtx, retryId),
       );
       expect(retried).toBeNull();
       const cancelId = await insertOutboxRow('approved', 'dedupe-cancel-branch');
       const cancelled = await dataSource.transaction((em) =>
-        repo.cancel(em, { tenantId: TENANT_ID, branchId: OTHER_BRANCH_ID, id: cancelId }),
+        repo.cancel(em, otherBranchCtx, cancelId),
       );
       expect(cancelled).toBeNull();
       const rows = (await dataSource.query(
@@ -754,6 +730,62 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       const statusById = new Map(rows.map((row) => [row.id, row.status]));
       expect(statusById.get(retryId)).toBe('dead_lettered');
       expect(statusById.get(cancelId)).toBe('approved');
+    });
+  });
+
+  describe('tenant + branch read isolation (#463)', () => {
+    it('find reads scoped to another branch of the SAME tenant return nothing', async () => {
+      const id = await insertOutboxRow('approved', 'dedupe-read-branch');
+
+      const crossBranchRow = await dataSource.transaction((em) =>
+        repo.findById(em, otherBranchCtx, id),
+      );
+      expect(crossBranchRow).toBeNull();
+      const crossBranchList = await dataSource.transaction((em) =>
+        repo.findAll(em, otherBranchCtx, { limit: 100, offset: 0 }),
+      );
+      expect(crossBranchList.map((row) => row.id)).not.toContain(id);
+
+      const own = await dataSource.transaction((em) => repo.findById(em, ctx, id));
+      expect(own!.id).toBe(id);
+    });
+
+    it('outbox reads scoped to another tenant fail closed (branch ownership denial)', async () => {
+      const id = await insertOutboxRow('approved', 'dedupe-read-tenant');
+      await expect(
+        dataSource.transaction((em) => repo.findById(em, otherTenantCtx, id)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        dataSource.transaction((em) => repo.findAll(em, otherTenantCtx, { limit: 100, offset: 0 })),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('receipt reads scoped to another tenant return nothing (outbox + receipt rows untouched)', async () => {
+      const id = await insertOutboxRow('approved', 'dedupe-read-receipts');
+      const inserted = await dataSource.transaction((em) =>
+        repo.insertReceipt(em, ctx, {
+          outboxId: id,
+          attempt: 1,
+          fencingToken: 1,
+          outcome: 'provider_accepted',
+          providerRef: `sim:${id}:1`,
+          errorCode: null,
+          receipt: { attempt: 1 },
+        }),
+      );
+      expect(inserted.tenantId).toBe(TENANT_ID);
+
+      const ownReceipts = await dataSource.transaction((em) => repo.findReceipts(em, ctx, id));
+      expect(ownReceipts).toHaveLength(1);
+
+      const crossTenantReceipts = await dataSource.transaction((em) =>
+        repo.findReceipts(em, otherTenantCtx, id),
+      );
+      expect(crossTenantReceipts).toEqual([]);
+      const crossTenantLatest = await dataSource.transaction((em) =>
+        repo.findLatestReceipt(em, otherTenantCtx, id),
+      );
+      expect(crossTenantLatest).toBeNull();
     });
   });
 
@@ -1017,29 +1049,55 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
   });
 });
 
-describe('N2 dispatch branch scope pre-storage denial', () => {
+describe('N2 dispatch scope denial (pre-storage, Postgres-free)', () => {
   const dispatchRepo = new NotificationDispatchRepository();
   const query = jest.fn();
   const em = { query } as unknown as EntityManager;
-  const base = { tenantId: TENANT_ID, id: SESSION_ID };
+  const ctxBase = { tenantId: TENANT_ID, branchId: BRANCH_ID, requestId: 'scope-req' } as RequestContext;
 
   beforeEach(() => query.mockClear());
 
-  const cases = [
-    { name: 'claim', run: () => dispatchRepo.claim(em, { ...base, branchId: '' } as never) },
-    {
-      name: 'currentClaimBasis',
-      run: () => dispatchRepo.currentClaimBasis(em, { ...base, branchId: undefined } as never),
-    },
-    {
-      name: 'rearmForRetry',
-      run: () => dispatchRepo.rearmForRetry(em, { ...base, branchId: ' ' } as never),
-    },
-    { name: 'cancel', run: () => dispatchRepo.cancel(em, { ...base, branchId: undefined } as never) },
+  const branchCases: Array<{ name: string; run: () => Promise<unknown> }> = [
+    { name: 'claim', run: () => dispatchRepo.claim(em, { ...ctxBase, branchId: '' }, 'x') },
+    { name: 'currentClaimBasis', run: () => dispatchRepo.currentClaimBasis(em, { ...ctxBase, branchId: undefined }, 'x') },
+    { name: 'findAll', run: () => dispatchRepo.findAll(em, { ...ctxBase, branchId: ' ' }, { limit: 10, offset: 0 }) },
+    { name: 'findById', run: () => dispatchRepo.findById(em, { ...ctxBase, branchId: undefined }, 'x') },
+    { name: 'rearmForRetry', run: () => dispatchRepo.rearmForRetry(em, { ...ctxBase, branchId: '' }, 'x') },
+    { name: 'cancel', run: () => dispatchRepo.cancel(em, { ...ctxBase, branchId: undefined }, 'x') },
   ];
 
-  it.each(cases)('$name rejects missing branch scope before query', async ({ run }) => {
-    await expect(run()).rejects.toThrow('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
+  it.each(branchCases)('$name rejects missing branch scope before any query', async ({ run }) => {
+    await expect(run()).rejects.toThrow('NOTIFICATION_OUTBOX_BRANCH_REQUIRED');
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  const tenantCases: Array<{ name: string; run: () => Promise<unknown> }> = [
+    { name: 'claim', run: () => dispatchRepo.claim(em, { ...ctxBase, tenantId: undefined }, 'x') },
+    { name: 'findAll', run: () => dispatchRepo.findAll(em, { ...ctxBase, tenantId: '' }, { limit: 10, offset: 0 }) },
+    { name: 'findById', run: () => dispatchRepo.findById(em, { ...ctxBase, tenantId: undefined }, 'x') },
+    {
+      name: 'findReceipts',
+      run: () => dispatchRepo.findReceipts(em, { ...ctxBase, tenantId: undefined }, 'x'),
+    },
+    {
+      name: 'insertReceipt',
+      run: () =>
+        dispatchRepo.insertReceipt(em, { ...ctxBase, tenantId: undefined }, {
+          outboxId: 'x',
+          attempt: 1,
+          fencingToken: 1,
+          outcome: 'provider_accepted',
+          providerRef: 'sim:x:1',
+          errorCode: null,
+          receipt: {},
+        }),
+    },
+    { name: 'applyOutcome', run: () => dispatchRepo.applyOutcome(em, { ...ctxBase, tenantId: undefined }, 'x', 't', 'provider_accepted', 1, null) },
+  ];
+
+  it.each(tenantCases)('$name rejects missing tenant scope with the shared tenant-scope error', async ({ run }) => {
+    await expect(run()).rejects.toMatchObject({ name: 'TenantScopeRequiredError' });
+    await expect(run()).rejects.not.toThrow(ForbiddenException);
     expect(query).not.toHaveBeenCalled();
   });
 });

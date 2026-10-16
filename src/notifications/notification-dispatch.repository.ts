@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable 
 import { randomUUID } from 'crypto';
 import { EntityManager } from 'typeorm';
 import { RequestContext } from '../common/context/request-context';
+import { assertTenantScope } from '../common/tenant/assert-tenant-scope';
 import { NotificationOutboxStatus } from './notification-outbox.entity';
 import { DispatchOutcome, NotificationDispatchReceipt } from './notification-dispatch-receipt.entity';
 
@@ -87,6 +88,11 @@ function mapReceiptRow(row: Record<string, unknown>): NotificationDispatchReceip
 /**
  * #266 N2 — Gönderim (dispatch) deposu: claim/lease/fencing + dayanıklı geçişler.
  *
+ * Kapsam sözleşmesi (#463): her tenant-scoped metot `RequestContext` alır;
+ * `assertTenantScope` ile kiracı kapsamı ileri konur ve şube kimliği YALNIZ
+ * istek bağlamından (`ctx.branchId`) gelir. Şube-aitliği `assertBranchOwnership`
+ * ile onaylanır (özel kopya; ortak ayıklama CONTEXT.md K-26 altında ertelendi).
+ *
  * Eşzamanlılık modeli (MASTER PROMPT §4):
  * 1. **tx1 (claim)**: koşullu UPDATE — `status IN ('approved','failed')`,
  *    `available_at <= now()` (backoff) ve aktif olmayan kiralama. Her
@@ -102,31 +108,35 @@ function mapReceiptRow(row: Record<string, unknown>): NotificationDispatchReceip
  */
 @Injectable()
 export class NotificationDispatchRepository {
-  /** Tenant + branch predicate'i — tüm operasyon sorguları için zorunlu. */
-  private scope(
-    entityManager: EntityManager,
-    trustedRequestContext: Readonly<{ tenantId?: string; branchId?: string }>,
-  ): { tenantId: string; branchId: string } {
-    const tenantId = trustedRequestContext?.tenantId;
-    const branchId = trustedRequestContext?.branchId;
-    if (
-      typeof tenantId !== 'string' ||
-      !tenantId.trim() ||
-      typeof branchId !== 'string' ||
-      !branchId.trim()
-    ) {
-      throw new ForbiddenException('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
+  /**
+   * Şube kapsamı — id yalnız istek bağlamından okunur; sunucuda yetkilenen
+   * şube seçimi boş/eksikse sorgu öncesi FAIL-CLOSED reddi zorunludur.
+   */
+  private async assertBranchOwnership(
+    manager: EntityManager,
+    tenantId: string,
+    branchId: string | undefined,
+  ): Promise<void> {
+    if (typeof branchId !== 'string' || !branchId.trim()) {
+      throw new ForbiddenException('NOTIFICATION_OUTBOX_BRANCH_REQUIRED');
     }
-    return { tenantId, branchId };
+    const rows = await manager.query(
+      `SELECT 1 FROM branches WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
+      [tenantId, branchId],
+    );
+    if (!Array.isArray(rows) || rows.length !== 1) {
+      throw new ForbiddenException('NOTIFICATION_OUTBOX_BRANCH_NOT_VISIBLE');
+    }
   }
 
   /** Operasyon listesi — tüm durumlar, isteğe bağlı `status` filtresi. */
   async findAll(
     entityManager: EntityManager,
-    trustedRequestContext: RequestContext,
+    ctx: RequestContext,
     input: Readonly<{ limit: number; offset: number; status?: string }>,
   ): Promise<NotificationOperationRow[]> {
-    const { tenantId, branchId } = this.scope(entityManager, trustedRequestContext);
+    assertTenantScope(ctx, 'notification_outbox');
+    await this.assertBranchOwnership(entityManager, ctx.tenantId, ctx.branchId);
     if (!Number.isSafeInteger(input.limit) || input.limit <= 0) {
       throw new BadRequestException('NOTIFICATION_OUTBOX_LIMIT_INVALID');
     }
@@ -134,6 +144,8 @@ export class NotificationDispatchRepository {
       throw new BadRequestException('NOTIFICATION_OUTBOX_OFFSET_INVALID');
     }
     const bounded = Math.min(input.limit, 100);
+    const tenantId = ctx.tenantId;
+    const branchId = ctx.branchId!;
     const params: unknown[] = [tenantId, branchId];
     let statusPredicate = '';
     if (input.status) {
@@ -158,16 +170,17 @@ export class NotificationDispatchRepository {
   /** Tek satır detayı — tüm durumlar. */
   async findById(
     entityManager: EntityManager,
-    trustedRequestContext: RequestContext,
+    ctx: RequestContext,
     id: string,
   ): Promise<NotificationOperationRow | null> {
-    const { tenantId, branchId } = this.scope(entityManager, trustedRequestContext);
+    assertTenantScope(ctx, 'notification_outbox');
+    await this.assertBranchOwnership(entityManager, ctx.tenantId, ctx.branchId);
     const rows = (await entityManager.query(
       `SELECT ${OPERATION_COLUMNS}
          FROM notification_outbox o
          JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
         WHERE o.tenant_id = $1 AND s.branch_id = $2 AND o.id = $3`,
-      [tenantId, branchId, id],
+      [ctx.tenantId, ctx.branchId, id],
     )) as NotificationOperationRow[];
     return rows[0] ?? null;
   }
@@ -175,7 +188,8 @@ export class NotificationDispatchRepository {
   /** Satırın güncel durumu — başarısız claim'in sınıflandırılması için. */
   async currentClaimBasis(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
+    ctx: RequestContext,
+    id: string,
   ): Promise<{
     status: NotificationOutboxStatus;
     version: number;
@@ -183,7 +197,10 @@ export class NotificationDispatchRepository {
     claimActive: boolean;
     backoffUntil: Date | null;
   } | null> {
-    const { tenantId, branchId } = this.scope(entityManager, input);
+    assertTenantScope(ctx, 'notification_outbox');
+    await this.assertBranchOwnership(entityManager, ctx.tenantId, ctx.branchId);
+    const tenantId = ctx.tenantId;
+    const branchId = ctx.branchId!;
     const rows = (await entityManager.query(
       `SELECT o.status, o.version, o.attempts,
               (o.claim_expires_at IS NOT NULL AND o.claim_expires_at >= now()) AS "claimActive",
@@ -193,7 +210,7 @@ export class NotificationDispatchRepository {
           AND o.session_id IN (
             SELECT id FROM attendance_sessions
              WHERE tenant_id = $1 AND branch_id = $3)`,
-      [tenantId, input.id, branchId],
+      [tenantId, id, branchId],
     )) as Array<{
       status: NotificationOutboxStatus;
       version: number;
@@ -220,9 +237,13 @@ export class NotificationDispatchRepository {
    */
   async claim(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
+    ctx: RequestContext,
+    id: string,
   ): Promise<ClaimResult | null> {
-    const { tenantId, branchId } = this.scope(entityManager, input);
+    assertTenantScope(ctx, 'notification_outbox');
+    await this.assertBranchOwnership(entityManager, ctx.tenantId, ctx.branchId);
+    const tenantId = ctx.tenantId;
+    const branchId = ctx.branchId!;
     const claimToken = randomUUID();
     const rows = extractRows<{
       id: string;
@@ -256,7 +277,7 @@ export class NotificationDispatchRepository {
                     channel, event_type AS "eventType", snapshot,
                     attempts AS attempt, fencing_token AS "fencingToken",
                     claim_token AS "claimToken", version`,
-        [tenantId, input.id, claimToken, CLAIM_LEASE_SECONDS, branchId],
+        [tenantId, id, claimToken, CLAIM_LEASE_SECONDS, branchId],
       ),
     );
     if (rows.length === 0) return null;
@@ -281,14 +302,13 @@ export class NotificationDispatchRepository {
    */
   async transitionToBlockedConsent(
     entityManager: EntityManager,
-    input: Readonly<{
-      tenantId: string;
-      id: string;
-      claimToken: string;
-      reason: string;
-      consentVersion: number | null;
-    }>,
+    ctx: RequestContext,
+    id: string,
+    claimToken: string,
+    reason: string,
+    consentVersion: number | null,
   ): Promise<{ version: number } | null> {
+    assertTenantScope(ctx, 'notification_outbox');
     const rows = extractRows<{ version: number }>(
       await entityManager.query(
         `UPDATE notification_outbox
@@ -301,13 +321,7 @@ export class NotificationDispatchRepository {
           WHERE tenant_id = $1 AND id = $2 AND claim_token = $5
             AND status IN ('approved', 'failed')
           RETURNING version`,
-        [
-          input.tenantId,
-          input.id,
-          input.reason,
-          input.consentVersion,
-          input.claimToken,
-        ],
+        [ctx.tenantId, id, reason, consentVersion, claimToken],
       ),
     );
     if (rows.length === 0) return null;
@@ -331,16 +345,15 @@ export class NotificationDispatchRepository {
    */
   async applyOutcome(
     entityManager: EntityManager,
-    input: Readonly<{
-      tenantId: string;
-      id: string;
-      claimToken: string;
-      outcome: DispatchOutcome;
-      attempts: number;
-      errorCode: string | null;
-    }>,
+    ctx: RequestContext,
+    id: string,
+    claimToken: string,
+    outcome: DispatchOutcome,
+    attempts: number,
+    errorCode: string | null,
   ): Promise<{ status: NotificationOutboxStatus; version: number } | null> {
-    const backoffMs = backoffMsForAttempts(input.attempts);
+    assertTenantScope(ctx, 'notification_outbox');
+    const backoffMs = backoffMsForAttempts(attempts);
     const rows = extractRows<{ status: NotificationOutboxStatus; version: number }>(
       await entityManager.query(
         `UPDATE notification_outbox
@@ -368,15 +381,7 @@ export class NotificationDispatchRepository {
           WHERE tenant_id = $1 AND id = $2 AND claim_token = $7
             AND status IN ('approved', 'failed')
           RETURNING status, version`,
-        [
-          input.tenantId,
-          input.id,
-          input.outcome,
-          MAX_ATTEMPTS,
-          backoffMs / 1000,
-          input.errorCode,
-          input.claimToken,
-        ],
+        [ctx.tenantId, id, outcome, MAX_ATTEMPTS, backoffMs / 1000, errorCode, claimToken],
       ),
     );
     if (rows.length === 0) return null;
@@ -386,8 +391,8 @@ export class NotificationDispatchRepository {
   /** tx2 — dayanıcı receipt satırı (idempotent: UNIQUE outbox_id+attempt). */
   async insertReceipt(
     entityManager: EntityManager,
+    ctx: RequestContext,
     input: Readonly<{
-      tenantId: string;
       outboxId: string;
       attempt: number;
       fencingToken: number;
@@ -397,6 +402,7 @@ export class NotificationDispatchRepository {
       receipt: Record<string, unknown>;
     }>,
   ): Promise<NotificationDispatchReceipt> {
+    assertTenantScope(ctx, 'notification_dispatch_receipts');
     const rows = extractRows<Record<string, unknown>>(
       await entityManager.query(
         `INSERT INTO notification_dispatch_receipts
@@ -405,7 +411,7 @@ export class NotificationDispatchRepository {
          VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8::jsonb)
          RETURNING *`,
         [
-          input.tenantId,
+          ctx.tenantId,
           input.outboxId,
           input.attempt,
           input.fencingToken,
@@ -423,14 +429,15 @@ export class NotificationDispatchRepository {
   /** Gönderim kanıtları — detail yanıtı için (attempt artan sırada). */
   async findReceipts(
     entityManager: EntityManager,
-    tenantId: string,
+    ctx: RequestContext,
     outboxId: string,
   ): Promise<NotificationDispatchReceipt[]> {
+    assertTenantScope(ctx, 'notification_dispatch_receipts');
     const rows = (await entityManager.query(
       `SELECT * FROM notification_dispatch_receipts
         WHERE tenant_id = $1 AND outbox_id = $2
         ORDER BY attempt ASC`,
-      [tenantId, outboxId],
+      [ctx.tenantId, outboxId],
     )) as Array<Record<string, unknown>>;
     return rows.map(mapReceiptRow);
   }
@@ -441,14 +448,15 @@ export class NotificationDispatchRepository {
    */
   async findLatestReceipt(
     entityManager: EntityManager,
-    tenantId: string,
+    ctx: RequestContext,
     outboxId: string,
   ): Promise<NotificationDispatchReceipt | null> {
+    assertTenantScope(ctx, 'notification_dispatch_receipts');
     const rows = (await entityManager.query(
       `SELECT * FROM notification_dispatch_receipts
         WHERE tenant_id = $1 AND outbox_id = $2
         ORDER BY attempt DESC LIMIT 1`,
-      [tenantId, outboxId],
+      [ctx.tenantId, outboxId],
     )) as Array<Record<string, unknown>>;
     return rows.length > 0 ? mapReceiptRow(rows[0]) : null;
   }
@@ -459,9 +467,13 @@ export class NotificationDispatchRepository {
    */
   async rearmForRetry(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
+    ctx: RequestContext,
+    id: string,
   ): Promise<{ status: NotificationOutboxStatus; version: number } | null> {
-    const { tenantId, branchId } = this.scope(entityManager, input);
+    assertTenantScope(ctx, 'notification_outbox');
+    await this.assertBranchOwnership(entityManager, ctx.tenantId, ctx.branchId);
+    const tenantId = ctx.tenantId;
+    const branchId = ctx.branchId!;
     const rows = extractRows<{ status: NotificationOutboxStatus; version: number }>(
       await entityManager.query(
         `UPDATE notification_outbox
@@ -476,7 +488,7 @@ export class NotificationDispatchRepository {
                WHERE tenant_id = $1 AND branch_id = $3)
             AND status IN ('dead_lettered', 'uncertain')
           RETURNING status, version`,
-        [tenantId, input.id, branchId],
+        [tenantId, id, branchId],
       ),
     );
     if (rows.length === 0) return null;
@@ -489,9 +501,13 @@ export class NotificationDispatchRepository {
    */
   async cancel(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
+    ctx: RequestContext,
+    id: string,
   ): Promise<{ status: NotificationOutboxStatus; version: number } | null> {
-    const { tenantId, branchId } = this.scope(entityManager, input);
+    assertTenantScope(ctx, 'notification_outbox');
+    await this.assertBranchOwnership(entityManager, ctx.tenantId, ctx.branchId);
+    const tenantId = ctx.tenantId;
+    const branchId = ctx.branchId!;
     const rows = extractRows<{ status: NotificationOutboxStatus; version: number }>(
       await entityManager.query(
         `UPDATE notification_outbox
@@ -506,7 +522,7 @@ export class NotificationDispatchRepository {
                WHERE tenant_id = $1 AND branch_id = $3)
             AND status NOT IN ('dispatched', 'delivered', 'cancelled', 'closed')
           RETURNING status, version`,
-        [tenantId, input.id, branchId],
+        [tenantId, id, branchId],
       ),
     );
     if (rows.length === 0) return null;

@@ -117,7 +117,7 @@ export class NotificationDispatchService {
       const row = await this.outbox.findById(em, context, id);
       if (!row) throw new NotFoundException(`NOTIFICATION_NOT_FOUND:${id}`);
       const receipts = includeReceipts
-        ? await this.outbox.findReceipts(em, row.tenantId, row.id)
+        ? await this.outbox.findReceipts(em, context, row.id)
         : [];
       return { row, availableActions: availableActionsFor(row.status), receipts };
     });
@@ -128,23 +128,20 @@ export class NotificationDispatchService {
    * claim'in commit'i tx2 guard'ının ön koşuludur).
    */
   async execute(context: RequestContext, id: string): Promise<ExecuteResult> {
-    const tenantId = context.tenantId!;
-    const branchId = context.branchId!;
-
     const claim = await this.dataSource.transaction((em) =>
-      this.outbox.claim(em, { tenantId, branchId, id }),
+      this.outbox.claim(em, context, id),
     );
 
     if (!claim) {
       const basis = await this.dataSource.transaction((em) =>
-        this.outbox.currentClaimBasis(em, { tenantId, branchId, id }),
+        this.outbox.currentClaimBasis(em, context, id),
       );
       if (
         basis !== null &&
         (basis.status === 'dispatched' || basis.status === 'delivered')
       ) {
         const receipt = await this.dataSource.transaction((em) =>
-          this.outbox.findLatestReceipt(em, tenantId, id),
+          this.outbox.findLatestReceipt(em, context, id),
         );
         return {
           id,
@@ -171,13 +168,14 @@ export class NotificationDispatchService {
       });
 
       if (!decision.approved) {
-        const transitioned = await this.outbox.transitionToBlockedConsent(em, {
-          tenantId: claim.tenantId,
-          id: claim.id,
-          claimToken: claim.claimToken,
-          reason: decision.reason!,
-          consentVersion: decision.consentVersion,
-        });
+        const transitioned = await this.outbox.transitionToBlockedConsent(
+          em,
+          context,
+          claim.id,
+          claim.claimToken,
+          decision.reason!,
+          decision.consentVersion,
+        );
         if (!transitioned) throw new ConflictException(`CLAIM_LOST:${claim.id}`);
         await this.writeOutcomeAudit(em, context, {
           id: claim.id,
@@ -205,18 +203,18 @@ export class NotificationDispatchService {
       // 3) Koşullu sonuç geçişi (claim_token + durum koruması) — önce geçiş,
       //    sonra receipt: cancel yarışı kaybedilirse tx2 rollback eder ve
       //    sağlayıcı etkisi sıfır kalır.
-      const next = await this.outbox.applyOutcome(em, {
-        tenantId: claim.tenantId,
-        id: claim.id,
-        claimToken: claim.claimToken,
-        outcome: sim.outcome,
-        attempts: claim.attempt,
-        errorCode: sim.errorCode,
-      });
+      const next = await this.outbox.applyOutcome(
+        em,
+        context,
+        claim.id,
+        claim.claimToken,
+        sim.outcome,
+        claim.attempt,
+        sim.errorCode,
+      );
       if (!next) throw new ConflictException(`CLAIM_LOST:${claim.id}`);
 
-      const receipt = await this.outbox.insertReceipt(em, {
-        tenantId: claim.tenantId,
+      const receipt = await this.outbox.insertReceipt(em, context, {
         outboxId: claim.id,
         attempt: claim.attempt,
         fencingToken: claim.fencingToken,
@@ -261,12 +259,10 @@ export class NotificationDispatchService {
     context: RequestContext,
     id: string,
   ): Promise<{ id: string; status: NotificationOutboxStatus; version: number }> {
-    const tenantId = context.tenantId!;
-    const branchId = context.branchId!;
     return this.dataSource.transaction(async (em) => {
-      const next = await this.outbox.rearmForRetry(em, { tenantId, branchId, id });
+      const next = await this.outbox.rearmForRetry(em, context, id);
       if (!next) {
-        const basis = await this.outbox.currentClaimBasis(em, { tenantId, branchId, id });
+        const basis = await this.outbox.currentClaimBasis(em, context, id);
         throw claimConflict(basis, id);
       }
       return { id, status: next.status, version: next.version };
@@ -281,12 +277,10 @@ export class NotificationDispatchService {
     context: RequestContext,
     id: string,
   ): Promise<{ id: string; status: NotificationOutboxStatus; version: number }> {
-    const tenantId = context.tenantId!;
-    const branchId = context.branchId!;
     return this.dataSource.transaction(async (em) => {
-      const next = await this.outbox.cancel(em, { tenantId, branchId, id });
+      const next = await this.outbox.cancel(em, context, id);
       if (!next) {
-        const basis = await this.outbox.currentClaimBasis(em, { tenantId, branchId, id });
+        const basis = await this.outbox.currentClaimBasis(em, context, id);
         throw claimConflict(basis, id);
       }
       return { id, status: next.status, version: next.version };
