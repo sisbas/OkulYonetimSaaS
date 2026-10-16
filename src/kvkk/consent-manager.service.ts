@@ -156,7 +156,8 @@ export class ConsentManagerService {
       entityType: 'dataprotection' as const,
       entityId: tenantId,
       result: 'success' as const,
-      changedFields: ['purpose'] as const,
+      // Okuma hiçbir alanı değiştirmez; sahte 'purpose' beyanı yerine dürüst boş (#462).
+      changedFields: [] as const,
     };
     await this.audit.write(entityManager, 'dataprotection.consent.read', {
       ...readMetadata,

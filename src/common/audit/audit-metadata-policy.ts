@@ -122,6 +122,11 @@ type AuditMetadataPolicy = Readonly<{
   actorRequired?: boolean;
   resultAllowlist: readonly AuditResultValue[];
   redactionReceiptRequired?: boolean;
+  /**
+   * Okuma gibi hiçbir alanı değiştirmeyen olaylarda `changedFields` dürüstçe
+   * boş olabilir; varsayılan olarak policy boş diziyi reddeder (#462).
+   */
+  changedFieldsOptional?: boolean;
 }>;
 
 const LEAVE_EVENT_POLICY: AuditMetadataPolicy = {
@@ -162,6 +167,12 @@ const DATA_PROTECTION_POLICY: AuditMetadataPolicy = {
   actorRequired: true,
   resultAllowlist: ['success', 'failure'],
   redactionReceiptRequired: true,
+};
+
+// Okuma olayı hiçbir alanı değiştirmez; `changedFields` dürüstçe boş olabilir (#462).
+const DATA_PROTECTION_READ_POLICY: AuditMetadataPolicy = {
+  ...DATA_PROTECTION_POLICY,
+  changedFieldsOptional: true,
 };
 
 const STUDENT_POLICY: AuditMetadataPolicy = {
@@ -328,7 +339,7 @@ const POLICY_BY_EVENT: Record<TransactionalAuditEventName, AuditMetadataPolicy> 
   'dataprotection.erasure.requested': DATA_PROTECTION_POLICY,
   'dataprotection.erasure.completed': DATA_PROTECTION_POLICY,
   'dataprotection.consent.revoked': DATA_PROTECTION_POLICY,
-  'dataprotection.consent.read': DATA_PROTECTION_POLICY,
+  'dataprotection.consent.read': DATA_PROTECTION_READ_POLICY,
   'student.created': STUDENT_POLICY,
   'student.updated': STUDENT_POLICY,
   'student.deactivated': STUDENT_POLICY,
@@ -427,8 +438,12 @@ function assertRequestId(value: unknown): string {
   return value;
 }
 
-function assertChangedFields(value: unknown, allowedFields: readonly string[]): readonly string[] {
-  if (!Array.isArray(value) || value.length === 0 || value.some((field) => typeof field !== 'string')) {
+function assertChangedFields(
+  value: unknown,
+  allowedFields: readonly string[],
+  optional = false,
+): readonly string[] {
+  if (!Array.isArray(value) || (value.length === 0 && !optional) || value.some((field) => typeof field !== 'string')) {
     throw new TypeError('changedFields must be a non-empty string array');
   }
 
@@ -559,7 +574,11 @@ export function validateTransactionalAuditMetadata<E extends TransactionalAuditE
   const actorSessionId = assertNullableUuid(metadata.actorSessionId, 'actorSessionId');
   const entityId = assertUuid(metadata.entityId, 'entityId');
   const requestId = assertRequestId(metadata.requestId);
-  const changedFields = assertChangedFields(metadata.changedFields, policy.allowedChangedFields);
+  const changedFields = assertChangedFields(
+    metadata.changedFields,
+    policy.allowedChangedFields,
+    policy.changedFieldsOptional,
+  );
   const branchId = policy.branchScoped ? assertUuid(metadata.branchId, 'branchId') : undefined;
 
   const redactionReceipt = policy.redactionReceiptRequired
