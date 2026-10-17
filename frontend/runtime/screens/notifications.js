@@ -25,7 +25,7 @@ function renderSessionBulkAction(rows) {
     id: pick(row, ['id']),
     version: Number(pick(row, ['version'], 0)),
   }));
-  return `<button type="button" data-action="bulk-approve-session" data-session-id="${escapeHtml(pick(approvable[0], ['sessionId'], ''))}" data-versions="${escapeHtml(encodeURIComponent(JSON.stringify(expectedVersions)))}">Bu oturumun ${approvable.length} taslağını toplu onayla</button>`;
+  return `<button type="button" data-action="bulk-approve-session" data-session-id="${escapeHtml(pick(approvable[0], ['sessionId'], ''))}" data-versions="${escapeHtml(encodeURIComponent(JSON.stringify(expectedVersions)))}" ${mutationDisabled() ? 'disabled' : ''}>Bu oturumun ${approvable.length} taslağını toplu onayla</button>`;
 }
 
 async function bulkApproveSession(sessionId, versionsCsv) {
@@ -42,6 +42,7 @@ async function bulkApproveSession(sessionId, versionsCsv) {
     await apiRequest(`/notifications/drafts/session/${encodeURIComponent(sessionId)}/approve`, {
       method: 'POST',
       body: { expectedVersions },
+      versioned: true,
     });
     announce('Oturum taslakları toplu onaylandı.', 'success');
     await loadNotifications();
@@ -93,6 +94,11 @@ function renderNotificationCard(row) {
   </article>`;
 }
 
+async function fetchNotificationDetail(id) {
+  const { body } = await apiRequest(`/notifications/${encodeURIComponent(id)}`);
+  return body;
+}
+
 async function openNotificationDetail(id) {
   if (!requireSession()) return;
   state.activeNotificationId = id || state.activeNotificationId;
@@ -100,8 +106,7 @@ async function openNotificationDetail(id) {
   const target = $('#notification-detail');
   target.innerHTML = loading('Bildirim detayı getiriliyor');
   try {
-    const { body } = await apiRequest(`/notifications/${encodeURIComponent(state.activeNotificationId)}`);
-    renderNotificationDetail(body);
+    renderNotificationDetail(await fetchNotificationDetail(state.activeNotificationId));
   } catch (error) {
     renderError(target, error);
   }
@@ -129,7 +134,7 @@ function renderReceiptRow(receipt) {
   </li>`;
 }
 
-function renderNotificationDetail(body) {
+function renderNotificationDetail(body, uiState = '') {
   const row = body && body.row ? body.row : {};
   const actions = asArray(body, ['availableActions']);
   const receipts = asArray(body, ['receipts']);
@@ -138,8 +143,9 @@ function renderNotificationDetail(body) {
   const status = pick(row, ['status'], 'unknown');
   const reason = pick(row, ['reason']);
   const actionButtons = actions.length
-    ? actions.map((action) => `<button type="button" data-action="notification-run" data-notification-action="${escapeHtml(action)}">${escapeHtml(notificationActionLabel(action))}</button>`).join('')
+    ? actions.map((action) => `<button type="button" data-action="notification-run" data-notification-action="${escapeHtml(action)}" ${mutationDisabled() ? 'disabled' : ''}>${escapeHtml(notificationActionLabel(action))}</button>`).join('')
     : '<p class="hint">Sunucu bu durumda izin verilen bir eylem döndürmedi.</p>';
+  $('#notification-detail').dataset.state = uiState || 'record_ready';
   $('#notification-detail').innerHTML = `<article class="card">
     <h3>${escapeHtml(pick(row, ['eventType'], 'Bildirim'))} · ${escapeHtml(displayStatus(status))}</h3>
     <p class="card-meta">
@@ -150,6 +156,7 @@ function renderNotificationDetail(body) {
       <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
     </p>
     ${reason ? `<p>Gerekçe: ${escapeHtml(String(reason))}</p>` : ''}
+    ${canonicalStateBlock(uiState)}
     <div class="quick-actions">${actionButtons}</div>
     <strong>Gönderim kanıtları</strong>
     ${receipts.length ? `<ul class="impact-list">${receipts.map(renderReceiptRow).join('')}</ul>` : '<p class="hint">Gönderim kanıtı (receipt) yok veya görüntüleme yetkiniz sınırlı.</p>'}
@@ -167,16 +174,28 @@ async function runNotificationAction(action) {
     path = `/notifications/drafts/${encodeURIComponent(id)}/${encodeURIComponent(action)}`;
     body = { expectedVersion: state.activeNotificationVersion };
   }
-  target.innerHTML = loading('İşlem sunucuda uygulanıyor');
+  target.dataset.state = '';
+    target.innerHTML = loading('İşlem sunucuda uygulanıyor');
   try {
-    const { body: result } = await apiRequest(path, { method: 'POST', ...(body ? { body } : {}) });
+    const { body: result } = await apiRequest(path, {
+      method: 'POST',
+      ...(body ? { body } : {}),
+      versioned: Boolean(body),
+    });
     const nextStatus = pick(result, ['status'], '');
     announce(`İşlem tamamlandı${nextStatus ? ` · ${displayStatus(nextStatus)}` : ''}.`, 'success');
     await openNotificationDetail(id);
     await loadNotifications();
   } catch (error) {
     renderError(target, error);
-    if (error.uiState === 'stale_version' || error.uiState === 'version_required') await openNotificationDetail(id);
+    if (error.uiState === 'stale_version' || error.uiState === 'version_required') {
+      try {
+        renderNotificationDetail(await fetchNotificationDetail(id), error.uiState);
+      } catch (_refetchError) {
+        return renderError(target, error);
+      }
+      await loadNotifications();
+    }
   }
 }
 

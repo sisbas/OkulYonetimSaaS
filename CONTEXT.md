@@ -105,6 +105,18 @@ sınırlarıdır; sonraki oturumlar bunları yeniden açmaz (kanıt: bu tablo).
 
 ---
 
+## #443 kararları — kanonik UI-state haritası (2026-10-17)
+
+Numaralandırma K-1'den K-28'e devam eder. Bu kararlar #443'ün (`/grill-with-docs`
+çıktısı değil, ticket + #441 spec'i) uygulamasında alınan tasarım kararlarıdır.
+
+| # | Karar | Gerekçe |
+|---|---|---|
+| K-29 | **Öncelik sırası: çağrının bildirdiği kapsam → sunucunun kodu → HTTP durumu → bilinmeyen.** `canonicalUiState` önce `options.notFoundUiState`'i uygular, sonra `SERVER_REASON_UI[serverAuthoredCode(body)]`, sonra `HTTP_STATUS_UI_STATE`. Sunucunun gönderdiği kod haritada yoksa çökme değil, kapsamın kendi varsayılan durumu kullanılır. | #443'ün temel şikâyeti "409 her şeyde yedek öğretmen çakışması" idi. Kod → durum eşlemesi tek ve toplu olduğunda dört publish/sürüm sonucu birbirine karışamaz. `notFoundUiState` önce gelir çünkü 404'ün anlamı çağıranın ekranına aittir: şube seçiminde reddedilen şube ile var olmayan şube **ayırt edilemez** (`deny-response.ts`), dolayısıyla 404 orada `forbidden_non_enumerating`'dir, `empty_or_not_found_same_scope` değil. |
+| K-30 | **Sürüm beklentisi taşıyan bir isteğin kodsuz 409'u `stale_version`'dur.** Bu, istemcide *sebep kodu* üretmek değildir (`serverCode` yine boştur, AC7 sağlanır); sunucunun "sürümün artık geçerli değil" gerçeğini, sunucunun kodu göndermemesine rağmen sınıflandırmaktır. Kural dar tutulmuştur: yalnız istek `If-Match`/`expectedVersion` taşıyorsa ve yanıt hiçbir kod içermiyorsa geçerlidir. | Bildirim taslağı onayı (`expectedVersion`) sunucu tarafında 409 + sadece İngilizce `Conflict` zarfı döndürüyor; eski kod bu boşluğu yedek öğretmen mesajıyla dolduruyordu. #443 AC3 bu yolun kanonik `stale_version` kopyasını istiyor. Kural genişletilirse (kodsuz her 409 → stale) yarış durumu çakışma olarak da görünür ve iki durum birbirine karışır. |
+| K-31 | **`mutationDisabled()` her değiştirici düğmede render anında değerlendirilir; runtime'ta zamanlayıcı yoktur.** Bekleme penceresi `state.rateLimitedUntil` + `Retry-After` başlığından gelir. Bu, runtime'un "zamanlayıcı/fake-time yok" sınırının bilinçli sonucudur (`runtime-boundary.spec.ts` `setTimeout(() =>`'ı yasaklar). | #443 AC5 "tekrar eylemi kısa süreliğine devre dışı" diyor. Kalan boşluk dürüstçe: bekleme bitmeden düğmeler ancak bir sonraki render'da geri gelir. Bu bir kusur değil, kabul edilen bir sınırdır; `data-state="rate_limited"` bölgesi bekleme süresini kendi kopyasıyla bildirir. Zamanlayıcı eklenirse sınır `runtime-boundary.spec.ts` içinde gerekçesiyle birlikte değişmelidir — sadece bir `setTimeout` kaçırmak için değil. |
+| K-32 | **Her render bölgeye kanonik `data-state` damgalar.** Hata durumu `data-state="<canonical>"` yazar; başarılı kayıt render'ı `data-state="record_ready"` yazar. Böylece önceki hatanın durumu sonraki başarılı çizimde sızamaz. | #443 kabulünde bulunan gerçek sızıntı: `renderNotificationDetail` bölgenin `data-state`'ini temizlemediği için detay yeniden yüklendikten sonra bile `stale_version` görünüyordu. Kanıt/erişilebilirlik paketleri bölge özniteliğini okuduğu için tek kaynak (bölge) zorunlu. |
+
 ## Açık sorular
 
 | # | Soru | Durum |

@@ -36,8 +36,8 @@ function renderScheduleEventRow(event, index) {
       <label>Zaman dilimi <input data-schedule-field="timeSlotId" value="${escapeHtml(event.timeSlotId || '')}" /></label>
     </div>
     <div class="quick-actions">
-      <button type="button" data-action="schedule-row-update" data-schedule-index="${index}">Satırı güncelle</button>
-      <button type="button" data-action="schedule-row-remove" data-schedule-index="${index}">Satırı sil</button>
+      <button type="button" data-action="schedule-row-update" data-schedule-index="${index}" ${mutationDisabled() ? 'disabled' : ''}>Satırı güncelle</button>
+      <button type="button" data-action="schedule-row-remove" data-schedule-index="${index}" ${mutationDisabled() ? 'disabled' : ''}>Satırı sil</button>
     </div>
   </article>`;
 }

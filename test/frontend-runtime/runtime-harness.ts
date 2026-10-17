@@ -2,7 +2,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vm from 'node:vm';
 
-const source = fs.readFileSync(path.join(process.cwd(), 'frontend/runtime/app.js'), 'utf8');
+const RUNTIME_ROOT = path.join(process.cwd(), 'frontend/runtime');
+const SCREEN_MODULES = ['decisions', 'consents', 'notifications', 'schedule', 'attendance'];
+
+// Core first, then the screen modules in the order index.html loads them, so a
+// probe can drive any screen the way the browser does.
+const source = [
+  fs.readFileSync(path.join(RUNTIME_ROOT, 'app.js'), 'utf8'),
+  ...SCREEN_MODULES.map((name) => fs.readFileSync(path.join(RUNTIME_ROOT, 'screens', `${name}.js`), 'utf8')),
+].join('\n');
 
 export interface MockElement {
   id?: string;

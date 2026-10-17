@@ -11,6 +11,7 @@ function renderLeaveDecisionCard(leave) {
   const coverage = String(pick(leave, ['coverageStatus'], 'unknown')).toLowerCase();
   const pending = decision === 'pending' || decision === 'unknown';
   const etag = String(pick(leave, ['etag'], '') || '');
+  const locked = mutationDisabled();
   return `<article class="card">
     <h3>İzin talebi · ${escapeHtml(displayStatus(decision))}</h3>
     <p class="card-meta">
@@ -20,8 +21,8 @@ function renderLeaveDecisionCard(leave) {
     </p>
     ${pending
       ? `<div class="quick-actions">
-          <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="approve" data-leave-etag="${escapeHtml(etag)}">Onayla</button>
-          <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="reject" data-leave-etag="${escapeHtml(etag)}">Reddet</button>
+          <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="approve" data-leave-etag="${escapeHtml(etag)}" ${locked ? 'disabled' : ''}>Onayla</button>
+          <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="reject" data-leave-etag="${escapeHtml(etag)}" ${locked ? 'disabled' : ''}>Reddet</button>
         </div>`
       : '<p class="hint">Bu talebin kararı verilmiş; kayıt güncelliği listeyle birlikte tazelenir.</p>'}
   </article>`;
@@ -52,6 +53,7 @@ async function decideLeave(leaveId, decision, etag) {
     const { body } = await apiRequest(`/leaves/${encodeURIComponent(leaveId)}/${encodeURIComponent(decision)}`, {
       method: 'PATCH',
       headers: { 'If-Match': etag },
+      versioned: true,
     });
     const nextDecision = pick(body, ['decisionStatus'], '');
     announce(`İzin kararı tamamlandı${nextDecision ? ` · ${displayStatus(nextDecision)}` : ''}.`, 'success');

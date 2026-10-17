@@ -812,15 +812,17 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await runAction(sessionB!, 'approve');
     await sessionB!.waitForText(
       '#notification-detail .error-state',
-      /Görevlendirme mevcut program veya yedek görevle çakışıyor/,
+      /Kayıt güncellendi/,
       20_000,
     );
     const state = await sessionB!.attribute('#notification-detail .error-state', 'data-state');
-    expect(state).toBe('conflict_blocking');
+    expect(state).toBe('stale_version');
+    // Yedek öğretmen çakışma kopyası artık hiçbir 409 için kullanılmaz (#443).
+    expect(await sessionB!.countElements('#notification-detail .error-state')).toBe(1);
     await expectRow('r3', { status: 'approved', version: 1, attempts: 0 });
     recordEvidence(
       currentScenario,
-      'B stale approve (expectedVersion 0) → 409 conflict_blocking; DB r3 approved v1 attempts 0 (tek etki)',
+      'B stale approve (expectedVersion 0) → 409 stale_version (kendi mesajıyla); DB r3 approved v1 attempts 0 (tek etki)',
     );
     await snap(sessionB!, '06-stale-version-conflict');
     recordScenario(SCENARIO_NAMES[5], 'PASS');

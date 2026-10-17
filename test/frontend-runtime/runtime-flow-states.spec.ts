@@ -6,7 +6,7 @@ function readShellHtml(): string {
   return fs.readFileSync(path.join(process.cwd(), 'frontend/runtime/index.html'), 'utf8');
 }
 
-const PROBE = 'state, applyCatalog, login, updateContext, apiRequest, renderNavigation, activateTab, loadQueue, loadImpact, loadCandidates, createAssignment, clearAssignment, createLeave, loadOwnLeave, renderError, recoveryHint, requireSession, getBranchId';
+const PROBE = 'state, applyCatalog, login, updateContext, apiRequest, renderNavigation, activateTab, loadQueue, loadImpact, loadCandidates, createAssignment, clearAssignment, createLeave, loadOwnLeave, renderError, requireSession, getBranchId';
 
 describe('runtime core flow state coverage (#400)', () => {
   describe('candidate eligibility separation', () => {
@@ -118,10 +118,10 @@ describe('runtime core flow state coverage (#400)', () => {
         text: async () => '<html>Bad Gateway</html>',
         headers: { get: () => null },
       });
-      return ui.probe.apiRequest('/daily-operations/today').catch((error: { reasonCode?: string; message?: string }) => {
+      return ui.probe.apiRequest('/daily-operations/today').catch((error: { uiState?: string; message?: string }) => {
         // Should throw a normalized error, not crash on JSON.parse
         expect(error).toBeDefined();
-        expect(error.reasonCode).toBeDefined();
+        expect(error.uiState).toBe('error_retryable');
         expect(error.message).toBeTruthy();
       });
     });
@@ -136,9 +136,9 @@ describe('runtime core flow state coverage (#400)', () => {
         text: async () => '<html>unexpected</html>',
         headers: { get: () => null },
       });
-      return ui.probe.apiRequest('/daily-operations/today').catch((error: { reasonCode?: string; message?: string }) => {
+      return ui.probe.apiRequest('/daily-operations/today').catch((error: { uiState?: string; message?: string }) => {
         // A 200 with undecodable body is a server fault, never a fabricated empty state
-        expect(error.reasonCode).toBe('SERVER_ERROR');
+        expect(error.uiState).toBe('error_retryable');
         expect(error.message).not.toMatch(/boş|bulunmuyor/i);
       });
     });

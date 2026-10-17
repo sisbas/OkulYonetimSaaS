@@ -25,7 +25,7 @@ function renderConsentCard(row) {
       <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
     </p>
     ${revocable
-      ? `<button type="button" data-action="consent-revoke" data-subject-ref-id="${escapeHtml(subjectRefId)}" data-subject-type="${escapeHtml(subjectType)}" data-consent-type="${escapeHtml(consentType)}">Onayı geri çek</button>`
+      ? `<button type="button" data-action="consent-revoke" data-subject-ref-id="${escapeHtml(subjectRefId)}" data-subject-type="${escapeHtml(subjectType)}" data-consent-type="${escapeHtml(consentType)}" ${mutationDisabled() ? 'disabled' : ''}>Onayı geri çek</button>`
       : '<p class="hint">Onay zaten kapalı; geri çekilecek bir kayıt yok.</p>'}
   </article>`;
 }

@@ -85,18 +85,19 @@ function renderAttendanceDetail(session) {
   const version = Number(pick(session, ['version'], 0));
   const roster = asArray(session, ['rosterSnapshot', 'roster']);
   const locked = status === 'locked';
+  const muted = mutationDisabled();
   const rosterRows = roster.map((studentId, index) => `<li>
     <strong>Öğrenci ${index + 1}</strong>
     <span>${escapeHtml(String(studentId).slice(0, 8))}…</span>
     ${locked
-      ? `<button type="button" data-action="attendance-correct" data-student-id="${escapeHtml(studentId)}" data-session-version="${version}">Kontrollü düzeltme</button>`
+      ? `<button type="button" data-action="attendance-correct" data-student-id="${escapeHtml(studentId)}" data-session-version="${version}" ${muted ? 'disabled' : ''}>Kontrollü düzeltme</button>`
       : `<span class="quick-actions">
-          ${['present', 'absent', 'late', 'excused'].map((mark) => `<button type="button" data-action="attendance-mark" data-session-id="${escapeHtml(sessionId)}" data-student-id="${escapeHtml(studentId)}" data-mark="${mark}">${escapeHtml(displayStatus(mark))}</button>`).join('')}
+          ${['present', 'absent', 'late', 'excused'].map((mark) => `<button type="button" data-action="attendance-mark" data-session-id="${escapeHtml(sessionId)}" data-student-id="${escapeHtml(studentId)}" data-mark="${mark}" ${muted ? 'disabled' : ''}>${escapeHtml(displayStatus(mark))}</button>`).join('')}
         </span>`}
   </li>`).join('');
   const actions = locked
     ? '<p class="hint">Oturum kilitli; kayıtlar kontrollü düzeltme (gözetim) akışıyla değişir.</p>'
-    : `<button type="button" data-action="attendance-lock" data-session-id="${escapeHtml(sessionId)}" data-session-version="${version}">Oturumu kilitle ve devamsızlıkları kuyruğa al</button>`;
+    : `<button type="button" data-action="attendance-lock" data-session-id="${escapeHtml(sessionId)}" data-session-version="${version}" ${muted ? 'disabled' : ''}>Oturumu kilitle ve devamsızlıkları kuyruğa al</button>`;
   $('#attendance-detail').innerHTML = `<article class="card">
     <h3>Yoklama · ${escapeHtml(displayStatus(status))} · Sürüm ${escapeHtml(version)}</h3>
     <p>Roster: ${roster.length} öğrenci</p>
@@ -129,6 +130,7 @@ async function lockAttendance(sessionId, version) {
     const { body } = await apiRequest(`/attendance/sessions/${encodeURIComponent(sessionId)}/lock`, {
       method: 'POST',
       body: { expectedVersion: Number(version) },
+      versioned: true,
     });
     state.activeAttendanceSessionId = pick(body, ['id'], sessionId);
     announce('Oturum kilitlendi; devamsızlık bildirimleri kuyruğa alındı.', 'success');
@@ -150,6 +152,7 @@ async function correctAttendance(studentId, sessionVersion) {
     await apiRequest(`/attendance/sessions/${encodeURIComponent(state.activeAttendanceSessionId)}/records/${encodeURIComponent(studentId)}/correction`, {
       method: 'POST',
       body: { status, reasonCode, expectedVersion: Number(sessionVersion) },
+      versioned: true,
     });
     announce('Kontrollü düzeltme tamamlandı.', 'success');
     await openAttendanceSession(state.activeAttendanceSessionId);
