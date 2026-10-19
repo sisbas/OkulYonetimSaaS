@@ -50,6 +50,7 @@ function createStubDataSource(): DataSource {
     initialize: jest.fn().mockResolvedValue(undefined),
     destroy: jest.fn().mockResolvedValue(undefined),
     manager: {},
+    query: jest.fn().mockResolvedValue([]),
     entityMetadatas: [],
     options: { type: 'postgres' },
     getRepository: jest.fn().mockReturnValue({}),
@@ -101,6 +102,23 @@ function assertNestJson(result: Awaited<ReturnType<typeof requestJson>>, expecte
   const parsed = JSON.parse(result.body) as NestJsonBody;
   expect(typeof parsed).toBe('object');
   return parsed;
+}
+
+async function withLegacyGrant<T>(
+  permissions: string[],
+  roles: string[],
+  run: () => Promise<T>,
+): Promise<T> {
+  const previousPermissions = authenticatedUser.permissions;
+  const previousRoles = authenticatedUser.roleIds;
+  authenticatedUser.permissions = permissions;
+  authenticatedUser.roleIds = roles;
+  try {
+    return await run();
+  } finally {
+    authenticatedUser.permissions = previousPermissions;
+    authenticatedUser.roleIds = previousRoles;
+  }
 }
 
 describe('production /api/v1 routing authority (nested routes reach the Nest application)', () => {
@@ -183,25 +201,25 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
   });
 
   it('quarantines audit/verify even with a legacy operations grant (#373)', async () => {
-    // Legacy DB grants must not resurface the surface nor trigger a global scan.
+    // Legacy DB grants must not resurface the surface, trigger audit reads, or
+    // fall through to a global query on the data source.
     const queryService = bootedApp!.get(AuditQueryService);
     const list = jest.spyOn(queryService, 'list');
     const lastCheckpoint = jest.spyOn(queryService, 'lastCheckpoint');
-    const permissions = authenticatedUser.permissions;
-    const roles = authenticatedUser.roleIds;
-    authenticatedUser.permissions = ['audit_log:operations:read'];
-    authenticatedUser.roleIds = ['operations_manager'];
+    const dataSource = bootedApp!.get(getDataSourceToken()) as DataSource & { query: jest.Mock };
+    dataSource.query.mockClear();
     try {
-      const response = await requestJson('/api/v1/audit/verify', {
-        headers: { authorization: `Bearer ${accessToken as string}` },
+      await withLegacyGrant(['audit_log:operations:read'], ['operations_manager'], async () => {
+        const response = await requestJson('/api/v1/audit/verify', {
+          headers: { authorization: `Bearer ${accessToken as string}` },
+        });
+        assertNestJson(response, 404);
+        expect(response.body).not.toMatch(/checkedRows|headHash|checkpoint|signature/i);
+        expect(list).not.toHaveBeenCalled();
+        expect(lastCheckpoint).not.toHaveBeenCalled();
+        expect(dataSource.query).not.toHaveBeenCalled();
       });
-      assertNestJson(response, 404);
-      expect(response.body).not.toMatch(/checkedRows|headHash|checkpoint|signature/i);
-      expect(list).not.toHaveBeenCalled();
-      expect(lastCheckpoint).not.toHaveBeenCalled();
     } finally {
-      authenticatedUser.permissions = permissions;
-      authenticatedUser.roleIds = roles;
       list.mockRestore();
       lastCheckpoint.mockRestore();
     }
@@ -211,26 +229,22 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
     const retention = bootedApp!.get(AuditRetentionService);
     const plan = jest.spyOn(retention, 'plan');
     const prune = jest.spyOn(retention, 'prune');
-    const permissions = authenticatedUser.permissions;
-    const roles = authenticatedUser.roleIds;
-    authenticatedUser.permissions = ['audit_log:retention:run'];
-    authenticatedUser.roleIds = ['tenant_admin'];
     try {
-      for (const method of ['GET', 'POST']) {
-        assertNestJson(await requestJson(`/api/v1/audit/retention/${route}`, {
-          method,
-          headers: {
-            authorization: `Bearer ${accessToken as string}`,
-            'content-type': 'application/json',
-          },
-          ...(method === 'POST' ? { body: JSON.stringify({ dryRun: false, reason: 'security.probe' }) } : {}),
-        }), 404);
-      }
-      expect(plan).not.toHaveBeenCalled();
-      expect(prune).not.toHaveBeenCalled();
+      await withLegacyGrant(['audit_log:retention:run'], ['tenant_admin'], async () => {
+        for (const method of ['GET', 'POST']) {
+          assertNestJson(await requestJson(`/api/v1/audit/retention/${route}`, {
+            method,
+            headers: {
+              authorization: `Bearer ${accessToken as string}`,
+              'content-type': 'application/json',
+            },
+            ...(method === 'POST' ? { body: JSON.stringify({ dryRun: false, reason: 'security.probe' }) } : {}),
+          }), 404);
+        }
+        expect(plan).not.toHaveBeenCalled();
+        expect(prune).not.toHaveBeenCalled();
+      });
     } finally {
-      authenticatedUser.permissions = permissions;
-      authenticatedUser.roleIds = roles;
       plan.mockRestore();
       prune.mockRestore();
     }
