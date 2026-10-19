@@ -163,7 +163,7 @@ async function validateSchedule() {
     target.innerHTML = `<article class="card">
       <h3>Doğrulama · ${escapeHtml(displayStatus(status === 'valid' ? 'published' : 'draft'))}</h3>
       <p>Yayınlanabilir: ${canPublish ? 'Evet' : 'Hayır'} · Çakışma: ${escapeHtml(pick(evidence, ['hardConflictCount'], 0))}</p>
-      ${reasons.length ? `<ul class="impact-list">${reasons.slice(0, 10).map((r) => `<li>${escapeHtml(pick(r, ['code'], '-'))}</li>`).join('')}</ul>` : ''}
+      ${reasons.length ? `<ul class="impact-list">${reasons.map((r) => `<li data-schedule-reason="${escapeHtml(pick(r, ['code'], ''))}">${escapeHtml(displayTerm(scheduleReasonLabels, pick(r, ['code'], ''), 'Doğrulanamayan bir bulgu'))}</li>`).join('')}</ul>` : ''}
     </article>`;
     announce(canPublish ? 'Doğrulama geçti; yayınlanabilir.' : 'Doğrulama engelleri var.', canPublish ? 'success' : 'warning');
   } catch (error) {

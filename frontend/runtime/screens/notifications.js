@@ -80,12 +80,20 @@ async function loadNotifications() {
   }
 }
 
+function notificationHeadings(row) {
+  return {
+    eventLabel: displayTerm(notificationEventLabels, pick(row, ['eventType'], ''), 'Bildirim'),
+    channelLabel: displayTerm(notificationChannelLabels, pick(row, ['channel'], ''), 'Kanal belirtilmemiş'),
+  };
+}
+
 function renderNotificationCard(row) {
   const status = pick(row, ['status'], 'unknown');
+  const { eventLabel, channelLabel } = notificationHeadings(row);
   return `<article class="card">
-    <h3>${escapeHtml(pick(row, ['eventType'], 'Bildirim'))}</h3>
+    <h3>${escapeHtml(eventLabel)}</h3>
     <p class="card-meta">
-      <span>Kanal: ${escapeHtml(pick(row, ['channel'], '-'))}</span>
+      <span>Kanal: ${escapeHtml(channelLabel)}</span>
       <span>Deneme: ${escapeHtml(pick(row, ['attempts'], 0))}</span>
       <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
     </p>
@@ -124,13 +132,15 @@ function notificationActionLabel(action) {
 }
 
 function renderReceiptRow(receipt) {
-  const errorCode = pick(receipt, ['errorCode']);
-  return `<li>
-    <strong>Deneme ${escapeHtml(pick(receipt, ['attempt'], '?'))} · ${escapeHtml(pick(receipt, ['outcome'], '-'))}</strong>
+  const outcome = pick(receipt, ['outcome'], '');
+  const outcomeLabel = displayTerm(receiptOutcomeLabels, outcome, 'Sonuç okunamadı');
+  const errorCode = pick(receipt, ['errorCode'], '');
+  const simulated = pick(receipt, ['simulated'], false);
+  return `<li data-provider-outcome="${escapeHtml(outcome)}" data-provider-ref="${escapeHtml(pick(receipt, ['providerRef'], ''))}" data-receipt-error="${escapeHtml(errorCode)}">
+    <strong>Deneme ${escapeHtml(pick(receipt, ['attempt'], '?'))} · ${escapeHtml(outcomeLabel)}</strong>
     <span>${escapeHtml(formatStamp(pick(receipt, ['createdAt'], '')))}</span>
-    <span>Sağlayıcı: ${escapeHtml(pick(receipt, ['providerRef'], '-'))}</span>
-    <span class="tag" data-tone="${escapeHtml(pick(receipt, ['simulated'], false) ? 'neutral' : 'warning')}">${escapeHtml(pick(receipt, ['simulated'], false) ? 'simüle' : 'canlı')}</span>
-    ${errorCode ? `<span class="tag" data-tone="danger">${escapeHtml(String(errorCode))}</span>` : ''}
+    <span class="tag" data-tone="${simulated ? 'neutral' : 'warning'}">${escapeHtml(simulated ? 'simüle' : 'canlı')}</span>
+    ${errorCode ? '<span class="tag" data-tone="danger">Bir sorun oluştu</span>' : ''}
   </li>`;
 }
 
@@ -141,21 +151,23 @@ function renderNotificationDetail(body, uiState = '') {
   state.activeNotificationId = pick(row, ['id'], state.activeNotificationId);
   state.activeNotificationVersion = Number(pick(row, ['version'], 0));
   const status = pick(row, ['status'], 'unknown');
-  const reason = pick(row, ['reason']);
+  const reason = pick(row, ['reason'], '');
+  const { eventLabel, channelLabel } = notificationHeadings(row);
+  const reasonLabel = reason ? displayTerm(notificationReasonLabels, reason, 'Belirtilmemiş') : '';
   const actionButtons = actions.length
     ? actions.map((action) => `<button type="button" data-action="notification-run" data-notification-action="${escapeHtml(action)}" ${mutationDisabled() ? 'disabled' : ''}>${escapeHtml(notificationActionLabel(action))}</button>`).join('')
     : '<p class="hint">Sunucu bu durumda izin verilen bir eylem döndürmedi.</p>';
   $('#notification-detail').dataset.state = uiState || 'record_ready';
   $('#notification-detail').innerHTML = `<article class="card">
-    <h3>${escapeHtml(pick(row, ['eventType'], 'Bildirim'))} · ${escapeHtml(displayStatus(status))}</h3>
+    <h3>${escapeHtml(eventLabel)} · ${escapeHtml(displayStatus(status))}</h3>
     <p class="card-meta">
-      <span>Kanal: ${escapeHtml(pick(row, ['channel'], '-'))}</span>
+      <span>Kanal: ${escapeHtml(channelLabel)}</span>
       <span>Deneme: ${escapeHtml(pick(row, ['attempts'], 0))}</span>
       <span>Sürüm: ${escapeHtml(pick(row, ['version'], 0))}</span>
       <span>Onay sürümü: ${escapeHtml(pick(row, ['consentVersion'], '-'))}</span>
       <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
     </p>
-    ${reason ? `<p>Gerekçe: ${escapeHtml(String(reason))}</p>` : ''}
+    ${reasonLabel ? `<p>Gerekçe: ${escapeHtml(reasonLabel)}</p>` : ''}
     ${canonicalStateBlock(uiState)}
     <div class="quick-actions">${actionButtons}</div>
     <strong>Gönderim kanıtları</strong>

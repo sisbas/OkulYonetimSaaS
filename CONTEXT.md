@@ -117,6 +117,18 @@ Numaralandırma K-1'den K-28'e devam eder. Bu kararlar #443'ün (`/grill-with-do
 | K-31 | **`mutationDisabled()` her değiştirici düğmede render anında değerlendirilir; runtime'ta zamanlayıcı yoktur.** Bekleme penceresi `state.rateLimitedUntil` + `Retry-After` başlığından gelir. Bu, runtime'un "zamanlayıcı/fake-time yok" sınırının bilinçli sonucudur (`runtime-boundary.spec.ts` `setTimeout(() =>`'ı yasaklar). | #443 AC5 "tekrar eylemi kısa süreliğine devre dışı" diyor. Kalan boşluk dürüstçe: bekleme bitmeden düğmeler ancak bir sonraki render'da geri gelir. Bu bir kusur değil, kabul edilen bir sınırdır; `data-state="rate_limited"` bölgesi bekleme süresini kendi kopyasıyla bildirir. Zamanlayıcı eklenirse sınır `runtime-boundary.spec.ts` içinde gerekçesiyle birlikte değişmelidir — sadece bir `setTimeout` kaçırmak için değil. |
 | K-32 | **Her render bölgeye kanonik `data-state` damgalar.** Hata durumu `data-state="<canonical>"` yazar; başarılı kayıt render'ı `data-state="record_ready"` yazar. Böylece önceki hatanın durumu sonraki başarılı çizimde sızamaz. | #443 kabulünde bulunan gerçek sızıntı: `renderNotificationDetail` bölgenin `data-state`'ini temizlemediği için detay yeniden yüklendikten sonra bile `stale_version` görünüyordu. Kanıt/erişilebilirlik paketleri bölge özniteliğini okuduğu için tek kaynak (bölge) zorunlu. |
 
+## #446 kararları — kopya hijyeni (2026-10-17)
+
+Numaralandırma K-1'den K-32'ye devam eder.
+
+| # | Karar | Gerekçe |
+|---|---|---|
+| K-33 | **Görünen metne yalnız `displayTerm`/`displayStatus` eşleyicileri üzerinden ulaşılır.** Ham tanımlayıcı, kullanıcıya gösterilmeyen tanılama kanalında (`data-*` özniteliği) kalır. `termKey` tek normalizasyon noktasıdır; `displayStatus`/`statusTone`/`displayTerm` hepsi onu kullanır. | Ticket'ın statik denetimi bir alan *adı* listesiyle çalışır; alan adını değiştirip aynı ihlali yapmak onu atlatırdı. Bunun yerine kural alan adına değil **akışa** bağlı: yönetilen bir tanımlayıcı kopyaya yalnız bir görünüm eşleyicisinden geçebilir. `displayTerm` önce sunucunun gönderdiği değeri, sonra normalize biçimi arar — M3 bulgu kodları `UPPER_SNAKE`, KVKK/izin sözlükleri `snake_case` geldiği için tek normalizasyon yetmiyordu. |
+| K-34 | **Çizelge doğrulama bulguları #446 kapsamındadır; bulgunun *durum kimliği* #451'in.** #446 bulgunun okunabilir metnini verir (16 kanonik kodun tamamı, kod metin olarak hiç gösterilmez); #451 her kodun ayrı UI durumu, güne göre gruplama, çakışmanın karşı dersi adlandırması ve kısmi doğrulama ayrımı üzerine çalışır. Bulgu listesi artık `slice(0, 10)` ile kırpılmaz: on altısı da çizilir. | #446 "Problem" bölümü doğrulama bulgularını açıkça sayar. Kırpma, dokuz farklı sorunu tek listede kaybetme riskiydi ve #451'in "hiçbir bulgu diğerine birleşmez" kuralıyla çelişiyordu. |
+| K-35 | **Yoklama roster'ındaki 8 karakterlik öğrenci kimliği kaldırıldı; ticket'ın madde listesinde yoktu, ama "bir yönetici asla iç tanımlayıcı görmemelidir" gerekçesiyle zorunluydu.** Düğme zaten `data-student-id` taşıyor, yani davranış değişmedi. | Ticket'ın AC1'i izin/onay/bildirim kartlarıyla sınırlıydı; görünür metinde duran bir UUID parçası bırakmak, ticket'ın başlığındaki iddiayı yanlış yapardı. Kapsul dışı olduğu burada, bilerek kaydedilmiştir (K-26). Çizelge satırındaki UUID'ler ise *doldurulması gereken form alanıdır* (metin değil); o ekran #450/#452'nin konusu, kapsam dışı bırakıldı. |
+
+---
+
 ## Açık sorular
 
 | # | Soru | Durum |

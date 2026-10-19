@@ -13,10 +13,12 @@ function renderConsentCard(row) {
   const revocable = status === 'approved';
   const legalBasis = pick(row, ['legalBasis'], '');
   const retentionDays = pick(row, ['retentionDays'], null);
+  const consentTypeLabel = displayTerm(consentTypeLabels, consentType, 'Onay kaydı');
+  const subjectLabel = displayTerm(consentSubjectLabels, subjectType, 'Kapsam dışı');
   return `<article class="card">
-    <h3>${escapeHtml(consentType)} · ${escapeHtml(displayStatus(status))}</h3>
+    <h3>${escapeHtml(consentTypeLabel)} · ${escapeHtml(displayStatus(status))}</h3>
     <p class="card-meta">
-      <span>Özne: ${escapeHtml(subjectType)}</span>
+      <span>Özne: ${escapeHtml(subjectLabel)}</span>
       <span>Sürüm: ${escapeHtml(pick(row, ['version'], 0))}</span>
       ${legalBasis ? `<span>Hukuki sebep: ${escapeHtml(legalBasis)}</span>` : ''}
       ${retentionDays !== null && retentionDays !== undefined && retentionDays !== ''
@@ -53,7 +55,7 @@ async function revokeConsent(subjectRefId, subjectType, consentType) {
       method: 'POST',
       body: { subjectRefId, subjectType, consentType },
     });
-    announce(`Onay geri çekildi · ${escapeHtml(pick(body, ['consentType'], consentType))} (${escapeHtml(displayStatus(pick(body, ['status'], 'revoked')))}).`, 'success');
+    announce(`Onay geri çekildi · ${displayTerm(consentTypeLabels, pick(body, ['consentType'], consentType), 'Onay kaydı')} (${escapeHtml(displayStatus(pick(body, ['status'], 'revoked')))}).`, 'success');
     await loadConsents();
   } catch (error) {
     renderError(target, error);

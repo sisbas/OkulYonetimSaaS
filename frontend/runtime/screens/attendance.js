@@ -88,7 +88,6 @@ function renderAttendanceDetail(session) {
   const muted = mutationDisabled();
   const rosterRows = roster.map((studentId, index) => `<li>
     <strong>Öğrenci ${index + 1}</strong>
-    <span>${escapeHtml(String(studentId).slice(0, 8))}…</span>
     ${locked
       ? `<button type="button" data-action="attendance-correct" data-student-id="${escapeHtml(studentId)}" data-session-version="${version}" ${muted ? 'disabled' : ''}>Kontrollü düzeltme</button>`
       : `<span class="quick-actions">

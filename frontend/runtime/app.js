@@ -1062,14 +1062,91 @@ function renderLeaveCard(leave, title) {
   </article>`;
 }
 
+function termKey(value, fallback = 'unknown') {
+  const key = String(value ?? fallback).trim().toLowerCase();
+  return key || fallback;
+}
+
 function displayStatus(value) {
-  const key = String(value || 'unknown').toLowerCase();
-  return statusLabels[key] || statusLabels.unknown;
+  return statusLabels[termKey(value)] || statusLabels.unknown;
 }
 
 function statusTone(value) {
-  const key = String(value || 'unknown').toLowerCase();
-  return statusTones[key] || 'neutral';
+  return statusTones[termKey(value)] || 'neutral';
+}
+
+/**
+ * #446 — kullanıcıya gösterilen her terim haritalıdır. Haritada olmayan bir
+ * değer asla kendi kodunu yansıtmaz: nötr bir metne düşer, tanılama için
+ * ham değer data-* özniteliğinde kalır.
+ */
+const leaveReasonLabels = {
+  annual_leave: 'Yıllık izin',
+  administrative: 'İdari izin',
+  health: 'Sağlık izni',
+  other: 'Diğer izin',
+};
+const leaveDurationLabels = {
+  hourly: 'Saatlik',
+  full_day: 'Tam gün',
+  multi_day: 'Çok günlü',
+};
+const consentTypeLabels = {
+  parent_notification: 'Veli bilgilendirmesi',
+  sms_notification: 'SMS bilgilendirmesi',
+  whatsapp_notification: 'WhatsApp bilgilendirmesi',
+  email_notification: 'E-posta bilgilendirmesi',
+};
+const consentSubjectLabels = {
+  student: 'Öğrenci',
+  parent: 'Veli',
+  teacher: 'Öğretmen',
+  user: 'Kullanıcı',
+};
+const notificationEventLabels = {
+  'attendance.absent.locked': 'Devamsızlık bildirimi',
+  'schedule.published': 'Program yayınlandı',
+  'schedule.unpublished': 'Program yayından kaldırıldı',
+  'schedule.publish_denied': 'Program yayınlanamadı',
+};
+const notificationChannelLabels = {
+  sms: 'SMS',
+  email: 'E-posta',
+  whatsapp: 'WhatsApp',
+};
+const notificationReasonLabels = {
+  blocked_consent: 'Onay eksik olduğu için bekletildi',
+  blocked_channel_consent: 'Kanal onayı eksik olduğu için bekletildi',
+};
+const receiptOutcomeLabels = {
+  provider_accepted: 'Sağlayıcı kabul etti',
+  provider_delivered: 'Sağlayıcı teslim etti',
+  provider_rejected: 'Sağlayıcı reddetti',
+  uncertain: 'Sonuç belersiz',
+};
+const scheduleReasonLabels = {
+  TEACHER_TIME_OVERLAP: 'Öğretmenin aynı saatte başka dersi var',
+  STUDENT_GROUP_TIME_OVERLAP: 'Sınıfın aynı saatte başka dersi var',
+  ROOM_TIME_OVERLAP: 'Derslik aynı saatte başka ders için ayrılmış',
+  TIMESLOT_INACTIVE: 'Ders saati aktif değil',
+  TEACHER_INACTIVE: 'Öğretmen aktif değil',
+  STUDENT_GROUP_INACTIVE: 'Sınıf aktif değil',
+  TEACHER_BRANCH_ASSIGNMENT_MISSING: 'Öğretmenin bu şubeye görevlendirmesi yok',
+  TEACHER_COURSE_MISMATCH: 'Öğretmen bu dersi veremiyor',
+  TENANT_REFERENCE_MISMATCH: 'İlgili kayıt bulunamadı',
+  BRANCH_REFERENCE_MISMATCH: 'İlgili kayıt bulunamadı',
+  PUBLISHED_SCHEDULE_IMMUTABLE: 'Yayınlanmış program değiştirilemez',
+  SCHEDULE_EMPTY: 'Programda ders yok',
+  SCHEDULE_VALIDATION_STALE: 'Doğrulama eskidi',
+  SCHEDULE_HARD_CONFLICTS_PRESENT: 'Çözülmesi gereken çakışmalar var',
+  PUBLISHED_SCHEDULE_PERIOD_CONFLICT: 'Aynı dönemde yayınlanmış başka bir program var',
+  SCHEDULE_VERSION_MISMATCH: 'Kayıt güncellendi',
+  SCHEDULE_VERSION_REQUIRED: 'Güncel kayıt bekleniyor',
+};
+
+function displayTerm(labels, value, fallback) {
+  const raw = String(value ?? '').trim();
+  return labels[raw] || labels[termKey(raw, '')] || fallback;
 }
 
 const loading = (text) => `<div class="loading" role="status">${escapeHtml(text)}...</div>`;

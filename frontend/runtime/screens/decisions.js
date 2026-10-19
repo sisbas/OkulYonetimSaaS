@@ -11,16 +11,19 @@ function renderLeaveDecisionCard(leave) {
   const coverage = String(pick(leave, ['coverageStatus'], 'unknown')).toLowerCase();
   const pending = decision === 'pending' || decision === 'unknown';
   const etag = String(pick(leave, ['etag'], '') || '');
+  const reasonLabel = displayTerm(leaveReasonLabels, pick(leave, ['reasonCode'], ''), 'Belirtilmemiş');
+  const durationLabel = displayTerm(leaveDurationLabels, pick(leave, ['durationType'], ''), 'Belirtilmemiş');
   const locked = mutationDisabled();
   return `<article class="card">
     <h3>İzin talebi · ${escapeHtml(displayStatus(decision))}</h3>
     <p class="card-meta">
+      <span>Gerekçe: ${escapeHtml(reasonLabel)}</span>
+      <span>Süre: ${escapeHtml(durationLabel)}</span>
       <span>Karşılık: ${escapeHtml(displayStatus(coverage))}</span>
-      <span>${escapeHtml(pick(leave, ['reasonCode'], '-'))}</span>
       <span>${escapeHtml(formatStamp(pick(leave, ['createdAt'], '')))}</span>
     </p>
     ${pending
-      ? `<div class="quick-actions">
+      ? `<div class="quick-actions" data-reason-code="${escapeHtml(pick(leave, ['reasonCode'], ''))}">
           <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="approve" data-leave-etag="${escapeHtml(etag)}" ${locked ? 'disabled' : ''}>Onayla</button>
           <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="reject" data-leave-etag="${escapeHtml(etag)}" ${locked ? 'disabled' : ''}>Reddet</button>
         </div>`

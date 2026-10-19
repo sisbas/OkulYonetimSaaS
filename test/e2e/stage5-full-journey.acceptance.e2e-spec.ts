@@ -1261,8 +1261,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionA!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
     const liTexts0 = await sessionA!.queryTexts('#notification-detail ul.impact-list li');
     expect(liTexts0.length).toBe(1);
-    expect(liTexts0[0]).toContain('provider_delivered');
+    expect(liTexts0[0]).toContain('Sağlayıcı teslim etti');
     expect(liTexts0[0]).toContain('simüle');
+    expect(liTexts0[0]).not.toContain('provider_delivered');
     const row0 = await expectRow('r0', {
       status: 'delivered',
       attempts: 1,
@@ -1273,6 +1274,14 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(receipt0.outcome).toBe('provider_delivered');
     expect(receipt0.simulated).toBe(true);
     expect(receipt0.providerRef).toMatch(/^sim:/);
+    // Ham tanılama değerleri yalnız data-* özniteliğinde; görünen metin insan
+    // diliyle (#446).
+    expect(
+      await sessionA!.attribute('#notification-detail ul.impact-list li', 'data-provider-outcome'),
+    ).toBe(receipt0.outcome);
+    expect(
+      await sessionA!.attribute('#notification-detail ul.impact-list li', 'data-provider-ref'),
+    ).toBe(receipt0.providerRef);
 
     await openCard(sessionA!, 'r1');
     await detailHeading(sessionA!);

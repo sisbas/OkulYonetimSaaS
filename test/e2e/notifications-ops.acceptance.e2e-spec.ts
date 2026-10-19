@@ -732,8 +732,9 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await sessionA!.waitForText('#notification-detail h3', /· Teslim edildi/, 20_000);
     const liTexts = await sessionA!.queryTexts('#notification-detail ul.impact-list li');
     expect(liTexts.length).toBe(1);
-    expect(liTexts[0]).toContain('Deneme 1 · provider_delivered');
+    expect(liTexts[0]).toContain('Deneme 1 · Sağlayıcı teslim etti');
     expect(liTexts[0]).toContain('simüle');
+    expect(liTexts[0]).not.toContain('provider_delivered');
 
     const row = await expectRow('r0', {
       status: 'delivered',
@@ -745,10 +746,19 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     expect(receipt.outcome).toBe('provider_delivered');
     expect(receipt.simulated).toBe(true);
     expect(receipt.providerRef).toMatch(/^sim:/);
-    expect(liTexts[0]).toContain(`Sağlayıcı: ${receipt.providerRef}`);
+    const shownOutcome = await sessionA!.attribute(
+      '#notification-detail ul.impact-list li',
+      'data-provider-outcome',
+    );
+    const shownProviderRef = await sessionA!.attribute(
+      '#notification-detail ul.impact-list li',
+      'data-provider-ref',
+    );
+    expect(shownOutcome).toBe(receipt.outcome);
+    expect(shownProviderRef).toBe(receipt.providerRef);
     recordEvidence(
       currentScenario,
-      'UI li "Deneme 1 · provider_delivered · simüle · Sağlayıcı: sim:..." ↔ DB receipt (outcome/simulated/providerRef birebir)',
+      'UI li "Deneme 1 · Sağlayıcı teslim etti · simüle" ↔ DB receipt outcome/simulated birebir; providerRef yalnız data-provider-ref özniteliğinde aynı değer',
     );
     await snap(sessionA!, '04-dispatched-receipt-consistency');
     recordScenario(SCENARIO_NAMES[3], 'PASS');
@@ -868,11 +878,13 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     const listB = await apiCall(opsApiB, 'GET', '/notifications?limit=20&offset=0');
     expect((listB.json as { notifications?: unknown[] }).notifications ?? []).toEqual([]);
     await expectApiError(opsApiB, 'GET', `/notifications/${rows.r4}`, 404, 'NOTIFICATION_NOT_FOUND');
-    await expectApiError(opsApiB, 'POST', `/notifications/${rows.r4}/execute`, 403, 'Notification dispatch row not found');
+    // Aynı "kaynak yok" koşulu mutasyon ucunda da 404 (non-enumerating);
+    // 403 yalnız yetki reddi içindir.
+    await expectApiError(opsApiB, 'POST', `/notifications/${rows.r4}/execute`, 404, 'NOTIFICATION_NOT_FOUND');
     await expectRow('r4', { status: 'pending', attempts: 0 });
     recordEvidence(
       currentScenario,
-      'B-şubesi list [] · r4 detail 404 · r4 execute 403 · r3/r4 DB değişmedi',
+      'B-şubesi list [] · r4 detail 404 · r4 execute 404 · r3/r4 DB değişmedi',
     );
     await snap(sessionB!, '07-branch-isolation-cross-tenant');
     recordScenario(SCENARIO_NAMES[6], 'PASS');
