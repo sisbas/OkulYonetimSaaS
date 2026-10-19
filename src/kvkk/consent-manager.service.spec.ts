@@ -132,8 +132,9 @@ describe('ConsentManagerService', () => {
           entityType: 'dataprotection',
           entityId: CONSENT_ID,
           result: 'success',
-          // PR #414 Q5: revoke'un gerçekte değiştirdiği kolonlar (dürüst kanıt).
-          changedFields: ['status', 'revokedAt', 'version'],
+          // PR #414 K-19: revoke'un GERÇEKTE değiştirdiği kolonlar, gerçek kolon
+          // adlarıyla (dürüst kanıt): status, revoked_at, updated_at, version.
+          changedFields: ['status', 'revoked_at', 'updated_at', 'version'],
           redactionReceipt: expect.objectContaining({
             strategy: 'none',
             evaluatedFieldCount: 9,

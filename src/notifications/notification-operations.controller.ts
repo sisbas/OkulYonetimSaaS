@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -57,7 +58,10 @@ export class NotificationOperationsController {
     const ctx = req.context;
     if (!ctx) throw new ForbiddenException('Request context required');
     if (status !== undefined && !VALID_STATUSES.has(status)) {
-      throw new ForbiddenException('NOTIFICATION_STATUS_FILTER_INVALID');
+      // 400, not 403: bilinmeyen filtre değeri giriş doğrulama hatasıdır.
+      // 403 yalnız yetki reddi içindir (constitution III); ikisini ayırmak,
+      // istemci hatasını yetki reddinden ayırt edilebilir kılar.
+      throw new BadRequestException('NOTIFICATION_STATUS_FILTER_INVALID');
     }
     const parsedLimit = limit ? parseInt(limit, 10) : 20;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;

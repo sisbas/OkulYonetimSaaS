@@ -225,9 +225,12 @@ export class ConsentManagerService {
     }
 
     const row = updated[0];
-    // Dürüst audit kanıtı (PR #414 Q5): revoke'un gerçekte değiştirdiği
-    // kolonlar (`status`, `revoked_at`, `version`) + payload'dan ölçülmüş
-    // redactionReceipt. Uydurma `purpose`/`legalBasis` iddiası yoktur.
+    // Dürüst audit kanıtı (PR #414 K-19): revoke'un gerçekte değiştirdiği
+    // kolonlar GERÇEK kolon adlarıyla — `status`, `revoked_at`, `updated_at`
+    // (UPDATE'te `updated_at = now()` ile de değişir), `version`. CamelCase
+    // takma ad (`revokedAt`) kolon değildi ve denetçi tarafından doğrulanamazdı.
+    // Payload'dan ölçülmüş redactionReceipt; uydurma `purpose`/`legalBasis`
+    // iddiası yok.
     const revokeMetadata = {
       schemaVersion: 1 as const,
       tenantId,
@@ -237,7 +240,7 @@ export class ConsentManagerService {
       entityType: 'dataprotection' as const,
       entityId: String(row.id),
       result: 'success' as const,
-      changedFields: ['status', 'revokedAt', 'version'] as const,
+      changedFields: ['status', 'revoked_at', 'updated_at', 'version'] as const,
     };
     await this.audit.write(entityManager, 'dataprotection.consent.revoked', {
       ...revokeMetadata,

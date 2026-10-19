@@ -189,8 +189,9 @@ describeWithPostgres('consent revoke + transactional audit PostgreSQL (#266)', (
     expect(audits[0].metadata_json).toMatchObject({
       schemaVersion: 1,
       result: 'success',
-      // PR #414 Q5: revoke'un gerçekte değiştirdiği kolonlar (policy sıralar).
-      changedFields: ['revokedAt', 'status', 'version'],
+      // PR #414 K-19: revoke'un gerçekte değiştirdiği kolonlar, gerçek kolon
+      // adlarıyla ve policy'nin sıraladığı biçimde.
+      changedFields: ['revoked_at', 'status', 'updated_at', 'version'],
       redactionReceipt: expect.objectContaining({ strategy: 'none' }),
     });
   });

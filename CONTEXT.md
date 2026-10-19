@@ -129,6 +129,21 @@ Numaralandırma K-1'den K-32'ye devam eder.
 
 ---
 
+---
+
+## #414 code-review düzeltmeleri — kararlar (2026-10-19)
+
+Bu tur, `main...HEAD` üzerinde çalışan `/code-review` (Standards + Spec eksenleri)
+bulgularını kapatır. Numaralandırma K-35'ten devam eder (#446 kararları bu
+HEAD'de mevcuttur).
+
+| # | Karar | Gerekçe |
+|---|---|---|
+| K-36 | **K-19 düzeltmesi: `changedFields` gerçek KOLON adlarını taşır** — `['status', 'revoked_at', 'updated_at', 'version']`. K-19'daki `revokedAt` bir kolon değil, takma addı (kolon `revoked_at`); ayrıca revoke `UPDATE`'i `updated_at = now()` da değiştirdiği için `updated_at` beyan edilmeliydi. Allowlist (`DATA_PROTECTION_CHANGED_FIELDS`) ve `DataProtectionAuditChangedField` tipi birlikte güncellendi. | K-19'in amcı "gerçek değişen kolonlar"dı; camelCase takma ad denetçi tarafından tabloya karşı doğrulanamıyor, `updated_at` ise sessizce eksik kalıyordu (dürüstlük ihlali). K-19'un K-28 gereği bağlayıcı olduğu için bu satır değişikliği de burada, gerekçesiyle kayıt altındadır. |
+| K-37 | **Bildirim yüzeyinde tek "kaynak yok" sinyali: non-enumerating 404.** `?status=` filtresi geçersizse 400 (giriş doğrulama hatası; 403 yalnız yetki reddi). Kapsam dışı bildirim/draft için 404 — hem okuma (`detail`) hem mutasyon (`execute`/`retry`/`cancel`) ucunda; 403'e düşen "satır bulunamadı" yolları kaldırıldı. | Constitution III/VI (yetki reddi ile kaynak-yok ayrımı; kararlı ve açık hata yanıtları) + CONTEXT.md "Branch scope" glossary'si (görünmeyen branch izninde non-enumerating 404) + ADR production-frontend-runtime kural 4. Aynı kayıt sınıfının iki farklı sinyali, başka şubede satırın varlığını ele veriyordu. Runtime tarafında bu, `GET /notifications/:id` ile aynı `empty_or_not_found_same_scope` yüzeyini gösterir; frontend değişikliği gerekmedi. |
+| K-38 | **K-17 tek kaynak migration backfill'i ile uygulanır.** Grant endpoint'i/UI'ı K-22 gereği yoktur; dolayısıyla `legal_basis`/`retention_days` kaynağı `CONSENT_TYPE_METADATA` olmak üzere `1880000000000` migration'ı mevcut satırlara **geri yazar** (`COALESCE`: yalnız NULL kolonlar dolar). Migration değerleri gömülüdür (uygulama kodunu import etmez — uygulanmış migration'ın anlamı kaynak kodla birlikte değişmemelidir); map ile eşitliği `test/database/consent-legal-basis.migration.spec.ts` CI'da sabitler. Map'te olmayan consent_type için değer uydurulmaz (satır NULL kalır; `chk_kvkk_consents_consent_type` izin verdiği hâlde `general_processing`/`attendance_tracking` bu kapsamın DIŞINDADIR — hukuki zemin dayanağı kararı henüz verilmedi, ayrı karar konusu). | K-25'in UI yüzeyi boş kalmasın diye kolonların gerçekten dolu olması gerekiyor; ama K-22 bir grant yolu yazmayı yasaklıyor. Migration, uygulanmış-artefakt-donması ilkesiyle (migration uygulama koduna bağımlı olmaz) birlikte tek kaynağı uygular. |
+| K-39 | **K-26 follow-up #416'ya ek iki kalem:** (a) `frontend/runtime/screens/*` içindeki tekrar eden load→fetch→render iskeleti (5 kopya), (b) `test/jest-acceptance-guard.json`'ın `.scratch/` keşfi (K-23 AC 11/11 sayımı bozuluyordu — bu turda ayrıca düzeltildi). | Bu turda düzeltilenler: guard keşfi (yanlış-yeşil riski, doğrudan AC ihlali). Kalan tekrar, K-26 gerekçesiyle (odak: davranış-değiştirmeyen refactor) #416'da. |
+
 ## Açık sorular
 
 | # | Soru | Durum |

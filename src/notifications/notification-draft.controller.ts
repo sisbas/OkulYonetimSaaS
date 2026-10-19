@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -63,6 +64,11 @@ export class NotificationDraftController {
    *
    * Tenant + branch predicate zorunludur. Snapshot ile birlikte
    * döner (PII taşımaz).
+   *
+   * Görünmeyen kaynak non-enumerating 404 döner (CONTEXT.md "Branch scope"):
+   * mesaj sabittir, kaynak başka şubede var/yok bilgisi sızmaz. Aynı
+   * bildirim sınıfının detay ucu (`GET /notifications/:id`) da 404 döner —
+   * tek "kaynak yok" sinyali.
    */
   @Get(':id')
   @Permissions('notification:draft:read')
@@ -75,7 +81,7 @@ export class NotificationDraftController {
     const draft = await this.dataSource.transaction(async (em) =>
       this.draftService.getDraft(em, ctx, id),
     );
-    if (!draft) throw new ForbiddenException('Draft not found');
+    if (!draft) throw new NotFoundException('Draft not found');
     return draft;
   }
 

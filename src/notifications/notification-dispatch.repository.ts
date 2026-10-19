@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { EntityManager } from 'typeorm';
 import { RequestContext } from '../common/context/request-context';
@@ -524,7 +524,12 @@ export function claimConflict(
   id: string,
 ): ConflictException {
   if (!basis) {
-    throw new ForbiddenException('Notification dispatch row not found');
+    // Non-enumerating 404 — claim edilebilir satır çağıranın tenant+branch
+    // kapsamında değil. `GET /notifications/:id` detayı da aynı koşulda 404
+    // döner; mutasyon ucu 403 dönerse aynı kayıt sınıfı iki farklı sinyal
+    // üretir ve hangi şubenin var olduğunu ele verir (CONTEXT.md "Branch
+    // scope", ADR production-frontend-runtime kural 4).
+    throw new NotFoundException(`NOTIFICATION_NOT_FOUND:${id}`);
   }
   if (basis.status === 'dispatched' || basis.status === 'delivered') {
     throw new ConflictException(`IDEMPOTENT_DISPATCHED:${id}`);

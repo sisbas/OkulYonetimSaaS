@@ -164,10 +164,12 @@ export type DataProtectionAuditChangedField =
   | 'redactionStrategy'
   | 'legalBasis'
   | 'erasureScope'
-  // Consent revoke (PR #414 Q5): gerçekte değişen kolonlar — `status`,
-  // `revoked_at`, `version`. Uydurma alan yok.
+  // Consent revoke (PR #414 K-19): gerçekte değişen kolonlar, GERÇEK kolon
+  // adlarıyla — `status`, `revoked_at`, `updated_at` (UPDATE'te `now()` ile
+  // de değişir), `version`. Uydurma alan yok.
   | 'status'
-  | 'revokedAt'
+  | 'revoked_at'
+  | 'updated_at'
   | 'version';
 export type StudentAuditChangedField =
   | 'status'

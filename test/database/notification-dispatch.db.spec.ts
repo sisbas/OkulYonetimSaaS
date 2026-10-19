@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { CreateTenants1700000000002 } from '../../src/database/migrations/1700000000002-CreateTenants';
 import { CreateKvkkConsents1700000000010 } from '../../src/database/migrations/1700000000010-CreateKvkkConsents';
@@ -916,7 +916,7 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
       expect(result.status).toBe('delivered');
     });
 
-    it('execute from another branch context is rejected without touching the row (branch predicate)', async () => {
+    it('execute from another branch context is a non-enumerating 404 and leaves the row untouched (branch predicate)', async () => {
       await seedConsent(true);
       const id = await insertOutboxRow('approved', 'dedupe-e2e-branch');
       const otherBranchCtx = {
@@ -924,7 +924,9 @@ withPostgres('N2 real PostgreSQL bounded dispatch regressions', () => {
         branchId: OTHER_BRANCH_ID,
       } as RequestContext;
 
-      await expect(service.execute(otherBranchCtx, id)).rejects.toThrow(ForbiddenException);
+      // Aynı "kaynak yok" koşulu detay ucunda 404 döner; mutasyon ucu da
+      // 404 dönmeli (403 değil) — aksi halde iki sinyal ayırt edilir.
+      await expect(service.execute(otherBranchCtx, id)).rejects.toThrow(NotFoundException);
 
       const row = (await dataSource.query(
         `SELECT status, attempts, claim_token FROM notification_outbox WHERE id = $1`,

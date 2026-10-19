@@ -62,9 +62,11 @@ const DATA_PROTECTION_CHANGED_FIELDS = [
   'redactionStrategy',
   'legalBasis',
   'erasureScope',
-  // Consent revoke (PR #414 Q5): revoke'un gerçekte değiştirdiği kolonlar.
+  // Consent revoke (PR #414 K-19): revoke'un gerçekte değiştirdiği kolonlar,
+  // gerçek kolon adlarıyla — denetçi metadata'yı tabloya karşı doğrulayabilir.
   'status',
-  'revokedAt',
+  'revoked_at',
+  'updated_at',
   'version',
 ] as const;
 const STUDENT_CHANGED_FIELDS = [

@@ -853,12 +853,15 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     expect(await sessionB!.countElements('#notifications-list article.card')).toBe(STUDENT_COUNT);
     recordEvidence(currentScenario, 'B bağlamı B-şubesine geçti; eskimeyen liste/detay kartları korunur');
 
-    // A şube satırı üzerinde execution → 403 (sunucu-otoriter sınır).
+    // A şube satırı üzerinde execution → 404 non-enumerating (sunucu-otoriter
+    // sınır). Detay ucuyla AYNI sinyal: kapsam dışı kayıt, varmış gibi de
+    // yokmuş gibi de ele verilmez (403 yalnız yetki reddi içindir).
     await runAction(sessionB!, 'execute');
-    await sessionB!.waitForText('#notification-detail .error-state', /Bu işlem için yetkiniz yok/, 20_000);
+    await sessionB!.waitForText('#notification-detail .error-state', /Bildirim bulunamadı veya kapsamınız dışında/, 20_000);
     expect(await sessionB!.attribute('#notification-detail .error-state', 'data-state')).toBe(
-      'forbidden_non_enumerating',
+      'empty_or_not_found_same_scope',
     );
+    await expectApiError(opsApiB, 'POST', `/notifications/${rows.r3}/execute`, 404, 'NOTIFICATION_NOT_FOUND');
     await expectRow('r3', { status: 'approved', version: 1, attempts: 0 });
 
     // Diğer şubede detay → 404 (scope dışı kayıt non-enumerating).

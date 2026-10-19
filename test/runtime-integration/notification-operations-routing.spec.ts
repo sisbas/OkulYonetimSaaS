@@ -252,9 +252,12 @@ describe('notification operations API routing + permission authority', () => {
 
   it('rejects an invalid status filter inside the controller (not by the guard)', async () => {
     await withPermissions([readPermission], async () => {
+      // 400, not 403: an unknown filter value is an input-validation failure.
+      // 403 is reserved for permission denial (constitution III) — answering
+      // 403 here would make a client mistake indistinguishable from a denial.
       const body = assertNestJson(
         await requestJson('/api/v1/notifications?status=bogus', { headers: authHeaders() }),
-        403,
+        400,
       );
       expect(body.message).toBe('NOTIFICATION_STATUS_FILTER_INVALID');
     });
@@ -401,5 +404,21 @@ describe('notification operations API routing + permission authority', () => {
       );
     });
     expect(dispatchServiceStub.list).not.toHaveBeenCalled();
+  });
+
+  // Tek "kaynak yok" sinyali: draft görünmüyor da olsa, başka şubede de
+  // olsa, mesaj ve durum aynıdır (non-enumerating). `GET /notifications/:id`
+  // detayı zaten 404 döndüğü için aynı kayıt sınıfı iki farklı sinyal
+  // üretmemelidir (CONTEXT.md "Branch scope").
+  it('signals a draft outside the caller scope as a non-enumerating 404', async () => {
+    draftServiceStub.getDraft.mockResolvedValue(null);
+    await withPermissions([readPermission], async () => {
+      const body = assertNestJson(
+        await requestJson(`/api/v1/notifications/drafts/${notificationId}`, { headers: authHeaders() }),
+        404,
+      );
+      expect(body.message).toBe('Draft not found');
+    });
+    expect(draftServiceStub.getDraft).toHaveBeenCalledTimes(1);
   });
 });
