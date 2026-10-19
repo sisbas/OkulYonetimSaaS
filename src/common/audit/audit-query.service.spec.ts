@@ -1,10 +1,6 @@
 import { AuditQueryService } from './audit-query.service';
 import { AuditLogRepository } from './audit-log.repository';
-import {
-  resolveAuditHmacKey,
-  resolveAuditHmacKeyRing,
-  signAuditEntryHash,
-} from './audit-chain';
+import { resolveAuditHmacKey, signAuditEntryHash } from './audit-chain';
 
 /**
  * Audit okuma servisi (#259): KVKK maskeli okuma ve okuma audit'i.
@@ -114,12 +110,14 @@ describe('AuditQueryService (#259)', () => {
     { up_to_sequence: '-1' },
     { up_to_sequence: '1.5' },
     { up_to_sequence: '0' },
+    { up_to_sequence: '9007199254740993' },
     { head_hash: 'invalid' },
     { head_hash: 'b'.repeat(64) },
     { signature: null },
     { signature: '' },
     { signature: 'z'.repeat(64) },
     { signature: 'a'.repeat(63) },
+    { signature: 'b'.repeat(64) },
     { signature_key_id: null },
     { signature_key_id: '' },
     { signature_key_id: 'unknown' },
@@ -157,9 +155,11 @@ describe('AuditQueryService (#259)', () => {
 
     // Retired key removed → checkpoint rejected.
     delete process.env.AUDIT_HMAC_PREVIOUS_KEYS;
-    const dataSource2 = makeDataSource(() => [retiredCheckpoint]);
-    const service2 = makeService(dataSource2);
-    await expect(service2.lastCheckpoint()).rejects.toThrow(/unknown signature key/);
+    const dataSourceWithoutRetiredKey = makeDataSource(() => [retiredCheckpoint]);
+    const serviceWithoutRetiredKey = makeService(dataSourceWithoutRetiredKey);
+    await expect(serviceWithoutRetiredKey.lastCheckpoint()).rejects.toThrow(
+      /unknown signature key/,
+    );
   });
 
   it('returns null when no checkpoint exists', async () => {
@@ -175,12 +175,5 @@ describe('AuditQueryService (#259)', () => {
   it('does not expose a verify method (#373 permanent quarantine)', () => {
     const service = makeService(makeDataSource());
     expect(typeof (service as unknown as Record<string, unknown>).verify).toBe('undefined');
-  });
-
-  it('lastCheckpoint works without a verify path (pure-function boundary)', () => {
-    // #373: verifyAuditChain remains in audit-chain.ts; lastCheckpoint is the
-    // only chain-related method on this service. Confirm the key ring resolves.
-    const ring = resolveAuditHmacKeyRing();
-    expect(ring).toBeDefined();
   });
 });

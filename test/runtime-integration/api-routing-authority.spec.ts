@@ -182,6 +182,31 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
     }), 404);
   });
 
+  it('quarantines audit/verify even with a legacy operations grant (#373)', async () => {
+    // Legacy DB grants must not resurface the surface nor trigger a global scan.
+    const queryService = bootedApp!.get(AuditQueryService);
+    const list = jest.spyOn(queryService, 'list');
+    const lastCheckpoint = jest.spyOn(queryService, 'lastCheckpoint');
+    const permissions = authenticatedUser.permissions;
+    const roles = authenticatedUser.roleIds;
+    authenticatedUser.permissions = ['audit_log:operations:read'];
+    authenticatedUser.roleIds = ['operations_manager'];
+    try {
+      const response = await requestJson('/api/v1/audit/verify', {
+        headers: { authorization: `Bearer ${accessToken as string}` },
+      });
+      assertNestJson(response, 404);
+      expect(response.body).not.toMatch(/checkedRows|headHash|checkpoint|signature/i);
+      expect(list).not.toHaveBeenCalled();
+      expect(lastCheckpoint).not.toHaveBeenCalled();
+    } finally {
+      authenticatedUser.permissions = permissions;
+      authenticatedUser.roleIds = roles;
+      list.mockRestore();
+      lastCheckpoint.mockRestore();
+    }
+  });
+
   it.each(['plan', 'run'])('quarantines global retention/%s even with legacy DB permissions', async (route) => {
     const retention = bootedApp!.get(AuditRetentionService);
     const plan = jest.spyOn(retention, 'plan');

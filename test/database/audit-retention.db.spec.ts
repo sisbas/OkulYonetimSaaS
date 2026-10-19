@@ -276,16 +276,13 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({ [oldKey.keyId]: oldKey.key });
       await dataSource.transaction((manager) => repository.insert(manager, record(100)));
       const verifiable = (await readChain()).map(toVerifiable);
-      expect(verifyAuditChain(verifiable, {
-        resolveHmacKey: auditHmacKeyResolver(resolveAuditHmacKeyRing()),
-        startPrevHash: headHash,
-      })).toMatchObject({ valid: true });
+      expect(verifySeg(verifiable)).toMatchObject({ valid: true });
 
       delete process.env.AUDIT_HMAC_PREVIOUS_KEYS;
-      expect(verifyAuditChain(verifiable, {
-        resolveHmacKey: auditHmacKeyResolver(resolveAuditHmacKeyRing()),
-        startPrevHash: headHash,
-      })).toMatchObject({ valid: false, reason: 'unknown-signature-key' });
+      expect(verifySeg(verifiable)).toMatchObject({
+        valid: false,
+        reason: 'unknown-signature-key',
+      });
     } finally {
       envKeys.forEach((key, index) => {
         if (backup[index] === undefined) delete process.env[key];
@@ -301,10 +298,12 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       .toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
 
     // Tail-deletion detection: removing the last row without updating the
-    // expected head hash produces a truncated-chain mismatch.
-    await dataSource.query('DELETE FROM audit_logs WHERE seq = $1', [chain[chain.length - 1].seq]);
+    // expected head hash is caught by the sequence bound, not by the head check
+    // (which would report head-hash-mismatch).
+    const expectedLastSequence = Number(chain[chain.length - 1].seq);
+    await dataSource.query('DELETE FROM audit_logs WHERE seq = $1', [expectedLastSequence]);
     const truncated = await readChain();
-    expect(verifySeg(truncated, { expectedHeadHash: tailHash }))
+    expect(verifySeg(truncated, { expectedHeadHash: tailHash, expectedLastSequence }))
       .toMatchObject({ valid: false, reason: 'truncated-chain' });
   });
 
