@@ -1142,7 +1142,8 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await sessionA!.waitForText('#notification-detail', /Deneme: 1/, 10_000);
     let liTexts = await sessionA!.queryTexts('#notification-detail ul.impact-list li');
     expect(liTexts.length).toBe(1);
-    expect(liTexts[0]).toContain('uncertain');
+    expect(liTexts[0]).toContain('Sonuç belersiz');
+    expect(liTexts[0]).not.toContain('uncertain');
     const afterFirst = await expectRow('r9', { status: 'uncertain', attempts: 1, dispatchedAt: null });
     expect(afterFirst.dispatchedAt).toBeNull();
 
