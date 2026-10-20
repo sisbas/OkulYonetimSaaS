@@ -80,6 +80,7 @@ function makeElement(init: Partial<MockElement> = {}): MockElement {
 
 export function runtime(
   probeExports = 'state, applyCatalog, login, updateContext, apiRequest',
+  permissions: string[] = [],
 ): RuntimeHarness {
   const elements = new Map<string, MockElement>();
 
@@ -143,7 +144,12 @@ export function runtime(
     getElementById: (id: string) => element(`#${id}`),
   };
   const context = vm.createContext({ document, fetch, URLSearchParams });
-  vm.runInContext(source + `\nthis.probe = { ${probeExports} };`, context);
+  // #445: persona kotu — boot sonrası izin anahtarları atanır
+  // (applyCatalog bundan sonra çağrılırsa üzerine yazar; fail-closed default []).
+  vm.runInContext(
+    `${source}\nthis.probe = { ${probeExports} };\nthis.probe.state.permissions = ${JSON.stringify(permissions)};\n`,
+    context,
+  );
 
   const renderedStrings = () =>
     [...elements.values()].map((el) => `${el.textContent ?? ''} ${el.innerHTML ?? ''}`).join(' ').trim();
@@ -154,3 +160,59 @@ export function runtime(
 export function response(body: unknown, status = 200) {
   return { ok: status === 200, status, text: async () => JSON.stringify(body), headers: { get: () => null } };
 }
+
+/**
+ * #445 — persona kotları (tek kaynak). Sunucu seeds'indeki anahtar
+ * gerçekliğini temsil eder; yetki kapsamına özel davranış
+ * runtime-role-navigation ve boundary speclerinde test edilir.
+ */
+
+// Akış persona kotu: ROUTE_PERMISSIONS'taki tüm bilinen anahtarlar
+// (tenant_admin benzeri). Kopya/hygiene/akış specleri karar-sonrası UX'i
+// test ettiği için bu kotla yüklenirler.
+export const ALL_PERMISSION_KEYS = [
+  'attendance:generate', 'attendance:lock', 'attendance:own:read',
+  'attendance:own:submit', 'attendance:record:update', 'attendance:update',
+  'consent:read', 'consent:revoke',
+  'daily_operations:own:read', 'daily_operations:read', 'daily_operations:update',
+  'dashboard:teacher_own_summary:read', 'dashboard:read',
+  'leave:approve', 'leave:create', 'leave:impact:read', 'leave:own:read',
+  'leave:read', 'leave:reject',
+  'notification:draft:approve', 'notification:draft:close', 'notification:draft:read',
+  'parent_notification:approve', 'parent_notification:send',
+  'schedule:draft:create', 'schedule:draft:update', 'schedule:own:read',
+  'schedule:publish', 'schedule:read',
+  'user:read',
+];
+
+// Öğretmen (sunucu seeds): dar anahtar seti, üst küme değil.
+export const TEACHER_PERMISSION_KEYS = [
+  'attendance:own:read', 'attendance:own:submit', 'attendance:record:update',
+  'daily_operations:own:read', 'dashboard:teacher_own_summary:read',
+  'leave:create', 'leave:own:read', 'schedule:own:read', 'user:read',
+];
+
+// Operasyon yöneticisi: öğretmen anahtarlarını kapsayan üst küme (ops ⊇
+// teacher) → teacher sekmesi de görünür (kullanılabilirlik yakınsaması).
+export const OPS_PERMISSION_KEYS = [
+  ...TEACHER_PERMISSION_KEYS,
+  'attendance:generate', 'attendance:lock', 'attendance:update',
+  'consent:read', 'consent:revoke',
+  'daily_operations:read', 'daily_operations:update',
+  'leave:approve', 'leave:impact:read', 'leave:read', 'leave:reject',
+  'notification:draft:approve', 'notification:draft:close',
+  'notification:draft:read', 'parent_notification:approve', 'parent_notification:send',
+  'schedule:draft:create', 'schedule:draft:update', 'schedule:publish', 'schedule:read',
+];
+
+// Kurum (tenant) yöneticisi: operasyon üst kümesi + kullanıcı/tenant yönetimi
+// (sunucu seeds tenant_admin'in kapsayıcı üst kümesi).
+export const TENANT_ADMIN_PERMISSION_KEYS = [
+  ...OPS_PERMISSION_KEYS,
+  'attendance:report:read',
+  'user:create', 'user:update', 'user:read',
+];
+
+// Yalnız-okur persona (story 79): hiçbir akış anahtarı yok; yayınlanmış program
+// tamamen gizli kalır (GET published-schedule ucu henüz mevcut değil).
+export const VIEWER_PERMISSION_KEYS = ['dashboard:read', 'schedule:read', 'user:read'];

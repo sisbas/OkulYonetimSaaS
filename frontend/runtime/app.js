@@ -17,7 +17,7 @@ const state = {
   impactCount: 0,
   candidateCount: 0,
   activeLessonLabel: '',
-  authLabel: '',
+  permissions: [],
   pendingRoute: '',
   pendingBranch: '',
   pendingDraft: null,
@@ -350,6 +350,90 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
 }
 
+// #445 API seam: bir istek gönderilmeden önce aktörün izin anahtarı kontrol
+// edilir. Bu tablo sunucu @Permissions guard'larının KULLANIKLILIK kopyasıdır
+// (runtime-route-permission-seam.spec.ts iki tarafı senkron tutar); gizlenen
+// kontrol ve reddedilen istek hiçbir zaman zorlama değildir — zorlama
+// sunucudadır. Tabloda karşılığı olmayan hiçbir iş rotası gönderilmez
+// (fail-closed); oturum/oluğum uçlarını izin gerektirmez.
+const ROUTE_PERMISSIONS = [
+  { method: 'GET', path: '/context', permission: '' },
+  { method: 'POST', path: '/context/branch', permission: '' },
+  { method: 'POST', path: '/auth/login', permission: '' },
+  { method: 'POST', path: '/auth/refresh', permission: '' },
+  { method: 'POST', path: '/leaves/me', permission: 'leave:create' },
+  { method: 'GET', path: '/leaves/me/:id', permission: 'leave:own:read' },
+  { method: 'GET', path: '/leaves', permission: 'leave:read' },
+  { method: 'GET', path: '/leaves/:id', permission: 'leave:read' },
+  { method: 'PATCH', path: '/leaves/:id/approve', permission: 'leave:approve' },
+  { method: 'PATCH', path: '/leaves/:id/reject', permission: 'leave:reject' },
+  { method: 'GET', path: '/daily-operations/today', permission: 'daily_operations:read' },
+  { method: 'GET', path: '/daily-operations/leaves/:leaveId/impact', permission: 'leave:impact:read' },
+  { method: 'GET', path: '/daily-operations/leaves/:leaveId/events/:scheduleEventId/candidates', permission: 'leave:impact:read' },
+  { method: 'POST', path: '/daily-operations/leaves/:leaveId/events/:scheduleEventId/substitution', permission: 'daily_operations:update' },
+  { method: 'DELETE', path: '/daily-operations/leaves/:leaveId/events/:scheduleEventId/substitution', permission: 'daily_operations:update' },
+  { method: 'POST', path: '/daily-operations/leaves/:leaveId/projection/replay', permission: 'daily_operations:update' },
+  { method: 'POST', path: '/schedules', permission: 'schedule:draft:create' },
+  { method: 'POST', path: '/schedules/:id/draft', permission: 'schedule:draft:update' },
+  { method: 'POST', path: '/schedules/:id/validate', permission: 'schedule:read' },
+  { method: 'POST', path: '/schedules/:id/publish', permission: 'schedule:publish' },
+  { method: 'POST', path: '/schedules/:id/unpublish', permission: 'schedule:publish' },
+  { method: 'GET', path: '/consents', permission: 'consent:read' },
+  { method: 'POST', path: '/consents/revoke', permission: 'consent:revoke' },
+  { method: 'GET', path: '/notifications', permission: 'notification:draft:read' },
+  { method: 'GET', path: '/notifications/:id', permission: 'notification:draft:read' },
+  { method: 'POST', path: '/notifications/drafts/session/:sessionId/approve', permission: 'notification:draft:approve' },
+  { method: 'POST', path: '/notifications/drafts/:id/approve', permission: 'notification:draft:approve' },
+  { method: 'POST', path: '/notifications/drafts/:id/close', permission: 'notification:draft:close' },
+  { method: 'POST', path: '/notifications/:id/execute', permission: 'parent_notification:send' },
+  { method: 'POST', path: '/notifications/:id/retry', permission: 'parent_notification:send' },
+  { method: 'POST', path: '/notifications/:id/cancel', permission: 'parent_notification:approve' },
+  { method: 'GET', path: '/attendance/sessions', permission: 'attendance:own:read' },
+  { method: 'POST', path: '/attendance/sessions', permission: 'attendance:generate' },
+  { method: 'GET', path: '/attendance/sessions/:id/records', permission: 'attendance:own:read' },
+  { method: 'POST', path: '/attendance/sessions/:id/records', permission: 'attendance:record:update' },
+  { method: 'POST', path: '/attendance/sessions/:id/lock', permission: 'attendance:lock' },
+  { method: 'POST', path: '/attendance/sessions/:id/records/:studentId/correction', permission: 'attendance:update' },
+];
+
+/** Oturum/katalog uçları iş izni gerektirmez; tabloya girmenin tersi. */
+function isSessionBound(path) {
+  return path.startsWith('/context') || path.startsWith('/auth/');
+}
+
+/**
+ * Yol şablonlarını eşleştirir: ':param' bölümü herhangi bir segmenti tüketir,
+ * diğer bölümler birebir eşleşmek zorundadır. Eşleşme yoksa null döner —
+ * çağıran fail-closed reddeder; oturum uçları için boş dize (izin gerekmez).
+ */
+function permissionForRoute(method, rawPath) {
+  const path = String(rawPath || '').split('?')[0].split('#')[0];
+  if (isSessionBound(path)) return '';
+  const segments = path.split('/').filter(Boolean);
+  for (const rule of ROUTE_PERMISSIONS) {
+    if (rule.method !== method) continue;
+    const parts = rule.path.split('/').filter(Boolean);
+    if (parts.length !== segments.length) continue;
+    let matched = true;
+    for (let i = 0; i < parts.length; i += 1) {
+      if (parts[i].charAt(0) === ':') continue;
+      if (parts[i] !== segments[i]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) return rule.permission;
+  }
+  return null;
+}
+
+/** Kullanılabilirlik yakınsaması: anahtar yoksa istek istemcide reddedilir. */
+function canRequest(method, path) {
+  const required = permissionForRoute(method, path);
+  // null = tabloda olmayan rota (fail-closed), '' = oturum ucu (izin yok).
+  return required !== null && (required === '' || state.permissions.includes(required));
+}
+
 function asArray(payload, keys) {
   if (Array.isArray(payload)) return payload;
   for (const key of keys) if (Array.isArray(payload?.[key])) return payload[key];
@@ -362,6 +446,12 @@ function pick(value, keys, fallback = '') {
 }
 
 async function apiRequest(path, options = {}, _refreshAttempted = false) {
+  const method = options.method || 'GET';
+  // Kullanılabilirlik ön kontrolü (#445): istek gönderilmeden reddedilir;
+  // sunucu yine de kendi kararını bağımsız verir.
+  if (!canRequest(method, path)) {
+    throw normalizeApiError({ status: 403, headers: { get: () => null } }, {}, options);
+  }
   const headers = { Accept: 'application/json', ...(options.headers || {}) };
   if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
   if (state.branchId && !path.startsWith('/context') && !path.startsWith('/auth/')) {
@@ -371,7 +461,7 @@ async function apiRequest(path, options = {}, _refreshAttempted = false) {
   let response;
   try {
     response = await fetch(`${API_ROOT}${path}`, {
-      method: options.method || 'GET',
+      method,
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
@@ -528,7 +618,9 @@ function applyCatalog(catalog) {
   if (institutionEl) {
     institutionEl.textContent = pick(catalog?.institution, ['name'], '');
   }
-  state.authLabel = pick(catalog?.role, ['label'], '');
+  // Kapasite anahtarları (#445): sekme görünürlüğü sunucunun yetki anahtarlarından
+  // türetilir; rol etiketi arayüz kararında kullanılmaz.
+  state.permissions = [...new Set(asArray(catalog, ['permissions']))];
   state.branches = asArray(catalog, ['branches']);
   const selector = $('#branch-id');
   selector.innerHTML = '<option value="">Şube seçin</option>' + state.branches.map((branch) =>
@@ -690,7 +782,7 @@ function handleNetworkError() {
 function logout() {
   state.accessToken = '';
   state.refreshToken = '';
-  state.authLabel = '';
+  state.permissions = [];
   state.branchId = '';
   state.branchLabel = '';
   state.branches = [];
@@ -747,12 +839,17 @@ async function updateContext(event) {
   await loadQueue();
 }
 
-const ROLE_NAV = {
-  'Öğretmen': ['bugun', 'teacher', 'program', 'attendance'],
-  'Operasyon Yöneticisi': ['bugun', 'ops', 'program', 'attendance', 'notifications'],
-  'Kurum Yöneticisi': ['bugun', 'teacher', 'ops', 'program', 'attendance', 'notifications'],
+// #445: sekme görünürlüğü sunucunun izin anahtarlarından türetilir. Rol
+// etiketine dayanan eski ROLE_NAV haritası kaldırıldı. Eşlemeler yalnız
+// KULLANIKLILIK yakınsamasıdır — gizlenen kontrol hiçbir zaman zorlama
+// değildir; zorlama sunucu @Permissions guard'ındadır (API seam testi #445).
+const TAB_CAPABILITIES = {
+  teacher: 'leave:own:read',
+  ops: 'daily_operations:read',
+  program: 'schedule:draft:create',
+  attendance: 'attendance:own:read',
+  notifications: 'notification:draft:read',
 };
-const DEFAULT_NAV = ['bugun'];
 
 // Screen modüllerin sekme aktivasyon hook'u: notifications.js
 // registerTabActivationHook ile kaydolur; tek yönlü bağımlılık preserved.
@@ -762,18 +859,31 @@ function registerTabActivationHook(name, activation) {
   tabActivationHooks[name] = activation;
 }
 
-function navSectionsFor(authLabel) {
-  if (!authLabel) return [...DEFAULT_NAV];
-  return [...(ROLE_NAV[authLabel] || DEFAULT_NAV)];
+function hasCapability(key) {
+  return Boolean(key) && state.permissions.includes(key);
+}
+
+function navSectionsFor(capabilities) {
+  const granted = new Set(capabilities);
+  const sections = ['bugun'];
+  for (const [tab, key] of Object.entries(TAB_CAPABILITIES)) {
+    if (granted.has(key)) sections.push(tab);
+  }
+  return sections;
 }
 
 function renderNavigation() {
-  const allowed = new Set(navSectionsFor(state.authLabel));
+  const allowed = new Set(navSectionsFor(state.permissions));
   document.querySelectorAll('.tab').forEach((tab) => {
     tab.classList.toggle('hidden', !allowed.has(tab.dataset.tab));
   });
   document.querySelectorAll('.quick-actions button[data-section]').forEach((btn) => {
     btn.classList.toggle('hidden', !allowed.has(btn.dataset.section));
+  });
+  // Statik HTML kontroller: taşınan yetkinlik anahtarı yoksa gizlenir.
+  // Bu bir kullanılabilirlik yakınsamasıdır; sunucu yine de tüm kararları alır.
+  document.querySelectorAll('[data-requires-permission]').forEach((el) => {
+    el.classList.toggle('hidden', !hasCapability(el.dataset.requiresPermission));
   });
   const current = document.querySelector('.tab[aria-selected="true"]');
   if (current && !allowed.has(current.dataset.tab)) {
@@ -795,8 +905,7 @@ function setActiveTab(name) {
 }
 
 function activateTab(name) {
-  const allowed = new Set(navSectionsFor(state.authLabel));
-  if (state.authLabel && !allowed.has(name)) {
+  if (name !== 'bugun' && state.permissions.length && !hasCapability(TAB_CAPABILITIES[name])) {
     announce('Bu işlem için yetkiniz yok. Güvenli şekilde Bugün ekranına dönebilirsiniz.', 'warning');
     const bugunTab = document.querySelector('.tab[data-tab="bugun"]');
     if (bugunTab && !bugunTab.classList.contains('hidden')) {
@@ -897,7 +1006,9 @@ function renderQueueItem(item) {
       <span>${escapeHtml(pick(item, ['roomLabel'], 'Derslik bekleniyor'))}</span>
     </p>
     <span class="tag" data-tone="${escapeHtml(statusTone(rawState))}">${escapeHtml(stateLabel)}</span>
-    <button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}" data-course-label="${escapeHtml(pick(item, ['courseLabel', 'title'], 'Ders'))}">Bu dersin etkisini incele</button>
+    ${canRequest('GET', `/daily-operations/leaves/${encodeURIComponent(leaveId)}/impact`)
+      ? `<button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}" data-course-label="${escapeHtml(pick(item, ['courseLabel', 'title'], 'Ders'))}">Bu dersin etkisini incele</button>`
+      : '<p class="hint">Ders durumu listeleniyor; etki analizi yetkiniz kapsamında değil.</p>'}
   </article>`;
 }
 
@@ -950,7 +1061,9 @@ function renderImpact(body, events) {
     <strong>${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}</strong>
     <span>${escapeHtml(pick(event, ['occurrenceDate'], ''))} ${escapeHtml(pick(event, ['timeRange'], ''))}</span>
     <span class="tag" data-tone="${escapeHtml(statusTone(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}">${escapeHtml(displayStatus(pick(event, ['state', 'assignmentStatus', 'coverageStatus'], 'open')))}</span>
-    <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}" data-course-label="${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}">Adayları getir ve bu dersi planla</button>
+    ${canRequest('GET', `/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(eventIdentity(event))}/candidates`)
+      ? `<button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}" data-course-label="${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}">Adayları getir ve bu dersi planla</button>`
+      : ''}
   </li>`).join('');
   return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))} · ${events.length} ders etkileniyor</div>
     <ul class="impact-list">${rows}</ul>`;
@@ -1001,12 +1114,17 @@ function renderCandidate(candidate) {
   const disabled = !selectable || !state.activeLeaveEtag || mutationDisabled();
   const eligibleText = eligible ? 'Bu dersi verebilir' : 'Bu dersi veremez';
   const availableText = available ? 'Bu saat müsait' : 'Bu saat meşgul';
+  // Görevlendirme istikameti tek yetkinlik anahtarına bağlı (#445);
+  // yalnız-okur aktörde düğmeler yerine dürüst bir bağlam ipucu çizilir.
+  const canSubstitute = canRequest('POST', `/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/substitution`);
   return `<article class="card candidate">
     <h3>${escapeHtml(pick(candidate, ['displayName', 'name'], 'Aday öğretmen'))}</h3>
     <p>${eligibleText} · ${availableText}</p>
     <span class="tag" data-tone="${selectable ? 'success' : 'danger'}">${selectable ? 'Seçilebilir aday' : eligible ? 'Şu an seçilemez' : 'Seçilemez aday'}</span>
-    <button type="button" data-action="assign" data-teacher-id="${escapeHtml(teacherId)}" ${disabled ? 'disabled aria-describedby="etag-help"' : ''}>Bu öğretmeni görevlendir</button>
-    <button type="button" data-action="clear" ${state.activeAssignmentId && state.activeLeaveEtag && !mutationDisabled() ? '' : 'disabled'}>Görevlendirmeyi temizle</button>
+    ${canSubstitute
+      ? `<button type="button" data-action="assign" data-teacher-id="${escapeHtml(teacherId)}" ${disabled ? 'disabled aria-describedby="etag-help"' : ''}>Bu öğretmeni görevlendir</button>
+    <button type="button" data-action="clear" ${state.activeAssignmentId && state.activeLeaveEtag && !mutationDisabled() ? '' : 'disabled'}>Görevlendirmeyi temizle</button>`
+      : '<p class="hint">Aday bağlamı görüntüleniyor; görevlendirme yetkiniz kapsamında değil.</p>'}
   </article>`;
 }
 

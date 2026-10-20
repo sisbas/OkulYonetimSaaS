@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { withRuntimeBuildLock } from '../../scripts/runtime-build-lock';
 
 describe('WP-07F runtime frontend boundary', () => {
   const root = process.cwd();
@@ -30,15 +31,18 @@ describe('WP-07F runtime frontend boundary', () => {
 
   it('builds byte-identical canonical shell, script and stylesheet assets', () => {
     const { execFileSync } = require('node:child_process');
-    execFileSync(process.execPath, [path.join(root, 'scripts', 'build-runtime-assets.js')], { cwd: root });
-    for (const asset of ['index.html', 'app.js', 'styles.css']) {
-      const source = fs.readFileSync(path.join(runtimeDir, asset));
-      const built = fs.readFileSync(path.join(root, 'dist', 'runtime', asset));
-      expect(source.length).toBeGreaterThan(0);
-      expect(built.equals(source)).toBe(true);
-    }
-    expect(html).toContain('app.js');
-    expect(html).toContain('styles.css');
+    // Build + byte-assertion aynı kilit altında (eşzamanlı işçi koruması)
+    withRuntimeBuildLock(() => {
+      execFileSync(process.execPath, [path.join(root, 'scripts', 'build-runtime-assets.js')], { cwd: root });
+      for (const asset of ['index.html', 'app.js', 'styles.css']) {
+        const source = fs.readFileSync(path.join(runtimeDir, asset));
+        const built = fs.readFileSync(path.join(root, 'dist', 'runtime', asset));
+        expect(source.length).toBeGreaterThan(0);
+        expect(built.equals(source)).toBe(true);
+      }
+      expect(html).toContain('app.js');
+      expect(html).toContain('styles.css');
+    });
   });
 
   it('serves the runtime under /runtime without moving API_ROOT off same origin', () => {
@@ -101,11 +105,20 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(app).not.toContain('ETag:');
   });
 
-  it('keeps role and permission authority on the API side', () => {
+  it('frontend never decides authorisation; capability is a server-derived affordance (#445)', () => {
+    // Rol-etiketi tabanlı arayüz dallanması yasak: roller seeds'te izin
+    // anahtarlarına maplenir, istemci rol akıl yürütmez.
     expect(html).not.toContain('role="teacher"');
     expect(html).not.toContain('role="operations"');
     expect(app).not.toContain('state.role');
-    expect(app).not.toContain('permissions =');
+    // İzin anahtarları TEK kaynaktan (sunucu /context permissions alanından) gelir
+    expect(app).toContain('asArray(catalog, [\'permissions\'])');
+    // Yetkinlik ön kontrolü fail-closed: tabloda olmayan rota istek öncesi reddedilir;
+    // bu kullanılabilirlik yakınsamasıdır — zorlama yine sunucu @Permissions guard'dadır.
+    expect(app).toContain('function canRequest(method, path)');
+    expect(app).toContain('required !== null');
+    expect(app).toMatch(/permissionForRoute[\s\S]{0,700}return null;/);
+    // Zorlamanın sunucuda kaldığı copy sözleşmesi korunur
     expect(app).toContain('Rol ve yetkileriniz sistem tarafından uygulanır');
   });
 

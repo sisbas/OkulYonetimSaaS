@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { runtime, response } from './runtime-harness';
+import { runtime, response, ALL_PERMISSION_KEYS } from './runtime-harness';
 
 const PROBE =
   'state, applyCatalog, login, updateContext, apiRequest, loadQueue, loadLeaves, loadConsents, loadNotifications, openNotificationDetail, validateSchedule';
@@ -31,6 +31,9 @@ function signedIn() {
   const ui = runtime(PROBE);
   ui.probe.state.accessToken = 'token';
   ui.probe.state.branchId = 'ANKARA';
+  // Bu kopya testleri yetkili full-permisson persona üzerinden çalışır (#445):
+  // yetki kararını role-navigation/boundary specleri taşır.
+  ui.probe.state.permissions = ALL_PERMISSION_KEYS;
   return ui;
 }
 

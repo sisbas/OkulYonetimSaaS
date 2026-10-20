@@ -24,8 +24,15 @@ function renderLeaveDecisionCard(leave) {
     </p>
     ${pending
       ? `<div class="quick-actions" data-reason-code="${escapeHtml(pick(leave, ['reasonCode'], ''))}">
-          <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="approve" data-leave-etag="${escapeHtml(etag)}" ${locked ? 'disabled' : ''}>Onayla</button>
-          <button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="reject" data-leave-etag="${escapeHtml(etag)}" ${locked ? 'disabled' : ''}>Reddet</button>
+          ${canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/approve`)
+            ? `<button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="approve" data-leave-etag="${escapeHtml(etag)}" ${locked ? 'disabled' : ''}>Onayla</button>`
+            : ''}
+          ${canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/reject`)
+            ? `<button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="reject" data-leave-etag="${escapeHtml(etag)}" ${locked ? 'disabled' : ''}>Reddet</button>`
+            : ''}
+          ${!canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/approve`) && !canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/reject`)
+            ? '<span class="hint">Bu talebin kararı yetkiniz kapsamında değil; karar yetkili ekranda verilir.</span>'
+            : ''}
         </div>`
       : '<p class="hint">Bu talebin kararı verilmiş; kayıt güncelliği listeyle birlikte tazelenir.</p>'}
   </article>`;

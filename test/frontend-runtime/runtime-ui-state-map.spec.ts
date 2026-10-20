@@ -1,13 +1,17 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { runtime, response } from './runtime-harness';
+import { runtime, response, ALL_PERMISSION_KEYS } from './runtime-harness';
 
 const PROBE = 'state, applyCatalog, login, updateContext, apiRequest, loadQueue, loadCandidates, createAssignment, runNotificationAction, openNotificationDetail';
 
-const catalog = { branches: [{ name: 'Merkez', code: 'ANKARA' }, { name: 'Merkez', code: 'IZMIR' }], activeBranch: null };
+const catalog = {
+  branches: [{ name: 'Merkez', code: 'ANKARA' }, { name: 'Merkez', code: 'IZMIR' }],
+  activeBranch: null,
+  permissions: ALL_PERMISSION_KEYS,
+};
 
 function signedIn() {
-  const ui = runtime(PROBE);
+  const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
   ui.probe.state.accessToken = 'token';
   ui.probe.state.branchId = 'ANKARA';
   return ui;
@@ -43,7 +47,9 @@ describe('#443 canonical UI-state map', () => {
     it('falls back to a canonical state for a code the map does not know', async () => {
       const ui = signedIn();
       ui.fetch.mockResolvedValueOnce(response({ reasonCode: 'SOME_FUTURE_CODE', message: 'Conflict' }, 409));
-      const error = await ui.probe.apiRequest('/x', { versioned: false }).catch((caught: any) => caught);
+      // #445 preflight fail-closed artık /x gibi tablo-dışı rotaları reddeder;
+      // sunucu kod eşleme testleri tabloda yer alan zararsız bir GET üzerinden çalışır.
+      const error = await ui.probe.apiRequest('/daily-operations/today').catch((caught: any) => caught);
       expect(error.uiState).toBe('conflict_blocking');
       expect(error.serverCode).toBe('SOME_FUTURE_CODE');
     });
@@ -70,7 +76,7 @@ describe('#443 canonical UI-state map', () => {
       ui.probe.state.activeScheduleEventId = 'event-1';
       ui.probe.state.activeLeaveEtag = 'etag-1';
       ui.fetch.mockResolvedValueOnce(response({ message: 'Notification draft version conflict' }, 409));
-      await ui.probe.apiRequest('/x').catch((error: any) => {
+      await ui.probe.apiRequest('/daily-operations/today').catch((error: any) => {
         expect(error.message).not.toMatch(/Görevlendirme mevcut program/);
       });
     });
@@ -78,9 +84,9 @@ describe('#443 canonical UI-state map', () => {
     it('gives SUBSTITUTE_TIME_CONFLICT and SUBSTITUTE_LEAVE_OVERLAP distinct copy', async () => {
       const ui = signedIn();
       ui.fetch.mockResolvedValueOnce(response({ message: 'SUBSTITUTE_TIME_CONFLICT:event-1' }, 409));
-      const time = await ui.probe.apiRequest('/x').catch((error: any) => error);
+      const time = await ui.probe.apiRequest('/daily-operations/today').catch((error: any) => error);
       ui.fetch.mockResolvedValueOnce(response({ message: 'SUBSTITUTE_LEAVE_OVERLAP:event-1' }, 409));
-      const leave = await ui.probe.apiRequest('/x').catch((error: any) => error);
+      const leave = await ui.probe.apiRequest('/daily-operations/today').catch((error: any) => error);
       expect(time.uiState).toBe('conflict_blocking');
       expect(leave.uiState).toBe('conflict_blocking');
       expect(time.message).not.toBe(leave.message);
@@ -166,7 +172,7 @@ describe('#443 canonical UI-state map', () => {
     it('reports an empty server code when the response carries none', async () => {
       const ui = signedIn();
       ui.fetch.mockResolvedValueOnce(response({ message: 'Conflict' }, 409));
-      const error = await ui.probe.apiRequest('/x').catch((caught: any) => caught);
+      const error = await ui.probe.apiRequest('/daily-operations/today').catch((caught: any) => caught);
       expect(error.serverCode).toBe('');
       expect(error.uiState).toBe('conflict_blocking');
     });

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { runtime, response } from './runtime-harness';
+import { runtime, response, ALL_PERMISSION_KEYS } from './runtime-harness';
 
 function readShellHtml(): string {
   return fs.readFileSync(path.join(process.cwd(), 'frontend/runtime/index.html'), 'utf8');
@@ -11,7 +11,7 @@ const PROBE = 'state, applyCatalog, login, updateContext, apiRequest, renderNavi
 describe('runtime core flow state coverage (#400)', () => {
   describe('candidate eligibility separation', () => {
     it('separates course-eligibility from time-availability in candidate card', () => {
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.activeLeaveId = 'leave-1';
       ui.probe.state.activeScheduleEventId = 'event-1';
@@ -39,7 +39,7 @@ describe('runtime core flow state coverage (#400)', () => {
     });
 
     it('eligibility-not-finalized renders blocking state, never empty list', () => {
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.activeLeaveId = 'leave-1';
       ui.probe.state.activeScheduleEventId = 'event-1';
@@ -80,7 +80,7 @@ describe('runtime core flow state coverage (#400)', () => {
 
   describe('empty states explain why and how to proceed', () => {
     it('daily-ops empty state includes next-action guidance', () => {
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.branchId = 'ANKARA';
       ui.fetch.mockResolvedValueOnce(response({ items: [] }));
@@ -93,7 +93,7 @@ describe('runtime core flow state coverage (#400)', () => {
     });
 
     it('candidates empty state includes next-action guidance', () => {
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.activeLeaveId = 'leave-1';
       ui.probe.state.activeScheduleEventId = 'event-1';
@@ -109,7 +109,7 @@ describe('runtime core flow state coverage (#400)', () => {
   describe('non-JSON server response handled gracefully', () => {
     it('apiRequest handles non-JSON error response without crashing', () => {
       expect.assertions(3);
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       // Mock a non-JSON response (HTML error page)
       ui.fetch.mockResolvedValueOnce({
@@ -128,7 +128,7 @@ describe('runtime core flow state coverage (#400)', () => {
 
     it('apiRequest treats 200 non-JSON as server fault, not empty state', () => {
       expect.assertions(2);
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.fetch.mockResolvedValueOnce({
         ok: true,
@@ -147,7 +147,7 @@ describe('runtime core flow state coverage (#400)', () => {
   describe('edge: stale data / concurrent edit', () => {
     it('version mismatch error shows operational Turkish, preserves selection', () => {
       expect.assertions(6);
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.activeLeaveId = 'leave-1';
       ui.probe.state.activeScheduleEventId = 'event-1';

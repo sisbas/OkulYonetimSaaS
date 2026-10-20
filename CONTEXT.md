@@ -156,6 +156,17 @@ Numaralandırma K-1'den K-35'e devam eder.
 
 ---
 
+## #445 kararları — capability-driven navigation (2026-10-20)
+
+| # | Karar | Gerekçe |
+|---|---|---|
+| K-39 | **`/context`, `ContextCatalog.permissions` alanıyla makine-okur izin anahtarları taşır.** #339'un "katalog iç izin kodu yayımlamaz" sözleşmesi **daraltılmıştır**: kullanıcı-görünür metin etiket/kopyada hâlâ `displayTerm`'den geçer (sızıntı testleri korunur), fakat izin anahtarları artık yetkinlik kanalı olarak makine-okur veridir. Boş `permissions` dizisi = katalog henüz gelmemiş (önyükleme penceresi); kapasite tabanlı görünüm o anda kapalıdır. | #445 AC1. Anahtarlar makine-okur veridir, insan-görünür jargon serbest değildir — ayrım K-26/#416 ile aynıdır. `applyCatalog` dedupe + sıralı tutar; rol etiketi yalnız ekran metnidir. |
+| K-40 | **İstemci hazır izin tablosu `ROUTE_PERMISSIONS` fail-closed'dur.** Tabloda olmayan rota → `null` → `canRequest` reddi; `apiRequest` isteği göndermeden önce reddeder (`fetch` hiç çağrılmaz, `forbidden_non_enumerating`). `''` = oturum ucu (izin gerektirmeyen `/context`, `/auth/*`). Boundary iddiası "frontend never decides authorisation"a dönüştü: istemci yalnız *ön-dönüş* yapar, yetki kararı sunucunun kalır. | #445 AC2/AC5. İstemci reddi istekte önce gelir; sunucu 403'le bağımsız kararını korur (`test/runtime-integration/api-routing-authority.spec.ts` + yeni seam spec `runtime-route-permission-seam.spec.ts`). |
+| K-41 | **Gizlenen kontrol kullanılabilirlik yakınsamasıdır, zorlama değildir.** Sekme görünürlüğü `TAB_CAPABILITIES` + `navSectionsFor`, kontrol gizleme statik `data-requires-permission` + dinamik `canRequest` kapılarıyla yapılır; yetkisiz aksiyon için dürüst Türkçe ipucu gösterilir. Personalar (teacher ⊂ ops ⊂ tenant_admin, viewer) `test/frontend-runtime/runtime-harness.ts`'ta tek kaynaklıdır. | #445 AC3/AC6. Zorlama sunucudadır; istemci kapısı yalnız kullanılabilirliği artırır. Bilinen boşluk: yayınlanmış program için `GET published-schedule` ucu henüz mevcut değil → viewer persona'nın program yüzeyi tamamen gizli (izleyebilecek nokta yok); bu açık olarak kayıt altındadır. |
+| K-42 | **Jest işçi yarışı için prosesler-arası kilit: `scripts/runtime-build-lock.js`.** Screen-modules ve boundary suitleri dist/runtime build'iyle serileştirilir; kilit `wx` open + rastgele belirteç + bırakmada kendi belirtecini doğrulayan silme (bırakma yarışı kapalı). `build-runtime-assets.js` kendi başına kilit almaz (nested kilit → deadlock; kilit yalnız test suitlerinde). | Eşzamanlı jest işçileri byte-identical okumada sporadik ENOENT/yanlış bayt üretiyordu (flak); iki defa üst üste 14 suite/136 test yeşil. |
+
+---
+
 ## Açık sorular
 
 | # | Soru | Durum |

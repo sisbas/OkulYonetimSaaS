@@ -90,13 +90,22 @@ function renderAttendanceDetail(session) {
   const roster = asArray(session, ['rosterSnapshot', 'roster']);
   const locked = status === 'locked';
   const muted = mutationDisabled();
+  // Kullanılabilirlik yakınsaması (#445): işaretleme/kilitleme/düzeltme
+  // düğmeleri yalnızca aktörün izin anahtarının tabloda bulunduğu
+  // istikametler için çizilir; zorlama yine sunucu @Permissions guard'ındadır.
+  const canMark = canRequest('POST', `/attendance/sessions/${encodeURIComponent(sessionId)}/records`);
+  const canLock = canRequest('POST', `/attendance/sessions/${encodeURIComponent(sessionId)}/lock`);
   const rosterRows = roster.map((studentId, index) => `<li>
     <strong>Öğrenci ${index + 1}</strong>
     ${locked
-      ? `<button type="button" data-action="attendance-correct" data-student-id="${escapeHtml(studentId)}" data-session-version="${version}" ${muted ? 'disabled' : ''}>Kontrollü düzeltme</button>`
-      : `<span class="quick-actions">
-          ${['present', 'absent', 'late', 'excused'].map((mark) => `<button type="button" data-action="attendance-mark" data-session-id="${escapeHtml(sessionId)}" data-student-id="${escapeHtml(studentId)}" data-mark="${mark}" ${muted ? 'disabled' : ''}>${escapeHtml(displayStatus(mark))}</button>`).join('')}
-        </span>`}
+      ? canRequest('POST', `/attendance/sessions/${encodeURIComponent(sessionId)}/records/${encodeURIComponent(studentId)}/correction`)
+        ? `<button type="button" data-action="attendance-correct" data-student-id="${escapeHtml(studentId)}" data-session-version="${version}" ${muted ? 'disabled' : ''}>Kontrollü düzeltme</button>`
+        : '<span class="hint">Oturum kilitli; düzeltme yetkiniz kapsamında değil.</span>'
+      : canMark
+        ? `<span class="quick-actions">
+            ${['present', 'absent', 'late', 'excused'].map((mark) => `<button type="button" data-action="attendance-mark" data-session-id="${escapeHtml(sessionId)}" data-student-id="${escapeHtml(studentId)}" data-mark="${mark}" ${muted ? 'disabled' : ''}>${escapeHtml(displayStatus(mark))}</button>`).join('')}
+          </span>`
+        : '<span class="hint">Kayıt görüntüleniyor; işaretleme yetkiniz kapsamında değil.</span>'}
   </li>`).join('');
   const actions = locked
     ? '<p class="hint">Oturum kilitli; kayıtlar kontrollü düzeltme (gözetim) akışıyla değişir.</p>'
@@ -105,7 +114,7 @@ function renderAttendanceDetail(session) {
     <h3>Yoklama · ${escapeHtml(displayStatus(status))} · Sürüm ${escapeHtml(version)}</h3>
     <p>${roster.length ? `Roster: ${roster.length} öğrenci` : 'Roster boş'}</p>
     <ul class="impact-list">${rosterRows || '<li>Roster yok.</li>'}</ul>
-    ${actions}
+    ${canLock ? actions : '<p class="hint">Kilitleme yetkiniz kapsamında değil; kayıtlar yalnızca görüntülenir.</p>'}
   </article>`;
 }
 

@@ -25,7 +25,8 @@ function renderSessionBulkAction(rows) {
     id: pick(row, ['id']),
     version: Number(pick(row, ['version'], 0)),
   }));
-  return `<button type="button" data-action="bulk-approve-session" data-session-id="${escapeHtml(pick(approvable[0], ['sessionId'], ''))}" data-versions="${escapeHtml(encodeURIComponent(JSON.stringify(expectedVersions)))}" ${mutationDisabled() ? 'disabled' : ''}>Bu oturumun ${approvable.length} taslağını toplu onayla</button>`;
+  const path = `/notifications/drafts/session/${encodeURIComponent(pick(approvable[0], ['sessionId'], ''))}/approve`;
+  return canRequest('POST', path) ? `<button type="button" data-action="bulk-approve-session" data-session-id="${escapeHtml(pick(approvable[0], ['sessionId'], ''))}" data-versions="${escapeHtml(encodeURIComponent(JSON.stringify(expectedVersions)))}" ${mutationDisabled() ? 'disabled' : ''}>Bu oturumun ${approvable.length} taslağını toplu onayla</button>` : '';
 }
 
 async function bulkApproveSession(sessionId, versionsCsv) {
@@ -158,9 +159,17 @@ function renderNotificationDetail(body, uiState = '') {
   const reason = pick(row, ['reason'], '');
   const { eventLabel, channelLabel } = notificationHeadings(row);
   const reasonLabel = reason ? displayTerm(notificationReasonLabels, reason, 'Belirtilmemiş') : '';
-  const actionButtons = actions.length
-    ? actions.map((action) => `<button type="button" data-action="notification-run" data-notification-action="${escapeHtml(action)}" ${mutationDisabled() ? 'disabled' : ''}>${escapeHtml(notificationActionLabel(action))}</button>`).join('')
-    : '<p class="hint">Sunucu bu durumda izin verilen bir eylem döndürmedi.</p>';
+  // Kullanılabilirlik yakınsaması (#445): sadece sunucunun izin verdiği ve
+  // aktörün izin anahtarının bulunduğu eylem düğmeleri çizilir.
+  const permittedActions = actions.filter((action) => {
+    const path = notificationActionPath(action);
+    return path && canRequest('POST', path);
+  });
+  const actionButtons = permittedActions.length
+    ? permittedActions.map((action) => `<button type="button" data-action="notification-run" data-notification-action="${escapeHtml(action)}" ${mutationDisabled() ? 'disabled' : ''}>${escapeHtml(notificationActionLabel(action))}</button>`).join('')
+    : actions.length
+      ? '<p class="hint">Bu eylemler yetki anahtarınızda değil; ilgili ekranda yetkili operatör işlemleri yürütebilir.</p>'
+      : '<p class="hint">Sunucu bu durumda izin verilen bir eylem döndürmedi.</p>';
   $('#notification-detail').dataset.state = uiState || 'record_ready';
   $('#notification-detail').innerHTML = `<article class="card">
     <h3>${escapeHtml(eventLabel)} · ${escapeHtml(displayStatus(status))}</h3>
@@ -179,15 +188,25 @@ function renderNotificationDetail(body, uiState = '') {
   </article>`;
 }
 
+// #445: eylem → istikamet yolu tek kaynaktan; görülür düğme ve yürütme aynı
+// eşleşmeyi kullanır (canRequest kullanılabilirlik yakınsaması).
+function notificationActionPath(action) {
+  const id = encodeURIComponent(state.activeNotificationId || '');
+  if (!id) return '';
+  if (action === 'approve' || action === 'close') {
+    return `/notifications/drafts/${id}/${action}`;
+  }
+  return `/notifications/${id}/${action}`;
+}
+
 async function runNotificationAction(action) {
   if (!requireSession()) return;
   const id = state.activeNotificationId;
   if (!id) return announce('Önce listeden bir bildirim açın.', 'warning');
   const target = $('#notification-detail');
-  let path = `/notifications/${encodeURIComponent(id)}/${encodeURIComponent(action)}`;
+  const path = notificationActionPath(action);
   let body;
   if (action === 'approve' || action === 'close') {
-    path = `/notifications/drafts/${encodeURIComponent(id)}/${encodeURIComponent(action)}`;
     body = { expectedVersion: state.activeNotificationVersion };
   }
   target.dataset.state = '';

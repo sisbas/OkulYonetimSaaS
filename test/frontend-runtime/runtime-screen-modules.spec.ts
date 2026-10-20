@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { withRuntimeBuildLock } from '../../scripts/runtime-build-lock';
 
 /**
  * #442 — runtime frontend screen-module prefactor.
@@ -69,15 +70,19 @@ describe('#442 runtime screen modules prefactor', () => {
   });
 
   it('copies the runtime source tree byte-identically into the production build output', () => {
-    execFileSync(process.execPath, [path.join(root, 'scripts', 'build-runtime-assets.js')], { cwd: root });
-    const scriptAssets = [
-      'app.js',
-      ...screenAssets.map((asset) => path.join('screens', asset)),
-    ];
-    for (const asset of scriptAssets) {
-      const source = fs.readFileSync(path.join(runtimeDir, asset));
-      const built = fs.readFileSync(path.join(root, 'dist', 'runtime', asset));
-      expect(built.equals(source)).toBe(true);
-    }
+    // Build + byte-assertion aynı kilit altında: eşzamanlı jest işçisi
+    // aradaki rmSync/cpSync ile okumayı bozamasın (#445 flake fix).
+    withRuntimeBuildLock(() => {
+      execFileSync(process.execPath, [path.join(root, 'scripts', 'build-runtime-assets.js')], { cwd: root });
+      const scriptAssets = [
+        'app.js',
+        ...screenAssets.map((asset) => path.join('screens', asset)),
+      ];
+      for (const asset of scriptAssets) {
+        const source = fs.readFileSync(path.join(runtimeDir, asset));
+        const built = fs.readFileSync(path.join(root, 'dist', 'runtime', asset));
+        expect(built.equals(source)).toBe(true);
+      }
+    });
   });
 });

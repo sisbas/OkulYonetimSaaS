@@ -217,7 +217,12 @@ describe('ContextCatalogService (versioned, human-readable catalog)', () => {
 
     const serialized = JSON.stringify(response);
     expect(serialized).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i); // iç UUID yok
-    expect(serialized).not.toMatch(/etag|tenantId|branchId|permission/i); // iç anahtar/jargon yok
+    // #445 (K-39): permissions artık makine-okur yetkinlik kanalı olarak
+    // makine-okur izin ANAHTARLARI taşır — kullanıcı-görünür metin yine
+    // displayTerm'den gelir. Etag/tenantId/branchId gibi kimlik jargonu
+    // yine serbest değildir; anahtarlar yalnız izin-key uzayındadır.
+    expect(serialized).not.toMatch(/etag|tenantId|branchId/i);
+    expect(response.permissions).toEqual(['tenant:branch:read']);
     // #339 review P2 / F2: iç snake_case rol kodu yayımlanmaz; yalnız etiket döner.
     expect(response.role).not.toHaveProperty('key');
     expect(serialized).not.toMatch(/operations_manager|"[a-z]+_[a-z]+"\s*:/); // snake_case iç kod yok

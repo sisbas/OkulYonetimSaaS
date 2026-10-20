@@ -1,10 +1,10 @@
-import { runtime, response } from './runtime-harness';
+import { runtime, response, ALL_PERMISSION_KEYS } from './runtime-harness';
 
 const PROBE =
   'state, applyCatalog, login, updateContext, apiRequest, loadQueue, loadCandidates, loadLeaves, loadConsents, loadNotifications, renderError, handleNetworkError, loadAttendanceSessions, openAttendanceSession, loadImpact, renderScheduleStatus';
 
 function signedIn() {
-  const ui = runtime(PROBE);
+  const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
   ui.probe.state.accessToken = 'token';
   ui.probe.state.branchId = 'ANKARA';
   return ui;

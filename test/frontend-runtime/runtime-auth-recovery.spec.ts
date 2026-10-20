@@ -1,15 +1,27 @@
-import { runtime, response } from './runtime-harness';
+import {
+  runtime,
+  response,
+  TEACHER_PERMISSION_KEYS,
+  OPS_PERMISSION_KEYS,
+} from './runtime-harness';
 
 const PROBE = 'state, applyCatalog, login, updateContext, apiRequest, navSectionsFor, renderNavigation, activateTab';
 const PROBE_AUTH = `${PROBE}, logout, trySilentRefresh, handleAuthRequired, handleNetworkError`;
 
-const catalogFor = (roleLabel: string | null) => ({
+const catalogFor = (permissions: string[]) => ({
   version: 1,
   institution: { name: 'Atatürk Anadolu Lisesi' },
-  role: roleLabel ? { label: roleLabel } : null,
+  role: { label: 'Yetki Etiketi' },
   branches: [{ name: 'Merkez', code: 'ANKARA' }],
   activeBranch: { name: 'Merkez', code: 'ANKARA' },
+  permissions,
 });
+
+// Persona kotları: runtime-harness'ta tek kaynak (#445).
+// Bu spec yalnız oturum kurtarma davranışını test eder; hangi kot
+// seçilirse seçilsin yetkilendirme iddiasını değiştirmez.
+const TEACHER_PERMISSIONS = TEACHER_PERMISSION_KEYS;
+const OPS_PERMISSIONS = OPS_PERMISSION_KEYS;
 
 describe('runtime auth recovery states (#399)', () => {
   it('login stores both accessToken and refreshToken for silent refresh', () => {
@@ -18,7 +30,7 @@ describe('runtime auth recovery states (#399)', () => {
       .mockResolvedValueOnce(
         response({ accessToken: 'access-abc', refreshToken: 'refresh-xyz', refreshTokenId: 'sid-1' }),
       )
-      .mockResolvedValueOnce(response(catalogFor('Öğretmen')));
+      .mockResolvedValueOnce(response(catalogFor(TEACHER_PERMISSIONS)));
     ui.element('#email').value = 'teacher@example.com';
     ui.element('#password').value = 'secret';
     return ui.probe
@@ -62,10 +74,9 @@ describe('runtime auth recovery states (#399)', () => {
 
   it('handleAuthRequired shows Turkish re-auth prompt preserving route and branch', () => {
     const ui = runtime(PROBE_AUTH);
-    ui.probe.applyCatalog(catalogFor('Öğretmen'));
+    ui.probe.applyCatalog(catalogFor(TEACHER_PERMISSIONS));
     ui.probe.state.accessToken = 'old-token';
     ui.probe.state.refreshToken = 'refresh-old';
-    ui.probe.state.authLabel = 'Öğretmen';
     ui.probe.state.branchId = 'ANKARA';
     ui.probe.state.branchLabel = 'Merkez · ANKARA';
     // Simulate being on teacher tab: set teacher selected, bugun deselected
@@ -90,7 +101,7 @@ describe('runtime auth recovery states (#399)', () => {
       .mockResolvedValueOnce(
         response({ accessToken: 'access-re', refreshToken: 'refresh-re', refreshTokenId: 'sid-3' }),
       )
-      .mockResolvedValueOnce(response(catalogFor('Operasyon Yöneticisi')));
+      .mockResolvedValueOnce(response(catalogFor(OPS_PERMISSIONS)));
     ui.element('#email').value = 'ops@example.com';
     ui.element('#password').value = 'secret';
     return ui.probe
@@ -106,7 +117,7 @@ describe('runtime auth recovery states (#399)', () => {
     const ui = runtime(PROBE_AUTH);
     ui.probe.state.accessToken = 'access-xyz';
     ui.probe.state.refreshToken = 'refresh-xyz';
-    ui.probe.state.authLabel = 'Öğretmen';
+    ui.probe.state.permissions = ['user:read'];
     ui.probe.state.branchId = 'ANKARA';
     ui.probe.state.branchLabel = 'Merkez · ANKARA';
     ui.probe.state.branches = [{ name: 'Merkez', code: 'ANKARA' }];
@@ -114,7 +125,7 @@ describe('runtime auth recovery states (#399)', () => {
     ui.probe.logout();
     expect(ui.probe.state.accessToken).toBe('');
     expect(ui.probe.state.refreshToken).toBe('');
-    expect(ui.probe.state.authLabel).toBe('');
+    expect(ui.probe.state.permissions).toEqual([]);
     expect(ui.probe.state.branchId).toBe('');
     expect(ui.probe.state.branchLabel).toBe('');
     expect(ui.probe.state.branches).toEqual([]);
@@ -125,7 +136,7 @@ describe('runtime auth recovery states (#399)', () => {
 
   it('logout clears institution and branch display from DOM', () => {
     const ui = runtime(PROBE_AUTH);
-    ui.probe.applyCatalog(catalogFor('Öğretmen'));
+    ui.probe.applyCatalog(catalogFor(TEACHER_PERMISSIONS));
     ui.element('#context-institution').textContent = 'Atatürk Anadolu Lisesi';
     ui.probe.logout();
     expect(ui.element('#context-institution').textContent).toBe('');
@@ -141,8 +152,7 @@ describe('runtime auth recovery states (#399)', () => {
 
   it('forbidden response shows operational Turkish with safe exit, no raw codes', () => {
     const ui = runtime(PROBE_AUTH);
-    ui.probe.applyCatalog(catalogFor('Öğretmen'));
-    ui.probe.state.authLabel = 'Öğretmen';
+    ui.probe.applyCatalog(catalogFor(TEACHER_PERMISSIONS));
     ui.probe.activateTab('ops');
     const message = ui.element('#message-region').innerHTML;
     expect(message).toContain('yetkiniz yok');
@@ -153,7 +163,6 @@ describe('runtime auth recovery states (#399)', () => {
     const ui = runtime(PROBE_AUTH);
     ui.probe.state.accessToken = 'old';
     ui.probe.state.refreshToken = 'refresh-old';
-    ui.probe.state.authLabel = 'Öğretmen';
     ui.probe.state.branchId = 'ANKARA';
     ui.probe.handleAuthRequired();
     const message = ui.element('#message-region').innerHTML;
@@ -163,7 +172,7 @@ describe('runtime auth recovery states (#399)', () => {
 
   it('unsent leave draft fields are preserved across auth interruption', () => {
     const ui = runtime(PROBE_AUTH);
-    ui.probe.applyCatalog(catalogFor('Öğretmen'));
+    ui.probe.applyCatalog(catalogFor(TEACHER_PERMISSIONS));
     ui.element('#leave-start').value = '2026-11-01';
     ui.element('#leave-end').value = '2026-11-05';
     ui.element('#leave-reason').value = 'Sağlık raporu';
