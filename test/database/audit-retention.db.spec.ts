@@ -290,28 +290,28 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       // Keep both keys resolvable for the anchor/truncation checks below,
       // which must verify the pre-rotation entry as well.
       process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({ [oldKey.keyId]: oldKey.key });
+
+      // Head-hash mismatch detection via pure function.
+      const chain = await readChain();
+      const tailHash = chain[chain.length - 1].entry_hash as string;
+      expect(verifySeg(chain, { expectedHeadHash: tailHash })).toMatchObject({ valid: true });
+      expect(verifySeg(chain, { expectedHeadHash: 'c'.repeat(64) }))
+        .toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
+
+      // Tail-deletion detection: removing the last row without updating the
+      // expected head hash is caught by the sequence bound, not by the head check
+      // (which would report head-hash-mismatch).
+      const expectedLastSequence = Number(chain[chain.length - 1].seq);
+      await dataSource.query('DELETE FROM audit_logs WHERE seq = $1', [expectedLastSequence]);
+      const truncated = await readChain();
+      expect(verifySeg(truncated, { expectedHeadHash: tailHash, expectedLastSequence }))
+        .toMatchObject({ valid: false, reason: 'truncated-chain' });
     } finally {
       envKeys.forEach((key, index) => {
         if (backup[index] === undefined) delete process.env[key];
         else process.env[key] = backup[index];
       });
     }
-
-    // Head-hash mismatch detection via pure function.
-    const chain = await readChain();
-    const tailHash = chain[chain.length - 1].entry_hash as string;
-    expect(verifySeg(chain, { expectedHeadHash: tailHash })).toMatchObject({ valid: true });
-    expect(verifySeg(chain, { expectedHeadHash: 'c'.repeat(64) }))
-      .toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
-
-    // Tail-deletion detection: removing the last row without updating the
-    // expected head hash is caught by the sequence bound, not by the head check
-    // (which would report head-hash-mismatch).
-    const expectedLastSequence = Number(chain[chain.length - 1].seq);
-    await dataSource.query('DELETE FROM audit_logs WHERE seq = $1', [expectedLastSequence]);
-    const truncated = await readChain();
-    expect(verifySeg(truncated, { expectedHeadHash: tailHash, expectedLastSequence }))
-      .toMatchObject({ valid: false, reason: 'truncated-chain' });
   });
 
   it('does not prune a fresh chain (retention not reached) and still audits the run', async () => {
