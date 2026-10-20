@@ -22,13 +22,17 @@ describe('NotificationOutboxRepository', () => {
 
     it('updates every expected draft and returns rows', async () => {
       const em = {
-        query: jest.fn().mockResolvedValue([
-          [
-            { id: input.expectedVersions[0].id, status: 'approved', version: 1 },
-            { id: input.expectedVersions[1].id, status: 'approved', version: 1 },
-          ],
-          2,
-        ]),
+        query: jest
+          .fn()
+          .mockResolvedValueOnce([{ pending: 2 }])
+          .mockResolvedValueOnce([
+            [
+              { id: input.expectedVersions[0].id, status: 'approved', version: 1 },
+              { id: input.expectedVersions[1].id, status: 'approved', version: 1 },
+            ],
+            2,
+          ])
+          .mockResolvedValueOnce([{ pending: 0 }]),
       } as any;
 
       const result = await repository.transitionDraftsForSession(em, input);
@@ -51,7 +55,10 @@ describe('NotificationOutboxRepository', () => {
 
     it('throws ConflictException on version mismatch (all-or-nothing)', async () => {
       const em = {
-        query: jest.fn().mockResolvedValue([]),
+        query: jest
+          .fn()
+          .mockResolvedValueOnce([{ pending: 2 }])
+          .mockResolvedValueOnce([]),
       } as any;
 
       await expect(repository.transitionDraftsForSession(em, input)).rejects.toBeInstanceOf(
@@ -69,6 +76,49 @@ describe('NotificationOutboxRepository', () => {
       await expect(
         repository.transitionDraftsForSession({} as any, { ...input, tenantId: '  ' }),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects oversized batches instead of silently approving only a prefix (#464)', async () => {
+      const em = { query: jest.fn() } as any;
+      await expect(
+        repository.transitionDraftsForSession(em, {
+          ...input,
+          expectedVersions: Array.from({ length: 201 }, (_, index) => ({
+            id: `40000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+            version: 0,
+          })),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(em.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects a page-sized subset before touching any row (#464)', async () => {
+      const em = { query: jest.fn().mockResolvedValueOnce([{ pending: 3 }]) } as any;
+
+      await expect(repository.transitionDraftsForSession(em, input)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(em.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls back when a draft appears between the completeness check and the update (#464)', async () => {
+      const em = {
+        query: jest
+          .fn()
+          .mockResolvedValueOnce([{ pending: 2 }])
+          .mockResolvedValueOnce([
+            [
+              { id: input.expectedVersions[0].id, status: 'approved', version: 1 },
+              { id: input.expectedVersions[1].id, status: 'approved', version: 1 },
+            ],
+            2,
+          ])
+          .mockResolvedValueOnce([{ pending: 1 }]),
+      } as any;
+
+      await expect(repository.transitionDraftsForSession(em, input)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
   });
 });

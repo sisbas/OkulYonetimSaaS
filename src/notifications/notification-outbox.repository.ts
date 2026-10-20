@@ -42,6 +42,15 @@ export type NotificationDraftRow = {
 };
 
 /**
+ * Session toplu onayının kabul ettiği en büyük `expectedVersions` boyutu (#464).
+ *
+ * Sessiz `slice` kırpması, istemcinin "tam set" gönderdiği hâlde sunucunun yalnız
+ * ilk N satırı onaylayıp kalanları bırakmasına yol açıyordu. Sınır aşılırsa açıkça
+ * reddedilir; yarım onay asla başarı gibi raporlanmaz.
+ */
+const MAX_BULK_EXPECTED_VERSIONS = 200;
+
+/**
  * TypeORM 0.3.30 postgres QueryRunner dönüş şeklini normalize eder:
  * UPDATE/DELETE sorguları `[rows, rowCount]` tuple'ı döner;
  * SELECT/INSERT ise `rows` dizisi.
@@ -270,6 +279,11 @@ const rows = (await entityManager.query(
    * versionlar birebir eşleşmezse 0 satır döner → all-or-nothing
    * ConflictException (HTTP 409) → işlem geri alınır.
    * Tenant + branch predicate zorunludur.
+   *
+   * #464: gönderilen set oturumun TAM bekleyen seti olmalıdır; eksik set
+   * `ConflictException` ile reddedilir, böylece UI bekleyen taslak varken
+   * "toplu onaylandı" diyemez. Çağıran taraflar bu metodu transaction içinde
+   * çalıştırmalıdır (controller `dataSource.transaction` kullanır).
    */
   async transitionDraftsForSession(
     entityManager: EntityManager,
@@ -289,10 +303,22 @@ const rows = (await entityManager.query(
     if (!Array.isArray(input.expectedVersions) || input.expectedVersions.length === 0) {
       throw new BadRequestException('NOTIFICATION_BULK_VERSIONS_REQUIRED');
     }
-    const bounded = input.expectedVersions.slice(0, 200);
+    if (input.expectedVersions.length > MAX_BULK_EXPECTED_VERSIONS) {
+      throw new BadRequestException('NOTIFICATION_BULK_VERSIONS_TOO_MANY');
+    }
+    const bounded = input.expectedVersions;
     const ids = bounded.map((v) => v.id);
     const versions = bounded.map((v) => v.version);
     const fromStatuses = ['pending', 'blocked_consent'];
+
+    // Ön kontrol: UPDATE'ten önce tam set doğrulanır. Böylece kısmi set
+    // hiçbir satırı değiştirmeden reddedilir (transaction olmasa bile yarım
+    // onay yazılmaz).
+    if (await this.countPendingSessionDrafts(entityManager, input, fromStatuses) !== bounded.length) {
+      throw new ConflictException(
+        'Notification draft bulk requires every pending draft of the session',
+      );
+    }
 
     const updated = extractRows<{ id: string; status: string; version: number }>(
       await entityManager.query(
@@ -323,10 +349,45 @@ const rows = (await entityManager.query(
         'Notification draft bulk version conflict, not found, or in invalid status',
       );
     }
+
+    // Yarış kontrolü: ön kontrolden sonra commit olan yeni bir taslak kalırsa
+    // yine fail-closed (çağıran transaction'ı geri alır).
+    if (await this.countPendingSessionDrafts(entityManager, input, fromStatuses) > 0) {
+      throw new ConflictException(
+        'Notification draft bulk would leave pending drafts in the session',
+      );
+    }
     return updated.map((row) => ({
       id: row.id,
       status: row.status,
       version: Number(row.version),
     }));
+  }
+
+  /**
+   * Oturumun tenant+branch kapsamında kalan bekleyen taslak sayısı (#464).
+   *
+   * Hem ön kontrol (tam set) hem yarış kontrolü (geriye kalan) aynı predicate'i
+   * kullanır; tenant filtresi ve `s.tenant_id = o.tenant_id` join'i sayesinde
+   * başka tenant'ın aynı session id'li satırları sayılmaz.
+   */
+  private async countPendingSessionDrafts(
+    entityManager: EntityManager,
+    input: Readonly<{ tenantId: string; branchId: string; sessionId: string }>,
+    fromStatuses: readonly string[],
+  ): Promise<number> {
+    const [row] = extractRows<{ pending: number | string }>(
+      await entityManager.query(
+        `SELECT count(*)::int AS pending
+           FROM notification_outbox o
+           JOIN attendance_sessions s ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+          WHERE o.tenant_id = $1
+            AND o.session_id = $2
+            AND s.branch_id = $3
+            AND o.status = ANY($4::varchar[])`,
+        [input.tenantId, input.sessionId, input.branchId, fromStatuses],
+      ),
+    );
+    return Number(row?.pending ?? 0);
   }
 }

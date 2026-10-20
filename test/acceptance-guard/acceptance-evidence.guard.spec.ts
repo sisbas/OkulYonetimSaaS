@@ -100,6 +100,16 @@ export const NON_ACCEPTANCE_EXEMPTIONS: ReadonlyArray<{
     mustContain: 'INSERT INTO notification_outbox',
   },
   {
+    file: path.join('test', 'database', 'notification-session-drafts.db.spec.ts'),
+    reason:
+      '#464 non-acceptance real-PostgreSQL complete-set regression: ON COMMIT DROP ' +
+      'session-local temporary fixtures seed one attendance session with more pending ' +
+      'drafts than the notification page size to prove the session listing is not ' +
+      'page-bounded and that a page-sized subset fails closed instead of reporting bulk ' +
+      'approval. These are not genuine business/UI journeys, delivery or pilot acceptance.',
+    mustContain: 'INSERT INTO notification_outbox',
+  },
+  {
     file: path.join('test', 'database', 'notification-dispatch.db.spec.ts'),
     reason:
       'N2 non-acceptance real-PostgreSQL bounded dispatch regression: it seeds reference ' +

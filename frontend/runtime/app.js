@@ -1009,28 +1009,64 @@ async function revokeConsent(subjectRefId, subjectType, consentType) {
   }
 }
 
-function groupDraftsBySession(rows) {
-  const groups = new Map();
-  for (const row of rows) {
-    const sessionId = pick(row, ['sessionId'], '');
-    const key = sessionId || 'no-session';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
+const DRAFT_INDEX_PAGE_SIZE = 100;
+const DRAFT_INDEX_MAX_PAGES = 10;
+// Sunucu sınırı: NOTIFICATION_BULK_VERSIONS_TOO_MANY (repository MAX_BULK_EXPECTED_VERSIONS).
+const SESSION_BULK_LIMIT = 200;
+
+// #464: toplu onay görünen bildirim sayfasıyla sınırlı kalmamalı. Taslak
+// kuyruğu sayfa sayfa okunur ve oturum bazında gruplanır; sınır aşılırsa
+// fail-closed (buton gösterilmez).
+async function buildDraftIndexBySession() {
+  const bySession = new Map();
+  for (let page = 0; page < DRAFT_INDEX_MAX_PAGES; page += 1) {
+    const query = new URLSearchParams({
+      limit: String(DRAFT_INDEX_PAGE_SIZE),
+      offset: String(page * DRAFT_INDEX_PAGE_SIZE),
+    });
+    const { body } = await apiRequest(`/notifications/drafts?${query.toString()}`);
+    const rows = asArray(body, ['drafts', 'items']);
+    for (const row of rows) {
+      const sessionId = pick(row, ['sessionId'], '');
+      if (!sessionId) continue;
+      if (!bySession.has(sessionId)) bySession.set(sessionId, []);
+      bySession.get(sessionId).push(row);
+    }
+    if (rows.length < DRAFT_INDEX_PAGE_SIZE) return bySession;
   }
-  return groups;
+  throw new Error('Taslak indeksi sınırı aşıldı');
 }
 
-function renderSessionBulkAction(rows) {
+function renderSessionBulkAction(sessionId, rows) {
   const approvable = rows.filter((row) => {
     const status = String(pick(row, ['status'], '')).toLowerCase();
     return status === 'pending' || status === 'blocked_consent';
   });
   if (!approvable.length) return '<p class="hint">Bu oturum için bekleyen onay yok.</p>';
+  if (approvable.length > SESSION_BULK_LIMIT) {
+    return `<p class="hint">Bu oturumda ${approvable.length} bekleyen taslak var; toplu onay en fazla ${SESSION_BULK_LIMIT} taslağı kapsar. Taslakları tek tek onaylayın.</p>`;
+  }
   const expectedVersions = approvable.map((row) => ({
     id: pick(row, ['id']),
     version: Number(pick(row, ['version'], 0)),
   }));
-  return `<button type="button" data-action="bulk-approve-session" data-session-id="${escapeHtml(pick(approvable[0], ['sessionId'], ''))}" data-versions="${escapeHtml(encodeURIComponent(JSON.stringify(expectedVersions)))}">Bu oturumun ${approvable.length} taslağını toplu onayla</button>`;
+  return `<button type="button" data-action="bulk-approve-session" data-session-id="${escapeHtml(sessionId)}" data-versions="${escapeHtml(encodeURIComponent(JSON.stringify(expectedVersions)))}">Bu oturumun ${approvable.length} taslağını toplu onayla</button>`;
+}
+
+function renderSessionBulkActions(rows, draftsBySession) {
+  const bulkTarget = $('#bulk-approve-output');
+  if (!draftsBySession) {
+    bulkTarget.innerHTML = '<p class="hint">Taslak listesi getirilemedi; toplu onay devre dışı.</p>';
+    return;
+  }
+  const visibleSessionIds = rows.map((row) => pick(row, ['sessionId'], '')).filter(Boolean);
+  const sessionIds = [...new Set([...visibleSessionIds, ...draftsBySession.keys()])];
+  bulkTarget.innerHTML = sessionIds.map((sessionId) => `<article class="card">
+            <h3>Oturum ${escapeHtml(String(sessionId).slice(0, 8))}…</h3>
+            ${draftsBySession.has(sessionId)
+              ? renderSessionBulkAction(sessionId, draftsBySession.get(sessionId))
+              : '<p class="hint">Bu oturum için bekleyen onay yok.</p>'}
+          </article>`).join('');
 }
 
 async function bulkApproveSession(sessionId, versionsCsv) {
@@ -1434,16 +1470,16 @@ async function loadNotifications() {
     const { body } = await apiRequest(`/notifications?${query.toString()}`);
     const rows = asArray(body, ['notifications', 'items']);
     target.innerHTML = rows.length ? rows.map(renderNotificationCard).join('') : empty('Bu kapsamda bildirim yok.');
-    const bulkTarget = $('#bulk-approve-output');
-    const bulkActions = rows.some((row) => pick(row, ['sessionId'], ''))
-      ? [...groupDraftsBySession(rows).entries()]
-          .filter(([sessionId]) => sessionId !== 'no-session')
-          .map(([sessionId, sessionRows]) => `<article class="card">
-            <h3>Oturum ${escapeHtml(String(sessionId).slice(0, 8))}…</h3>
-            ${renderSessionBulkAction(sessionRows)}
-          </article>`).join('')
-      : '';
-    bulkTarget.innerHTML = bulkActions;
+    // #464: toplu onay yalnız görünen 20 satırı değil, oturumun TÜM bekleyen
+    // taslaklarını göndermeli. Kuyruk sonuna kadar okunur; okunamazsa buton
+    // hiç gösterilmez (yarım setle "başarılı" denemez).
+    let draftsBySession = null;
+    try {
+      draftsBySession = await buildDraftIndexBySession();
+    } catch (_error) {
+      draftsBySession = null;
+    }
+    renderSessionBulkActions(rows, draftsBySession);
     announce(`${rows.length} bildirim listelendi.`, 'success');
   } catch (error) {
     renderError(target, error);
