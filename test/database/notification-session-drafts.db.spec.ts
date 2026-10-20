@@ -50,7 +50,7 @@ withPostgres('N1c real PostgreSQL complete-set session bulk approval (#464)', ()
       UNION ALL
       SELECT $1::uuid, $3::uuid, 'sms', 'blocked_consent', 'y-' || n, now() - interval '1 minute' FROM generate_series(1, 3) n
       UNION ALL
-      SELECT $1::uuid, $4::uuid, 'sms', 'pending', 'z-' || n, now() FROM generate_series(1, 2) n
+      SELECT $1::uuid, $4::uuid, 'sms', 'pending', 'z-' || n, now() + interval '1 minute' FROM generate_series(1, 2) n
       UNION ALL
       SELECT $5::uuid, $2::uuid, 'sms', 'pending', 'cross-tenant-' || n, now() FROM generate_series(1, 2) n`,
       [tenantA, sessionX, sessionY, sessionZ, tenantB]);
