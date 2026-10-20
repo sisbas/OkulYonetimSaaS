@@ -235,6 +235,10 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
 
   it('authenticates the persisted retention anchor and rejects DB tampering (#358)', async () => {
     await seedAgedChain(2);
+    // `seq` is database-wide and DELETE does not reset it, so derive the
+    // expected anchor from the seeded chain rather than assuming 1..N.
+    const seeded = await readChain();
+    const expectedCheckpointSequence = Number(seeded[seeded.length - 1].seq);
     await service.prune(pruneInput());
     // #373: AuditQueryService.verify() was removed. Verify the chain via the
     // verifyAuditChain pure function + lastCheckpoint(), the same building
@@ -244,7 +248,7 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
     const checkpoint = await queryService.lastCheckpoint();
     expect(checkpoint).not.toBeNull();
     const { headHash } = checkpoint!;
-    expect(checkpoint!.upToSequence).toBe(2);
+    expect(checkpoint!.upToSequence).toBe(expectedCheckpointSequence);
 
     const verifySeg = (rows: AuditRow[], opts: Record<string, unknown> = {}) =>
       verifyAuditChain(rows.map(toVerifiable), {
