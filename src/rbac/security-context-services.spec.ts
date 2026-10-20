@@ -217,7 +217,7 @@ describe('ContextCatalogService (versioned, human-readable catalog)', () => {
 
     const serialized = JSON.stringify(response);
     expect(serialized).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i); // iç UUID yok
-    // #445 (K-39): permissions artık makine-okur yetkinlik kanalı olarak
+    // #445 (K-43): permissions artık makine-okur yetkinlik kanalı olarak
     // makine-okur izin ANAHTARLARI taşır — kullanıcı-görünür metin yine
     // displayTerm'den gelir. Etag/tenantId/branchId gibi kimlik jargonu
     // yine serbest değildir; anahtarlar yalnız izin-key uzayındadır.
