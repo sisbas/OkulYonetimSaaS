@@ -874,7 +874,7 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     // Listeyi B şubesi için yenile → 0 kart.
     await sessionB!.clickElement('#refresh-notifications');
     await waitForCount(sessionB!, '#notifications-list article.card', 0);
-    await sessionB!.waitForText('#message-region', /0 bildirim listelendi/, 10_000);
+    await sessionB!.waitForText('#message-region', /Bu kapsamda bildirim yok/, 10_000);
     await sessionB!.waitForText('#notifications-list .empty-state', /Bu kapsamda bildirim yok/, 10_000);
 
     // Node tarafı aynı sınırları kanıtlar.
