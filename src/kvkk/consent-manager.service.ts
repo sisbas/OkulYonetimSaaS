@@ -184,7 +184,9 @@ export class ConsentManagerService {
       entityType: 'dataprotection',
       entityId: String(row.id),
       result: 'success',
-      changedFields: ['purpose', 'legalBasis'],
+      // UPDATE'in gerçekten dokunduğu alanlar; `updated_at` bookkeeping olduğu
+      // için audit kanıtına alınmaz (repo genelindeki diğer event'lerle aynı ilke).
+      changedFields: ['status', 'revokedAt', 'version'],
       redactionReceipt: {
         strategy: 'none',
         evaluatedFieldCount: 6,

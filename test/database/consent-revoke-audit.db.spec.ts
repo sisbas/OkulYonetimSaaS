@@ -189,7 +189,7 @@ describeWithPostgres('consent revoke + transactional audit PostgreSQL (#266)', (
     expect(audits[0].metadata_json).toMatchObject({
       schemaVersion: 1,
       result: 'success',
-      changedFields: ['legalBasis', 'purpose'],
+      changedFields: ['revokedAt', 'status', 'version'],
       redactionReceipt: expect.objectContaining({ strategy: 'none' }),
     });
   });

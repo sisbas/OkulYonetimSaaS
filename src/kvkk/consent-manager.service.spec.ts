@@ -109,7 +109,7 @@ describe('ConsentManagerService', () => {
           entityType: 'dataprotection',
           entityId: CONSENT_ID,
           result: 'success',
-          changedFields: ['purpose', 'legalBasis'],
+          changedFields: ['status', 'revokedAt', 'version'],
           redactionReceipt: expect.objectContaining({
             strategy: 'none',
             evaluatedFieldCount: 6,
