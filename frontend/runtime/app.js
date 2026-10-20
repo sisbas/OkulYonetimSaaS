@@ -308,7 +308,9 @@ function updateOperationalSnapshot() {
   $('#summary-leave').textContent = summaryText(state.activeLeaveId, 'Talep seçilmedi');
   $('#summary-assignment').textContent = state.activeAssignmentId
     ? 'Görevlendirme tamamlandı'
-    : `${state.queueCount} açık ders · ${state.impactCount} etki · ${state.candidateCount} aday`;
+    : state.queueCount || state.impactCount || state.candidateCount
+      ? `${state.queueCount} açık ders · ${state.impactCount} etki · ${state.candidateCount} aday`
+      : 'Henüz iş yok';
   $('#summary-lesson').textContent = summaryText(state.activeLessonLabel, 'Henüz seçilmedi');
   $('#next-action').textContent = recommendedAction();
   $('#activity-trail').textContent = `Son işlem: ${state.lastAction}`;
@@ -443,23 +445,42 @@ function normalizeApiError(response, body, options = {}) {
   };
 }
 
-function canonicalStateBlock(uiState, message = '') {
+function canonicalStateBlock(uiState, message = '', title = '') {
   if (!uiState || !UI_STATES[uiState]) return '';
   const copy = UI_STATES[uiState];
-  return `<div class="error-state" data-state="${escapeHtml(uiState)}">
-    <strong>${escapeHtml(copy.title)}</strong>
+  const variant = uiState === 'same_scope_empty' ? 'empty-state' : 'error-state';
+  const hint = uiState === 'same_scope_empty' ? '' : `<small class="recovery-hint">${escapeHtml(copy.hint)}</small>`;
+  return `<div class="${variant}" data-state="${escapeHtml(uiState)}">
+    <strong>${escapeHtml(title || copy.title)}</strong>
     <p>${escapeHtml(message || copy.message)}</p>
-    <small class="recovery-hint">${escapeHtml(copy.hint)}</small>
+    ${hint}
   </div>`;
+}
+
+function toneFor(uiState) {
+  if (uiState === 'same_scope_empty') return 'neutral';
+  if (uiState === 'error_retryable' || uiState === 'unknown_server_state') return 'danger';
+  return 'warning';
+}
+
+function renderRegionState(target, uiState, message = '', title = '') {
+  const copy = UI_STATES[uiState];
+  if (!copy) {
+    target.dataset.state = 'error_retryable';
+    target.innerHTML = canonicalStateBlock('error_retryable', message);
+    announce(message || copy?.message || UI_STATES.error_retryable.message, 'danger');
+    return;
+  }
+  const text = message || copy.message;
+  target.dataset.state = uiState;
+  target.innerHTML = canonicalStateBlock(uiState, text, title);
+  announce(text, toneFor(uiState));
 }
 
 function renderError(target, error) {
   const uiState = UI_STATES[error.uiState] ? error.uiState : 'error_retryable';
-  const copy = UI_STATES[uiState];
   if (uiState === 'rate_limited') startRateLimitCooldown(error.retryAfterSeconds);
-  target.dataset.state = uiState;
-  target.innerHTML = canonicalStateBlock(uiState, error.message || copy.message);
-  announce(error.message || copy.message, 'danger');
+  renderRegionState(target, uiState, error.message);
 }
 
 function startRateLimitCooldown(retryAfterSeconds) {
@@ -469,13 +490,6 @@ function startRateLimitCooldown(retryAfterSeconds) {
 
 function mutationDisabled() {
   return Date.now() < state.rateLimitedUntil;
-}
-
-function renderBlockingState(target, uiState) {
-  const copy = UI_STATES[uiState] || UI_STATES.error_retryable;
-  target.dataset.state = uiState;
-  target.innerHTML = canonicalStateBlock(uiState);
-  announce(copy.message, 'warning');
 }
 
 function requireSession() {
@@ -854,9 +868,14 @@ async function loadQueue() {
   try {
     const { body } = await apiRequest(`/daily-operations/today?${query.toString()}`);
     const items = asArray(body, ['items', 'lessons', 'queue']);
+    resetCountsExcept('queueCount');
     state.queueCount = items.length;
-    target.innerHTML = items.length ? items.map(renderQueueItem).join('') : empty('Aynı kapsamda açık ders bulunmuyor. Şube veya tarih değiştirip yeniden deneyin.');
-    announce('Günlük işler yenilendi.', 'success');
+    if (items.length) {
+      target.innerHTML = items.map(renderQueueItem).join('');
+      announce('Günlük işler yenilendi.', 'success');
+    } else {
+      empty(target, 'queue');
+    }
     updateWorkflowProgress();
   } catch (error) {
     updateWorkflowProgress('context', 'Günlük işler alınamadı');
@@ -898,11 +917,15 @@ async function loadImpact(leaveId, eventId, courseLabel = '') {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/impact`);
     captureLeaveVersion(body, etag);
     const events = asArray(body, ['events', 'affectedLessons', 'lessons', 'items']);
+    resetCountsExcept('impactCount');
     state.impactCount = events.length;
-    state.candidateCount = 0;
     if (!state.activeScheduleEventId && events[0]) state.activeScheduleEventId = eventIdentity(events[0]);
     updateAssignmentStateFromEvents(events);
-    target.innerHTML = renderImpact(body, events);
+    if (events.length) {
+      target.innerHTML = renderImpact(body, events);
+    } else {
+      empty(target, 'impact');
+    }
     updateWorkflowProgress();
   } catch (error) {
     updateWorkflowProgress('impact', 'Etki analizi alınamadı');
@@ -930,7 +953,7 @@ function renderImpact(body, events) {
     <button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}" data-course-label="${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}">Adayları getir ve bu dersi planla</button>
   </li>`).join('');
   return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))} · ${events.length} ders etkileniyor</div>
-    <ul class="impact-list">${rows || '<li>Etki satırı yok.</li>'}</ul>`;
+    <ul class="impact-list">${rows}</ul>`;
 }
 
 async function loadCandidates(eventId, courseLabel = '') {
@@ -948,11 +971,16 @@ async function loadCandidates(eventId, courseLabel = '') {
     const { body } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/candidates`);
     if (body?.eligibilityFinalized === false) {
       updateWorkflowProgress('assignment', 'Uygunluk kaynağı bekleniyor');
-      return renderBlockingState(target, 'eligibility_not_ready');
+      return renderRegionState(target, 'eligibility_not_ready');
     }
     const candidates = asArray(body, ['candidates', 'items']);
+    resetCountsExcept('candidateCount');
     state.candidateCount = candidates.length;
-    target.innerHTML = candidates.length ? candidates.map(renderCandidate).join('') : empty('Bu ders için uygun aday bulunamadı. Farklı bir ders veya kapsam seçip yeniden deneyin.');
+    if (candidates.length) {
+      target.innerHTML = candidates.map(renderCandidate).join('');
+    } else {
+      empty(target, 'candidates');
+    }
     updateWorkflowProgress();
   } catch (error) {
     updateWorkflowProgress('assignment', 'Aday listesi alınamadı');
@@ -1149,8 +1177,55 @@ function displayTerm(labels, value, fallback) {
   return labels[raw] || labels[termKey(raw, '')] || fallback;
 }
 
-const loading = (text) => `<div class="loading" role="status">${escapeHtml(text)}...</div>`;
-const empty = (text) => `<div class="empty-state" data-state="same_scope_empty"><strong>Burada işlem yok</strong><p>${escapeHtml(text)}</p></div>`;
+function resetCountsExcept(...keep) {
+    const all = ['queueCount', 'impactCount', 'candidateCount'];
+    for (const key of all) {
+      if (!keep.includes(key)) state[key] = 0;
+    }
+  }
+
+  const loading = (text) => `<div class="loading" role="status">${escapeHtml(text)}...</div>`;
+
+const EMPTY_COPY = {
+  queue: {
+    title: 'Günlük iş listesi boş',
+    message: 'Bu kapsamda açık ders yok. Şube veya tarih değiştirip yeniden deneyin.',
+  },
+  candidates: {
+    title: 'Aday listesi boş',
+    message: 'Bu ders için uygun aday yok. Farklı bir ders veya kapsam seçip yeniden deneyin.',
+  },
+  leaves: {
+    title: 'İzin talebi yok',
+    message: 'Bu kapsamda izin talebi yok.',
+  },
+  consents: {
+    title: 'Onay kaydı yok',
+    message: 'Bu kapsamda onay kaydı yok.',
+  },
+  notifications: {
+    title: 'Bildirim yok',
+    message: 'Bu kapsamda bildirim yok.',
+  },
+  attendance: {
+    title: 'Yoklama oturumu yok',
+    message: 'Bu kapsamda yoklama oturumu yok.',
+  },
+  impact: {
+    title: 'Etki yok',
+    message: 'Bu izin için etkilenen ders yok.',
+  },
+  schedule: {
+    title: 'Çizelge yok',
+    message: 'Henüz çizelge oluşturulmadı.',
+  },
+};
+
+const empty = (target, key) => {
+  const copy = EMPTY_COPY[key];
+  if (!copy) return;
+  renderRegionState(target, 'same_scope_empty', copy.message, copy.title);
+};
 
 document.addEventListener('click', (event) => {
   const target = event.target.closest('button');

@@ -41,8 +41,12 @@ async function loadLeaves() {
   try {
     const { body } = await apiRequest(`/leaves?${query.toString()}`);
     const rows = asArray(body, ['leaves', 'items', 'requests', 'data']);
-    target.innerHTML = rows.length ? rows.map(renderLeaveDecisionCard).join('') : empty('Bu kapsamda izin talebi yok.');
-    announce(`${rows.length} izin talebi listelendi.`, 'success');
+    if (rows.length) {
+      target.innerHTML = rows.map(renderLeaveDecisionCard).join('');
+      announce(`${rows.length} izin talebi listelendi.`, 'success');
+    } else {
+      empty(target, 'leaves');
+    }
   } catch (error) {
     renderError(target, error);
   }

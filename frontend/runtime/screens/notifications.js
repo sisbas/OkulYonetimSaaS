@@ -63,7 +63,11 @@ async function loadNotifications() {
   try {
     const { body } = await apiRequest(`/notifications?${query.toString()}`);
     const rows = asArray(body, ['notifications', 'items']);
-    target.innerHTML = rows.length ? rows.map(renderNotificationCard).join('') : empty('Bu kapsamda bildirim yok.');
+    if (rows.length) {
+      target.innerHTML = rows.map(renderNotificationCard).join('');
+    } else {
+      empty(target, 'notifications');
+    }
     const bulkTarget = $('#bulk-approve-output');
     const bulkActions = rows.some((row) => pick(row, ['sessionId'], ''))
       ? [...groupDraftsBySession(rows).entries()]
@@ -74,7 +78,7 @@ async function loadNotifications() {
           </article>`).join('')
       : '';
     bulkTarget.innerHTML = bulkActions;
-    announce(`${rows.length} bildirim listelendi.`, 'success');
+    if (rows.length) announce(`${rows.length} bildirim listelendi.`, 'success');
   } catch (error) {
     renderError(target, error);
   }

@@ -39,8 +39,12 @@ async function loadConsents() {
   try {
     const { body } = await apiRequest('/consents');
     const rows = asArray(body, ['consents', 'items']);
-    target.innerHTML = rows.length ? rows.map(renderConsentCard).join('') : empty('Bu kapsamda onay kaydı yok.');
-    announce(`${rows.length} onay kaydı listelendi.`, 'success');
+    if (rows.length) {
+      target.innerHTML = rows.map(renderConsentCard).join('');
+      announce(`${rows.length} onay kaydı listelendi.`, 'success');
+    } else {
+      empty(target, 'consents');
+    }
   } catch (error) {
     renderError(target, error);
   }

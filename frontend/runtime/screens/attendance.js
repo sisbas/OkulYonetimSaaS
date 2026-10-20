@@ -44,7 +44,11 @@ async function loadAttendanceSessions() {
   try {
     const { body } = await apiRequest('/attendance/sessions');
     const rows = asArray(body, ['sessions', 'items']);
-    target.innerHTML = rows.length ? rows.map(renderAttendanceSessionCard).join('') : empty('Bu kapsamda yoklama oturumu yok.');
+    if (rows.length) {
+      target.innerHTML = rows.map(renderAttendanceSessionCard).join('');
+    } else {
+      empty(target, 'attendance');
+    }
   } catch (error) {
     renderError(target, error);
   }
@@ -59,7 +63,7 @@ function renderAttendanceSessionCard(session) {
     <p class="card-meta">
       <span>${escapeHtml(formatStamp(pick(session, ['sessionDate'], '')))}</span>
       <span>Sürüm: ${escapeHtml(pick(session, ['version'], 0))}</span>
-      <span>Öğrenci: ${roster.length}</span>
+      <span>${roster.length ? `Öğrenci: ${roster.length}` : 'Öğrenci yok'}</span>
     </p>
     <button type="button" data-action="attendance-open" data-session-id="${escapeHtml(sessionId)}">Oturumu aç ve kayıtları yönet</button>
   </article>`;
@@ -99,7 +103,7 @@ function renderAttendanceDetail(session) {
     : `<button type="button" data-action="attendance-lock" data-session-id="${escapeHtml(sessionId)}" data-session-version="${version}" ${muted ? 'disabled' : ''}>Oturumu kilitle ve devamsızlıkları kuyruğa al</button>`;
   $('#attendance-detail').innerHTML = `<article class="card">
     <h3>Yoklama · ${escapeHtml(displayStatus(status))} · Sürüm ${escapeHtml(version)}</h3>
-    <p>Roster: ${roster.length} öğrenci</p>
+    <p>${roster.length ? `Roster: ${roster.length} öğrenci` : 'Roster boş'}</p>
     <ul class="impact-list">${rosterRows || '<li>Roster yok.</li>'}</ul>
     ${actions}
   </article>`;

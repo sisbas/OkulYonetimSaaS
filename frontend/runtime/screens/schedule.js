@@ -6,10 +6,15 @@
 
 function renderScheduleStatus() {
   const target = $('#schedule-status');
+  if (!state.scheduleId) {
+    empty(target, 'schedule');
+    $('#schedule-events').innerHTML = '';
+    return;
+  }
   target.innerHTML = `<article class="card">
-    <h3>${state.scheduleId ? 'Çizelge hazır' : 'Çizelge yok'}</h3>
+    <h3>Çizelge hazır</h3>
     <p>Kimlik: ${escapeHtml(state.scheduleId || '-')} · Revizyon: ${escapeHtml(state.scheduleRevision)}</p>
-    <p>Olay sayısı: ${state.scheduleEvents.length}</p>
+    <p>${state.scheduleEvents.length ? `Olay sayısı: ${state.scheduleEvents.length}` : 'Olay yok'}</p>
   </article>`;
   $('#schedule-events').innerHTML = state.scheduleEvents.length
     ? state.scheduleEvents.map(renderScheduleEventRow).join('')

@@ -49,7 +49,7 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
 
   it('treats unfinished candidate eligibility as a blocking state', () => {
     expect(app).toContain('body?.eligibilityFinalized === false');
-    expect(app).toContain("renderBlockingState(target, 'eligibility_not_ready')");
+    expect(app).toContain("renderRegionState(target, 'eligibility_not_ready')");
     expect(app).toContain('eligibility_not_ready');
   });
 

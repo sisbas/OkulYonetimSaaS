@@ -144,6 +144,18 @@ HEAD'de mevcuttur).
 | K-38 | **K-17 tek kaynak migration backfill'i ile uygulanır.** Grant endpoint'i/UI'ı K-22 gereği yoktur; dolayısıyla `legal_basis`/`retention_days` kaynağı `CONSENT_TYPE_METADATA` olmak üzere `1880000000000` migration'ı mevcut satırlara **geri yazar** (`COALESCE`: yalnız NULL kolonlar dolar). Migration değerleri gömülüdür (uygulama kodunu import etmez — uygulanmış migration'ın anlamı kaynak kodla birlikte değişmemelidir); map ile eşitliği `test/database/consent-legal-basis.migration.spec.ts` CI'da sabitler. Map'te olmayan consent_type için değer uydurulmaz (satır NULL kalır; `chk_kvkk_consents_consent_type` izin verdiği hâlde `general_processing`/`attendance_tracking` bu kapsamın DIŞINDADIR — hukuki zemin dayanağı kararı henüz verilmedi, ayrı karar konusu). | K-25'in UI yüzeyi boş kalmasın diye kolonların gerçekten dolu olması gerekiyor; ama K-22 bir grant yolu yazmayı yasaklıyor. Migration, uygulanmış-artefakt-donması ilkesiyle (migration uygulama koduna bağımlı olmaz) birlikte tek kaynağı uygular. |
 | K-39 | **K-26 follow-up #416'ya ek iki kalem:** (a) `frontend/runtime/screens/*` içindeki tekrar eden load→fetch→render iskeleti (5 kopya), (b) `test/jest-acceptance-guard.json`'ın `.scratch/` keşfi (K-23 AC 11/11 sayımı bozuluyordu — bu turda ayrıca düzeltildi). | Bu turda düzeltilenler: guard keşfi (yanlış-yeşil riski, doğrudan AC ihlali). Kalan tekrar, K-26 gerekçesiyle (odak: davranış-değiştirmeyen refactor) #416'da. |
 
+## #444 kararları — paylaşılan bölge durumları (2026-10-17)
+
+Numaralandırma K-1'den K-35'e devam eder.
+
+| # | Karar | Gerekçe |
+|---|---|---|
+| K-36 | **Tek paylaşılan yol: `renderRegionState(target, uiState, message, title)`.** Boş, engelli ve çevrimdışı durumlar hepsi bu fonksiyondan geçer; `target.dataset.state`'i damgalar, `canonicalStateBlock`'la çizer ve `announce()` ile canlı bölgeye bildirir. `renderError` ve (eski) `renderBlockingState` artık başka çizim yolu açmaz. | #444 AC1/AC6: "Empty, blocked and offline states render through one shared path that stamps the canonical state attribute on the region." Önceki kodda `empty()` ayrı bir string üretiyordu, `renderError` ve `renderBlockingState` kendi `data-state`'lerini kendileri damgalıyordu. Tek yol olmadan kanıt/erişilebilirlik paketleri okumak için üç farklı özellik aramak zorunda kalırdı. |
+| K-37 | **Her alan kendi boş durum kopyasını taşır (`EMPTY_COPY`).** Altı alan (kuyruk, aday, izin, onay, bildirim, yoklama) + etki ve çizelge için ayrı başlık/mesaj. Boş durum içinde `<button>` veya `data-action` yok; `same_scope_empty` için `recovery-hint` bastırılır — boş bölgenin tek işi alanı tanımlamak ve yönlendirmek. | #444 AC2/AC3. `displayTerm` kullanımı: ticket'ın "What to build" bölümü doğrulama bulgularını açıkça sayıyor. |
+| K-38 | **Sayaç sıfırlama tek noktada: `resetCountsExcept(...keep)`.** Her yükleme fonksiyonu diğer iki sayacı sıfırlar; `resetCountsExcept('queueCount')` vb. Böylece `loadCandidates` sonrası `loadQueue` "0 açık ders · 0 etki · 3 aday" göstermez. | #444 AC4. Ticket'ın AC4'ü tazeleme sonrasıki bir sonraki yüklemede de geçerli olmalı — yoksa sayaçlar bir önceki alanın eski değerini taşır. |
+
+---
+
 ## Açık sorular
 
 | # | Soru | Durum |
