@@ -17,6 +17,8 @@ describe('Gate 1 KVKK acceptance checks', () => {
       'attendance:read',
       'attendance:absence:read',
       'audit_log:read',
+      // #373: permission removed from catalogue; kept here as a negative
+      // assertion — teacher must never hold it even if re-added.
       'audit_log:operations:read',
       'audit_log:security:read',
       'parent_notification:send',

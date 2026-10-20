@@ -62,6 +62,10 @@ const DATA_PROTECTION_CHANGED_FIELDS = [
   'redactionStrategy',
   'legalBasis',
   'erasureScope',
+  // Consent revoke (#466): mutasyonun gerçekten dokunduğu alanlar.
+  'status',
+  'revokedAt',
+  'version',
 ] as const;
 const STUDENT_CHANGED_FIELDS = [
   'status',

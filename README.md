@@ -125,6 +125,22 @@ npm run db:verify
 npm run db:seed:permissions
 ```
 
+İlk girilebilir yönetici için ayrıca [İlk yöneticiyi oluşturma (bootstrap)](#ilk-yöneticiyi-oluşturma-bootstrap) bölümüne bakın.
+
+## İlk yöneticiyi oluşturma (bootstrap)
+
+Fresh kurulumda (boş `users` tablosu) ilk girilebilir yöneticiyi seed eder:
+
+```bash
+SEED_ADMIN_EMAIL=admin@okul.example \
+SEED_ADMIN_PASSWORD=<en-az-12-karakter> \
+npm run db:seed:admin
+```
+
+Env değişkenleri: `SEED_ADMIN_EMAIL` (zorunlu), `SEED_ADMIN_PASSWORD` (zorunlu, ≥12 karakter), `SEED_ADMIN_FULL_NAME` (varsayılan: `Kurum Yöneticisi`), `SEED_TENANT_SLUG` (varsayılan: `system-seed`, `db:seed:permissions` ile aynı).
+
+Seed fail-closed'dur: tenant/rol yoksa, kullanıcılar zaten varsa veya mevcut kullanıcı giriş yapamıyor (pasif/üye değil/rolü yok) ise reddeder; aynı e-posta ile tekrar çalıştırma idempotent'tir (`already-exists`). Soft-delete edilmiş hedef kullanıcı veya üyelik "yok" sayılır ve seed onu geri yükler (`repaired`); soft-delete edilmiş kullanıcıda parola yenilenir ve `token_version` artırılır. Yalnız `db:seed:permissions` sonrası çalıştırın.
+
 ## Quality gate
 
 ```bash

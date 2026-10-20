@@ -204,6 +204,37 @@ describe('okul-03-audit-scope: genişletilmiş action tipleri politikası', () =
     });
   });
 
+  it('consent.revoked yalnız gerçekten değişen alanları kaydeder (#466)', () => {
+    const metadata: AuditMetadataByEvent['dataprotection.consent.revoked'] = {
+      schemaVersion: 1,
+      tenantId: TENANT_ID,
+      actorUserId: ACTOR_ID,
+      actorSessionId: null,
+      requestId: 'consent-revoked-unit',
+      entityType: 'dataprotection',
+      entityId: ENTITY_ID,
+      result: 'success',
+      changedFields: ['status', 'revokedAt', 'version'],
+      redactionReceipt: redactionReceipt(),
+    };
+
+    expect(validateTransactionalAuditMetadata('dataprotection.consent.revoked', metadata)).toEqual({
+      tenantId: TENANT_ID,
+      actorUserId: ACTOR_ID,
+      actorSessionId: null,
+      action: 'dataprotection.consent.revoked',
+      entityType: 'dataprotection',
+      entityId: ENTITY_ID,
+      requestId: 'consent-revoked-unit',
+      metadataJson: {
+        schemaVersion: 1,
+        result: 'success',
+        changedFields: ['revokedAt', 'status', 'version'],
+        redactionReceipt: redactionReceipt(),
+      },
+    });
+  });
+
   it('redactionReceipt zorunluyken eksikse reddeder', () => {
     const { redactionReceipt: _omit, ...withoutReceipt } = dataProtectionMetadata() as Record<string, unknown>;
     expect(() =>

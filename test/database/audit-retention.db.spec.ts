@@ -13,7 +13,9 @@ import { AuditRetentionService } from '../../src/common/audit/audit-retention.se
 import { AuditQueryService } from '../../src/common/audit/audit-query.service';
 import {
   TEST_AUDIT_HMAC_KEY,
+  auditHmacKeyResolver,
   resolveAuditHmacKey,
+  resolveAuditHmacKeyRing,
   verifyAuditChain,
 } from '../../src/common/audit/audit-chain';
 import { TypeOrmTransactionalAuditWriter } from '../../src/common/audit/transactional-audit-writer';
@@ -233,13 +235,30 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
 
   it('authenticates the persisted retention anchor and rejects DB tampering (#358)', async () => {
     await seedAgedChain(2);
+    // `seq` is database-wide and DELETE does not reset it, so derive the
+    // expected anchor from the seeded chain rather than assuming 1..N.
+    const seeded = await readChain();
+    const expectedCheckpointSequence = Number(seeded[seeded.length - 1].seq);
     await service.prune(pruneInput());
+    // #373: AuditQueryService.verify() was removed. Verify the chain via the
+    // verifyAuditChain pure function + lastCheckpoint(), the same building
+    // blocks a future platform-authority surface would use.
     const queryService = new AuditQueryService(dataSource, repository,
       new TypeOrmTransactionalAuditWriter(repository));
-    await expect(queryService.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({
-      valid: true, startedFromCheckpoint: true, checkedRows: 1,
-      verificationScope: 'bounded-segment',
-    });
+    const checkpoint = await queryService.lastCheckpoint();
+    expect(checkpoint).not.toBeNull();
+    const { headHash } = checkpoint!;
+    expect(checkpoint!.upToSequence).toBe(expectedCheckpointSequence);
+
+    const verifySeg = (rows: AuditRow[], opts: Record<string, unknown> = {}) =>
+      verifyAuditChain(rows.map(toVerifiable), {
+        resolveHmacKey: auditHmacKeyResolver(resolveAuditHmacKeyRing()),
+        startPrevHash: headHash,
+        ...opts,
+      });
+
+    // Checkpoint signature validation happens inside lastCheckpoint().
+    // Tamper the checkpoint and expect rejection.
     const [original] = await dataSource.query('SELECT * FROM audit_chain_checkpoints');
     for (const [column, value] of [
       ['head_hash', 'b'.repeat(64)], ['signature', 'b'.repeat(64)],
@@ -247,10 +266,11 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
     ]) {
       // Column names are fixed test literals; values remain parameterized.
       await dataSource.query(`UPDATE audit_chain_checkpoints SET ${column} = $1`, [value]);
-      await expect(queryService.verify({ tenantId: TENANT_ID })).rejects.toThrow(/Audit checkpoint rejected/);
+      await expect(queryService.lastCheckpoint()).rejects.toThrow(/Audit checkpoint rejected/);
       await dataSource.query(`UPDATE audit_chain_checkpoints SET ${column} = $1`, [original[column]]);
     }
 
+    // Key rotation: verify the chain segment after checkpoint with rotated keys.
     const envKeys = ['AUDIT_HMAC_KEY', 'AUDIT_HMAC_KEY_ID', 'AUDIT_HMAC_PREVIOUS_KEYS'] as const;
     const backup = envKeys.map((key) => process.env[key]);
     const oldKey = resolveAuditHmacKey();
@@ -259,21 +279,39 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       process.env.AUDIT_HMAC_KEY_ID = 'checkpoint-rotated';
       process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({ [oldKey.keyId]: oldKey.key });
       await dataSource.transaction((manager) => repository.insert(manager, record(100)));
-      await expect(queryService.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({ valid: true, checkedRows: 2 });
+      const rotatedRows = await readChain();
+      expect(verifySeg(rotatedRows)).toMatchObject({ valid: true });
+
       delete process.env.AUDIT_HMAC_PREVIOUS_KEYS;
-      await expect(queryService.verify({ tenantId: TENANT_ID })).rejects.toThrow(/unknown signature key/);
+      expect(verifySeg(rotatedRows)).toMatchObject({
+        valid: false,
+        reason: 'unknown-signature-key',
+      });
+      // Keep both keys resolvable for the anchor/truncation checks below,
+      // which must verify the pre-rotation entry as well.
+      process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({ [oldKey.keyId]: oldKey.key });
+
+      // Head-hash mismatch detection via pure function.
+      const chain = await readChain();
+      const tailHash = chain[chain.length - 1].entry_hash as string;
+      expect(verifySeg(chain, { expectedHeadHash: tailHash })).toMatchObject({ valid: true });
+      expect(verifySeg(chain, { expectedHeadHash: 'c'.repeat(64) }))
+        .toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
+
+      // Tail-deletion detection: removing the last row without updating the
+      // expected head hash is caught by the sequence bound, not by the head check
+      // (which would report head-hash-mismatch).
+      const expectedLastSequence = Number(chain[chain.length - 1].seq);
+      await dataSource.query('DELETE FROM audit_logs WHERE seq = $1', [expectedLastSequence]);
+      const truncated = await readChain();
+      expect(verifySeg(truncated, { expectedHeadHash: tailHash, expectedLastSequence }))
+        .toMatchObject({ valid: false, reason: 'truncated-chain' });
     } finally {
       envKeys.forEach((key, index) => {
         if (backup[index] === undefined) delete process.env[key];
         else process.env[key] = backup[index];
       });
     }
-    const chain = await readChain();
-    await dataSource.query('DELETE FROM audit_logs');
-    await expect(queryService.verify({ tenantId: TENANT_ID })).resolves.toMatchObject({ valid: true, verificationScope: 'bounded-segment' });
-    await expect(queryService.verify({ tenantId: TENANT_ID,
-      expectedHeadHash: chain[chain.length - 1].entry_hash as string,
-    })).resolves.toMatchObject({ valid: false, reason: 'head-hash-mismatch' });
   });
 
   it('does not prune a fresh chain (retention not reached) and still audits the run', async () => {
@@ -323,7 +361,7 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       );
       // Migration-cycle jobs deliberately do not run the permission seed.
       // This reference fixture must establish its own legacy DB grant.
-      for (const code of ['audit_log:retention:run', 'audit_log:operations:read']) {
+      for (const code of ['audit_log:retention:run']) {
         const existingPermission = await dataSource.query(
           'SELECT id FROM permissions WHERE code = $1', [code],
         );
@@ -337,7 +375,7 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       }
       await dataSource.query(
         `INSERT INTO role_permissions (role_id, permission_id)
-         SELECT $1, id FROM permissions WHERE code IN ('audit_log:retention:run', 'audit_log:operations:read')`,
+         SELECT $1, id FROM permissions WHERE code IN ('audit_log:retention:run')`,
         [roles[0].id],
       );
       await seedAgedChain(2);
@@ -364,13 +402,13 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       });
       expect(actor.roleIds).toContain('tenant_admin');
       expect(actor.permissions).toContain('audit_log:retention:run');
-      expect(actor.permissions).toContain('audit_log:operations:read');
+      expect(actor.permissions).not.toContain('audit_log:operations:read');
       const before = await readChain(); // Login may append an audited auth event.
+      // #373: audit/verify is permanently quarantined — route not registered (404).
       const verification = await fetch(`http://127.0.0.1:${port}/api/v1/audit/verify`, {
         headers: { authorization: `Bearer ${accessToken}` },
       });
-      expect(verification.status).toBe(403);
-      expect(await verification.json()).not.toHaveProperty('lastCheckpoint');
+      expect(verification.status).toBe(404);
       for (const route of ['plan', 'run']) {
         const response = await fetch(`http://127.0.0.1:${port}/api/v1/audit/retention/${route}`, {
           method: 'POST',

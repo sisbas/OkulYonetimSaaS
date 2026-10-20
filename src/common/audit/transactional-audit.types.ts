@@ -162,7 +162,11 @@ export type DataProtectionAuditChangedField =
   | 'recordCount'
   | 'redactionStrategy'
   | 'legalBasis'
-  | 'erasureScope';
+  | 'erasureScope'
+  // Consent revoke (#466): mutasyonun gerçekten dokunduğu alanlar.
+  | 'status'
+  | 'revokedAt'
+  | 'version';
 export type StudentAuditChangedField =
   | 'status'
   | 'enrollmentStatus'
