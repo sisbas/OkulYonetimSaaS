@@ -279,14 +279,17 @@ describeWithPostgres('audit retention PostgreSQL (#259, AC-7)', () => {
       process.env.AUDIT_HMAC_KEY_ID = 'checkpoint-rotated';
       process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({ [oldKey.keyId]: oldKey.key });
       await dataSource.transaction((manager) => repository.insert(manager, record(100)));
-      const verifiable = (await readChain()).map(toVerifiable);
-      expect(verifySeg(verifiable)).toMatchObject({ valid: true });
+      const rotatedRows = await readChain();
+      expect(verifySeg(rotatedRows)).toMatchObject({ valid: true });
 
       delete process.env.AUDIT_HMAC_PREVIOUS_KEYS;
-      expect(verifySeg(verifiable)).toMatchObject({
+      expect(verifySeg(rotatedRows)).toMatchObject({
         valid: false,
         reason: 'unknown-signature-key',
       });
+      // Keep both keys resolvable for the anchor/truncation checks below,
+      // which must verify the pre-rotation entry as well.
+      process.env.AUDIT_HMAC_PREVIOUS_KEYS = JSON.stringify({ [oldKey.keyId]: oldKey.key });
     } finally {
       envKeys.forEach((key, index) => {
         if (backup[index] === undefined) delete process.env[key];
