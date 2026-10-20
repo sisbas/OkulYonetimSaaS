@@ -36,6 +36,8 @@ withPostgres('N1c real PostgreSQL complete-set session bulk approval (#464)', ()
         available_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(),
         UNIQUE (tenant_id, dedupe_key)
       ) ON COMMIT DROP;
+    `);
+    await manager.query(`
       INSERT INTO attendance_sessions VALUES
         ($1, $2, $3, 'locked'), ($4, $2, $3, 'locked'), ($5, $2, $6, 'locked')`,
       [sessionX, tenantA, branchX, sessionY, sessionZ, branchY]);
