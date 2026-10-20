@@ -5,7 +5,7 @@ import { TypeOrmTransactionalAuditWriter } from '../../src/common/audit/transact
 import { RequestContext } from '../../src/common/context/request-context';
 import { DailyOperationsRepository } from '../../src/daily-operations/daily-operations.repository';
 import { TransactionalLeaveAuditAdapter } from '../../src/leaves/leave-audit.adapter';
-import { LeaveSelfDecisionException, LeaveStaleVersionException } from '../../src/leaves/leave-errors';
+import { LeaveSelfDecisionException, LeaveOverlapException, LeaveStaleVersionException } from '../../src/leaves/leave-errors';
 import { LeaveIdentityService } from '../../src/leaves/leave-identity.service';
 import { LeaveCoverageStatus, LeaveDecisionStatus, LeaveDurationType, LeaveReasonCode, LeaveRequest } from '../../src/leaves/leave-request.entity';
 import { LeaveRepository } from '../../src/leaves/leave.repository';
@@ -201,6 +201,8 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
   async function createPendingLeave(input: {
     requesterUserId?: string;
     teacherId?: string;
+    startsAt?: Date;
+    endsAt?: Date;
   } = {}): Promise<LeaveRequest> {
     return leaveRepository.create(ctxFor(TEACHER_USER, 'r1-create'), {
       tenantId: TENANT, branchId: BRANCH,
@@ -209,8 +211,8 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
       durationType: LeaveDurationType.FULL_DAY,
       reasonCode: LeaveReasonCode.ANNUAL_LEAVE,
       coverageStatus: LeaveCoverageStatus.NOT_REQUIRED,
-      startsAt: new Date('2026-09-14T00:00:00.000Z'),
-      endsAt: new Date('2026-09-28T20:00:00.000Z'),
+      startsAt: input.startsAt ?? new Date('2026-09-14T00:00:00.000Z'),
+      endsAt: input.endsAt ?? new Date('2026-09-28T20:00:00.000Z'),
     });
   }
 
@@ -348,7 +350,13 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
     ).rejects.toBeInstanceOf(LeaveSelfDecisionException);
 
     // Talep sahibi farklı ama aktör aynı öğretmen: kimlik çözümü reddi tetikler.
-    const affiliatedLeave = await createPendingLeave({ requesterUserId: MANAGER_USER });
+    // Dönem, ownLeave ile çakışmamalı (e8cbbf4: ikinci açık talep create'de
+    // LeaveOverlapException ile reddedilir) — senaryo dönem değil kimlik üzerine.
+    const affiliatedLeave = await createPendingLeave({
+      requesterUserId: MANAGER_USER,
+      startsAt: new Date('2026-10-12T00:00:00.000Z'),
+      endsAt: new Date('2026-10-13T20:00:00.000Z'),
+    });
     await expect(
       leaveService.decide(
         ctxFor(TEACHER_USER, 'r1-self-affiliated'),
@@ -388,6 +396,19 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
     );
     expect(retried.version).toBe(2);
     expect(retried.impact?.impactedLessonCount).toBe(3);
+  });
+
+  it('rejects a second overlapping pending leave for the same teacher', async () => {
+    const existing = await createPendingLeave();
+    expect(existing.decisionStatus).toBe(LeaveDecisionStatus.PENDING);
+
+    await expect(createPendingLeave()).rejects.toBeInstanceOf(LeaveOverlapException);
+
+    const count = await countRows(
+      "SELECT COUNT(*)::int AS n FROM leave_requests WHERE teacher_id = $1 AND decision_status = 'pending'",
+      [TEACHER],
+    );
+    expect(count).toBe(1);
   });
 });
 

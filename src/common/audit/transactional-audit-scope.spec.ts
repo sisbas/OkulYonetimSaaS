@@ -60,6 +60,21 @@ function dataProtectionMetadata(): AuditMetadataByEvent['dataprotection.export.r
   };
 }
 
+function consentReadMetadata(): AuditMetadataByEvent['dataprotection.consent.read'] {
+  return {
+    schemaVersion: 1,
+    tenantId: TENANT_ID,
+    actorUserId: ACTOR_ID,
+    actorSessionId: null,
+    requestId: 'consent-read-unit',
+    entityType: 'dataprotection',
+    entityId: TENANT_ID,
+    result: 'success',
+    changedFields: [],
+    redactionReceipt: redactionReceipt(),
+  };
+}
+
 function studentMetadata(): AuditMetadataByEvent['student.created'] {
   return {
     schemaVersion: 1,
@@ -219,6 +234,26 @@ describe('okul-03-audit-scope: genişletilmiş action tipleri politikası', () =
     expect(() => validateTransactionalAuditMetadata('dataprotection.export.redacted', bad)).toThrow(
       /redactionReceipt accounting mismatch/,
     );
+  });
+
+  // #462: okuma eventi hiçbir alanı değiştirmez → boş changedFields dürüst ve kabul edilir.
+  it('okuma eventini (consent.read) boş changedFields ile kabul eder', () => {
+    expect(validateTransactionalAuditMetadata('dataprotection.consent.read', consentReadMetadata())).toEqual(
+      expect.objectContaining({
+        action: 'dataprotection.consent.read',
+        entityType: 'dataprotection',
+        metadataJson: expect.objectContaining({ result: 'success', changedFields: [] }),
+      }),
+    );
+  });
+
+  it('okuma dışı dataprotection eventinde boş changedFields hâlâ reddedilir', () => {
+    expect(() =>
+      validateTransactionalAuditMetadata('dataprotection.export.redacted', {
+        ...dataProtectionMetadata(),
+        changedFields: [],
+      }),
+    ).toThrow(/non-empty string array/);
   });
 
   it('student eventi branch-scoped ve actor zorunlu; geçerli kaydı kabul eder', () => {

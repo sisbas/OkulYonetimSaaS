@@ -60,7 +60,11 @@ export function mount({ mode, store = null }) {
     token = "",
     loginBusy = false,
     scheduleView = "group",
-    scheduleScope = "all";
+    scheduleScope = "all",
+    studentQuery = "",
+    studentGroup = "all",
+    studentStatus = "all",
+    studentPage = 1;
   const $ = (s) => document.querySelector(s),
     link = (path, label, cls = "") =>
       `<a class="${cls}" href="${base}/${path}" data-route>${label}</a>`;
@@ -156,13 +160,21 @@ export function mount({ mode, store = null }) {
     );
   }
   function loginView() {
-    return (
-      heading(
-        "Oturum aç",
-        "Kurumunuzun verdiği hesap bilgileriyle devam edin.",
-      ) +
-      `<section class="panel panel-pad login-card"><div class="eyebrow">Güvenli kurum erişimi</div><h2>Tekrar hoş geldiniz</h2><form id="login-form">${field("E-posta", "email", "email", "", 'required autocomplete="username"')}${field("Şifre", "password", "password", "", 'required autocomplete="current-password"')}<button class="primary" type="submit" ${loginBusy ? "disabled" : ""}>${loginBusy ? "Doğrulanıyor…" : "Oturum aç"}</button></form><p class="meta">Hesap veya kurum erişimi sorunu için kurum yöneticinize başvurun.</p><a href="/ux/today">Örnek verilerle arayüzü incele →</a></section>`
-    );
+    // HERO: A paper school-day composition welcomes the team back to its shared plan.
+    return `<div class="login-page">
+      <header class="login-header"><a class="login-brand" href="/"><img src="/app/mark.svg" alt=""><span>okul<span>yönetim</span></span></a><a class="login-home" href="/">Ana sayfaya dön <span aria-hidden="true">↗</span></a></header>
+      <main class="login-main" id="main" tabindex="-1">
+        <section class="login-story" aria-labelledby="login-story-title"><p class="login-kicker">AYNI PLAN. AYNI SAYFA. BİRLİKTE.</p><h1 id="login-story-title">Yeni bir gün.<br />Yeni bir <em>başlangıç.</em></h1><p class="login-description">Okulun günlük ritmini birlikte yönetin.<br />Planlarınız, ekibiniz ve sıradaki adımınız aynı yerde.</p>
+          <div class="login-paper" aria-hidden="true"><div class="login-paper-top"><span>Günün küçük hatırlatması</span><span>↗</span></div><p>İyi bir okul günü,<br /><em>iyi bir planla başlar.</em></p><div class="login-paper-bottom"><span class="login-dot"></span> Eğitime alan açın.</div></div><span class="login-spark" aria-hidden="true">✳</span>
+        </section>
+        <section class="login-form-section" aria-labelledby="login-title"><div class="login-form-inner"><p class="login-kicker"><span class="login-dot"></span> KURUMUNUZA GİRİŞ</p><h2 id="login-title">Tekrar hoş geldiniz.</h2><p class="login-form-description">Kurumunuzun verdiği hesap bilgileriyle devam edin.</p>
+          ${notice ? `<div class="login-feedback" role="alert">${esc(notice)}</div>` : ""}
+          <form id="login-form" aria-busy="${loginBusy}"><label class="login-field" for="login-email">E-posta adresi<input id="login-email" name="email" type="email" required autocomplete="username" placeholder="adiniz@okulunuz.com" autocapitalize="none" spellcheck="false" ${loginBusy ? "readonly" : ""}></label><label class="login-field" for="login-password">Şifre<input id="login-password" name="password" type="password" required autocomplete="current-password" placeholder="Şifrenizi girin" ${loginBusy ? "readonly" : ""}></label><button class="login-submit" type="submit" ${loginBusy ? "disabled" : ""}><span>${loginBusy ? "Doğrulanıyor…" : "Oturum aç"}</span><span aria-hidden="true">${loginBusy ? "…" : "↗"}</span></button></form>
+          <p class="login-help">Giriş yapmakta sorun mu yaşıyorsunuz?<br /><strong>Hesap ve erişim desteği için kurum yöneticinize başvurun.</strong></p>
+          <div class="login-preview"><span>Önce bir göz atmak ister misiniz?</span><a href="/ux/today">Örnek verilerle keşfedin <span aria-hidden="true">↗</span></a></div>
+        </div></section>
+      </main><footer class="login-footer"><span>© Okul Yönetim</span><span>Daha az karmaşa. Daha çok eğitim.</span></footer>
+    </div>`;
   }
   function metrics() {
     const list = visibleLessons().filter((l) => l.day === "2026-09-14");
@@ -178,6 +190,10 @@ export function mount({ mode, store = null }) {
     return `<div class="metrics">${["Bugünkü ders", "Açık operasyon", "İzinli öğretmen", "Görevlendirme bekleyen", "Eksik yoklama", "Bildirim bekleyen"].map((t, i) => (!canManage() && [2, 3, 5].includes(i) ? "" : `<div class="metric ${i === 3 ? "attention" : ""}"><span>${t}</span><strong>${values[i]}</strong></div>`)).join("")}</div>`;
   }
   function today() {
+    // HERO: A school-day completion strip turns the daily plan into a clear shared rhythm.
+    const dayLessons = visibleLessons().filter((l) => l.day === "2026-09-14");
+    const completed = dayLessons.filter((l) => l.status === "completed").length;
+    const completion = dayLessons.length ? Math.round(completed / dayLessons.length * 100) : 0;
     const lessons = visibleLessons()
       .filter((l) => l.day === "2026-09-14")
       .filter(
@@ -198,10 +214,11 @@ export function mount({ mode, store = null }) {
     ];
     return (
       heading(
-        teacher() ? "Bugünkü derslerim" : "Bugün",
-        "Öncelikleri görün, bekleyen işleri tamamlayın.",
+        teacher() ? "Bugünkü derslerim" : "Güne birlikte başlayalım.",
+        "14 Eylül, Pazartesi · Okulunuzun günlük ritmi, tek yerde.",
         `${link("schedule", "Haftalık program", "btn")}${teacher() ? "" : link("reports", "Gün sonu", "btn primary")}`,
       ) +
+      `<section class="day-overview" aria-labelledby="day-overview-title"><div class="day-overview-copy"><span class="day-kicker">GÜNÜN BÜYÜK RESMİ</span><h2 id="day-overview-title">Aynı plan.<br /><em>Daha net bir gün.</em></h2><p>Öncelikleri görün, değişiklikleri takip edin.<br />Eğitime alan açmak için sıradaki adımı birlikte tamamlayın.</p></div><div class="day-progress"><div class="day-progress-top"><span>Derslerin tamamlanma durumu</span><strong>%${completion}</strong></div><progress max="${dayLessons.length || 1}" value="${completed}" aria-label="Bugünkü tamamlanan dersler">%${completion}</progress><div class="day-progress-bottom"><span><strong>${completed}</strong> tamamlanan ders</span><span><strong>${dayLessons.length - completed}</strong> sıradaki ders</span></div><a href="${base}/schedule" data-route>Haftalık planı görün <span aria-hidden="true">↗</span></a></div><span class="day-flower" aria-hidden="true">✳</span></section>` +
       metrics() +
       `<div class="split">${panel(
         "Ders akışı",
@@ -625,6 +642,7 @@ export function mount({ mode, store = null }) {
     kind = kind === "time-slots" ? "slots" : kind;
     if (!defLabels[kind]) return notFound();
     if (id) return definitionDetail(kind, id);
+    if (kind === "students") return studentList();
     const records = store[kind] || [];
     const filtered = records.filter(
       (x) =>
@@ -675,6 +693,38 @@ export function mount({ mode, store = null }) {
         ]),
       )}${filtered.length ? "" : empty("Eşleşen kayıt yok", "Arama ifadesini değiştirin.")}</section>`
     );
+  }
+  function studentList() {
+    // HERO: A class-register identity block gives every student a distinct, readable place.
+    const records = store.students || [];
+    const groups = [...new Set(records.map((s) => s.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, "tr"));
+    const query = studentQuery.trim().toLocaleLowerCase("tr");
+    const matches = records.filter((s) =>
+      (!query || [s.name, s.number, s.group].some((value) => String(value || "").toLocaleLowerCase("tr").includes(query))) &&
+      (studentGroup === "all" || s.group === studentGroup) &&
+      (studentStatus === "all" || (studentStatus === "active" ? s.active !== false : s.active === false))
+    );
+    const pageSize = 12;
+    const pageCount = Math.max(1, Math.ceil(matches.length / pageSize));
+    studentPage = Math.min(studentPage, pageCount);
+    const offset = (studentPage - 1) * pageSize;
+    const page = matches.slice(offset, offset + pageSize);
+    const initial = (name) => String(name || "Ö").trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toLocaleUpperCase("tr");
+    return heading("Her öğrenci, bir hikâye.", "Öğrenci kayıtlarını, sınıfları ve iletişim durumlarını tek yerde görün.", canManage() ? button("+ Öğrenci ekle", "add-definition", "students", "primary") : "") +
+      `<section class="student-summary" aria-label="Öğrenci kayıt özeti"><div class="student-summary-title"><span class="student-kicker">OKULUNUZUN SINIF DEFTERİ</span><h2>Birlikte büyüyen<br /><em>bir okul.</em></h2></div><div class="student-stat"><strong>${records.length}</strong><span>Toplam öğrenci</span></div><div class="student-stat"><strong>${records.filter((s) => s.active !== false).length}</strong><span>Aktif kayıt</span></div><div class="student-stat"><strong>${groups.length}</strong><span>Sınıf / şube</span></div></section>
+      <section class="panel student-register" aria-labelledby="student-list-title"><header class="student-register-header"><div><h2 id="student-list-title">Öğrenci listesi</h2><p>Her kayda daha yakından bakın.</p></div><span class="student-record-count">${records.length} kayıt</span></header>
+        <div class="student-toolbar"><label class="student-search-label" for="student-search"><span class="sr-only">Ad, öğrenci numarası veya sınıf ara</span><span aria-hidden="true">⌕</span><input id="student-search" type="search" placeholder="Ad, numara veya sınıf ara…" data-student-search value="${esc(studentQuery)}"></label><label class="student-filter" for="student-group">Sınıf / şube<select id="student-group" data-student-group><option value="all">Tüm sınıflar</option>${groups.map((group) => `<option value="${esc(group)}" ${studentGroup === group ? "selected" : ""}>${esc(group)}</option>`).join("")}</select></label><label class="student-filter" for="student-status">Kayıt durumu<select id="student-status" data-student-status><option value="all" ${studentStatus === "all" ? "selected" : ""}>Tüm durumlar</option><option value="active" ${studentStatus === "active" ? "selected" : ""}>Aktif</option><option value="inactive" ${studentStatus === "inactive" ? "selected" : ""}>Pasif</option></select></label></div>
+        <p class="student-result-count" role="status">${matches.length} öğrenci bulundu${studentGroup !== "all" ? ` · ${esc(studentGroup)}` : ""}</p>
+        ${page.length ? `<div class="student-table">${columns(["Öğrenci", "Öğrenci no", "Sınıf / şube", "Veli iletişimi", "Durum", "İşlem"], page.map((s, index) => [
+          `<div class="student-identity"><span class="student-avatar student-avatar-${index % 3}" aria-hidden="true">${esc(initial(s.name))}</span><div><strong>${esc(s.name)}</strong><span>Öğrenci kaydı</span></div></div>`,
+          `<span class="student-number">${esc(s.number || "—")}</span>`,
+          `<span class="student-class">${esc(s.group || "Atanmamış")}</span>`,
+          `<span class="student-contact ${s.contact ? "" : "student-contact-missing"}">${s.contact ? "İletişim kaydı var" : "İletişim kaydı yok"}</span>`,
+          badge(s.active === false ? "Pasif" : "Aktif"),
+          `<a class="student-detail" href="${base}/definitions/students/${encodeURIComponent(s.id)}" data-route aria-label="${esc(s.name)} öğrenci detayını aç">İncele <span aria-hidden="true">↗</span></a>`
+        ]))}</div>` : `<div class="student-empty"><span aria-hidden="true">⌕</span><h3>Eşleşen öğrenci bulunamadı.</h3><p>Arama ifadesini veya filtreleri değiştirerek yeniden deneyin.</p><button type="button" data-student-reset>Filtreleri temizle</button></div>`}
+        <footer class="student-pagination"><span>${matches.length ? `${offset + 1}–${Math.min(offset + pageSize, matches.length)}` : "0"} / ${matches.length} öğrenci</span><div><button type="button" data-student-page="${studentPage - 1}" ${studentPage === 1 ? "disabled" : ""} aria-label="Önceki sayfa">←</button><span>Sayfa ${studentPage} / ${pageCount}</span><button type="button" data-student-page="${studentPage + 1}" ${studentPage === pageCount ? "disabled" : ""} aria-label="Sonraki sayfa">→</button></div></footer>
+      </section><p class="student-bottom-note">Öğrenci detayından yoklama ve veli iletişim bilgilerine ulaşabilirsiniz.</p>`;
   }
   function tabs(labels) {
     return `<div class="tabs" role="tablist" aria-label="Detay bölümleri">${labels.map((l, i) => `<button id="tab-${i}" role="tab" data-tab="${esc(l)}" aria-selected="${activeTab === l}" aria-controls="tab-content" tabindex="${activeTab === l ? "0" : "-1"}">${l}</button>`).join("")}</div>`;
@@ -888,8 +938,12 @@ export function mount({ mode, store = null }) {
     );
   }
   function render() {
+    $("#app").classList.toggle("dashboard-surface", path() === "today" || path().startsWith("definitions/students"));
+    $("#app").classList.toggle("students-surface", path() === "definitions/students");
     if (!demo) {
-      $("#app").innerHTML = shell(production());
+      const isLogin = path() === "login";
+      document.title = isLogin ? "Okul Yönetim · Giriş" : "Okul Yönetim · Bugün";
+      $("#app").innerHTML = isLogin ? loginView() : shell(production());
       return;
     }
     const p = path();
@@ -1112,6 +1166,15 @@ export function mount({ mode, store = null }) {
     }
   });
   document.addEventListener("input", (e) => {
+    if (demo && e.target.matches("[data-student-search]")) {
+      const cursor = e.target.selectionStart;
+      studentQuery = e.target.value;
+      studentPage = 1;
+      render();
+      $("#student-search").focus();
+      $("#student-search").setSelectionRange(cursor, cursor);
+      return;
+    }
     if (e.target.matches("[data-search]")) {
       const n = e.target.selectionStart;
       filter = e.target.value || "all";
@@ -1122,6 +1185,15 @@ export function mount({ mode, store = null }) {
   });
   document.addEventListener("change", (e) => {
     const el = e.target;
+    if (demo && (el.matches("[data-student-group]") || el.matches("[data-student-status]"))) {
+      if (el.matches("[data-student-group]")) studentGroup = el.value;
+      else studentStatus = el.value;
+      studentPage = 1;
+      const id = el.id;
+      render();
+      $("#" + id).focus();
+      return;
+    }
     if (el.name === "demo-teacher" && demo) {
       store.demoTeacher = el.value;
       render();
@@ -1167,6 +1239,23 @@ export function mount({ mode, store = null }) {
       render();
     }
   });
+  document.addEventListener("click", (e) => {
+    if (!demo) return;
+    const pageButton = e.target.closest("[data-student-page]");
+    const resetButton = e.target.closest("[data-student-reset]");
+    if (pageButton && !pageButton.disabled) {
+      studentPage = Number(pageButton.dataset.studentPage);
+      render();
+      $("#student-list-title").setAttribute("tabindex", "-1");
+      $("#student-list-title").focus();
+    } else if (resetButton) {
+      studentQuery = "";
+      studentGroup = studentStatus = "all";
+      studentPage = 1;
+      render();
+      $("#student-search").focus();
+    }
+  });
   document.addEventListener("submit", async (e) => {
     const f = e.target;
     e.preventDefault();
@@ -1177,6 +1266,8 @@ export function mount({ mode, store = null }) {
         email = data.get("email"),
         password = data.get("password");
       f.querySelector("button").disabled = true;
+      f.setAttribute("aria-busy", "true");
+      f.querySelector("button").textContent = "Doğrulanıyor…";
       try {
         const response = await fetch("/api/v1/auth/login", {
           method: "POST",
@@ -1213,6 +1304,10 @@ export function mount({ mode, store = null }) {
       } finally {
         loginBusy = false;
         render();
+        if (path() === "login") {
+          $("#login-email").value = email;
+          $("#login-password").focus();
+        }
       }
       return;
     }

@@ -32,12 +32,13 @@ withPostgres('N0 real PostgreSQL scope and canonical transaction regressions', (
       CREATE TEMP TABLE attendance_sessions (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, status text) ON COMMIT DROP;
       CREATE TEMP TABLE attendance_records (tenant_id uuid, session_id uuid, student_id uuid, status text) ON COMMIT DROP;
       CREATE TEMP TABLE kvkk_consent_subjects (id uuid, tenant_id uuid, subject_ref_id uuid, subject_type text, status text) ON COMMIT DROP;
-      CREATE TEMP TABLE kvkk_consents (subject_id uuid, tenant_id uuid, consent_type text, status text, revoked_at timestamptz, expires_at timestamptz) ON COMMIT DROP;
+      CREATE TEMP TABLE kvkk_consents (id uuid, tenant_id uuid, subject_id uuid, consent_type text, status text, revoked_at timestamptz, expires_at timestamptz, version int, created_at timestamptz) ON COMMIT DROP;
       CREATE TEMP TABLE notification_outbox (
         id uuid DEFAULT gen_random_uuid() PRIMARY KEY, tenant_id uuid, dedupe_key varchar,
         event_type varchar, student_id uuid, session_id uuid, channel varchar,
         status varchar CHECK (status IN ('pending', 'blocked_consent', 'dispatched', 'failed')),
         payload_masked jsonb, reason varchar, consent_version int, created_by_id uuid,
+        snapshot jsonb, version int DEFAULT 0,
         available_at timestamptz DEFAULT now(), UNIQUE (tenant_id, dedupe_key)
       ) ON COMMIT DROP;
     `);
@@ -97,8 +98,9 @@ withPostgres('N0 real PostgreSQL scope and canonical transaction regressions', (
       expect(await repo.findPending(manager, ctx, 10)).toEqual([]);
       await manager.query(`ROLLBACK TO SAVEPOINT consent_denial`);
       await manager.query(`INSERT INTO kvkk_consent_subjects VALUES ($1, $2, $3, 'student', 'active')`, [actor, tenantA, student]);
-      await manager.query(`INSERT INTO kvkk_consents VALUES ($1, $2, 'parent_notification', 'approved', NULL, NULL),
-        ($1, $2, 'sms_notification', 'approved', NULL, NULL)`, [actor, tenantA]);
+      await manager.query(`INSERT INTO kvkk_consents VALUES
+        (gen_random_uuid(), $2, $1, 'parent_notification', 'approved', NULL, NULL, 1, now()),
+        (gen_random_uuid(), $2, $1, 'sms_notification', 'approved', NULL, NULL, 1, now())`, [actor, tenantA]);
       await manager.query(`SAVEPOINT domain_mutation`);
       expect((await service.enqueueLockedAbsenceNotifications(manager, input)).insertedRows).toBe(1);
       expect((await service.enqueueLockedAbsenceNotifications(manager, input)).duplicatesSkipped).toBe(1);
@@ -136,6 +138,24 @@ describe('N0 scope/limit pre-storage denial', () => {
     const query = jest.fn();
     await expect(repo.findPending({ query } as unknown as EntityManager, ctx, limit))
       .rejects.toThrow('NOTIFICATION_OUTBOX_LIMIT_INVALID');
+    expect(query).not.toHaveBeenCalled();
+  });
+  it.each([
+    { tenantId: tenantA, branchId: undefined },
+    { tenantId: tenantA, branchId: '' },
+    { tenantId: undefined, branchId: branchX },
+    { tenantId: ' ', branchId: branchX },
+  ])('transitionDraft rejects missing scope before query: %j', async (scope) => {
+    const query = jest.fn();
+    await expect(
+      repo.transitionDraft({ query } as unknown as EntityManager, {
+        tenantId: scope.tenantId as string,
+        branchId: scope.branchId as string,
+        id: 'draft-1',
+        targetStatus: 'approved',
+        expectedVersion: 0,
+      }),
+    ).rejects.toThrow('NOTIFICATION_OUTBOX_SCOPE_REQUIRED');
     expect(query).not.toHaveBeenCalled();
   });
 });

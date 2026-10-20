@@ -54,3 +54,10 @@ export class LeaveImpactRangeTooLargeException extends HttpException {
     );
   }
 }
+
+export class LeaveOverlapException extends ConflictException {
+  constructor() {
+    super('Leave request period overlaps an existing request');
+  }
+}
+

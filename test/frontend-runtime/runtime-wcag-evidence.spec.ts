@@ -158,8 +158,7 @@ describe('WCAG 2.2 AA evidence suite (#401)', () => {
       // Verify renderNavigation inserts the bugun tab as default-selected
       const ui = runtime(PROBE);
       ui.probe.state.accessToken = 'token';
-      ui.probe.state.authLabel = 'Okul müdürü';
-      ui.probe.applyCatalog({ branches: [{ code: 'ANKARA', name: 'Ankara Kampüsü' }], roles: ['school_admin'] });
+      ui.probe.applyCatalog({ branches: [{ code: 'ANKARA', name: 'Ankara Kampüsü' }], permissions: ['user:read'] });
       return new Promise((resolve) => setTimeout(resolve, 0)).then(() => {
         const bugunTab = ui.element('.tab[data-tab="bugun"]');
         expect(bugunTab.getAttribute('aria-selected')).toBe('true');

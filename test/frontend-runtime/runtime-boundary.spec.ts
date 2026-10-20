@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { withRuntimeBuildLock } from '../../scripts/runtime-build-lock';
 
 describe('WP-07F runtime frontend boundary', () => {
   const root = process.cwd();
@@ -30,15 +31,18 @@ describe('WP-07F runtime frontend boundary', () => {
 
   it('builds byte-identical canonical shell, script and stylesheet assets', () => {
     const { execFileSync } = require('node:child_process');
-    execFileSync(process.execPath, [path.join(root, 'scripts', 'build-runtime-assets.js')], { cwd: root });
-    for (const asset of ['index.html', 'app.js', 'styles.css']) {
-      const source = fs.readFileSync(path.join(runtimeDir, asset));
-      const built = fs.readFileSync(path.join(root, 'dist', 'runtime', asset));
-      expect(source.length).toBeGreaterThan(0);
-      expect(built.equals(source)).toBe(true);
-    }
-    expect(html).toContain('app.js');
-    expect(html).toContain('styles.css');
+    // Build + byte-assertion aynı kilit altında (eşzamanlı işçi koruması)
+    withRuntimeBuildLock(() => {
+      execFileSync(process.execPath, [path.join(root, 'scripts', 'build-runtime-assets.js')], { cwd: root });
+      for (const asset of ['index.html', 'app.js', 'styles.css']) {
+        const source = fs.readFileSync(path.join(runtimeDir, asset));
+        const built = fs.readFileSync(path.join(root, 'dist', 'runtime', asset));
+        expect(source.length).toBeGreaterThan(0);
+        expect(built.equals(source)).toBe(true);
+      }
+      expect(html).toContain('app.js');
+      expect(html).toContain('styles.css');
+    });
   });
 
   it('serves the runtime under /runtime without moving API_ROOT off same origin', () => {
@@ -54,7 +58,9 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(app).toContain("reasonCode: $('#leave-reason-code').value");
     expect(app).toContain("startsAt: toIso8601($('#leave-starts-at').value)");
     expect(app).toContain("endsAt: toIso8601($('#leave-ends-at').value)");
-    for (const forbidden of ['startDate', 'endDate', 'startTime', 'endTime', 'leave-note', 'leave-start-time', 'leave-end-time']) {
+    // Not: startTime/endTime artık schedule formunda da kullanılıyor (n3 merge);
+    // leave formu hala startsAt/endsAt gönderiyor — DTO sınırı korunuyor.
+    for (const forbidden of ['startDate', 'endDate', 'leave-note', 'leave-start-time', 'leave-end-time']) {
       expect(app).not.toContain(forbidden);
       expect(html).not.toContain(forbidden);
     }
@@ -93,15 +99,26 @@ describe('WP-07F runtime frontend boundary', () => {
     expect(app).not.toContain('leave:${');
     expect(app).not.toContain('v${');
     expect(app).not.toContain('resourceVersion +');
-    expect(app).not.toContain('Version:');
+    // 'Version:' jargon yalnız string kopyasında yasak; tanımlayıcı (DTO/alan)
+    // bağlamındaki `expectedVersion:` / `activeNotificationVersion:` değildir.
+    expect(app.replace(/\w+Version:/g, '')).not.toContain('Version:');
     expect(app).not.toContain('ETag:');
   });
 
-  it('keeps role and permission authority on the API side', () => {
+  it('frontend never decides authorisation; capability is a server-derived affordance (#445)', () => {
+    // Rol-etiketi tabanlı arayüz dallanması yasak: roller seeds'te izin
+    // anahtarlarına maplenir, istemci rol akıl yürütmez.
     expect(html).not.toContain('role="teacher"');
     expect(html).not.toContain('role="operations"');
     expect(app).not.toContain('state.role');
-    expect(app).not.toContain('permissions =');
+    // İzin anahtarları TEK kaynaktan (sunucu /context permissions alanından) gelir
+    expect(app).toContain('asArray(catalog, [\'permissions\'])');
+    // Yetkinlik ön kontrolü fail-closed: tabloda olmayan rota istek öncesi reddedilir;
+    // bu kullanılabilirlik yakınsamasıdır — zorlama yine sunucu @Permissions guard'dadır.
+    expect(app).toContain('function canRequest(method, path)');
+    expect(app).toContain('required !== null');
+    expect(app).toMatch(/permissionForRoute[\s\S]{0,700}return null;/);
+    // Zorlamanın sunucuda kaldığı copy sözleşmesi korunur
     expect(app).toContain('Rol ve yetkileriniz sistem tarafından uygulanır');
   });
 
