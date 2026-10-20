@@ -7,7 +7,9 @@ import { CreateTenants1700000000002 } from '../../src/database/migrations/170000
 import { CreateUsers1700000000005 } from '../../src/database/migrations/1700000000005-CreateUsers';
 import {
   AdminSeedError,
+  ExistingAccountState,
   MIN_ADMIN_PASSWORD_LENGTH,
+  decideExistingAccount,
   seedFirstAdminUser,
   validateAdminSeedInput,
 } from '../../src/database/seeds/admin-user.seed';
@@ -55,6 +57,63 @@ describe('validateAdminSeedInput (#388)', () => {
   });
 });
 
+describe('decideExistingAccount (#465)', () => {
+  const LOGINABLE: ExistingAccountState = Object.freeze({
+    userSoftDeleted: false,
+    userStatus: 'active',
+    membership: Object.freeze({ status: 'active', softDeleted: false }),
+    hasRole: true,
+  });
+
+  it('returns already-exists only when every auth predicate holds', () => {
+    expect(decideExistingAccount(LOGINABLE)).toBe('already-exists');
+  });
+
+  it('repairs a soft-deleted user even when its status still says active', () => {
+    expect(decideExistingAccount({ ...LOGINABLE, userSoftDeleted: true })).toBe('repair-user');
+  });
+
+  it('repairs a soft-deleted tenant membership', () => {
+    expect(
+      decideExistingAccount({
+        ...LOGINABLE,
+        membership: { status: 'active', softDeleted: true },
+      }),
+    ).toBe('repair-membership');
+  });
+
+  it('repairs the user, which also restores the membership, when both are soft-deleted', () => {
+    expect(
+      decideExistingAccount({
+        ...LOGINABLE,
+        userSoftDeleted: true,
+        membership: { status: 'active', softDeleted: true },
+      }),
+    ).toBe('repair-user');
+  });
+
+  it('fails closed for an inactive user', () => {
+    expect(decideExistingAccount({ ...LOGINABLE, userStatus: 'inactive' })).toBe('not-loginable');
+  });
+
+  it('fails closed for an inactive tenant membership', () => {
+    expect(
+      decideExistingAccount({
+        ...LOGINABLE,
+        membership: { status: 'inactive', softDeleted: false },
+      }),
+    ).toBe('not-loginable');
+  });
+
+  it('fails closed when the membership row is missing', () => {
+    expect(decideExistingAccount({ ...LOGINABLE, membership: null })).toBe('not-loginable');
+  });
+
+  it('fails closed when the tenant_admin role is missing', () => {
+    expect(decideExistingAccount({ ...LOGINABLE, hasRole: false })).toBe('not-loginable');
+  });
+});
+
 describeWithPostgres('admin user seed on real PostgreSQL (#388)', () => {
   jest.setTimeout(30_000);
 
@@ -95,6 +154,33 @@ describeWithPostgres('admin user seed on real PostgreSQL (#388)', () => {
       [table],
     );
     if (rows[0].ok) await manager.query(sql);
+  }
+
+  async function expectLoginable(userId: string): Promise<void> {
+    const rows: Array<{ ok: boolean }> = await dataSource.query(
+      `SELECT (
+         (SELECT status FROM users WHERE id = $1::uuid) = 'active'
+         AND (SELECT deleted_at FROM users WHERE id = $1::uuid) IS NULL
+         AND EXISTS (
+           SELECT 1 FROM tenant_memberships
+           WHERE tenant_id = (SELECT id FROM tenants WHERE slug = $2)
+             AND user_id = $1::uuid AND status = 'active' AND deleted_at IS NULL
+         )
+         AND EXISTS (
+           SELECT 1 FROM tenants
+           WHERE id = (SELECT id FROM tenants WHERE slug = $2)
+             AND status = 'active' AND deleted_at IS NULL
+         )
+         AND EXISTS (
+           SELECT 1 FROM user_roles ur
+           JOIN roles r ON r.id = ur.role_id
+           WHERE ur.tenant_id = (SELECT id FROM tenants WHERE slug = $2)
+             AND ur.user_id = $1::uuid AND r.deleted_at IS NULL
+         )
+       ) AS ok`,
+      [userId, BASE_INPUT.tenantSlug],
+    );
+    expect(rows[0].ok).toBe(true);
   }
 
   beforeEach(async () => {
@@ -207,6 +293,91 @@ describeWithPostgres('admin user seed on real PostgreSQL (#388)', () => {
   it('fails closed when the existing user is not loginable (inactive status)', async () => {
     await dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT));
     await dataSource.query(`UPDATE users SET status = 'inactive' WHERE email = $1`, [BASE_INPUT.email]);
+
+    await expect(
+      dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT)),
+    ).rejects.toThrow(/not loginable/);
+  });
+
+  it('repairs a soft-deleted admin and issues credentials that can log in (#465)', async () => {
+    const first = await dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT));
+    await dataSource.query(`UPDATE users SET deleted_at = now() WHERE id = $1::uuid`, [first.userId]);
+
+    const recovery = { ...BASE_INPUT, password: 'recovered-pass-2026' };
+    const repaired = await dataSource.transaction((manager) => seedFirstAdminUser(manager, recovery));
+
+    expect(repaired.outcome).toBe('repaired');
+    expect(repaired.userId).toBe(first.userId);
+
+    const rows = await dataSource.query(
+      `SELECT status, deleted_at, credential_hash, token_version FROM users WHERE id = $1::uuid`,
+      [first.userId],
+    );
+    expect(rows[0].status).toBe('active');
+    expect(rows[0].deleted_at).toBeNull();
+    expect(bcrypt.compareSync(recovery.password, rows[0].credential_hash)).toBe(true);
+    expect(rows[0].token_version).toBe(2);
+
+    await expectLoginable(first.userId);
+    const countRows = await dataSource.query(`SELECT count(*)::int AS n FROM users`);
+    expect(countRows[0].n).toBe(1);
+  });
+
+  it('repairs a soft-deleted tenant membership without resetting credentials (#465)', async () => {
+    const first = await dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT));
+    const before = await dataSource.query(`SELECT credential_hash FROM users WHERE id = $1::uuid`, [
+      first.userId,
+    ]);
+
+    await dataSource.query(
+      `UPDATE tenant_memberships SET deleted_at = now()
+        WHERE user_id = $1::uuid AND tenant_id = (SELECT id FROM tenants WHERE slug = $2)`,
+      [first.userId, BASE_INPUT.tenantSlug],
+    );
+
+    const repaired = await dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT));
+
+    expect(repaired.outcome).toBe('repaired');
+    expect(repaired.userId).toBe(first.userId);
+
+    const after = await dataSource.query(`SELECT credential_hash FROM users WHERE id = $1::uuid`, [
+      first.userId,
+    ]);
+    expect(after[0].credential_hash).toBe(before[0].credential_hash);
+    expect(bcrypt.compareSync(BASE_INPUT.password, after[0].credential_hash)).toBe(true);
+
+    await expectLoginable(first.userId);
+  });
+
+  it('repairs a user whose user and membership rows are both soft-deleted (#465)', async () => {
+    const first = await dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT));
+    await dataSource.query(`UPDATE users SET deleted_at = now() WHERE id = $1::uuid`, [first.userId]);
+    await dataSource.query(
+      `UPDATE tenant_memberships SET deleted_at = now()
+        WHERE user_id = $1::uuid AND tenant_id = (SELECT id FROM tenants WHERE slug = $2)`,
+      [first.userId, BASE_INPUT.tenantSlug],
+    );
+
+    const repaired = await dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT));
+
+    expect(repaired.outcome).toBe('repaired');
+    expect(repaired.userId).toBe(first.userId);
+
+    const membershipRows = await dataSource.query(
+      `SELECT status, deleted_at FROM tenant_memberships
+        WHERE user_id = $1::uuid AND tenant_id = (SELECT id FROM tenants WHERE slug = $2)`,
+      [first.userId, BASE_INPUT.tenantSlug],
+    );
+    expect(membershipRows).toHaveLength(1);
+    expect(membershipRows[0].status).toBe('active');
+    expect(membershipRows[0].deleted_at).toBeNull();
+
+    await expectLoginable(first.userId);
+  });
+
+  it('fails closed when the existing account has no tenant_admin role (#465)', async () => {
+    const first = await dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT));
+    await dataSource.query(`DELETE FROM user_roles WHERE user_id = $1::uuid`, [first.userId]);
 
     await expect(
       dataSource.transaction((manager) => seedFirstAdminUser(manager, BASE_INPUT)),

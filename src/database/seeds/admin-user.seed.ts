@@ -10,7 +10,9 @@ import { AppDataSource } from '../data-source';
  * users + tenant_memberships(active) + user_roles(tenant_admin).
  * HTTP yüzeyi YOKTUR; yalnız CLI seed yolu. Fail-closed:
  * - kullanıcılar zaten varsa (hedef e-posta hariç) reddeder,
- * - hedef e-posta mevcutsa idempotent "already-exists" döner,
+ * - hedef e-posta mevcutsa ve giriş yapabiliyorsa idempotent "already-exists" döner,
+ * - hedef hesap soft-delete edilmişse (kullanıcı veya üyelik) "repaired" ile geri yüklenir,
+ * - hedef hesap başka bir nedenle giriş yapamıyorsa reddeder,
  * - tenant veya tenant_admin rolü yoksa `db:seed:permissions` ipucuyla reddeder,
  * - zayıf/eksik parola, e-posta, ad alanlarını reddeder.
  */
@@ -28,10 +30,25 @@ export type AdminSeedInput = Readonly<{
   fullName: string;
 }>;
 
+export type AdminSeedOutcome = 'created' | 'already-exists' | 'repaired';
+
 export type AdminSeedResult = Readonly<{
-  outcome: 'created' | 'already-exists';
+  outcome: AdminSeedOutcome;
   userId: string;
 }>;
+
+export type ExistingAccountState = Readonly<{
+  userSoftDeleted: boolean;
+  userStatus: string;
+  membership: Readonly<{ status: string; softDeleted: boolean }> | null;
+  hasRole: boolean;
+}>;
+
+export type ExistingAccountDecision =
+  | 'already-exists'
+  | 'repair-user'
+  | 'repair-membership'
+  | 'not-loginable';
 
 export class AdminSeedError extends Error {
   constructor(message: string) {
@@ -55,6 +72,46 @@ export function validateAdminSeedInput(input: AdminSeedInput): void {
   if (input.fullName.trim().length === 0) {
     throw new AdminSeedError('fullName is required (SEED_ADMIN_FULL_NAME)');
   }
+}
+
+/**
+ * #465 — mevcut hesap için bootstrap kararı. Auth yolundaki (#388) soft-delete
+ * koşullarını aynen uygular: soft-delete edilmiş kullanıcı veya üyelik "yok"
+ * sayılır. "already-exists" yalnızca gerçekten giriş yapabilen hesap için döner;
+ * böylece seed, kimlik doğrulayamayan bir hesabı başarı gibi raporlamaz.
+ *
+ * Üyelik onarımı kimlik bilgilerine dokunmaz (parola geçerli kalır); kullanıcı
+ * onarımı parolayı yeniler ve token_version'ı artırır.
+ */
+export function decideExistingAccount(state: ExistingAccountState): ExistingAccountDecision {
+  if (state.userSoftDeleted) return 'repair-user';
+  if (state.userStatus !== 'active') return 'not-loginable';
+  if (!state.membership) return 'not-loginable';
+  if (state.membership.softDeleted) return 'repair-membership';
+  if (state.membership.status !== 'active') return 'not-loginable';
+  if (!state.hasRole) return 'not-loginable';
+  return 'already-exists';
+}
+
+async function restoreMembershipAndRole(
+  manager: EntityManager,
+  tenantId: string,
+  userId: string,
+  roleId: string,
+): Promise<void> {
+  await manager.query(
+    `INSERT INTO tenant_memberships (tenant_id, user_id, status)
+     VALUES ($1::uuid, $2::uuid, 'active')
+     ON CONFLICT (tenant_id, user_id)
+     DO UPDATE SET status = 'active', deleted_at = NULL, updated_at = now()`,
+    [tenantId, userId],
+  );
+  await manager.query(
+    `INSERT INTO user_roles (tenant_id, user_id, role_id)
+     VALUES ($1::uuid, $2::uuid, $3::uuid)
+     ON CONFLICT (tenant_id, user_id, role_id) DO NOTHING`,
+    [tenantId, userId, roleId],
+  );
 }
 
 /**
@@ -93,32 +150,60 @@ export async function seedFirstAdminUser(
   }
   const roleId = roleRows[0].id;
 
-  const existingRows: Array<{ id: string }> = await manager.query(
-    `SELECT id::text AS id FROM users WHERE email = $1`,
+  const existingRows: Array<{ id: string; status: string; softDeleted: boolean }> = await manager.query(
+    `SELECT id::text AS id, status, (deleted_at IS NOT NULL) AS "softDeleted"
+       FROM users WHERE email = $1`,
     [email],
   );
   if (existingRows.length > 0) {
     const existingUserId = existingRows[0].id;
-    const loginableRows: Array<{ ok: boolean }> = await manager.query(
-      `SELECT (
-         (SELECT status FROM users WHERE id = $1::uuid) = 'active'
-         AND EXISTS (
-           SELECT 1 FROM tenant_memberships
-           WHERE tenant_id = $2::uuid AND user_id = $1::uuid AND status = 'active'
-         )
-         AND EXISTS (
-           SELECT 1 FROM user_roles
-           WHERE tenant_id = $2::uuid AND user_id = $1::uuid AND role_id = $3::uuid
-         )
-       ) AS ok`,
-      [existingUserId, tenantId, roleId],
+    const membershipRows: Array<{ status: string; softDeleted: boolean }> = await manager.query(
+      `SELECT status, (deleted_at IS NOT NULL) AS "softDeleted"
+         FROM tenant_memberships
+        WHERE tenant_id = $1::uuid AND user_id = $2::uuid`,
+      [tenantId, existingUserId],
     );
-    if (!loginableRows[0].ok) {
+    const rolePresenceRows: Array<{ ok: boolean }> = await manager.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM user_roles
+          WHERE tenant_id = $1::uuid AND user_id = $2::uuid AND role_id = $3::uuid
+       ) AS ok`,
+      [tenantId, existingUserId, roleId],
+    );
+
+    const decision = decideExistingAccount({
+      userSoftDeleted: existingRows[0].softDeleted,
+      userStatus: existingRows[0].status,
+      membership:
+        membershipRows.length > 0
+          ? { status: membershipRows[0].status, softDeleted: membershipRows[0].softDeleted }
+          : null,
+      hasRole: rolePresenceRows[0].ok,
+    });
+
+    if (decision === 'already-exists') {
+      return Object.freeze({ outcome: 'already-exists' as const, userId: existingUserId });
+    }
+    if (decision === 'not-loginable') {
       throw new AdminSeedError(
         `User '${email}' exists but is not loginable: it needs active status, an active tenant membership and the tenant_admin role.`,
       );
     }
-    return Object.freeze({ outcome: 'already-exists' as const, userId: existingUserId });
+    if (decision === 'repair-user') {
+      const credentialHash = bcrypt.hashSync(input.password, BCRYPT_COST);
+      // Parola yenilendiği için mevcut oturumlar token_version ile geçersizleşir.
+      // full_name kasıtlı olarak korunur: bootstrap yeniden çalıştırması hesabı
+      // yeniden adlandırmamalıdır.
+      await manager.query(
+        `UPDATE users
+            SET status = 'active', deleted_at = NULL, credential_hash = $2,
+                token_version = token_version + 1, updated_at = now()
+          WHERE id = $1::uuid`,
+        [existingUserId, credentialHash],
+      );
+    }
+    await restoreMembershipAndRole(manager, tenantId, existingUserId, roleId);
+    return Object.freeze({ outcome: 'repaired' as const, userId: existingUserId });
   }
 
   const userCountRows: Array<{ n: number }> = await manager.query(
@@ -139,16 +224,7 @@ export async function seedFirstAdminUser(
   );
   const userId = insertedRows[0].id;
 
-  await manager.query(
-    `INSERT INTO tenant_memberships (tenant_id, user_id, status)
-     VALUES ($1::uuid, $2::uuid, 'active')`,
-    [tenantId, userId],
-  );
-  await manager.query(
-    `INSERT INTO user_roles (tenant_id, user_id, role_id)
-     VALUES ($1::uuid, $2::uuid, $3::uuid)`,
-    [tenantId, userId, roleId],
-  );
+  await restoreMembershipAndRole(manager, tenantId, userId, roleId);
 
   return Object.freeze({ outcome: 'created' as const, userId });
 }
@@ -178,6 +254,8 @@ if (require.main === module) {
     .then((result) => {
       if (result.outcome === 'created') {
         console.log(`First admin user created (id=${result.userId})`);
+      } else if (result.outcome === 'repaired') {
+        console.log(`Admin user repaired (id=${result.userId}); login access restored`);
       } else {
         console.log(`Admin user already exists (id=${result.userId}); skipped`);
       }
