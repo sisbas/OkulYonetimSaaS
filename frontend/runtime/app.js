@@ -296,7 +296,11 @@ function normalizeApiError(response, body) {
   const mapped = reasonUi[reasonCode];
   const uiState = mapped?.[0] || statusStates[response.status] || 'error_retryable';
   const knownReasonCode = Boolean(mapped);
-  const message = knownReasonCode || genericError || !messageText
+  // Sunucunun ham taşıma hatası metni kullanıcıya gösterilmez: HTML/proxy
+  // gövdesi, 5xx ve 429 yanıtları kanonik durum kopyasının arkasında kalır.
+  const untrustedTransport =
+    response.status === 429 || response.status >= 500 || /[<>]/.test(messageText);
+  const message = knownReasonCode || genericError || !messageText || untrustedTransport
     ? mapped?.[1] || stateMessages[uiState]
     : messageText;
   return { status: response.status, reasonCode, uiState, message };
