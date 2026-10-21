@@ -35,37 +35,31 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).not.toContain("pick(body, ['assignmentId']");
   });
 
-  it('normalizes Nest error envelopes into canonical UI states', () => {
-    expect(app).toContain("if (response.status === 403 && genericError && !messageReason) reasonCode = 'FORBIDDEN'");
-    expect(app).toContain("if (response.status === 412) reasonCode = 'LEAVE_VERSION_MISMATCH'");
-    expect(app).toContain("if (response.status === 409 && !reasonUi[reasonCode]) reasonCode = 'SUBSTITUTE_TIME_CONFLICT'");
+  it('normalizes Nest error envelopes into canonical UI states without minting reason codes', () => {
+    expect(app).toContain('const statusStates');
+    expect(app).toContain('const stateMessages');
+    expect(app).not.toMatch(/reasonCode = *'[A-Z_]+'/);
+    expect(app).not.toContain("reasonCode: 'BRANCH_NOT_VISIBLE'");
     expect(app).toContain('forbidden_non_enumerating');
     expect(app).toContain('stale_version');
     expect(app).toContain('conflict_blocking');
+    expect(app).toContain('rate_limited');
   });
 
   it('treats unfinished candidate eligibility as a blocking state', () => {
-    expect(app).toContain('body?.eligibilityFinalized === false');
+    expect(app).toContain('body?.eligibilityFinalized !== true');
     expect(app).toContain("renderBlockingState(target, 'TEACHER_COURSE_ELIGIBILITY_NOT_READY')");
     expect(app).toContain('eligibility_not_ready');
   });
 
-  it('maps canonical stale, forbidden, conflict and empty states', () => {
-    for (const code of [
-      'FORBIDDEN',
-      'RESOURCE_NOT_VISIBLE',
-      'BRANCH_NOT_VISIBLE',
-      'LEAVE_VERSION_MISMATCH',
-      'TEACHER_COURSE_ELIGIBILITY_NOT_READY',
-      'SUBSTITUTE_TIME_CONFLICT',
-      'ASSIGNMENT_NOT_FOUND',
-      'OFFLINE_OR_UNAVAILABLE',
-    ]) {
-      expect(app).toContain(code);
-    }
-    expect(app).toContain('forbidden_non_enumerating');
-    expect(app).toContain('stale_version');
-    expect(app).toContain('conflict_blocking');
+  it('maps canonical stale, forbidden, conflict and empty states including rates', () => {
+    expect(app).toContain("'empty_or_not_found_same_scope'");
+    expect(app).toContain("'forbidden_non_enumerating'");
+    expect(app).toContain("'stale_version'");
+    expect(app).toContain("'conflict_blocking'");
+    expect(app).toContain("'locked_state'");
+    expect(app).toContain("'rate_limited'");
+    expect(app).toContain("'eligibility_not_ready'");
   });
 
   it('keeps assignment create and clear server-confirmed with refetch', () => {
@@ -198,8 +192,8 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain('const uiStateTitles');
     expect(app).toContain('const statusLabels');
     expect(app).toContain('function displayStatus');
-    expect(app).toContain('const knownReasonCode = Boolean(reasonUi[reasonCode])');
-    expect(app).toContain("const message = reasonUi[error.reasonCode]?.[1] || 'İşlem tamamlanamadı.'");
+    expect(app).toContain('const knownReasonCode = Boolean(mapped)');
+    expect(app).toContain("const message = error?.message || stateMessages[uiState] || 'İşlem tamamlanamadı.'");
     expect(app).toContain('return statusLabels[key] || statusLabels.unknown');
     expect(app).toContain("unresolved: 'Henüz karşılanmadı'");
     expect(app).toContain("resolved: 'Çözüldü'");
