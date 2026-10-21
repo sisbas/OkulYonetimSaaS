@@ -195,3 +195,23 @@ describe('Yoklama seti mock-up\'ları (#476)', () => {
     expect(html).not.toContain('Hoş geldiniz');
   });
 });
+
+describe('Veli Bilgilendirme seti mock-up\'ları (#477)', () => {
+  it('parent-notifications.html: taslak kuyrugu, iletisim uygunlugu rozetleri', () => {
+    const html = readPage('parent-notifications.html');
+    shellChecks(html);
+    expect(/taslak kuyrugu|kuyruk/i.test(html)).toBe(true);
+    expect(/[iİ]zinli|maskeli|engeli/i.test(html)).toBe(true);
+    expect(/queued.*sent|gönderilmedi|gönderilmemiş/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('parent-notifications-detail.html: mesaj inceleme, maskeli iletişim, onay/iptal', () => {
+    const html = readPage('parent-notifications-detail.html');
+    shellChecks(html);
+    expect(/mesaj inceleme|icerik|inceleme/i.test(html)).toBe(true);
+    expect(/maskeli|gizli/i.test(html)).toBe(true);
+    expect(/onay|iptal/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+});
