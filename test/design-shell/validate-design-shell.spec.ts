@@ -169,3 +169,29 @@ describe('İzinler seti mock-up\'ları (#475)', () => {
     expect(html).not.toContain('Hoş geldiniz');
   });
 });
+
+describe('Yoklama seti mock-up\'ları (#476)', () => {
+  it('yoklama.html: ders oturumlari listesi, eksik/tamamlanmis ayrimi', () => {
+    const html = readPage('yoklama.html');
+    shellChecks(html);
+    expect(/yoklama oturum|ders oturumlar/i.test(html)).toBe(true);
+    expect(/eksik|tamamlanmış|tamamlandı/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('yoklama-session.html: isaretleyici (geldi/gelmedi/gec/izinli/isaretlenmedi), toplu geldi, tamamla', () => {
+    const html = readPage('yoklama-session.html');
+    shellChecks(html);
+    expect(/geldi|gelmedi|geç|izinli|[iİ]şaretlenmedi/i.test(html)).toBe(true);
+    expect(/toplu geldi|tamamla/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('yoklama-absences.html: tamamlanan sonuclar, iletisleme uygunlugu bildirimi yok', () => {
+    const html = readPage('yoklama-absences.html');
+    shellChecks(html);
+    expect(/tamamlanan|devamsizlik|sonuclar/i.test(html)).toBe(true);
+    expect(/[iİ]şaretlenmemiş devamsız sayılmaz|devamsız sayılmaz/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+});

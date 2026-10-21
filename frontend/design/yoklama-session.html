@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Yoklama işaretle — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Yoklama · İşaretle</p>
+        <h1>Oturum yoklama</h1>
+        <p class="topbar-subtitle">Öğrenci kayıtlarını işaretleyin: geldi, gelmedi, geç, izinli, işaretlenmedi.</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="empty">
+      <section class="panel attendance-session-panel" aria-labelledby="session-heading">
+        <div>
+          <h2 id="session-heading">Oturum yoklama</h2>
+          <form id="attendance-mark-form" class="stack grid-form" novalidate>
+            <fieldset>
+              <legend>Öğrenci işaretlemesi</legend>
+              <label>
+                <input type="checkbox" name="mark" value="present" /> Geldi
+              </label>
+              <label>
+                <input type="checkbox" name="mark" value="absent" /> Gelmedi
+              </label>
+              <label>
+                <input type="checkbox" name="mark" value="late" /> Geç
+              </label>
+              <label>
+                <input type="checkbox" name="mark" value="excused" /> İzinli
+              </label>
+              <label>
+                <input type="checkbox" name="mark" value="unmarked" /> İşaretlenmedi
+              </label>
+            </fieldset>
+            <button type="button" class="button-primary" data-action="mark-all-present">Tümünü geldi olarak işaretle</button>
+            <button type="button" class="button-primary" data-action="complete-session">Oturumu tamamla</button>
+          </form>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>
