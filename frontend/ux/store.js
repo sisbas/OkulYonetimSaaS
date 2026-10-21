@@ -502,6 +502,9 @@ export function createDemoStore() {
     const academicYear = String(input.academicYear ?? "").trim();
     if (!/^\d{4}-\d{4}$/.test(academicYear))
       fail("Akademik yıl yıl-aralığı biçiminde olmalıdır: 2026-2027.");
+    const [startYear, endYear] = academicYear.split("-").map(Number);
+    if (endYear !== startYear + 1)
+      fail("Akademik yıl bitişik bir aralık olmalıdır: 2026-2027.");
     const metricKey = String(input.metricKey ?? "").trim();
     if (!metricKey || metricKey.length > 120)
       fail("Metrik anahtarı zorunludur ve en fazla 120 karakter olabilir.");
@@ -511,6 +514,7 @@ export function createDemoStore() {
     const targetValue = Number(input.targetValue);
     if (input.targetValue === null || input.targetValue === "" || !Number.isFinite(targetValue))
       fail("Hedef değeri sayısal olmalıdır.");
+    if (targetValue < 0) fail("Hedef değeri negatif olamaz.");
     if (
       store.strategicGoals.some(
         (goal) =>
@@ -535,10 +539,15 @@ export function createDemoStore() {
 
   function updateGoalProgress(id, value) {
     goalAdmin();
+    if (!store.strategicGoalsEnabled)
+      fail(
+        "Stratejik hedefler ekranı kapalı; kurum yöneticisi Ayarlar'dan açabilir.",
+      );
     const goal = find(store.strategicGoals, id, "Stratejik hedef");
     const progressValue = Number(value);
     if (!Number.isFinite(progressValue))
       fail("Gerçekleşme değeri sayısal olmalıdır.");
+    if (progressValue < 0) fail("Gerçekleşme değeri negatif olamaz.");
     goal.progressValue = progressValue;
     return goal;
   }

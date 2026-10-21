@@ -113,13 +113,14 @@ export function mount({ mode, store = null }) {
     ];
     // #459 — Hedef ekranı kapalıyken hiçbir rol gezinmede görmez; okuma
     // yetkisi backend izin yüzeyiyle eşleşir (yönetici + öğretmen).
+    // Production modunda store null olabilir; navigasyon bu yüzden çökmemeli.
     const goalsVisible =
-      store.strategicGoalsEnabled &&
-      (store.role === "TENANT_ADMIN" || teacher());
+      Boolean(store?.strategicGoalsEnabled) &&
+      (store?.role === "TENANT_ADMIN" || teacher());
     const allowed = !demo
       ? ["today"]
       : teacher()
-        ? ["today", "schedule", "my-leaves", "attendance"]
+        ? ["today", "schedule", "my-leaves", "attendance", "strategic-goals"]
         : store.role === "VIEWER"
           ? ["schedule", "reports"]
           : store.role === "ACADEMIC_STAFF"
@@ -852,6 +853,16 @@ export function mount({ mode, store = null }) {
   }
   // #459 — Stratejik hedefler: varsayılan kapalı; Ayarlar'dan kurulur.
   // Okuma tenant-admin + öğretmen; yazma yalnız tenant-admin (strategic_goal:manage).
+  // Akademik yıl seçenekleri sabit değil: eylülden itibaren yeni dönem başlar.
+  function academicYearOptions() {
+    const now = new Date();
+    const startYear =
+      now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+    return [startYear - 1, startYear, startYear + 1].map((year) => {
+      const label = `${year}-${year + 1}`;
+      return [label, label];
+    });
+  }
   function goalsRoute() {
     if (store.role !== "TENANT_ADMIN" && !teacher()) return forbidden();
     if (!store.strategicGoalsEnabled) return goalsOff();
@@ -1202,10 +1213,7 @@ export function mount({ mode, store = null }) {
       if (act === "add-goal")
         openDrawer(
           "Hedef ekle",
-          `<form id="goal-form">${select("Akademik yıl", "academicYear", [
-            ["2026-2027", "2026-2027"],
-            ["2027-2028", "2027-2028"],
-          ])}${field("Metrik anahtarı", "metricKey", "text", "", 'required maxlength="120"')}${field("Metrik adı", "metricLabel", "text", "", 'maxlength="200"')}${field("Hedef değer", "targetValue", "number", "", 'required step="any" min="0"')}<p class="meta">Metrik tipi okul tanımlıdır; aynı metrik ve yılda ikinci hedef reddedilir.</p><div id="goal-error" role="alert"></div><button type="submit" class="primary">Hedefi ekle</button></form>`,
+          `<form id="goal-form">${select("Akademik yıl", "academicYear", academicYearOptions())}${field("Metrik anahtarı", "metricKey", "text", "", 'required maxlength="120"')}${field("Metrik adı", "metricLabel", "text", "", 'maxlength="200"')}${field("Hedef değer", "targetValue", "number", "", 'required step="any" min="0"')}<p class="meta">Metrik tipi okul tanımlıdır; aynı metrik ve yılda ikinci hedef reddedilir.</p><div id="goal-error" role="alert"></div><button type="submit" class="primary">Hedefi ekle</button></form>`,
         );
       if (act === "goal-progress")
         openDrawer(
@@ -1215,7 +1223,7 @@ export function mount({ mode, store = null }) {
             "progressValue",
             "number",
             "",
-            'required step="any"',
+            'required step="any" min="0"',
           )}<p class="meta">Hedef ve gerçekleşme okul tarafından elle girilir.</p><div id="goal-progress-error" role="alert"></div><button type="submit" class="primary">Gerçekleşmeyi kaydet</button></form>`,
         );
     } catch (err) {

@@ -146,4 +146,35 @@ describe('#459 strategic goals screen, off by default', () => {
     // Kabukta öğretmen yüzeyi yazma düğmesi içermez, salt okunur notu taşır.
     expect(ui).toContain('salt okunur');
   });
+
+  it('AC4 · teacher navigation includes the goals screen when the school enables it', () => {
+    const ui = uiSource();
+    expect(ui).toMatch(
+      /teacher\(\)\s*\?\s*\[[^\]]*"strategic-goals"\]/,
+    );
+  });
+
+  it('AC1 · production mount never dereferences the demo store', () => {
+    // start.js `mount({ mode: "production" })` çağırır; store null'dur.
+    const ui = uiSource();
+    expect(ui).toMatch(/Boolean\(store\?\.strategicGoalsEnabled\)/);
+    expect(ui).toMatch(/store\?\.role === "TENANT_ADMIN" \|\| teacher\(\)/);
+  });
+
+  it('AC3 · refuses a non-consecutive academic year and a negative target', () => {
+    store.role = 'TENANT_ADMIN';
+    store.enableStrategicGoals();
+    expect(() =>
+      store.createGoal({ academicYear: '2026-2020', metricKey: 'gecersiz', targetValue: 10 }),
+    ).toThrow(/bitişik/);
+    expect(() =>
+      store.createGoal({ academicYear: '2026-2027', metricKey: 'negatif', targetValue: -5 }),
+    ).toThrow(/negatif/);
+  });
+
+  it('AC1 · progress cannot be written while the screen is off', () => {
+    store.role = 'TENANT_ADMIN';
+    expect(store.strategicGoalsEnabled).toBe(false);
+    expect(() => store.updateGoalProgress('sg1', 10)).toThrow(/kapalı/);
+  });
 });
