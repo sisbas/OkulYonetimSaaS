@@ -121,6 +121,9 @@ export const PERMISSION_SEED = [
   { code: 'tenant:member:read', description: 'tenant:member:read' },
   { code: 'tenant:member:update', description: 'tenant:member:update' },
   { code: 'tenant:billing:read', description: 'tenant:billing:read' },
+  // #457: stratejik hedefler — yönetici yazar, öğretmen okur; veli hiç göremez.
+  { code: 'strategic_goal:manage', description: 'strategic_goal:manage' },
+  { code: 'strategic_goal:read', description: 'strategic_goal:read' },
 ] as const;
 
 export const ROLE_PERMISSION_SEED = {
@@ -227,6 +230,8 @@ export const ROLE_PERMISSION_SEED = {
     'course:read',
     'room:read',
     'time_slot:read',
+    // #457: öğretmen okur, yazamaz — okulun planı değiştirilemez.
+    'strategic_goal:read',
   ],
   // --- OKUL-01 yeni rolleri (permission matrix'inden türetildi) ---
   // Rol -> izin eşlemesi, src/rbac/roles.extended.ts OKUL01_PERMISSION_MATRIX
