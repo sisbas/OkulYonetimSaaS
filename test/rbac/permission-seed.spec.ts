@@ -22,6 +22,8 @@ describe('permission seed', () => {
     'attendance:lock',
     'attendance:unlock',
     'room:archive',
+    // #457: öğretmen yalnız okur; okul planını değiştiremez.
+    'strategic_goal:manage',
   ];
   const operationsManagerForbidden = [
     'tenant:update',
@@ -36,11 +38,15 @@ describe('permission seed', () => {
     // #259: retention kırpma koşusu yıkıcıdır → yalnız tenant_admin.
     'audit_log:retention:run',
     'attendance:unlock',
+    // #457: operasyon yöneticisi stratejik hedefleri yönetemez/okuyamaz
+    // (yönetici yazar, öğretmen okur; başka hiçbir rol yoktur).
+    'strategic_goal:manage',
+    'strategic_goal:read',
   ];
 
-  it('contains exactly 118 unique permissions', () => {
-    expect(permissionCodes).toHaveLength(118);
-    expect(permissionSet.size).toBe(118);
+  it('contains exactly 120 unique permissions', () => {
+    expect(permissionCodes).toHaveLength(120);
+    expect(permissionSet.size).toBe(120);
   });
 
   it('uses colon-delimited seeded permission keys', () => {
@@ -90,6 +96,17 @@ describe('permission seed', () => {
       'course:read',
       'room:read',
       'time_slot:read',
+      // #457: öğretmen stratejik hedefleri OKUR (yalnız okuma).
+      'strategic_goal:read',
     ]);
   });
+
+  it.each(['student', 'parent', 'teacher_assistant'] as const)(
+    'never grants %s a strategic_goal permission key (#457: veli/öğrenci planı göremez)',
+    (role) => {
+      const granted = ROLE_PERMISSION_SEED[role] as readonly string[];
+      expect(granted).not.toContain('strategic_goal:manage');
+      expect(granted).not.toContain('strategic_goal:read');
+    },
+  );
 });
