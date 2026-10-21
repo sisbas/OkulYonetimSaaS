@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Mock-up envanteri — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Mock-up envanteri</p>
+        <h1>Tüm ekranlar</h1>
+        <p class="topbar-subtitle">Faz 1 nihai mock-up seti: 360, 768, 1024 ve 1440 responsive kesitleri; durum kesitleri (bos, engelli, çevrimdışı, yasakli, stale).</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="empty">
+      <section class="panel inventory-panel" aria-labelledby="inventory-heading">
+        <div>
+          <h2 id="inventory-heading">Mock-up envanteri</h2>
+          <p class="hint">Tüm mock-up sayfaları kanonik IA sırasıyla listelenir. Her sayfa tasarım kabuğu üzerinden doğrulanır.</p>
+          <ul id="inventory-list" class="inventory-list" role="region" aria-label="Mock-up envanteri">
+            <li><a href="index.html">index.html — boş mock-up sayfası</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="login.html">login.html — giriş</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: auth_required</span></li>
+            <li><a href="403.html">403.html — erişim sınırı</a> <span class="role-tag">yetkisiz aktör</span> <span class="state-tag">durum: forbidden_non_enumerating</span></li>
+            <li><a href="program.html">program.html — haftalık ders çizelgesi</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="program-builder.html">program-builder.html — manuel ders ekleme</a> <span class="role-tag">Yönetici/Operasyon</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="program-conflicts.html">program-conflicts.html — çakışma çözüm</a> <span class="role-tag">Yönetici</span> <span class="state-tag">durum: conflict</span></li>
+            <li><a href="leave.html">leave.html — izin listesi</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="my-leaves.html">my-leaves.html — Izinlerim</a> <span class="role-tag">Öğretmen</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="leave-new.html">leave-new.html — yeni izin talebi</a> <span class="role-tag">Öğretmen</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="leave-detail.html">leave-detail.html — etki ve karar</a> <span class="role-tag">Yönetici</span> <span class="state-tag">durum: pending</span></li>
+            <li><a href="yoklama.html">yoklama.html — ders oturumları</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="yoklama-session.html">yoklama-session.html — işaretleyici</a> <span class="role-tag">Öğretmen</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="yoklama-absences.html">yoklama-absences.html — sonuçlar</a> <span class="role-tag">Operasyon</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="parent-notifications.html">parent-notifications.html — taslak kuyruğu</a> <span class="role-tag">Yönetici/Operasyon</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="parent-notifications-detail.html">parent-notifications-detail.html — mesaj inceleme</a> <span class="role-tag">Yönetici</span> <span class="state-tag">durum: pending</span></li>
+            <li><a href="definitions.html">definitions.html — kaynak tanımları</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="users-roles.html">users-roles.html — kullanıcılar ve roller</a> <span class="role-tag">Yönetici</span> <span class="state-tag">durum: empty</span></li>
+            <li><a href="reports.html">reports.html — açık iş ve yük özeti</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: empty</span></li>
+          </ul>
+          <section class="notes" aria-label="Kabul notları">
+            <h3>Kabul notları</h3>
+            <ul>
+              <li>Responsive kesitler: 360, 768, 1024, 1440 px (görsel kabul; sert kabul Faz 2 — K-61).</li>
+              <li>Durum kesitleri: empty, blocked, offline, forbidden, stale (K-40/K-41).</li>
+              <li>Statik doğrulama: scripts/validate-design-shell.mjs tüm sette geçer.</li>
+              <li>Kod değişikliği yok (ADR 0002, K-59).</li>
+            </ul>
+          </section>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>

@@ -243,3 +243,30 @@ describe('Tanimlar + Yonetim + Raporlar seti mock-up\'ları (#478)', () => {
     expect(html).not.toContain('Hoş geldiniz');
   });
 });
+
+describe('Envanter sayfasi + mock-up kabul turu (#479)', () => {
+  const ALL_PAGES = [
+    'index.html', 'login.html', '403.html', 'program.html',
+    'program-builder.html', 'program-conflicts.html', 'leave.html',
+    'my-leaves.html', 'leave-new.html', 'leave-detail.html', 'yoklama.html',
+    'yoklama-session.html', 'yoklama-absences.html', 'parent-notifications.html',
+    'parent-notifications-detail.html', 'definitions.html', 'users-roles.html',
+    'reports.html',
+  ];
+
+  it('envanter.html: tüm mock-up ekranlari kanonik IA sırasıyla listelenir', () => {
+    const html = readPage('envanter.html');
+    shellChecks(html);
+    for (const page of ALL_PAGES) {
+      expect(html).toContain(page);
+    }
+    expect(/envanter|tüm ekran|tüm mock-up/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('envanter.html: responsive kesitler ve durum kesitleri belgelenir', () => {
+    const html = readPage('envanter.html');
+    expect(/360|768|1024|1440/i.test(html)).toBe(true);
+    expect(/durum|boş|engelli|yasaklı/i.test(html)).toBe(true);
+  });
+});
