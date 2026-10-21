@@ -200,6 +200,17 @@ describe('runtime copy hygiene (#446)', () => {
       expect(error.message).toBe('İşlem tamamlanamadı. Kısa süre sonra tekrar deneyin.');
     });
 
+    it('a single-token backend enum is never echoed as copy', () => {
+      const ui = runtime(PROBE);
+      for (const code of ['failed', 'pending', 'health', 'approved', 'blocked_consent']) {
+        const error = ui.probe.normalizeApiError({ status: 409 }, { message: code });
+        expect(error.reasonCode).toBe('');
+        expect(error.message).not.toBe(code);
+        expect(error.message).not.toMatch(new RegExp(`\\b${code}\\b`));
+        expect(error.message.length).toBeGreaterThan(10);
+      }
+    });
+
     it('a human server message is preserved while known codes keep their own copy', () => {
       const ui = runtime(PROBE);
       const human = ui.probe.normalizeApiError(

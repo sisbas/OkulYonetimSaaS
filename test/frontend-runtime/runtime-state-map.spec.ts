@@ -79,13 +79,31 @@ describe('canonical UI-state map (#443)', () => {
       const cases: Array<[{ status: number }, { message?: string; error?: string }]> = [
         [{ status: 404 }, { message: 'Kayıt bulunamadı', error: 'Not Found' }],
         [{ status: 403 }, { message: 'Bu işlem için yetkiniz yok', error: 'Forbidden' }],
-        [{ status: 401 }, { message: 'Oturum bağlamı doğrulanamadı', error: 'Unauthorized' }],
+        [{ status: 401 }, { message: 'Oturum başlamış doğrulanamadı', error: 'Unauthorized' }],
         [{ status: 400 }, { message: 'Validation failed', error: 'Bad Request' }],
       ];
       for (const [responseArg, body] of cases) {
         const error = ui.probe.normalizeApiError(responseArg, body);
         expect(error.reasonCode).toBe('');
       }
+    });
+
+    it('keeps unknown transport and proxy messages behind the canonical copy', () => {
+      const ui = runtime(PROBE);
+      const proxy = ui.probe.normalizeApiError(
+        { status: 502 },
+        { message: '<html>Bad Gateway</html>' },
+      );
+      expect(proxy.message).not.toContain('Bad Gateway');
+      expect(proxy.message).not.toContain('<');
+      expect(proxy.uiState).toBe('error_retryable');
+
+      const rateLimited = ui.probe.normalizeApiError(
+        { status: 429 },
+        { message: 'slow down please' },
+      );
+      expect(rateLimited.uiState).toBe('rate_limited');
+      expect(rateLimited.message).not.toContain('slow down');
     });
   });
 

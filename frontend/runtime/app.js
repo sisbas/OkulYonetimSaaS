@@ -167,6 +167,15 @@ const consentTypeLabels = {
   sms_notification: 'SMS bilgilendirme izni',
 };
 
+// Tek kelimelik enum'lar (failed, pending, health …) insan metni değildir;
+// ham gösterilmemeleri için tanıma kümesine alınır (#446).
+const SINGLE_TOKEN_CODES = new Set([
+  ...Object.keys(statusLabels),
+  ...Object.keys(consentTypeLabels),
+  ...Object.keys(leaveReasonLabels),
+  ...Object.keys(leaveDurationLabels),
+]);
+
 const $ = (selector) => document.querySelector(selector);
 
 function setStatus(text, tone = 'neutral') {
@@ -323,7 +332,8 @@ function findReasonInMessage(message) {
 function looksLikeBackendCode(text) {
   const value = String(text || '').trim();
   return /^[A-Z][A-Z0-9_]{2,}$/.test(value)
-    || /^[a-z][a-z0-9_]*(_[a-z0-9_]+)+$/.test(value);
+    || /^[a-z][a-z0-9_]*(_[a-z0-9_]+)+$/.test(value)
+    || SINGLE_TOKEN_CODES.has(value);
 }
 
 function normalizeApiError(response, body) {
@@ -337,7 +347,11 @@ function normalizeApiError(response, body) {
   const mapped = reasonUi[reasonCode];
   const uiState = mapped?.[0] || statusStates[response.status] || 'error_retryable';
   const knownReasonCode = Boolean(mapped);
-  const humanMessage = !looksLikeBackendCode(messageText) ? messageText : '';
+  // Sunucunun ham taşıma hatası metni kullanıcıya gösterilmez: HTML/proxy
+  // gövdesi, 5xx ve 429 yanıtları kanonik durum kopyasının arkasında kalır.
+  const untrustedTransport =
+    response.status === 429 || response.status >= 500 || /[<>]/.test(messageText);
+  const humanMessage = !untrustedTransport && !looksLikeBackendCode(messageText) ? messageText : '';
   const message = knownReasonCode || genericError || !humanMessage
     ? mapped?.[1] || stateMessages[uiState]
     : humanMessage;
