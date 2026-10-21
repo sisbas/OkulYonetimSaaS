@@ -219,6 +219,18 @@ export function createDemoStore() {
         contactEligible: Boolean(student.contact),
         message: `${student.name}, 14 Eylül Fizik dersinde yok olarak işaretlendi. Demo bildirim taslağı.`,
       }));
+    // #459 — Stratejik hedefler ekranı varsayılan olarak kapalıdır (sentetik).
+    store.strategicGoalsEnabled = false;
+    store.strategicGoals = [
+      {
+        id: "sg1",
+        academicYear: "2026-2027",
+        metricKey: "net_average",
+        metricLabel: "Ders başına ortalama net",
+        targetValue: 40,
+        progressValue: 28,
+      },
+    ];
     return store;
   }
 
@@ -468,6 +480,69 @@ export function createDemoStore() {
     return item;
   }
 
+  // #459 — Stratejik hedefler. Yönet: yalnız kurum yöneticisi (tenant_admin,
+  // backend'de strategic_goal:manage). Oku: yönetici ve öğretmen. Veli ve
+  // diğer roller bu yüzeye hiç ulaşamaz. Ekran kapalıyken hiçbir yazım yoktur.
+  function goalAdmin() {
+    store.role === "TENANT_ADMIN" ||
+      fail("Stratejik hedefler yalnız kurum yöneticisi tarafından değiştirilebilir.");
+  }
+
+  function enableStrategicGoals(enabled = true) {
+    goalAdmin();
+    store.strategicGoalsEnabled = Boolean(enabled);
+  }
+
+  function createGoal(input = {}) {
+    goalAdmin();
+    if (!store.strategicGoalsEnabled)
+      fail(
+        "Stratejik hedefler ekranı kapalı; kurum yöneticisi Ayarlar'dan açabilir.",
+      );
+    const academicYear = String(input.academicYear ?? "").trim();
+    if (!/^\d{4}-\d{4}$/.test(academicYear))
+      fail("Akademik yıl yıl-aralığı biçiminde olmalıdır: 2026-2027.");
+    const metricKey = String(input.metricKey ?? "").trim();
+    if (!metricKey || metricKey.length > 120)
+      fail("Metrik anahtarı zorunludur ve en fazla 120 karakter olabilir.");
+    const metricLabel = String(input.metricLabel ?? "").trim() || null;
+    if (metricLabel && metricLabel.length > 200)
+      fail("Metrik adı en fazla 200 karakter olabilir.");
+    const targetValue = Number(input.targetValue);
+    if (input.targetValue === null || input.targetValue === "" || !Number.isFinite(targetValue))
+      fail("Hedef değeri sayısal olmalıdır.");
+    if (
+      store.strategicGoals.some(
+        (goal) =>
+          goal.academicYear === academicYear && goal.metricKey.trim() === metricKey,
+      )
+    )
+      fail(
+        `${metricKey} metriği için ${academicYear} döneminde zaten bir hedef tanımlı: her metrik ve yıl için yalnız bir hedef eklenebilir.`,
+      );
+    const goal = {
+      id: `sg${++sequence}`,
+      academicYear,
+      metricKey,
+      metricLabel,
+      targetValue,
+      // Gerçekleşme elle girilir; hedef oluşturmada boş başlar.
+      progressValue: null,
+    };
+    store.strategicGoals.push(goal);
+    return goal;
+  }
+
+  function updateGoalProgress(id, value) {
+    goalAdmin();
+    const goal = find(store.strategicGoals, id, "Stratejik hedef");
+    const progressValue = Number(value);
+    if (!Number.isFinite(progressValue))
+      fail("Gerçekleşme değeri sayısal olmalıdır.");
+    goal.progressValue = progressValue;
+    return goal;
+  }
+
   function addLesson(input) {
     manager();
     const teacher = store.teachers.find(
@@ -545,6 +620,9 @@ export function createDemoStore() {
     submitAttendance,
     approveNotification,
     cancelNotification,
+    enableStrategicGoals,
+    createGoal,
+    updateGoalProgress,
     reset,
   });
   return reset();

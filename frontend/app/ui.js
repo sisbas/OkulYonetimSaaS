@@ -19,6 +19,8 @@ const icons = {
     "M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M19 8v6 M16 11h6",
   settings:
     "M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2 M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8",
+  goals:
+    "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M12 12h.01 M12 3v3 M12 18v3 M3 12h3 M18 12h3",
 };
 const icon = (n) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icons[n] || icons.today}"/></svg>`;
@@ -60,7 +62,8 @@ export function mount({ mode, store = null }) {
     token = "",
     loginBusy = false,
     scheduleView = "group",
-    scheduleScope = "all";
+    scheduleScope = "all",
+    goalsYear = "all";
   const $ = (s) => document.querySelector(s),
     link = (path, label, cls = "") =>
       `<a class="${cls}" href="${base}/${path}" data-route>${label}</a>`;
@@ -105,8 +108,14 @@ export function mount({ mode, store = null }) {
       ["parent-notifications", "Veli Bilgilendirme", "message"],
       ["definitions/teachers", "Tanımlar", "definitions"],
       ["reports", "Raporlar", "reports"],
+      ["strategic-goals", "Stratejik Hedefler", "goals"],
       ["users", "Yönetim", "users"],
     ];
+    // #459 — Hedef ekranı kapalıyken hiçbir rol gezinmede görmez; okuma
+    // yetkisi backend izin yüzeyiyle eşleşir (yönetici + öğretmen).
+    const goalsVisible =
+      store.strategicGoalsEnabled &&
+      (store.role === "TENANT_ADMIN" || teacher());
     const allowed = !demo
       ? ["today"]
       : teacher()
@@ -117,7 +126,7 @@ export function mount({ mode, store = null }) {
             ? ["today", "attendance", "definitions/teachers", "reports"]
             : items.map((x) => x[0]);
     return items
-      .filter(([r]) => allowed.includes(r))
+      .filter(([r]) => allowed.includes(r) && (r !== "strategic-goals" || goalsVisible))
       .map(
         ([r, l, i]) =>
           `<a href="${base}/${r}" data-route ${path() === r || path().startsWith(r + "/") ? 'aria-current="page"' : ""}>${icon(i)}<span class="nav-text">${l}</span></a>`,
@@ -791,6 +800,18 @@ export function mount({ mode, store = null }) {
               store.demoTeacher,
             )
           : ""
+      }${
+        store.role === "TENANT_ADMIN"
+          ? `${select(
+              "Ayarlar · Stratejik hedefler",
+              "goals-enabled",
+              [
+                ["off", "Kapalı"],
+                ["on", "Açık"],
+              ],
+              store.strategicGoalsEnabled ? "on" : "off",
+            )}<p class="meta wide">Stratejik hedefler ekranı varsayılan olarak kapalıdır; okul talep ederse buradan açılır.</p>`
+          : ""
       }${select(
         "Ekran durumu",
         "viewState",
@@ -827,6 +848,96 @@ export function mount({ mode, store = null }) {
         .join(
           "",
         )}</div>${panel("Kapsam ve bağımlılıklar", `<div class="panel-pad"><p>Program → İzin → Etki → Görevlendirme → Yoklama → Bildirim taslağı → Onay incelemesi.</p><p>Onaylı oturum/şube bağlamı, insan tarafından okunabilir ders referansları, izin onayı, yoklama ve bildirim API bağlantıları bekleniyor.</p><p>Ödeme, muhasebe, CRM, sınav modülü, veli/öğrenci uygulaması ve Faz 2–3 bu teslimatta yok.</p><p>Manrope/Inter font aileleri tanımlı; yerel font yoksa sistem fontları kullanılır. Klavye ve altı ekran genişliği doğrulama kapsamındadır.</p><a href="/ux/spec.md">Ekran envanteri, durum matrisi ve kabul raporu</a></div>`)}`
+    );
+  }
+  // #459 — Stratejik hedefler: varsayılan kapalı; Ayarlar'dan kurulur.
+  // Okuma tenant-admin + öğretmen; yazma yalnız tenant-admin (strategic_goal:manage).
+  function goalsRoute() {
+    if (store.role !== "TENANT_ADMIN" && !teacher()) return forbidden();
+    if (!store.strategicGoalsEnabled) return goalsOff();
+    return goals();
+  }
+  function goalsOff() {
+    return (
+      heading("Stratejik Hedefler", "Okulun akademik yıllara bağlı hedefleri.") +
+      panel(
+        "Bu ekran okul için kapalı",
+        empty(
+          "Stratejik hedefler ekranı kapalı",
+          "Bu ekran varsayılan olarak kapalıdır. Okul talep ederse kurum yöneticisi Ayarlar'dan açar.",
+          store.role === "TENANT_ADMIN"
+            ? link("review", "Ayarlar'ı aç", "btn")
+            : "",
+        ),
+      )
+    );
+  }
+  function goals() {
+    const manage = store.role === "TENANT_ADMIN";
+    const all = store.strategicGoals || [];
+    const years = Array.from(new Set(all.map((g) => g.academicYear)));
+    const rows = all
+      .filter(
+        (g) => goalsYear === "all" || g.academicYear === goalsYear,
+      )
+      .sort((a, b) =>
+        a.academicYear !== b.academicYear
+          ? a.academicYear < b.academicYear
+            ? -1
+            : 1
+          : a.metricKey.localeCompare(b.metricKey, "tr"),
+      );
+    const proportion = (g) => {
+      const p = g.progressValue;
+      if (p === null || p === undefined) return "Girilmedi";
+      const target = Number(g.targetValue);
+      const share =
+        target > 0 ? Math.round((Number(p) / target) * 100) + "%" : "—";
+      return `${share} · ${p} / ${target}`;
+    };
+    const row = (g) => [
+      `<strong>${esc(g.metricLabel || g.metricKey)}</strong><small>${esc(g.metricKey)}</small>`,
+      esc(g.academicYear),
+      String(g.targetValue),
+      g.progressValue === null || g.progressValue === undefined
+        ? "—"
+        : String(g.progressValue),
+      proportion(g),
+      ...(manage
+        ? [button("Gerçekleşme gir", "goal-progress", g.id, "btn")]
+        : []),
+    ];
+    return (
+      heading(
+        "Stratejik Hedefler",
+        "Okulun kendi planı; her metrik için yılda tek hedef.",
+        manage ? button("+ Hedef ekle", "add-goal", "", "btn primary") : "",
+      ) +
+      panel(
+        "Okul hedefleri",
+        `<div class="panel-pad">${select(
+          "Akademik yıl",
+          "goals-year",
+          [["all", "Tüm yıllar"], ...years.map((y) => [y, y])],
+          goalsYear,
+        )}</div>${
+          rows.length
+            ? columns(
+                manage
+                  ? ["Metrik", "Akademik yıl", "Hedef", "Gerçekleşme", "İlerleme", ""]
+                  : ["Metrik", "Akademik yıl", "Hedef", "Gerçekleşme", "İlerleme"],
+                rows.map(row),
+              )
+            : empty(
+                "Bu kapsamda hedef yok",
+                "Hedefler okul tarafından elle girilir. Her metrik ve yıl için tek kayıt tutulur.",
+              )
+        }<div class="footnote">Hedef ve gerçekleşme okul tarafından elle girilir. ${
+          manage
+            ? "Hedef değerlerini yalnız kurum yöneticisi değiştirir."
+            : "Öğretmen bu listeyi salt okunur izler."
+        }</div>`,
+      )
     );
   }
   function forbidden() {
@@ -937,6 +1048,7 @@ export function mount({ mode, store = null }) {
           : definitions(p.split("/")[1], p.split("/")[2]);
     else if (["users", "roles"].includes(p)) body = users();
     else if (p === "reports") body = reports();
+    else if (p === "strategic-goals") body = goalsRoute();
     else if (p === "review") body = review();
     else if (p === "login")
       body =
@@ -1087,6 +1199,25 @@ export function mount({ mode, store = null }) {
           "Örnek kayıt ekle",
           `<form id="definition-form" data-kind="${id}">${field("Ad / başlık", "name", "text", "", 'required maxlength="80"')}<p class="meta">Yalnız sentetik tanım kaydı oluşturulur.</p><button type="submit" class="primary">Örnek kaydı ekle</button></form>`,
         );
+      if (act === "add-goal")
+        openDrawer(
+          "Hedef ekle",
+          `<form id="goal-form">${select("Akademik yıl", "academicYear", [
+            ["2026-2027", "2026-2027"],
+            ["2027-2028", "2027-2028"],
+          ])}${field("Metrik anahtarı", "metricKey", "text", "", 'required maxlength="120"')}${field("Metrik adı", "metricLabel", "text", "", 'maxlength="200"')}${field("Hedef değer", "targetValue", "number", "", 'required step="any" min="0"')}<p class="meta">Metrik tipi okul tanımlıdır; aynı metrik ve yılda ikinci hedef reddedilir.</p><div id="goal-error" role="alert"></div><button type="submit" class="primary">Hedefi ekle</button></form>`,
+        );
+      if (act === "goal-progress")
+        openDrawer(
+          "Gerçekleşme gir",
+          `<form id="goal-progress-form" data-id="${esc(id)}">${field(
+            "Gerçekleşme değeri",
+            "progressValue",
+            "number",
+            "",
+            'required step="any"',
+          )}<p class="meta">Hedef ve gerçekleşme okul tarafından elle girilir.</p><div id="goal-progress-error" role="alert"></div><button type="submit" class="primary">Gerçekleşmeyi kaydet</button></form>`,
+        );
     } catch (err) {
       notice = err.message;
       render();
@@ -1164,6 +1295,18 @@ export function mount({ mode, store = null }) {
     if (el.name === "schedule-view" && demo) {
       scheduleView = el.value;
       scheduleScope = "all";
+      render();
+    }
+    if (el.name === "goals-enabled" && demo) {
+      if (el.value === "on") store.enableStrategicGoals();
+      else store.enableStrategicGoals(false);
+      notice = store.strategicGoalsEnabled
+        ? "Stratejik hedefler ekranı açıldı."
+        : "Stratejik hedefler ekranı kapatıldı.";
+      render();
+    }
+    if (el.name === "goals-year" && demo) {
+      goalsYear = el.value;
       render();
     }
   });
@@ -1258,6 +1401,25 @@ export function mount({ mode, store = null }) {
         store.addLesson(d);
         navigate(base + "/schedule");
         notice = "Ders örnek programa eklendi.";
+        render();
+      }
+      if (f.id === "goal-form") {
+        const data = Object.fromEntries(new FormData(f));
+        store.createGoal({
+          academicYear: String(data.academicYear),
+          metricKey: String(data.metricKey),
+          metricLabel: String(data.metricLabel ?? ""),
+          targetValue: Number(data.targetValue),
+        });
+        $("#drawer").close();
+        notice = "Örnek hedef eklendi. Gerçek kayıt yapılmaz.";
+        render();
+      }
+      if (f.id === "goal-progress-form") {
+        const data = Object.fromEntries(new FormData(f));
+        store.updateGoalProgress(f.dataset.id, data.progressValue);
+        $("#drawer").close();
+        notice = "Örnek gerçekleşme güncellendi.";
         render();
       }
     } catch (err) {
