@@ -215,3 +215,31 @@ describe('Veli Bilgilendirme seti mock-up\'ları (#477)', () => {
     expect(html).not.toContain('Hoş geldiniz');
   });
 });
+
+describe('Tanimlar + Yonetim + Raporlar seti mock-up\'ları (#478)', () => {
+  it('definitions.html: ogretmen/grup/ogrenci; ders/derslik/saat dilimi listeleri', () => {
+    const html = readPage('definitions.html');
+    shellChecks(html);
+    expect(/öğretmen|öğrenci|grup/i.test(html)).toBe(true);
+    expect(/ders|derslik|saat dilimi/i.test(html)).toBe(true);
+    expect(/liste|arama|detay/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('users-roles.html: erisim matrisi (makine-okur izin anahtari + insan etiketi)', () => {
+    const html = readPage('users-roles.html');
+    shellChecks(html);
+    expect(/erişim matrisi|erişim matrisı/i.test(html)).toBe(true);
+    expect(/izin anahtarı|izin kodu|insan etiketi/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('reports.html: acik is ve yuk ozeti, fisik kapanis iddiasi yok', () => {
+    const html = readPage('reports.html');
+    shellChecks(html);
+    expect(/[aA]çık/.test(html)).toBe(true);
+    expect(/[yY]ük özeti/.test(html)).toBe(true);
+    expect(/kapanış|iddia yok/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+});
