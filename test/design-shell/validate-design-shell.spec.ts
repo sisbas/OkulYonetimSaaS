@@ -105,3 +105,32 @@ describe('login ve 403 mock-up\'ları (#473)', () => {
     expect(html).not.toContain('başarılı');
   });
 });
+
+describe('Program seti mock-up\'ları (#474)', () => {
+  it('program.html: haftalık program, sınıf/öğretmen/derslik filtreleri, ders kartları', () => {
+    const html = readPage('program.html');
+    shellChecks(html);
+    expect(html).toContain('id="branch-filter"');
+    expect(html).toContain('id="teacher-filter"');
+    expect(html).toContain('id="room-filter"');
+    expect(/ders kartı|ders kartları/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('program-builder.html: manuel ders ekleme formu, çakışma/branş/izin uyarıları', () => {
+    const html = readPage('program-builder.html');
+    shellChecks(html);
+    expect(html).toContain('id="add-lesson-form"');
+    expect(/ders ekle|ekleme/i.test(html)).toBe(true);
+    expect(/çakışma|branş|izin/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('program-conflicts.html: açık çakışma detayı ve aday seçimi', () => {
+    const html = readPage('program-conflicts.html');
+    shellChecks(html);
+    expect(/açık çakışma|çakışma detayı/i.test(html)).toBe(true);
+    expect(/aday seç|seçim/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+});

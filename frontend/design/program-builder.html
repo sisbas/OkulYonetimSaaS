@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Ders ekle — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Program · Ders ekle</p>
+        <h1>Manuel ders ekleme</h1>
+        <p class="topbar-subtitle">Yeni bir ders çizelge satırı ekleyin. Çakışma, branş ve izin kontrolleri çalışır; yayınlama otomatik değildir.</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="empty">
+      <section class="panel builder-panel" aria-labelledby="builder-heading">
+        <div>
+          <h2 id="builder-heading">Yeni ders satırı</h2>
+          <form id="add-lesson-form" class="stack grid-form" novalidate>
+            <label>
+              Ders
+              <input id="lesson-subject" name="subject" required />
+            </label>
+            <label>
+              Öğretmen
+              <select id="builder-teacher" name="teacherId" required>
+                <option value="">Öğretmen seçin</option>
+              </select>
+            </label>
+            <label>
+              Derslik
+              <input id="builder-room" name="roomCode" required />
+            </label>
+            <label>
+              Başlangıç
+              <input id="builder-starts-at" type="datetime-local" required />
+            </label>
+            <label>
+              Bitiş
+              <input id="builder-ends-at" type="datetime-local" required />
+            </label>
+            <section id="conflict-hint" class="state-box hidden" role="region" aria-label="Çakışma uyarısı">
+              <p class="hint">Seçilen öğretmen veya derslik aynı zamanda başka bir derse sahiptir. Başka bir zaman ya da derslik seçin.</p>
+            </section>
+            <button type="submit" class="button-primary" data-requires-permission="schedule:draft:create">Ders ekle</button>
+          </form>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>
