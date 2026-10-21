@@ -1,11 +1,15 @@
-import { IsNumber, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsNumber, IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 /**
  * #457 — Stratejik hedef güncelle. Hedef ve gerçekleşme elle girilir;
  * metrik anahtarı/yılı sonradan DEĞİŞTİRİLMEZ (tekillik kimliği sabit kalır).
+ *
+ * targetValue nullable DEĞİL: `@IsOptional()` null'ı da "yok" sayıp doğrulamayı
+ * atlar ve null değer NOT NULL kolona giderek 500 üretirdi. `@ValidateIf` yalnız
+ * `undefined` alanı atlar; null @IsNumber ile 400'e düşer.
  */
 export class UpdateStrategicGoalDto {
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsNumber()
   targetValue?: number;
 

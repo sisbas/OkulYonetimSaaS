@@ -80,6 +80,10 @@ export class StrategicGoalService {
     if (dto.targetValue === undefined && dto.progressValue === undefined && dto.metricLabel === undefined) {
       throw new BadRequestException('No fields to update');
     }
+    const targetValue: number | null | undefined = dto.targetValue;
+    if (targetValue === null) {
+      throw new BadRequestException('targetValue must be a number');
+    }
     const values: UpdateStrategicGoalValues = {};
     if (dto.targetValue !== undefined) values.targetValue = dto.targetValue;
     if (dto.progressValue !== undefined) values.progressValue = dto.progressValue;
