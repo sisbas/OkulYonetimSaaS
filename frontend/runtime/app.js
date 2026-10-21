@@ -119,6 +119,13 @@ const statusLabels = {
   partially_covered: 'Kısmen karşılandı',
   not_required: 'Karşılık gerekmiyor',
   cancelled: 'İptal edildi',
+  draft: 'Taslak',
+  queued: 'Onaylandı · gönderim bekliyor',
+  dispatched: 'Gönderildi',
+  failed: 'Gönderilemedi',
+  blocked_consent: 'İletişim izni yok',
+  revoked: 'İzin geri alınmış',
+  expired: 'İznin süresi geçmiş',
   unknown: 'Durum bekleniyor',
 };
 const statusTones = {
@@ -126,13 +133,38 @@ const statusTones = {
   assigned: 'success',
   resolved: 'success',
   covered: 'success',
+  queued: 'success',
+  dispatched: 'success',
   pending: 'warning',
   open: 'warning',
   unresolved: 'warning',
   partially_covered: 'warning',
+  blocked_consent: 'warning',
+  expired: 'warning',
   uncovered: 'danger',
   rejected: 'danger',
+  revoked: 'danger',
+  failed: 'danger',
   cancelled: 'neutral',
+  draft: 'neutral',
+};
+
+const leaveReasonLabels = {
+  annual_leave: 'Yıllık izin',
+  administrative: 'İdari izin',
+  health: 'Sağlık izni',
+  other: 'Diğer',
+};
+
+const leaveDurationLabels = {
+  hourly: 'Saatlik izin',
+  full_day: 'Tam gün izin',
+  multi_day: 'Çok günlü izin',
+};
+
+const consentTypeLabels = {
+  parent_notification: 'Veli bilgilendirme izni',
+  sms_notification: 'SMS bilgilendirme izni',
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -174,7 +206,10 @@ function updateOperationalSnapshot() {
   const date = state.date || $('#operation-date')?.value;
   $('#summary-session').textContent = state.accessToken ? 'Aktif' : 'Bekleniyor';
   $('#summary-scope').textContent = branchId ? `${state.branchLabel}${date ? ` · ${date}` : ''}` : 'Şube seçilmedi';
-  $('#summary-leave').textContent = summaryText(state.activeLeaveId, 'Talep seçilmedi');
+  const summaryLeave = $('#summary-leave');
+  summaryLeave.textContent = state.activeLeaveId ? 'Seçili izin talebi' : 'Talep seçilmedi';
+  if (state.activeLeaveId) summaryLeave.dataset.leaveId = state.activeLeaveId;
+  else delete summaryLeave.dataset.leaveId;
   $('#summary-assignment').textContent = state.activeAssignmentId
     ? 'Görevlendirme tamamlandı'
     : `${state.queueCount} açık ders · ${state.impactCount} etki · ${state.candidateCount} aday`;
@@ -285,6 +320,12 @@ function findReasonInMessage(message) {
   return Object.keys(reasonUi).find((code) => normalized.includes(code));
 }
 
+function looksLikeBackendCode(text) {
+  const value = String(text || '').trim();
+  return /^[A-Z][A-Z0-9_]{2,}$/.test(value)
+    || /^[a-z][a-z0-9_]*(_[a-z0-9_]+)+$/.test(value);
+}
+
 function normalizeApiError(response, body) {
   const messageText = flattenMessage(body);
   const explicitReason = pick(body, ['reasonCode', 'code']);
@@ -296,9 +337,10 @@ function normalizeApiError(response, body) {
   const mapped = reasonUi[reasonCode];
   const uiState = mapped?.[0] || statusStates[response.status] || 'error_retryable';
   const knownReasonCode = Boolean(mapped);
-  const message = knownReasonCode || genericError || !messageText
+  const humanMessage = !looksLikeBackendCode(messageText) ? messageText : '';
+  const message = knownReasonCode || genericError || !humanMessage
     ? mapped?.[1] || stateMessages[uiState]
-    : messageText;
+    : humanMessage;
   return { status: response.status, reasonCode, uiState, message };
 }
 
@@ -904,10 +946,18 @@ function captureLeaveVersion(body, etag) {
 }
 
 function renderLeaveCard(leave, title) {
-  return `<article class="card">
+  const leaveId = pick(leave, ['leaveRequestId', 'leaveId', 'id'], '');
+  const reasonCode = pick(leave, ['reasonCode'], '');
+  const diagnostics = [
+    leaveId ? ` data-leave-id="${escapeHtml(leaveId)}"` : '',
+    reasonCode ? ` data-reason-code="${escapeHtml(reasonCode)}"` : '',
+  ].join('');
+  return `<article class="card"${diagnostics}>
     <h3>${escapeHtml(title)}</h3>
-    <p>Durum: ${escapeHtml(displayStatus(pick(leave, ['status'], 'unknown')))}</p>
-    <p>Karar: ${escapeHtml(displayStatus(pick(leave, ['decisionStatus'], 'unknown')))} · Ders karşılığı: ${escapeHtml(displayStatus(pick(leave, ['coverageStatus'], 'unknown')))}</p>
+    <p>Durum: ${escapeHtml(displayStatus(pick(leave, ['status', 'decisionStatus'], 'unknown')))}</p>
+    <p>Karar: ${escapeHtml(displayStatus(pick(leave, ['decisionStatus'], 'unknown')))}</p>
+    <p>Süre: ${escapeHtml(displayLeaveDuration(pick(leave, ['durationType'], '')))} · Gerekçe: ${escapeHtml(displayLeaveReason(leave))}</p>
+    <p>Ders karşılığı: ${escapeHtml(displayStatus(pick(leave, ['coverageStatus'], 'unknown')))}</p>
     <p>Güncellik: ${state.activeLeaveEtag ? 'Güncel kayıt alındı' : 'Güncel kayıt bekleniyor'}</p>
   </article>`;
 }
@@ -920,6 +970,25 @@ function displayStatus(value) {
 function statusTone(value) {
   const key = String(value || 'unknown').toLowerCase();
   return statusTones[key] || 'neutral';
+}
+
+function displayCanonical(value, labels, fallback) {
+  const key = String(value || '').toLowerCase();
+  return labels[key] || fallback;
+}
+
+function displayLeaveReason(leave) {
+  const serverLabel = pick(leave, ['reasonLabel'], '');
+  if (serverLabel) return String(serverLabel);
+  return displayCanonical(pick(leave, ['reasonCode'], ''), leaveReasonLabels, 'Gerekçe bilgisi çözümlenemedi');
+}
+
+function displayLeaveDuration(value) {
+  return displayCanonical(value, leaveDurationLabels, 'Süre bilgisi çözümlenemedi');
+}
+
+function displayConsentType(value) {
+  return displayCanonical(value, consentTypeLabels, 'Bilgilendirme izni');
 }
 
 const loading = (text) => `<div class="loading" role="status">${escapeHtml(text)}...</div>`;
