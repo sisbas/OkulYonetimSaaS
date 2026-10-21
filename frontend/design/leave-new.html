@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Yeni izin talebi — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">İzinler · Yeni talep</p>
+        <h1>Yeni izin talebi</h1>
+        <p class="topbar-subtitle">Saatlik, tam gün veya çok gün; tarih aralığı ve gerekçe kategorisi. Özel sağlık metni istenmez.</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="empty">
+      <section class="panel leave-new-panel" aria-labelledby="leave-new-heading">
+        <div>
+          <h2 id="leave-new-heading">İzin talebi açın</h2>
+          <form id="leave-request-form" class="stack grid-form" novalidate>
+            <label>
+              İzin türü
+              <select id="leave-duration-type" name="durationType" required>
+                <option value="hourly">Saatlik</option>
+                <option value="full_day">Tam gün</option>
+                <option value="multi_day">Çok gün</option>
+              </select>
+            </label>
+            <label>
+              Tarih aralığı
+              <div class="date-range">
+                <label>Başlangıç <input id="leave-starts-at" type="datetime-local" required /></label>
+                <label>Bitiş <input id="leave-ends-at" type="datetime-local" required /></label>
+              </div>
+            </label>
+            <label>
+              Gerekçe kategorisi
+              <select id="leave-reason-code" name="reasonCode" required>
+                <option value="administrative">İdari</option>
+                <option value="health">Sağlık</option>
+                <option value="annual_leave">Yıllık izin</option>
+                <option value="other">Diğer</option>
+              </select>
+            </label>
+            <label>
+              Gerekçe metni
+              <textarea id="leave-reason" name="reason" rows="3" required></textarea>
+            </label>
+            <p class="hint">Özel sağlık açıklaması istenmez; gerekçe yalnız talep kararı için kullanılır.</p>
+            <button type="submit" class="button-primary" data-requires-permission="leave:create">İzin talebi oluştur</button>
+          </form>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>

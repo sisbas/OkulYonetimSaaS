@@ -134,3 +134,38 @@ describe('Program seti mock-up\'ları (#474)', () => {
     expect(html).not.toContain('Hoş geldiniz');
   });
 });
+
+describe('İzinler seti mock-up\'ları (#475)', () => {
+  it('leave.html: izin listesi, durum rozetleri (draft/pending/approved/rejected)', () => {
+    const html = readPage('leave.html');
+    shellChecks(html);
+    expect(/[iİ]zin listesi|[iİ]zin talepleri/i.test(html)).toBe(true);
+    expect(/draft|pending|approved|rejected/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('my-leaves.html: Izinlerim, sahiplik ayrimi', () => {
+    const html = readPage('my-leaves.html');
+    shellChecks(html);
+    expect(/[iİ]zinlerim/i.test(html)).toBe(true);
+    expect(/sahiplik|kendi talebi/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('leave-new.html: yeni talep formu, tarih araligi, gerekce kategorisi', () => {
+    const html = readPage('leave-new.html');
+    shellChecks(html);
+    expect(/yeni izin|izin talebi|talep olustur/i.test(html)).toBe(true);
+    expect(html).toContain('id="leave-starts-at"');
+    expect(html).toContain('id="leave-ends-at"');
+    expect(/saatlik|tam gün|çok gün/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+
+  it('leave-detail.html: etki ve karar detayi, onay/ret', () => {
+    const html = readPage('leave-detail.html');
+    shellChecks(html);
+    expect(/etki|karar|onay|ret/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+  });
+});

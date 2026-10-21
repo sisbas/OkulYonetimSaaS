@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>İzin kararı — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">İzinler · Karar</p>
+        <h1>İzin etkisi ve kararı</h1>
+        <p class="topbar-subtitle">Etkilenen dersler, görevlendirme durumu; yönetici onayı veya red.</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="pending">
+      <section class="panel leave-detail-panel" aria-labelledby="leave-detail-heading">
+        <div>
+          <h2 id="leave-detail-heading">Etki ve karar</h2>
+          <section id="leave-impact" class="state-box" role="region" aria-label="İzin etki analizi">
+            <p class="hint">Etkilenen dersler ve oturumlar buradan incelenir; görevlendirme durumu gösterilir.</p>
+          </section>
+          <section id="leave-decision" class="state-box" role="region" aria-label="Karar alanı">
+            <p class="hint">Yönetici onayı veya reddi buradan verilir; kararın nedeni yazılır.</p>
+            <div class="decision-actions">
+              <button type="button" class="button-primary" data-action="approve-leave">Onayla</button>
+              <button type="button" class="button-primary" data-action="reject-leave">Reddet</button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>
