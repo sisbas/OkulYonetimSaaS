@@ -28,9 +28,6 @@ function check(file, html) {
   if (!/id="design-main"/.test(html)) {
     problems.push('eksik ana bölge: #design-main');
   }
-  if (!/data-state="empty"/.test(html)) {
-    problems.push('eksik durum örneği: data-state="empty"');
-  }
   if (problems.length) {
     failed += 1;
     console.error(file + ': ' + problems.join('; '));

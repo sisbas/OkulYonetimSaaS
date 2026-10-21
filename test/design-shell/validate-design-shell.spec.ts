@@ -70,3 +70,38 @@ describe('validate-design-shell', () => {
     expect(fs.existsSync(path.join(process.cwd(), 'frontend', 'app', 'tokens.css'))).toBe(true);
   });
 });
+
+const DESIGN_DIR = path.join(process.cwd(), 'frontend', 'design');
+
+function readPage(name: string): string {
+  return fs.readFileSync(path.join(DESIGN_DIR, name), 'utf8');
+}
+
+const shellChecks = (html: string) => {
+  for (const item of IA_ORDER) expect(html).toContain(`<strong>${item}</strong>`);
+  expect(html).toContain('href="../app/tokens.css"');
+  expect(/<meta[^>]*name="viewport"[^>]*>/.test(html)).toBe(true);
+  expect(/class="skip-link"/.test(html)).toBe(true);
+  expect(/id="design-main"/.test(html)).toBe(true);
+};
+
+describe('login ve 403 mock-up\'ları (#473)', () => {
+  it('login mock-up: kabuk geçerli, giriş formu mevcut, başarı koprası yok', () => {
+    const html = readPage('login.html');
+    shellChecks(html);
+    expect(html).toContain('id="email"');
+    expect(html).toContain('id="password"');
+    expect(html).toContain('id="tenant-id"');
+    expect(/type="submit"/.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+    expect(html).not.toContain('başarılı');
+  });
+
+  it('403 mock-up: erişim sınırı, başarı koprası yok', () => {
+    const html = readPage('403.html');
+    shellChecks(html);
+    expect(/erişim|yetki|sınır/i.test(html)).toBe(true);
+    expect(html).not.toContain('Hoş geldiniz');
+    expect(html).not.toContain('başarılı');
+  });
+});
