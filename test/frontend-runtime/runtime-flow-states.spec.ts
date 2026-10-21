@@ -17,6 +17,7 @@ describe('runtime core flow state coverage (#400)', () => {
       ui.probe.state.activeScheduleEventId = 'event-1';
       ui.probe.state.activeLeaveEtag = 'etag-1';
       const candidates = {
+        eligibilityFinalized: true,
         candidates: [
           { teacherId: 't1', displayName: 'Ayşe Yılmaz', courseEligible: true, availabilityStatus: 'available' },
           { teacherId: 't2', displayName: 'Ali Veli', courseEligible: true, availabilityStatus: 'busy' },
@@ -122,7 +123,7 @@ describe('runtime core flow state coverage (#400)', () => {
     });
 
     it('apiRequest treats 200 non-JSON as server fault, not empty state', () => {
-      expect.assertions(2);
+      expect.assertions(3);
       const ui = runtime(PROBE);
       ui.probe.state.accessToken = 'token';
       ui.fetch.mockResolvedValueOnce({
@@ -131,9 +132,10 @@ describe('runtime core flow state coverage (#400)', () => {
         text: async () => '<html>unexpected</html>',
         headers: { get: () => null },
       });
-      return ui.probe.apiRequest('/daily-operations/today').catch((error: { reasonCode?: string; message?: string }) => {
+      return ui.probe.apiRequest('/daily-operations/today').catch((error: { reasonCode?: string; uiState?: string; message?: string }) => {
         // A 200 with undecodable body is a server fault, never a fabricated empty state
-        expect(error.reasonCode).toBe('SERVER_ERROR');
+        expect(error.reasonCode).toBe('');
+        expect(error.uiState).toBe('error_retryable');
         expect(error.message).not.toMatch(/boş|bulunmuyor/i);
       });
     });
