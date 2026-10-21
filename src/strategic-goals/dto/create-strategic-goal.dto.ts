@@ -19,6 +19,7 @@ export class CreateStrategicGoalDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(200)
   metricLabel?: string | null;
 

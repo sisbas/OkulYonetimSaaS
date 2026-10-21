@@ -53,7 +53,7 @@ function makeRepo(): RepoStub {
     findActive: jest.fn(async () => null),
     findActiveByYearAndMetric: jest.fn(async () => null),
     update: jest.fn(async () => undefined),
-    softDelete: jest.fn(async () => undefined),
+    softDelete: jest.fn(async () => true),
   };
 }
 
@@ -62,13 +62,14 @@ describe('StrategicGoalService (#457)', () => {
     const repo = makeRepo();
     repo.create.mockImplementation(async (_ctx, values) => {
       expect(values).toMatchObject({
-        tenantId: TENANT_A,
         academicYear: '2026-2027',
         metricKey: 'graduation_rate',
         targetValue: 90,
         progressValue: null,
         createdByUserId: ADMIN_USER,
       });
+      // Tenant servis payload'ında taşınmaz; repository onu ctx'ten türetir.
+      expect(values).not.toHaveProperty('tenantId');
       return goalRow({ metricLabel: 'Mezuniyet oranı' });
     });
     const service = new StrategicGoalService(repo as never);
@@ -182,7 +183,6 @@ describe('StrategicGoalService (#457)', () => {
     expect(repo.update).toHaveBeenCalledWith(ctx, '90000000-0000-4000-8000-000000000001', {
       targetValue: 92,
       progressValue: 46,
-      metricLabel: undefined,
     });
   });
 
@@ -201,6 +201,26 @@ describe('StrategicGoalService (#457)', () => {
     await service.delete(ctx, '90000000-0000-4000-8000-000000000001');
 
     expect(repo.softDelete).toHaveBeenCalledWith(ctx, '90000000-0000-4000-8000-000000000001');
+  });
+
+  it('returns 404 when deleting an unknown or other-tenant goal', async () => {
+    const repo = makeRepo();
+    repo.softDelete.mockResolvedValue(false);
+    const service = new StrategicGoalService(repo as never);
+
+    await expect(
+      service.delete(ctx, '90000000-0000-4000-8000-000000000002'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rejects a non-consecutive academic year range', async () => {
+    const repo = makeRepo();
+    const service = new StrategicGoalService(repo as never);
+
+    await expect(
+      service.create(ctx, { academicYear: '2026-2020', metricKey: 'graduation_rate', targetValue: 1 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repo.create).not.toHaveBeenCalled();
   });
 
   it('rejects a metric key that is blank after trimming', async () => {

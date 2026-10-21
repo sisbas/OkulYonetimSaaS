@@ -8,7 +8,7 @@ import { StrategicGoal } from './strategic-goal.entity';
 
 export type CreateStrategicGoalValues = Pick<
   StrategicGoal,
-  'tenantId' | 'academicYear' | 'metricKey' | 'metricLabel' | 'targetValue' | 'progressValue' | 'createdByUserId'
+  'academicYear' | 'metricKey' | 'metricLabel' | 'targetValue' | 'progressValue' | 'createdByUserId'
 >;
 
 export type UpdateStrategicGoalValues = Partial<
@@ -27,7 +27,10 @@ export class StrategicGoalRepository {
 
   async create(ctx: RequestContext, values: CreateStrategicGoalValues): Promise<StrategicGoal> {
     assertTenantScope(ctx, 'strategic_goals');
-    return this.repository.save(this.repository.create(values));
+    // Tenant çağıranın bağlamından türetilir; istemci/payload tenant seçemez.
+    return this.repository.save(
+      this.repository.create({ ...values, tenantId: ctx.tenantId! }),
+    );
   }
 
   async list(ctx: RequestContext, academicYear?: string): Promise<StrategicGoal[]> {
@@ -67,11 +70,13 @@ export class StrategicGoalRepository {
     await this.repository.update({ id, tenantId: ctx.tenantId, ...ACTIVE }, values);
   }
 
-  async softDelete(ctx: RequestContext, id: string): Promise<void> {
+  /** Aktif kayıt silindiyse true; kayıt yoksa/başka tenant'sa false. */
+  async softDelete(ctx: RequestContext, id: string): Promise<boolean> {
     assertTenantScope(ctx, 'strategic_goals');
-    await this.repository.update(
+    const result = await this.repository.update(
       { id, tenantId: ctx.tenantId, ...ACTIVE },
       { deletedAt: new Date() },
     );
+    return (result.affected ?? 0) > 0;
   }
 }

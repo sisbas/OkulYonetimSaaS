@@ -7,7 +7,7 @@ import {
 } from './dto/create-strategic-goal.dto';
 import { ListStrategicGoalsQueryDto } from './dto/list-strategic-goals-query.dto';
 import { UpdateStrategicGoalDto } from './dto/update-strategic-goal.dto';
-import { StrategicGoalRepository } from './strategic-goal.repository';
+import { StrategicGoalRepository, UpdateStrategicGoalValues } from './strategic-goal.repository';
 import { StrategicGoal } from './strategic-goal.entity';
 
 export type StrategicGoalResponse = Readonly<{
@@ -40,13 +40,13 @@ export class StrategicGoalService {
   constructor(private readonly goals: StrategicGoalRepository) {}
 
   async create(ctx: RequestContext, dto: CreateStrategicGoalDto): Promise<StrategicGoalResponse> {
+    const academicYear = this.assertAcademicYear(dto.academicYear);
     const metricKey = this.normalizeMetricKey(dto.metricKey);
-    await this.assertNoActiveDuplicate(ctx, dto.academicYear, metricKey);
+    await this.assertNoActiveDuplicate(ctx, academicYear, metricKey);
 
     try {
       const saved = await this.goals.create(ctx, {
-        tenantId: ctx.tenantId!,
-        academicYear: dto.academicYear,
+        academicYear,
         metricKey,
         metricLabel: dto.metricLabel ?? null,
         targetValue: dto.targetValue,
@@ -59,7 +59,7 @@ export class StrategicGoalService {
       // Yarış durumu: servis kontrolü ile DB partial-unique indeksi arasında
       // ikinci bir hedef sızarsa indeks reddeder; aynı okunabilir nedene map'lenir.
       if (this.isTenantYearMetricUniqueViolation(error)) {
-        throw new DuplicateStrategicGoalException(dto.academicYear, metricKey);
+        throw new DuplicateStrategicGoalException(academicYear, metricKey);
       }
       throw error;
     }
@@ -80,16 +80,17 @@ export class StrategicGoalService {
     if (dto.targetValue === undefined && dto.progressValue === undefined && dto.metricLabel === undefined) {
       throw new BadRequestException('No fields to update');
     }
-    await this.goals.update(ctx, id, {
-      targetValue: dto.targetValue,
-      progressValue: dto.progressValue,
-      metricLabel: dto.metricLabel,
-    });
+    const values: UpdateStrategicGoalValues = {};
+    if (dto.targetValue !== undefined) values.targetValue = dto.targetValue;
+    if (dto.progressValue !== undefined) values.progressValue = dto.progressValue;
+    if (dto.metricLabel !== undefined) values.metricLabel = dto.metricLabel;
+    await this.goals.update(ctx, id, values);
     return this.get(ctx, id);
   }
 
   async delete(ctx: RequestContext, id: string): Promise<void> {
-    await this.goals.softDelete(ctx, id);
+    const deleted = await this.goals.softDelete(ctx, id);
+    if (!deleted) throw new NotFoundException('Strategic goal not found');
   }
 
   private async assertNoActiveDuplicate(
@@ -107,6 +108,17 @@ export class StrategicGoalService {
       throw new BadRequestException('metricKey is required and must be at most 120 characters');
     }
     return normalized;
+  }
+
+  /** Akademik yıl bitişik aralık olmalı: 2026-2027 geçerli, 2026-2020 değil. */
+  private assertAcademicYear(academicYear: string): string {
+    const match = /^(\d{4})-(\d{4})$/.exec(academicYear);
+    const start = match ? Number(match[1]) : NaN;
+    const end = match ? Number(match[2]) : NaN;
+    if (!match || end !== start + 1) {
+      throw new BadRequestException('academicYear must be a consecutive range like 2026-2027');
+    }
+    return academicYear;
   }
 
   private isTenantYearMetricUniqueViolation(error: unknown): boolean {
