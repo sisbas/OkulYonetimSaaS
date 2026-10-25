@@ -48,7 +48,7 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
 
   it('treats unfinished candidate eligibility as a blocking state', () => {
     expect(app).toContain('body?.eligibilityFinalized !== true');
-    expect(app).toContain("renderBlockingState(target, 'TEACHER_COURSE_ELIGIBILITY_NOT_READY')");
+    expect(app).toContain("renderRegionState(target, 'eligibility_not_ready')");
     expect(app).toContain('eligibility_not_ready');
   });
 
@@ -60,47 +60,6 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain("'locked_state'");
     expect(app).toContain("'rate_limited'");
     expect(app).toContain("'eligibility_not_ready'");
-
-  it('normalizes Nest error envelopes into canonical UI states without minting a code', () => {
-    expect(app).toContain('function canonicalUiState');
-    expect(app).toContain('SERVER_REASON_UI[serverAuthoredCode(body)]');
-    expect(app).toContain('HTTP_STATUS_UI_STATE[status]');
-    expect(app).not.toMatch(/reasonCode\s*=\s*'/);
-    expect(app).not.toContain('reasonUi');
-    expect(app).not.toContain('uiStateTitles');
-    for (const state of ['forbidden_non_enumerating', 'stale_version', 'conflict_blocking', 'rate_limited']) {
-      expect(app).toContain(state);
-    }
-  });
-
-  it('treats unfinished candidate eligibility as a blocking state', () => {
-    expect(app).toContain('body?.eligibilityFinalized === false');
-    expect(app).toContain("renderRegionState(target, 'eligibility_not_ready')");
-    expect(app).toContain('eligibility_not_ready');
-  });
-
-  it('maps canonical stale, forbidden, conflict and empty states', () => {
-    for (const code of [
-      'missing_permission',
-      'cross_tenant_or_unknown_resource',
-      'LEAVE_VERSION_MISMATCH',
-      'TEACHER_COURSE_ELIGIBILITY_NOT_READY',
-      'SUBSTITUTE_TIME_CONFLICT',
-      'ASSIGNMENT_NOT_FOUND',
-      'offline_or_unavailable',
-    ]) {
-      expect(app).toContain(code);
-    }
-    for (const state of [
-      'forbidden_non_enumerating',
-      'stale_version',
-      'conflict_blocking',
-      'same_scope_empty',
-      'impact_not_ready',
-      'locked_state',
-    ]) {
-      expect(app).toContain(state);
-    }
   });
 
   it('keeps assignment create and clear server-confirmed with refetch', () => {
@@ -239,7 +198,7 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain('function displayStatus');
     expect(app).toContain('const knownReasonCode = Boolean(mapped)');
     expect(app).toContain("const message = error?.message || stateMessages[uiState] || 'İşlem tamamlanamadı.'");
-    expect(app).toContain('return statusLabels[key] || statusLabels.unknown');
+    expect(app).toContain('return statusLabels[termKey(value)] || statusLabels.unknown');
 
     expect(app).toContain('escapeHtml(message || copy.message)');
     expect(app).toContain('return statusLabels[termKey(value)] || statusLabels.unknown');

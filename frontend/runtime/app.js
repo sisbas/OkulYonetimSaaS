@@ -112,6 +112,7 @@ const uiStateTitles = {
   rate_limited: 'Kısa süre bekleyin',
   error_retryable: 'İşlem tamamlanamadı',
   offline_or_unavailable: 'Bağlantı kurulamadı',
+};
 
 const UI_STATES = {
   auth_required: {
@@ -535,7 +536,7 @@ async function apiRequest(path, options = {}, _refreshAttempted = false) {
     throw normalizeApiError({ status: 403, headers: { get: () => null } }, {}, options);
   }
   const headers = { Accept: 'application/json', ...(options.headers || {}) };
-  if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
+  if (state.accessToken) headers.Authorization = 'Bearer ' + state.accessToken;
   if (state.branchId && !path.startsWith('/context') && !path.startsWith('/auth/')) {
     headers['x-branch-code'] = state.branchId;
   }
@@ -653,6 +654,9 @@ function recoveryHint(uiState) {
     rate_limited: 'Kısa bir süre sonra aynı işlemi tekrar deneyin.',
     error_retryable: 'Sorun devam ederse günlük işleri yeniden yükleyin.',
     offline_or_unavailable: 'Bağlantıyı kontrol edip yeniden deneyin.',
+  };
+  return hints[uiState] || '';
+}
 
 function serverAuthoredCode(body) {
   const explicit = pick(body, ['reasonCode', 'code']);
@@ -673,13 +677,15 @@ function canonicalUiState(response, body, options = {}) {
 }
 
 function normalizeApiError(response, body, options = {}) {
+  const serverCode = serverAuthoredCode(body);
   const uiState = canonicalUiState(response, body, options);
-  const mapped = SERVER_REASON_UI[serverAuthoredCode(body)];
+  const mapped = SERVER_REASON_UI[serverCode];
   const copy = UI_STATES[uiState] || UI_STATES.error_retryable;
   const retryAfterHeader = response.headers?.get ? response.headers.get('retry-after') : null;
   return {
     status: response.status,
-    serverCode: serverAuthoredCode(body),
+    reasonCode: serverCode,
+    serverCode,
     uiState,
     message: mapped?.message || copy.message,
     retryAfterSeconds: Number(retryAfterHeader) || 0,
@@ -703,6 +709,7 @@ function branchSelectionOutcome(error) {
     return { ...error, uiState: 'forbidden_non_enumerating', message: 'Bu şube görüntülenemiyor; yetki kapsamınız dışındaki şubeler listelenmez.' };
   }
   return error;
+}
 
 function canonicalStateBlock(uiState, message = '', title = '') {
   if (!uiState || !UI_STATES[uiState]) return '';
