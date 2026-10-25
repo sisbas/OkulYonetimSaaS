@@ -35,7 +35,7 @@ jobs:
           echo "GitGuardian API key is configured."
 
       - name: GitGuardian scan
-        uses: GitGuardian/ggshield/actions/secret@v1.52.2
+        uses: GitGuardian/ggshield/actions/secret@v1.56.0
         env:
           GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
           GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
