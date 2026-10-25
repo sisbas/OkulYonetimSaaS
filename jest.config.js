@@ -23,7 +23,9 @@ module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
   testRegex: '.*\\.spec\\.ts$',
-  testPathIgnorePatterns: ['/node_modules/', '/dist/', '/.worktrees/'],
+  // /.scratch/ holds throwaway wayfinder worktrees; their checked-out test
+  // copies are stale duplicates of test/** and must not run as if they were ours.
+  testPathIgnorePatterns: ['/node_modules/', '/dist/', '/.worktrees/', '/.scratch/'],
   transform: { '^.+\\.(t|j)s$': 'ts-jest' },
   collectCoverageFrom: ['src/**/*.(t|j)s'],
   testEnvironment: 'node',

@@ -229,7 +229,7 @@ describe('S0-A1 acceptance — runtime shell auth (fresh DB, real backend, real 
     await session!.waitForText('#session-status', /Oturum aktif/i);
     expect(await session!.attribute('#session-status', 'data-tone')).toBe('success');
     expect(await session!.text('#summary-session')).toBe('Aktif');
-    expect(await session!.text('#activity-trail')).toMatch(/Oturum açıldı/);
+    await session!.waitForText('#activity-trail', /Oturum açıldı/);
     expect(await session!.attribute('[data-step="session"]', 'data-state')).toBe('done');
 
     await session!.maskCredentialInputs();
@@ -242,8 +242,10 @@ describe('S0-A1 acceptance — runtime shell auth (fresh DB, real backend, real 
     expect(await session!.isVisible('#bugun-panel')).toBe(true);
     expect(await session!.isVisible('#ops-panel')).toBe(false);
 
-    // Ops kullanıcısı öğretmen sekmesini göremez (yetkisiz)
-    expect(await session!.isVisible('.tab[data-tab="teacher"]')).toBe(false);
+    // Ops kullanıcısı öğretmen sekmesini görür — K-41: ops ⊃ teacher
+    // yakınsaması, gizlenen kontrol kullanılabilirlik kararıdır (#445);
+    // yetki kararı sunucuda kalır. Panel, sekme tıklanana dek gizli.
+    expect(await session!.isVisible('.tab[data-tab="teacher"]')).toBe(true);
     expect(await session!.isVisible('#teacher-panel')).toBe(false);
 
     await session!.clickElement('.tab[data-tab="ops"]');

@@ -135,6 +135,8 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
     const catalog = new ContextCatalogService(ds, scope);
     const result = await catalog.build({ requestId: 'test', tenantId: tenant, user: authenticated });
     expect(result.activeBranch).toEqual({ name: 'Merkez', code: 'IZMIR' });
+    // #445: kapasite odaklı arayüz için izin anahtarları taze yetkiden döner.
+    expect(result.permissions).toEqual(['user:read']);
     expect(JSON.stringify(result)).not.toContain(branchB);
     const next = request('user:read', 'IZMIR');
     await expect(next.guard.canActivate(next.context)).resolves.toBe(true);

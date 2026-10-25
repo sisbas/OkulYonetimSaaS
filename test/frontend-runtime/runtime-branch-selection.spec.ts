@@ -1,6 +1,10 @@
-import { runtime, response } from './runtime-harness';
+import { runtime, response, ALL_PERMISSION_KEYS } from './runtime-harness';
 
-const catalog = { branches: [{ name: 'Merkez', code: 'ANKARA' }, { name: 'Merkez', code: 'IZMIR' }], activeBranch: null };
+const catalog = {
+  branches: [{ name: 'Merkez', code: 'ANKARA' }, { name: 'Merkez', code: 'IZMIR' }],
+  activeBranch: null,
+  permissions: ALL_PERMISSION_KEYS,
+};
 
 describe('runtime readable branch selection and authenticated forwarding', () => {
   it('loads the authorized catalog after login and shows distinct name/code labels without choosing the first branch', async () => {

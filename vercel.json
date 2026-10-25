@@ -4,14 +4,11 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist/runtime",
-  "redirects": [
+  "rewrites": [
     {
       "source": "/",
-      "destination": "/app/today",
-      "permanent": false
-    }
-  ],
-  "rewrites": [
+      "destination": "/landing/index.html"
+    },
     {
       "source": "/api/v1/:path*",
       "destination": "/api/v1?__vercelApiPath=:path*"
@@ -25,7 +22,7 @@
       "destination": "/:path*"
     },
     {
-      "source": "/app/:asset((?:ui|start)\\.js|style\\.css|mark\\.svg)",
+      "source": "/app/:asset((?:ui|start)\\.js|(?:style|login|dashboard|students)\\.css|mark\\.svg)",
       "destination": "/app/:asset"
     },
     {

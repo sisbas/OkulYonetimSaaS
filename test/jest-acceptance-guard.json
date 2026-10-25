@@ -3,6 +3,7 @@
   "rootDir": "..",
   "testEnvironment": "node",
   "testRegex": "acceptance-evidence\\.guard\\.spec\\.ts$",
+  "testPathIgnorePatterns": ["/node_modules/", "/dist/", "/.worktrees/", "/.scratch/"],
   "transform": { "^.+\\.(t|j)s$": "ts-jest" },
   "maxWorkers": 1
 }
