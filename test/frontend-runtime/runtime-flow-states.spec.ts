@@ -1,17 +1,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { runtime, response } from './runtime-harness';
+import { runtime, response, ALL_PERMISSION_KEYS } from './runtime-harness';
 
 function readShellHtml(): string {
   return fs.readFileSync(path.join(process.cwd(), 'frontend/runtime/index.html'), 'utf8');
 }
 
-const PROBE = 'state, applyCatalog, login, updateContext, apiRequest, renderNavigation, activateTab, loadQueue, loadImpact, loadCandidates, createAssignment, clearAssignment, createLeave, loadOwnLeave, renderError, recoveryHint, requireSession, getBranchId';
+const PROBE = 'state, applyCatalog, login, updateContext, apiRequest, renderNavigation, activateTab, loadQueue, loadImpact, loadCandidates, createAssignment, clearAssignment, createLeave, loadOwnLeave, renderError, requireSession, getBranchId';
 
 describe('runtime core flow state coverage (#400)', () => {
   describe('candidate eligibility separation', () => {
     it('separates course-eligibility from time-availability in candidate card', () => {
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.activeLeaveId = 'leave-1';
       ui.probe.state.activeScheduleEventId = 'event-1';
@@ -39,7 +39,7 @@ describe('runtime core flow state coverage (#400)', () => {
     });
 
     it('eligibility-not-finalized renders blocking state, never empty list', () => {
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.activeLeaveId = 'leave-1';
       ui.probe.state.activeScheduleEventId = 'event-1';
@@ -53,29 +53,34 @@ describe('runtime core flow state coverage (#400)', () => {
     });
   });
 
-  describe('attendance not-ready state', () => {
-    it('attendance panel shows explicit not-ready when lifecycle unavailable', () => {
+  describe('attendance operations state', () => {
+    it('attendance panel shows server-authoritative session management UI', () => {
       const html = readShellHtml();
-      expect(html).toContain('id="attendance-output"');
-      // The attendance panel intro should mention lifecycle unavailability honestly
-      expect(html).toMatch(/hazırlanıyor|yakında|kullanıma açılacak/i);
+      // n3 merge: attendance artık gerçek oturum yönetimi paneli
+      expect(html).toContain('id="attendance-sessions"');
+      expect(html).toContain('id="attendance-detail"');
+      expect(html).toContain('id="attendance-generate-form"');
+      // Sunucu otoriter yoklama zinciri açıklaması
+      expect(html).toMatch(/sunucu otoriter yoklama|oturum açma/i);
     });
   });
 
-  describe('notification planning-only state', () => {
-    it('notification panel shows planning-only state, no send button without backend path', () => {
+  describe('notification operations state', () => {
+    it('notification panel shows server-authoritative operations UI', () => {
       const html = readShellHtml();
-      expect(html).toContain('id="notifications-output"');
-      // Must NOT contain a send/submit button for notifications (no backend path)
+      // n3 merge: notifications artık gerçek backend operasyon paneli
+      expect(html).toContain('id="notifications-list"');
+      expect(html).toContain('id="notification-detail"');
+      // Notification-send butonu yok (dispatch execute üzerinden)
       expect(html).not.toMatch(/<button[^>]*data-action="notification-send"/i);
-      // Planning-only indicator
-      expect(html).toMatch(/planlama|taslak|yakında/i);
+      // Sunucu otoriter gönderim akışı açıklaması
+      expect(html).toMatch(/sunucu otoriter|gönderim kuyruğu/i);
     });
   });
 
   describe('empty states explain why and how to proceed', () => {
     it('daily-ops empty state includes next-action guidance', () => {
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.branchId = 'ANKARA';
       ui.fetch.mockResolvedValueOnce(response({ items: [] }));
@@ -88,7 +93,7 @@ describe('runtime core flow state coverage (#400)', () => {
     });
 
     it('candidates empty state includes next-action guidance', () => {
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.activeLeaveId = 'leave-1';
       ui.probe.state.activeScheduleEventId = 'event-1';
@@ -104,7 +109,7 @@ describe('runtime core flow state coverage (#400)', () => {
   describe('non-JSON server response handled gracefully', () => {
     it('apiRequest handles non-JSON error response without crashing', () => {
       expect.assertions(3);
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       // Mock a non-JSON response (HTML error page)
       ui.fetch.mockResolvedValueOnce({
@@ -113,17 +118,17 @@ describe('runtime core flow state coverage (#400)', () => {
         text: async () => '<html>Bad Gateway</html>',
         headers: { get: () => null },
       });
-      return ui.probe.apiRequest('/daily-operations/today').catch((error: { reasonCode?: string; message?: string }) => {
+      return ui.probe.apiRequest('/daily-operations/today').catch((error: { uiState?: string; message?: string }) => {
         // Should throw a normalized error, not crash on JSON.parse
         expect(error).toBeDefined();
-        expect(error.reasonCode).toBeDefined();
+        expect(error.uiState).toBe('error_retryable');
         expect(error.message).toBeTruthy();
       });
     });
 
     it('apiRequest treats 200 non-JSON as server fault, not empty state', () => {
       expect.assertions(2);
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.fetch.mockResolvedValueOnce({
         ok: true,
@@ -131,9 +136,9 @@ describe('runtime core flow state coverage (#400)', () => {
         text: async () => '<html>unexpected</html>',
         headers: { get: () => null },
       });
-      return ui.probe.apiRequest('/daily-operations/today').catch((error: { reasonCode?: string; message?: string }) => {
+      return ui.probe.apiRequest('/daily-operations/today').catch((error: { uiState?: string; message?: string }) => {
         // A 200 with undecodable body is a server fault, never a fabricated empty state
-        expect(error.reasonCode).toBe('SERVER_ERROR');
+        expect(error.uiState).toBe('error_retryable');
         expect(error.message).not.toMatch(/boş|bulunmuyor/i);
       });
     });
@@ -142,7 +147,7 @@ describe('runtime core flow state coverage (#400)', () => {
   describe('edge: stale data / concurrent edit', () => {
     it('version mismatch error shows operational Turkish, preserves selection', () => {
       expect.assertions(6);
-      const ui = runtime(PROBE);
+      const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
       ui.probe.state.accessToken = 'token';
       ui.probe.state.activeLeaveId = 'leave-1';
       ui.probe.state.activeScheduleEventId = 'event-1';

@@ -22,16 +22,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate GitGuardian configuration
+      - name: Prepare GitGuardian configuration
+        id: prepare_gitguardian
         shell: bash
         env:
-          GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+          RAW_GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
         run: |
           set -euo pipefail
+          GITGUARDIAN_API_KEY="$(printf '%s' "${RAW_GITGUARDIAN_API_KEY:-}" | tr -d '\r\n[:space:]')"
           if [ -z "${GITGUARDIAN_API_KEY:-}" ]; then
             echo "::error title=GitGuardian configuration missing::Repository secret GITGUARDIAN_API_KEY is not configured. Add a GitGuardian API token under Settings > Secrets and variables > Actions before making this check required."
             exit 1
           fi
+          echo "::add-mask::$GITGUARDIAN_API_KEY"
+          echo "gitguardian_api_key=$GITGUARDIAN_API_KEY" >> "$GITHUB_OUTPUT"
           echo "GitGuardian API key is configured."
 
       - name: GitGuardian scan
@@ -41,4 +45,4 @@ jobs:
           GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
           GITHUB_PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+          GITGUARDIAN_API_KEY: ${{ steps.prepare_gitguardian.outputs.gitguardian_api_key }}

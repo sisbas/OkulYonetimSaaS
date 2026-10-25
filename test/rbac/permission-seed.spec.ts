@@ -47,6 +47,10 @@ describe('permission seed', () => {
   it('contains exactly 120 unique permissions', () => {
     expect(permissionCodes).toHaveLength(120);
     expect(permissionSet.size).toBe(120);
+
+  it('contains exactly 123 unique permissions', () => {
+    expect(permissionCodes).toHaveLength(123);
+    expect(permissionSet.size).toBe(123);
   });
 
   it('uses colon-delimited seeded permission keys', () => {
