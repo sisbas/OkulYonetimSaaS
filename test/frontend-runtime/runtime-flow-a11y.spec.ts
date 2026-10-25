@@ -60,6 +60,47 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(app).toContain("'locked_state'");
     expect(app).toContain("'rate_limited'");
     expect(app).toContain("'eligibility_not_ready'");
+
+  it('normalizes Nest error envelopes into canonical UI states without minting a code', () => {
+    expect(app).toContain('function canonicalUiState');
+    expect(app).toContain('SERVER_REASON_UI[serverAuthoredCode(body)]');
+    expect(app).toContain('HTTP_STATUS_UI_STATE[status]');
+    expect(app).not.toMatch(/reasonCode\s*=\s*'/);
+    expect(app).not.toContain('reasonUi');
+    expect(app).not.toContain('uiStateTitles');
+    for (const state of ['forbidden_non_enumerating', 'stale_version', 'conflict_blocking', 'rate_limited']) {
+      expect(app).toContain(state);
+    }
+  });
+
+  it('treats unfinished candidate eligibility as a blocking state', () => {
+    expect(app).toContain('body?.eligibilityFinalized === false');
+    expect(app).toContain("renderRegionState(target, 'eligibility_not_ready')");
+    expect(app).toContain('eligibility_not_ready');
+  });
+
+  it('maps canonical stale, forbidden, conflict and empty states', () => {
+    for (const code of [
+      'missing_permission',
+      'cross_tenant_or_unknown_resource',
+      'LEAVE_VERSION_MISMATCH',
+      'TEACHER_COURSE_ELIGIBILITY_NOT_READY',
+      'SUBSTITUTE_TIME_CONFLICT',
+      'ASSIGNMENT_NOT_FOUND',
+      'offline_or_unavailable',
+    ]) {
+      expect(app).toContain(code);
+    }
+    for (const state of [
+      'forbidden_non_enumerating',
+      'stale_version',
+      'conflict_blocking',
+      'same_scope_empty',
+      'impact_not_ready',
+      'locked_state',
+    ]) {
+      expect(app).toContain(state);
+    }
   });
 
   it('keeps assignment create and clear server-confirmed with refetch', () => {
@@ -125,8 +166,8 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
     expect(html).toContain('Öncelik sırası');
     expect(app).toContain('const statusTones');
     expect(app).toContain('function statusTone');
-    expect(app).toContain('function recoveryHint');
     expect(app).toContain('class="recovery-hint"');
+    expect(app).toContain('function canonicalStateBlock');
     expect(app).toContain('class="card queue-card"');
     expect(app).toContain('class="card-meta"');
     expect(app).toContain('Bu dersin etkisini incele');
@@ -165,6 +206,9 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
   });
 
   it('does not expose internal labels, transport versions or backend jargon in visible runtime copy', () => {
+    // 'Version:' jargonu yalnız string kopyasında yasak; tanımlayıcı bağlamı
+    // (ör. `activeNotificationVersion:`) görünür kopya değildir.
+    const appCopy = app.replace(/\w+Version:/g, '');
     for (const forbidden of [
       'Tenant ID',
       'Branch ID',
@@ -184,17 +228,21 @@ describe('WP-07F runtime P0 flow and accessibility contract', () => {
       'Coverage:',
     ]) {
       expect(html).not.toContain(forbidden);
-      expect(app).not.toContain(forbidden);
+      expect(appCopy).not.toContain(forbidden);
     }
   });
 
   it('maps raw status and reason codes to Turkish operational copy before display', () => {
-    expect(app).toContain('const uiStateTitles');
+    expect(app).toContain('const UI_STATES');
+    expect(app).toContain('const SERVER_REASON_UI');
     expect(app).toContain('const statusLabels');
     expect(app).toContain('function displayStatus');
     expect(app).toContain('const knownReasonCode = Boolean(mapped)');
     expect(app).toContain("const message = error?.message || stateMessages[uiState] || 'İşlem tamamlanamadı.'");
     expect(app).toContain('return statusLabels[key] || statusLabels.unknown');
+
+    expect(app).toContain('escapeHtml(message || copy.message)');
+    expect(app).toContain('return statusLabels[termKey(value)] || statusLabels.unknown');
     expect(app).toContain("unresolved: 'Henüz karşılanmadı'");
     expect(app).toContain("resolved: 'Çözüldü'");
     expect(app).toContain("partially_covered: 'Kısmen karşılandı'");

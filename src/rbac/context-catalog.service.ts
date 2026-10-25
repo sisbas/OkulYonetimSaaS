@@ -18,6 +18,13 @@ export type ContextCatalog = {
    * isimlendirme sızıntısı yasak (madde 3: iç UUID/ETag/jargon dönmez).
    */
   role: { label: string } | null;
+  /**
+   * Aktörün etkili izin anahtarları (#445): kapasite odaklı arayüz için
+   * makine-okur yetkinlik kanalı. İzin anahtarı kullanıcıya sızdırılan
+   * açıklayıcı metin DEĞİLDİR; gizlenen kontrol hiçbir zaman zorlama değildir
+   * — zorlama sunucu @Permissions guard'ındadır (API seam testi #445).
+   */
+  permissions: string[];
   branches: Array<{ name: string; code?: string }>;
   activeBranch: { name: string; code?: string } | null;
 };
@@ -47,6 +54,13 @@ export function roleLabel(role: string | null | undefined): string | null {
   const humanized = role.replace(/[_:.]+/g, ' ').trim();
   if (!humanized) return null;
   return humanized.charAt(0).toLocaleUpperCase('tr') + humanized.slice(1);
+}
+
+/** İzin anahtarları: kopyaları atıp sıralar; null olmayanlar şablonla sınırlıdır. */
+function uniqueSortedPermissions(values: unknown): string[] {
+  return [...new Set(
+    Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string') : [],
+  )].sort();
 }
 
 /**
@@ -96,12 +110,20 @@ export class ContextCatalogService {
     const institutionName = await this.loadInstitutionName(tenantId);
     const activeCode = accessible.find((entry) => entry.branchId === activeBranch?.branchId)?.code;
     const activeRole = persisted ? selectActiveRole(persisted.authority.roles as string[]) : context.activeRole;
+    // İzin anahtarları sunucu-tek-kaynaktan (#339 madde 4): kalıcı oturumda
+    // taze veritabanı yetkisinden, yoksa istek bağlamı claim'lerinden. Kopya
+    // çıkarılıp sıralanır; boş küme fail-closed arayüz üretir (bugün hariç).
+    const rawPermissions = persisted
+      ? persisted.authority.permissions
+      : actor.permissions;
+    const permissions = uniqueSortedPermissions(rawPermissions);
 
     return {
       version: CONTEXT_CATALOG_VERSION,
       institution: { name: institutionName },
       // İç rol kodu (snake_case) YAYIMLANMAZ; yalnız insan-okur etiket (#339 review P2 / F2).
       role: activeRole ? { label: roleLabel(activeRole) as string } : null,
+      permissions,
       branches: accessible.map((entry) => ({ name: entry.name, ...(entry.code ? { code: entry.code } : {}) })),
       activeBranch: activeBranch ? {
         name: activeBranch.branchName,

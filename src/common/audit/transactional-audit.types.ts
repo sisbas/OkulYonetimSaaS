@@ -48,6 +48,7 @@ export const DATA_PROTECTION_AUDIT_EVENT_NAMES = [
   'dataprotection.erasure.requested',
   'dataprotection.erasure.completed',
   'dataprotection.consent.revoked',
+  'dataprotection.consent.read',
 ] as const;
 
 // Öğrenci / veli yaşam döngüsü olayları. `actorRequired` ile işlemi yapan
@@ -162,7 +163,14 @@ export type DataProtectionAuditChangedField =
   | 'recordCount'
   | 'redactionStrategy'
   | 'legalBasis'
-  | 'erasureScope';
+  | 'erasureScope'
+  // Consent revoke (PR #414 K-19): gerçekte değişen kolonlar, GERÇEK kolon
+  // adlarıyla — `status`, `revoked_at`, `updated_at` (UPDATE'te `now()` ile
+  // de değişir), `version`. Uydurma alan yok.
+  | 'status'
+  | 'revoked_at'
+  | 'updated_at'
+  | 'version';
 export type StudentAuditChangedField =
   | 'status'
   | 'enrollmentStatus'

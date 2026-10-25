@@ -55,6 +55,9 @@ function createStubDataSource(): DataSource {
     getRepository: jest.fn().mockReturnValue({}),
     getTreeRepository: jest.fn().mockReturnValue({}),
     getMongoRepository: jest.fn().mockReturnValue({}),
+    // Institution lookup used by the context catalog; tenant-scoped stub never
+    // returns data beyond the resolved tenant.
+    query: jest.fn().mockResolvedValue([{ name: 'Stub Okul' }]),
   } as unknown as DataSource;
 }
 
@@ -335,5 +338,24 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
 
     expect(body.statusCode).toBe(404);
     expect(JSON.stringify(body)).toContain('Cannot GET /api/v1/nonexistent/deep/route');
+  });
+
+  it('returns the actor permission keys from the session context for capability-driven navigation (#445)', async () => {
+    expect(accessToken).toBeDefined();
+    const body = assertNestJson(
+      await requestJson('/api/v1/context', {
+        headers: { authorization: `Bearer ${accessToken as string}` },
+      }),
+      200,
+    );
+
+    expect(body.version).toBe('context-catalog:v1');
+    expect(Array.isArray(body.permissions)).toBe(true);
+    expect(body.permissions).toEqual(
+      expect.arrayContaining(['leave:read', 'leave:own:read', 'leave:create']),
+    );
+    // Rol yalnızca insan-okur etiket taşır; iç rol kodu yayımlanmaz (#339).
+    expect(body.role).toEqual({ label: expect.any(String) });
+    expect(Object.keys(body.role as NestJsonBody)).toEqual(['label']);
   });
 });

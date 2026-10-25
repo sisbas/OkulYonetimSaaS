@@ -202,7 +202,7 @@ function datePartsInTimeZone(date: Date, timeZone: string): { year: string; mont
   return { year: value.year, month: value.month, day: value.day };
 }
 
-function dateStringInTimeZone(date: Date, timeZone: string): string {
+export function dateStringInTimeZone(date: Date, timeZone: string): string {
   const { year, month, day } = datePartsInTimeZone(date, timeZone);
   return `${year}-${month}-${day}`;
 }

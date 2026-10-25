@@ -1,0 +1,130 @@
+import { Injectable } from '@nestjs/common';
+import { EntityManager } from 'typeorm';
+import { RequestContext } from '../common/context/request-context';
+
+import {
+  NotificationOutboxRepository,
+  NotificationDraftRow,
+} from './notification-outbox.repository';
+
+/**
+ * #266 N1c — Notification draft service (operatör onay kuyruğu).
+ *
+ * Kilitli devamsızlıktan üretilen bildirim taslakları için
+ * salt-okuma + onay/iptal akışı sağlar.
+ *
+ * Kurallar (fail-closed):
+ * - Yalnız `pending` ve `blocked_consent` durumundaki satırlar
+ *   taslak olarak görünür.
+ * - Tenant + branch predicate zorunludur (cross-tenant izolasyonu).
+ * - Snapshot immutable'dır; bir kez yazıldıktan sonra değişmez.
+ * - Onay: `pending` veya `blocked_consent` durumundan (consent yeniden
+ *   verildikten sonra çıkış). İptal (`close`): yalnız `pending` durumundan.
+ * - Optimistic concurrency: `expectedVersion` ile korunur.
+ */
+@Injectable()
+export class NotificationDraftService {
+  constructor(private readonly outbox: NotificationOutboxRepository) {}
+
+  /**
+   * Draft listesi — operatör onay kuyruğu.
+   *
+   * Tenant + branch predicate zorunludur. Snapshot ile birlikte
+   * döner (PII taşımaz).
+   */
+  async listDrafts(
+    entityManager: EntityManager,
+    context: RequestContext,
+    limit: number,
+    offset: number = 0,
+  ): Promise<NotificationDraftRow[]> {
+    return this.outbox.findDrafts(entityManager, context, limit, offset);
+  }
+
+  /**
+   * Tek draft detayı.
+   *
+   * Tenant + branch predicate zorunludur. Snapshot ile birlikte
+   * döner (PII taşımaz).
+   */
+  async getDraft(
+    entityManager: EntityManager,
+    context: RequestContext,
+    id: string,
+  ): Promise<NotificationDraftRow | null> {
+    return this.outbox.findDraftById(entityManager, context, id);
+  }
+
+  /**
+   * Draft onayı — `pending` → `approved`.
+   *
+   * Optimistic concurrency: `expectedVersion` ile korunur.
+   * Stale version'da hata fırlatır.
+   */
+  async approveDraft(
+    entityManager: EntityManager,
+    input: Readonly<{
+      tenantId: string;
+      branchId: string;
+      id: string;
+      expectedVersion: number;
+    }>,
+  ): Promise<{ id: string; status: string; version: number }> {
+    return this.outbox.transitionDraft(entityManager, {
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      id: input.id,
+      targetStatus: 'approved',
+      expectedVersion: input.expectedVersion,
+    });
+  }
+
+  /**
+   * Draft iptali — `pending` → `closed`.
+   *
+   * Optimistic concurrency: `expectedVersion` ile korunur.
+   * Stale version'da hata fırlatır.
+   */
+  async closeDraft(
+    entityManager: EntityManager,
+    input: Readonly<{
+      tenantId: string;
+      branchId: string;
+      id: string;
+      expectedVersion: number;
+    }>,
+  ): Promise<{ id: string; status: string; version: number }> {
+    return this.outbox.transitionDraft(entityManager, {
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      id: input.id,
+      targetStatus: 'closed',
+      expectedVersion: input.expectedVersion,
+    });
+  }
+
+  /**
+   * Session düzeyinde toplu draft onayı (P1B-FINAL Stage 5).
+   *
+   * Aynı attendance session'ının tüm bekleyen/bloke draftlarını tek
+   * işlemde `approved`'a geçirir (all-or-nothing; stale version'da
+   * ConflictException → transaction geri alınır).
+   */
+  async bulkApproveSession(
+    entityManager: EntityManager,
+    input: Readonly<{
+      tenantId: string;
+      branchId: string;
+      sessionId: string;
+      expectedVersions: ReadonlyArray<{ id: string; version: number }>;
+    }>,
+  ): Promise<Array<{ id: string; status: string; version: number }>> {
+    return this.outbox.transitionDraftsForSession(entityManager, {
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      sessionId: input.sessionId,
+      targetStatus: 'approved',
+      expectedVersions: input.expectedVersions,
+    });
+  }
+}
