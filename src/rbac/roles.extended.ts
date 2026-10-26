@@ -110,6 +110,9 @@ export const OKUL01_PERMISSION_MATRIX: readonly RolePermissionMapping[] = [
   { role: 'parent', permission: 'leave:approve', effect: 'deny', auditRequired: true, denyState: 'forbidden_403', kvkkProtected: false },
   { role: 'parent', permission: 'leave:reject', effect: 'deny', auditRequired: true, denyState: 'forbidden_403', kvkkProtected: false },
   { role: 'parent', permission: 'role:permission:read', effect: 'deny', auditRequired: false, denyState: 'forbidden_403', kvkkProtected: false },
+  // #457: stratejik hedefler okul içi plandır; veli yüzeyi HİÇ göremez.
+  { role: 'parent', permission: 'strategic_goal:read', effect: 'deny', auditRequired: true, denyState: 'forbidden_403', kvkkProtected: false },
+  { role: 'parent', permission: 'strategic_goal:manage', effect: 'deny', auditRequired: true, denyState: 'forbidden_403', kvkkProtected: false },
 
   // --- Öğretmen Yardımcı (teacher_assistant) ---
   { role: 'teacher_assistant', permission: 'dashboard:teacher_own_summary:read', effect: 'allow', auditRequired: false, denyState: 'none', kvkkProtected: false },

@@ -138,4 +138,48 @@ describe('Phase 1 permission catalog v1', () => {
       resource: 'leave_request',
     })).toBeUndefined();
   });
+
+  it('lets the administrator manage strategic goals with the dedicated key (#457)', () => {
+    expect(findPermissionCatalogEntry({
+      role: 'tenant_admin',
+      route: '/strategic-goals',
+      action: 'manage',
+      resource: 'strategic_goal',
+    })).toMatchObject({
+      permission: 'strategic_goal:manage',
+      effect: 'allow',
+      deny_state: 'none',
+    });
+  });
+
+  it('lets the teacher only read strategic goals (#457)', () => {
+    expect(findPermissionCatalogEntry({
+      role: 'teacher',
+      route: '/strategic-goals',
+      action: 'read',
+      resource: 'strategic_goal',
+    })).toMatchObject({
+      permission: 'strategic_goal:read',
+      effect: 'allow',
+      deny_state: 'none',
+    });
+    // Okul planını öğretmen değiştiremez.
+    expect(findPermissionCatalogEntry({
+      role: 'teacher',
+      route: '/strategic-goals',
+      action: 'manage',
+      resource: 'strategic_goal',
+    })).toBeUndefined();
+  });
+
+  it('uses exactly the two strategic goal permission keys across the catalog (#457)', () => {
+    const strategic = PHASE_1_PERMISSION_CATALOG.filter((entry) =>
+      entry.permission.startsWith('strategic_goal'),
+    );
+    expect(new Set(strategic.map((entry) => entry.permission))).toEqual(
+      new Set(['strategic_goal:manage', 'strategic_goal:read']),
+    );
+    // Veli Faz-1 katalog rolü değildir; veli anahtarları seed testinde ayrıca
+    // reddedilir (permission-seed.spec.ts).
+  });
 });
