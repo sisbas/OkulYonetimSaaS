@@ -139,7 +139,7 @@ npm run db:seed:admin
 
 Env değişkenleri: `SEED_ADMIN_EMAIL` (zorunlu), `SEED_ADMIN_PASSWORD` (zorunlu, ≥12 karakter), `SEED_ADMIN_FULL_NAME` (varsayılan: `Kurum Yöneticisi`), `SEED_TENANT_SLUG` (varsayılan: `system-seed`, `db:seed:permissions` ile aynı).
 
-Seed fail-closed'dur: tenant/rol yoksa, kullanıcılar zaten varsa veya mevcut kullanıcı giriş- yapılamıyor (pasif/üye değil/rolü yok) ise reddeder; aynı e-posta ile tekrar çalıştırma idempotent'tir (`already-exists`). Yalnız `db:seed:permissions` sonrası çalıştırın.
+Seed fail-closed'dur: tenant/rol yoksa, kullanıcılar zaten varsa veya mevcut kullanıcı giriş yapamıyor (pasif/üye değil/rolü yok) ise reddeder; aynı e-posta ile tekrar çalıştırma idempotent'tir (`already-exists`). Soft-delete edilmiş hedef kullanıcı veya üyelik "yok" sayılır ve seed onu geri yükler (`repaired`); soft-delete edilmiş kullanıcıda parola yenilenir ve `token_version` artırılır. Yalnız `db:seed:permissions` sonrası çalıştırın.
 
 ## Quality gate
 
