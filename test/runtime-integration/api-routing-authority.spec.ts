@@ -50,7 +50,7 @@ function createStubDataSource(): DataSource {
     initialize: jest.fn().mockResolvedValue(undefined),
     destroy: jest.fn().mockResolvedValue(undefined),
     manager: {},
-    query: jest.fn().mockResolvedValue([]),
+    query: jest.fn().mockResolvedValue([{ name: 'Stub Okul' }]),
     entityMetadatas: [],
     options: { type: 'postgres' },
     getRepository: jest.fn().mockReturnValue({}),
@@ -58,7 +58,6 @@ function createStubDataSource(): DataSource {
     getMongoRepository: jest.fn().mockReturnValue({}),
     // Institution lookup used by the context catalog; tenant-scoped stub never
     // returns data beyond the resolved tenant.
-    query: jest.fn().mockResolvedValue([{ name: 'Stub Okul' }]),
   } as unknown as DataSource;
 }
 
