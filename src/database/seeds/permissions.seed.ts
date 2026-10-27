@@ -66,7 +66,6 @@ export const PERMISSION_SEED = [
   { code: 'role:permission:update', description: 'role:permission:update' },
   { code: 'role:audit:read', description: 'role:audit:read' },
   { code: 'audit_log:read', description: 'audit_log:read' },
-  { code: 'audit_log:operations:read', description: 'audit_log:operations:read' },
   // #259: audit retention kırpma koşusu (yıkıcı işlem; yalnız tenant_admin).
   { code: 'audit_log:retention:run', description: 'audit_log:retention:run' },
   { code: 'audit_log:security:read', description: 'audit_log:security:read' },
@@ -126,6 +125,9 @@ export const PERMISSION_SEED = [
   { code: 'tenant:member:read', description: 'tenant:member:read' },
   { code: 'tenant:member:update', description: 'tenant:member:update' },
   { code: 'tenant:billing:read', description: 'tenant:billing:read' },
+  // #457: stratejik hedefler — yönetici yazar, öğretmen okur; veli hiç göremez.
+  { code: 'strategic_goal:manage', description: 'strategic_goal:manage' },
+  { code: 'strategic_goal:read', description: 'strategic_goal:read' },
 ] as const;
 
 export const ROLE_PERMISSION_SEED = {
@@ -142,7 +144,6 @@ export const ROLE_PERMISSION_SEED = {
     'attendance:report:read',
     'attendance:submit',
     'attendance:update',
-    'audit_log:operations:read',
     'consent:read',
     'consent:revoke',
     'course:archive',
@@ -237,6 +238,8 @@ export const ROLE_PERMISSION_SEED = {
     'course:read',
     'room:read',
     'time_slot:read',
+    // #457: öğretmen okur, yazamaz — okulun planı değiştirilemez.
+    'strategic_goal:read',
   ],
   // --- OKUL-01 yeni rolleri (permission matrix'inden türetildi) ---
   // Rol -> izin eşlemesi, src/rbac/roles.extended.ts OKUL01_PERMISSION_MATRIX

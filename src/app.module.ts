@@ -29,6 +29,8 @@ import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ScheduleModule } from './schedules/schedule.module';
 import { ParentsModule } from './parents/parents.module';
+import { StrategicGoalsModule } from './strategic-goals/strategic-goals.module';
+
 import { KvkkModule } from './kvkk/kvkk.module';
 
 // #261 quarantine: eokul-sync / reports are UNSUPPORTED paths until their
@@ -63,6 +65,8 @@ if (process.env.ENABLE_REPORTS === 'true') {
     // #266 N1a: encrypted parent contact / contact point /
     // student-link foundation (KVKK encrypted domain storage).
     ParentsModule,
+    // #457: stratejik hedefler (school strategic goals) yüzeyi.
+    StrategicGoalsModule,
     // #259/#352/#361 regresyon düzeltmesi: AuditModule yalnız `import` ediliyordu
     // ama `imports` dizisinde YER ALMIYORDU → `/api/v1/audit/*` route'ları
     // kayıtsız kalıyor ve `AuditQueryService` constructor'ındaki anahtar halkası

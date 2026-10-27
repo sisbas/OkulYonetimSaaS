@@ -6,14 +6,14 @@ on:
       - main
       - develop
   pull_request:
+    # Base branch filtresi yok: stacked PR'lar (base main/develop değil) da
+    # test edilmeden merge edilememeli. Aksi halde #469/#470 gibi PR'larda
+    # `npm test` hiç koşmuyor ve statik kontroller kanıtsız kalıyor.
     types:
       - opened
       - synchronize
       - reopened
       - ready_for_review
-    branches:
-      - main
-      - develop
   workflow_dispatch:
 
 permissions:
