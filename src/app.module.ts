@@ -30,6 +30,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ScheduleModule } from './schedules/schedule.module';
 import { ParentsModule } from './parents/parents.module';
 import { StrategicGoalsModule } from './strategic-goals/strategic-goals.module';
+import { isStrategicGoalsEnabled } from './common/config/feature-flags';
 
 import { KvkkModule } from './kvkk/kvkk.module';
 
@@ -42,6 +43,22 @@ if (process.env.ENABLE_EOKUL_SYNC === 'true') {
 }
 if (process.env.ENABLE_REPORTS === 'true') {
   QUARANTINED_MODULES.push(ReportsModule);
+}
+
+/**
+ * #482 — Deploy seviyesinde AÇILAN (feature) modüller.
+ *
+ * `STRATEGIC_GOALS_ENABLED=true` değilse stratejik hedefler modülü hiç
+ * kaydedilmez. Route'un router'da bulunmaması, kapalıyken `/strategic-goals*`
+ * isteklerinin — kimlik doğrulamasından ÖNCE — 404 dönmesini sağlar; böylece
+ * yüzeyin varlığı sızmaz (403/401 ayrımı yüzeyi ele vermez).
+ */
+export function buildFeatureModules(env: NodeJS.ProcessEnv = process.env): any[] {
+  const modules: any[] = [];
+  if (isStrategicGoalsEnabled(env)) {
+    modules.push(StrategicGoalsModule);
+  }
+  return modules;
 }
 
 @Module({
@@ -65,8 +82,9 @@ if (process.env.ENABLE_REPORTS === 'true') {
     // #266 N1a: encrypted parent contact / contact point /
     // student-link foundation (KVKK encrypted domain storage).
     ParentsModule,
-    // #457: stratejik hedefler (school strategic goals) yüzeyi.
-    StrategicGoalsModule,
+    // #457: stratejik hedefler (school strategic goals) yüzeyi. #482: yalnız
+    // `STRATEGIC_GOALS_ENABLED=true` iken kaydedilir (varsayılan kapalı → 404).
+    ...buildFeatureModules(),
     // #259/#352/#361 regresyon düzeltmesi: AuditModule yalnız `import` ediliyordu
     // ama `imports` dizisinde YER ALMIYORDU → `/api/v1/audit/*` route'ları
     // kayıtsız kalıyor ve `AuditQueryService` constructor'ındaki anahtar halkası

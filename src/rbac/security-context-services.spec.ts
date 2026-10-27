@@ -270,6 +270,64 @@ describe('ContextCatalogService (versioned, human-readable catalog)', () => {
     expect(roleLabel('okul_muduru')).toBe('Okul muduru');
     expect(roleLabel(null)).toBeNull();
   });
+
+  describe('capabilities contract (#482)', () => {
+    const flag = 'STRATEGIC_GOALS_ENABLED';
+    let previous: string | undefined;
+
+    beforeEach(() => {
+      previous = process.env[flag];
+      delete process.env[flag];
+    });
+
+    afterEach(() => {
+      if (previous === undefined) delete process.env[flag];
+      else process.env[flag] = previous;
+    });
+
+    it('publishes an empty capability list while the flag is off (default)', async () => {
+      const { service } = catalog({
+        tenantName: 'Atatürk Ortaokulu',
+        branches: [{ branchId: BRANCH_A, name: 'Merkez Kampüs' }],
+        active: { branchId: BRANCH_A, branchName: 'Merkez Kampüs', source: 'membership_default' },
+      });
+      const response = await service.build(context());
+      expect(response.capabilities).toEqual([]);
+      // Sürüm bump'ı sözleşme değişikliğini tüketiciye bildirir (v1 → v2).
+      expect(response.version).toBe('context-catalog:v2');
+    });
+
+    it('publishes the strategic_goals capability when enabled, changing nothing else', async () => {
+      process.env[flag] = 'true';
+      const offer = {
+        tenantName: 'Atatürk Ortaokulu',
+        branches: [{ branchId: BRANCH_A, name: 'Merkez Kampüs' }],
+        active: { branchId: BRANCH_A, branchName: 'Merkez Kampüs', source: 'membership_default' },
+      };
+      const enabled = await catalog(offer).service.build(context());
+      delete process.env[flag];
+      const disabled = await catalog(offer).service.build(context());
+
+      expect(enabled.capabilities).toEqual(['strategic_goals']);
+      expect(enabled.permissions).toEqual(disabled.permissions);
+      expect(enabled.institution).toEqual(disabled.institution);
+      expect(enabled.branches).toEqual(disabled.branches);
+      expect(enabled.activeBranch).toEqual(disabled.activeBranch);
+      expect(enabled.role).toEqual(disabled.role);
+      // Capability bir izin kodu değildir: strategic_goal:* anahtarı icat edilmez.
+      expect(JSON.stringify(enabled.capabilities)).not.toContain('strategic_goal:');
+    });
+
+    it('captures the flag at boot, matching the route-registration snapshot', async () => {
+      // Servis, route kaydıyla aynı boot anlık görüntüsünü kullanır. Kurulumdan
+      // sonra env değişse bile capability değişmez; aksi hâlde "capability var,
+      // route yok" gibi tutarsız bir sinyal üretilebilirdi.
+      const service = catalog({ tenantName: 'Atatürk Ortaokulu', branches: [], active: null }).service;
+      process.env[flag] = 'true';
+      const response = await service.build(context());
+      expect(response.capabilities).toEqual([]);
+    });
+  });
 });
 
 
