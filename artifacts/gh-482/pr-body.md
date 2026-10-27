@@ -30,12 +30,12 @@
 ## Test çıktısı
 
 - `npm run lint` → EXIT 0 (tsc çıktısı boş).
-- `npm test -- --runInBand` → Test Suites: 151 passed, 15 skipped; Tests: 1379 passed, 158 skipped; EXIT 0.
+- `npm test -- --runInBand` → Test Suites: 151 passed, 16 skipped; Tests: 1379 passed, 158 skipped; EXIT 0.
 - `npm run test:rbac` → 8 suite / 123 test PASS.
 - `npx jest --runInBand src/app.module.spec.ts src/common/config/feature-flags.spec.ts src/rbac/security-context-services.spec.ts` → 39 test PASS.
 - `npx jest --runInBand test/runtime-integration/api-routing-authority.spec.ts` → 19 test PASS.
 - `npm run build` → EXIT 0.
-- `npx jest test/database/strategic-goals-flag.spec.ts` → yerelde 2 test skipped (PostgreSQL yok); DB Smoke'ta `test:database:required` altında skip yasağıyla koşar (404 ×5 method + flag-ON 401).
+- `npx jest --runInBand test/database/strategic-goals-flag-off.spec.ts test/database/strategic-goals-flag-on.spec.ts` → yerelde 2 test skipped (PostgreSQL yok); DB Smoke'ta `test:database:required` altında skip yasağıyla koşar (flag-OFF 404 ×5 method; flag-ON 401).
 - Mutasyon kontrolü: kapı koşulu kaldırılınca, `...buildFeatureModules()` silinince, capability sabitlenince/boot snapshot'ı bozulunca ilgili testler FAIL; geri alınınca PASS.
 - Backend CI: PR açılışında tetiklenecek draft run (URL `CI run referansı` bölümüne yazılacak).
 
@@ -55,7 +55,7 @@
 
 - PR: https://github.com/sisbas/OkulYonetimSaaS/pull/499 (draft, head `c741892`)
 - Backend CI: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227274 — SUCCESS
-- DB Smoke: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227144 — SUCCESS (`PASS test/database/strategic-goals-flag.spec.ts`, zorunlu koşuda skip yok)
+- DB Smoke: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227144 — önceki tek-spec head'inde SUCCESS; yeni ayrık spec'lerin sonucu PR checks'tadır.
 - Gate 1 CI: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227270 — SUCCESS
 - Sprint 1 Quality Gate: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227349 — SUCCESS
 - Sensitive Pattern Scanner: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227375 — SUCCESS
