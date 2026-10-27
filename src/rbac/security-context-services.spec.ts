@@ -317,6 +317,16 @@ describe('ContextCatalogService (versioned, human-readable catalog)', () => {
       // Capability bir izin kodu değildir: strategic_goal:* anahtarı icat edilmez.
       expect(JSON.stringify(enabled.capabilities)).not.toContain('strategic_goal:');
     });
+
+    it('captures the flag at boot, matching the route-registration snapshot', async () => {
+      // Servis, route kaydıyla aynı boot anlık görüntüsünü kullanır. Kurulumdan
+      // sonra env değişse bile capability değişmez; aksi hâlde "capability var,
+      // route yok" gibi tutarsız bir sinyal üretilebilirdi.
+      const service = catalog({ tenantName: 'Atatürk Ortaokulu', branches: [], active: null }).service;
+      process.env[flag] = 'true';
+      const response = await service.build(context());
+      expect(response.capabilities).toEqual([]);
+    });
   });
 });
 

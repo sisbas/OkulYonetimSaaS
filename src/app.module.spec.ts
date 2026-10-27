@@ -97,6 +97,7 @@ describe('AppModule wiring contract (#259/#352 review P1)', () => {
     // #482: flag kapalıyken route hiç kaydedilmemeli; doğrudan `imports`
     // dizisine eklemek kapıyı sessizce kaldırırdı.
     expect(featureGatedSymbols(source)).toContain('StrategicGoalsModule');
+    expect(importsArrayBody(source)).toContain('...buildFeatureModules()');
     expect(importsArrayBody(source)).not.toMatch(/^\s*StrategicGoalsModule,\s*$/m);
     expect(quarantinedSymbols(source)).not.toContain('StrategicGoalsModule');
   });

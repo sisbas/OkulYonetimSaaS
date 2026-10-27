@@ -23,20 +23,20 @@
 - [x] `STRATEGIC_GOALS_ENABLED` okunur; tanımsız, `false`, `1`, `TRUE`, boşluklu değerlerde kapalı davranır (7 vaka).
 - [x] Flag açıkken `/context.capabilities` içinde `strategic_goals` bulunur; kapalıyken boş dizi döner ve diğer alanlar değişmez.
 - [x] `CONTEXT_CATALOG_VERSION` `context-catalog:v2` oldu; sözleşme testleri yeni alanı doğruluyor.
-- [x] Flag kapalıyken `POST/GET/PATCH/DELETE /strategic-goals*` 404 döner (DB'siz HTTP spec'i PASS; gerçek AppModule + PostgreSQL spec'i CI DB Smoke'ta koşar).
-- [x] Flag açıkken #457 davranışı korunur; capability izin kodu değildir, yeni `strategic_goal:*` anahtarı yayımlanmaz.
+- [x] Flag kapalıyken `POST/GET/PATCH/DELETE /strategic-goals*` 404 döner (gerçek `AppModule` + PostgreSQL spec'i; CI DB Smoke'ta skip'siz koşar).
+- [x] Flag açıkken route'lar kayıtlıdır (aynı spec: 401, 404 değil) ve #457 servis davranışı korunur; capability izin kodu değildir, yeni `strategic_goal:*` anahtarı yayımlanmaz.
 - [x] Birim testleri ve tam Jest suite'i yerelde yeşil; `npm run lint` ve `npm run build` EXIT 0.
 
 ## Test çıktısı
 
 - `npm run lint` → EXIT 0 (tsc çıktısı boş).
-- `npm test -- --runInBand` → Test Suites: 152 passed, 15 skipped; Tests: 1379 passed, 157 skipped; EXIT 0.
+- `npm test -- --runInBand` → Test Suites: 151 passed, 15 skipped; Tests: 1379 passed, 158 skipped; EXIT 0.
 - `npm run test:rbac` → 8 suite / 123 test PASS.
-- `npx jest src/app.module.spec.ts src/common/config/feature-flags.spec.ts src/rbac/security-context-services.spec.ts src/strategic-goals/strategic-goals-feature-gate.spec.ts` → PASS.
-- `npx jest test/runtime-integration/api-routing-authority.spec.ts` → 19 test PASS.
+- `npx jest --runInBand src/app.module.spec.ts src/common/config/feature-flags.spec.ts src/rbac/security-context-services.spec.ts` → 39 test PASS.
+- `npx jest --runInBand test/runtime-integration/api-routing-authority.spec.ts` → 19 test PASS.
 - `npm run build` → EXIT 0.
-- `npx jest test/database/strategic-goals-flag.spec.ts` → yerelde 1 suite skipped (PostgreSQL yok); DB Smoke'ta `test:database:required` altında skip yasağıyla koşacak.
-- Mutasyon kontrolü: kapı koşulu kaldırılınca ve `capabilities` sabitlenince ilgili testler FAIL; geri alınınca PASS.
+- `npx jest test/database/strategic-goals-flag.spec.ts` → yerelde 2 test skipped (PostgreSQL yok); DB Smoke'ta `test:database:required` altında skip yasağıyla koşar (404 ×5 method + flag-ON 401).
+- Mutasyon kontrolü: kapı koşulu kaldırılınca, `...buildFeatureModules()` silinince, capability sabitlenince/boot snapshot'ı bozulunca ilgili testler FAIL; geri alınınca PASS.
 - Backend CI: PR açılışında tetiklenecek draft run (URL `CI run referansı` bölümüne yazılacak).
 
 ## KVKK/audit etkisi

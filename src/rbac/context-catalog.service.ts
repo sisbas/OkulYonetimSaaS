@@ -85,11 +85,24 @@ function uniqueSortedPermissions(values: unknown): string[] {
  */
 @Injectable()
 export class ContextCatalogService {
+  /**
+   * #482: capability kümesi servis örneği oluşturulurken (boot) sabitlenir.
+   *
+   * Route kaydı `AppModule` dekoratör değerlendirmesinde, yani boot'ta
+   * belirlenir. Capability'yi her istekte env'den yeniden okumak, process
+   * içinde env değişirse "capability var ama route yok" gibi tutarsız bir
+   * sinyal üretebilirdi; iki kapı da aynı boot anlık görüntüsünü kullanır.
+   * Deploy anahtarı değişince restart gerekir (ADR 0003 D2).
+   */
+  private readonly capabilities: string[];
+
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly branchScope: BranchScopeService,
-  ) {}
+  ) {
+    this.capabilities = contextCapabilities();
+  }
 
   async build(
     context: RequestContext,
@@ -137,7 +150,7 @@ export class ContextCatalogService {
       // İç rol kodu (snake_case) YAYIMLANMAZ; yalnız insan-okur etiket (#339 review P2 / F2).
       role: activeRole ? { label: roleLabel(activeRole) as string } : null,
       permissions,
-      capabilities: contextCapabilities(),
+      capabilities: [...this.capabilities],
       branches: accessible.map((entry) => ({ name: entry.name, ...(entry.code ? { code: entry.code } : {}) })),
       activeBranch: activeBranch ? {
         name: activeBranch.branchName,
