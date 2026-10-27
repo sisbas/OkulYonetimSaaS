@@ -53,8 +53,16 @@
 
 ## CI run referansı
 
-- PR Draft açılacak; Backend CI / DB Smoke / Gate 1 / Sprint 1 / Governance run URL'leri ilk turdan sonra bu bölüme eklenecek, ardından ready_for_review yapılacak.
-- Draft aşamasında governance doğrulaması çalışmaz; merge için required kontrollerin terminal PASS sonucu zorunludur.
+- PR: https://github.com/sisbas/OkulYonetimSaaS/pull/499 (draft, head `c741892`)
+- Backend CI: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227274 — SUCCESS
+- DB Smoke: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227144 — SUCCESS (`PASS test/database/strategic-goals-flag.spec.ts`, zorunlu koşuda skip yok)
+- Gate 1 CI: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227270 — SUCCESS
+- Sprint 1 Quality Gate: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227349 — SUCCESS
+- Sensitive Pattern Scanner: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227375 — SUCCESS
+- GitGuardian scan: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227654 — SUCCESS
+- PR Governance: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227413 — SUCCESS
+- P0 browser E2E: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/40490227145 — bu gövde yazıldığında devam ediyordu; terminal sonuç PR checks'tadır.
+- Not: PR Draft'tır. Merge/ready_for_review, terminal required-check sonuçları ve bağımsız review sonrası insan kararıdır.
 
 ## Issue reference
 

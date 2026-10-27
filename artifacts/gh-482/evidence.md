@@ -1,9 +1,11 @@
 # #482 — Stratejik hedefler deploy flag'i + `/context` capability
 
-**Durum:** IMPLEMENTING → VERIFYING (yerel); MERGE_ELIGIBLE değil
+**Durum:** VERIFYING — draft PR açıldı; required CI ilk turu büyük ölçüde yeşil, bağımsız review yok
 **Repo:** sisbas/OkulYonetimSaaS
 **Base SHA:** `a80d4196f5ca13658e58862cb8692466f6dbc9e8` (origin/main, 2026-10-27 fetch)
-**Branch:** `cline/63fnt985` (tek yazar; commit/push yapılmadı — kullanıcı istemedi)
+**Branch:** `cline/63fnt985`
+**PR:** https://github.com/sisbas/OkulYonetimSaaS/pull/499 (draft, base `main`)
+**İlk head SHA:** `c74189217e9a07d1d9b84a5892e04b9b66fdace6`
 **Issue:** #482 (bağımlılık #467 main'de birleşmiş)
 **İlgili kararlar:** ADR 0003 D2/D3; CONTEXT K-43/K-44/K-45
 
@@ -47,16 +49,26 @@
 - `buildFeatureModules` koşulunu kaldır → `evaluates the feature gate…` FAIL (2 failed) → geri alındı → PASS.
 - `capabilities: contextCapabilities()` yerine `[]` → iki capability testi FAIL → geri alındı → PASS.
 
-## Push/PR hazırlığı (yetki bekliyor)
+## PR ve CI kaydı
 
-- PR gövdesi: `artifacts/gh-482/pr-body.md` (8 zorunlu governance bölümü dolu; CI URL'leri draft run sonrası eklenecek).
-- Plan: `git add` → commit (`feat(strategic-goals): gate surface behind deploy flag (Refs #482)`) → `git push -u origin cline/63fnt985` → **draft** PR (base `main`) → CI terminal sonuçları → gövdeye run URL'leri → ready_for_review.
-- Required kontroller (ruleset `main-merge-governance`): Backend CI, DB Smoke, Sprint 1 Quality Gate, Gate 1 CI, Sensitive Pattern Scanner, PR Governance ×4, GitGuardian scan.
+- PR **#499** (draft) — https://github.com/sisbas/OkulYonetimSaaS/pull/499; base `main`, head `cline/63fnt985`.
+- İlk head `c741892` required kontrolleri:
+  - Backend CI `40490227274` **SUCCESS**
+  - DB Smoke `40490227144` **SUCCESS** → `PASS test/database/strategic-goals-flag.spec.ts` (zorunlu koşu, skip yok; gerçek AppModule + PostgreSQL 404 kanıtı)
+  - Gate 1 CI `40490227270` **SUCCESS**
+  - Sprint 1 Quality Gate `40490227349` **SUCCESS**
+  - Sensitive Pattern Scanner `40490227375` **SUCCESS**
+  - GitGuardian scan `40490227654` **SUCCESS**
+  - PR Governance `40490227413` **SUCCESS**
+  - P0 browser E2E `40490227145` → bu kayıt yazılırken devam ediyordu; terminal sonuç PR checks'tadır.
+- Required kontroller (ruleset `main-merge-governance`): Backend CI, DB Smoke, Sprint 1, Gate 1, Sensitive Scanner, PR Governance ×4, GitGuardian. `strict=false`, approval=0, thread resolution zorunlu.
+- Draft'ta governance validasyonları `ready_for_review`'a ertelenir; merge/ready geçişi insan kararıdır.
 - İnsan kapısı: merge ve üretim yayını bu PR ile açılmaz; bağımsız reviewer atanması gerekir.
 
 ## Açık sınırlılıklar / çelişkiler
 
-1. **Yerel PostgreSQL yok** (psql/pg_ctl yok, 5432 kapalı, DATABASE_URL yok): DB'ye bağlı 15 suite skip; #482'nin gerçek HTTP 404 kanıtı CI DB Smoke'ta koşacak. Bu bir ürün hatası değil, ortam önkoşuludur.
+1. **Yerel PostgreSQL yok** (psql/pg_ctl yok, 5432 kapalı, DATABASE_URL yok): DB'ye bağlı 15 suite yerelde skip; gerçek AppModule/PostgreSQL 404 kanıtı CI DB Smoke'ta alındı (PASS). Bu bir ürün hatası değil, ortam önkoşuludur.
 2. **ADR 0003 D3 ile CONTEXT K-43 çelişkisi:** ADR "katalog izin kodu yayımlamaz" derken, main'deki #445/K-43 uygulaması `ContextCatalog.permissions` alanıyla makine-okur izin anahtarları yayımlar. #482 bu kanalı DEĞİŞTİRMEZ (kapsam dışı); capability ayrı ve izin kodu içermeyen bir alandır. Karar önceliği CONTEXT (K-43) lehinedir; ADR metninin düzeltilmesi ayrı doküman işidir.
-3. **Commit/push/PR yok:** yürütme ortamı kuralı gereği kullanıcı istemeden commit/push yapılmadı. Bu nedenle exact head SHA, CI URL'si ve bağımsız review kapısı yok → MERGE_ELIGIBLE değil.
-4. **Bağımsız reviewer yok:** aynı ajanın ikinci rolü bağımsız kapı sayılmaz; review açık.
+3. **Bağımsız review yok:** aynı ajanın ikinci rolü bağımsız kapı sayılmaz; review açık, `MERGE_ELIGIBLE` değil.
+4. **Draft PR:** kullanıcı talebi "draft PR aç" idi; `ready_for_review` ve merge yapılmadı.
+5. **Takip commit'i:** bu kanıt dosyasındaki PR/CI bilgisi ikinci (doküman) commit ile eklenir; yeni head'in terminal CI sonuçları PR checks'tan okunmalıdır (önceki run'lar yeni head için geçerli sayılmaz).
