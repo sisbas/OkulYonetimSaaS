@@ -905,7 +905,7 @@ function setActiveTab(name) {
 }
 
 function activateTab(name) {
-  if (name !== 'bugun' && state.permissions.length && !hasCapability(TAB_CAPABILITIES[name])) {
+  if (name !== 'bugun' && !hasCapability(TAB_CAPABILITIES[name])) {
     announce('Bu işlem için yetkiniz yok. Güvenli şekilde Bugün ekranına dönebilirsiniz.', 'warning');
     const bugunTab = document.querySelector('.tab[data-tab="bugun"]');
     if (bugunTab && !bugunTab.classList.contains('hidden')) {

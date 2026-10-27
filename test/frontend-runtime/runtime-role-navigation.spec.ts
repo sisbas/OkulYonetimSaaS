@@ -137,6 +137,16 @@ describe('runtime capability-driven navigation (#445)', () => {
     expect(ui.element('.tab[data-tab="bugun"]').getAttribute('aria-selected')).toBe('true');
   });
 
+  it('an empty permission catalog fails closed when a hidden tab is activated directly', () => {
+    const ui = runtime(PROBE_TAB);
+    ui.probe.applyCatalog(catalogFor([]));
+    ui.probe.activateTab('ops');
+
+    expect(ui.element('#message-region').innerHTML).toContain('yetkiniz yok');
+    expect(ui.element('.tab[data-tab="bugun"]').getAttribute('aria-selected')).toBe('true');
+    expect(ui.element('#ops-panel').classList.contains('hidden')).toBe(true);
+  });
+
   it('bugün is the default landing tab after catalog load', () => {
     const ui = runtime(PROBE_TAB);
     ui.probe.applyCatalog(catalogFor(OPS_PERMISSION_KEYS));
