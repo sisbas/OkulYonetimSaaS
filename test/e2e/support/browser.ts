@@ -278,7 +278,8 @@ export async function launchE2eBrowser(): Promise<Browser> {
   });
 }
 
-export const PHONE_LEAK_PATTERN = /(?<![\d])(?:\+90|0090|0)?\s?5\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?![\d])/;
+export const PHONE_LEAK_PATTERN =
+  /(?<![0-9A-Za-z])(?:\+90|0090|0)?\s?5\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?![0-9A-Za-z])/;
 
 /**
  * PII/secret sızıntı taraması. Kabul artefaktları (DOM metni, report.json,
@@ -296,10 +297,12 @@ export function scanTextForLeaks(text: string): string[] {
   if (/Invalid credentials|QueryFailedError|stack trace|credential_hash|password hash/i.test(value)) {
     findings.push('raw-backend-detail');
   }
-  // Rakam sınırları: UUID segmentlerindeki rastgele rakam dizileri (ör.
-  // `-975911775950`) gerçek telefonla karışmaması için eşleşme bir rakama
-  // bitişik olamaz. Gerçek telefonlar (`+90 532 123 45 67`, `05321234567`)
-  // ayraç ya da metin sınırıyla ayrıldığından tarama zayıflamaz.
+  // Sınırlar: eşleşme bir harf ya da rakama bitişik olamaz. Sadece rakam
+  // sınırı yetmiyordu: deterministik `studentRef` gibi hex özetlerin içinde
+  // `5471383712fd76…` gibi rastgele 10 haneli diziler gerçek telefonla
+  // karışıyordu (CI'da `phone-like-value` yanlış pozitifi). Gerçek telefonlar
+  // (`+90 532 123 45 67`, `05321234567`) ayraç ya da metin sınırıyla
+  // ayrıldığından tarama zayıflamaz.
   if (PHONE_LEAK_PATTERN.test(value)) {
     findings.push('phone-like-value');
   }
