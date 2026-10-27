@@ -388,7 +388,10 @@ describe('production /api/v1 routing authority (nested routes reach the Nest app
       200,
     );
 
-    expect(body.version).toBe('context-catalog:v1');
+    // #482: capabilities alanı eklendi → sözleşme sürümü v2. İzin kanalı
+    // (#445/K-43) değişmez; capability bir izin kodu değildir.
+    expect(body.version).toBe('context-catalog:v2');
+    expect(Array.isArray(body.capabilities)).toBe(true);
     expect(Array.isArray(body.permissions)).toBe(true);
     expect(body.permissions).toEqual(
       expect.arrayContaining(['leave:read', 'leave:own:read', 'leave:create']),

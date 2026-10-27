@@ -4,10 +4,17 @@ import { DataSource } from 'typeorm';
 
 import { AuthorizationContextError, selectActiveRole } from '../common/context/authorization-context';
 import { RequestBranch, RequestContext } from '../common/context/request-context';
+import { contextCapabilities } from '../common/config/feature-flags';
 import { BranchScopeActor, BranchScopeService, BranchSelection } from './branch-scope.service';
 
-/** Versioned context/catalog sözleşme sürümü (#339 R4, madde 3). */
-export const CONTEXT_CATALOG_VERSION = 'context-catalog:v1';
+/**
+ * Versioned context/catalog sözleşme sürümü (#339 R4, madde 3).
+ *
+ * v2 (#482): `capabilities` alanı eklendi (ADR 0003 D3). Alan additive
+ * olduğu için sürüm bump'ı yalnız sözleşme tüketicilerine sinyal verir;
+ * `permissions` kanalı K-43 gereği değişmez.
+ */
+export const CONTEXT_CATALOG_VERSION = 'context-catalog:v2';
 
 export type ContextCatalog = {
   version: string;
@@ -25,6 +32,12 @@ export type ContextCatalog = {
    * — zorlama sunucu @Permissions guard'ındadır (API seam testi #445).
    */
   permissions: string[];
+  /**
+   * Deploy'da AÇIK olan ürün yüzeyleri (#482, ADR 0003 D3). İzin kodu veya
+   * yetki kararı değildir; yalnız "bu yüzey bu kurulumda var mı" sinyalidir.
+   * Flag kapalıyken boş dizi döner ve ilgili route'lar hiç kaydedilmez (404).
+   */
+  capabilities: string[];
   branches: Array<{ name: string; code?: string }>;
   activeBranch: { name: string; code?: string } | null;
 };
@@ -124,6 +137,7 @@ export class ContextCatalogService {
       // İç rol kodu (snake_case) YAYIMLANMAZ; yalnız insan-okur etiket (#339 review P2 / F2).
       role: activeRole ? { label: roleLabel(activeRole) as string } : null,
       permissions,
+      capabilities: contextCapabilities(),
       branches: accessible.map((entry) => ({ name: entry.name, ...(entry.code ? { code: entry.code } : {}) })),
       activeBranch: activeBranch ? {
         name: activeBranch.branchName,

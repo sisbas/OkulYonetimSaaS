@@ -60,11 +60,26 @@ describe('AppModule wiring contract (#259/#352 review P1)', () => {
     return matches.map((match) => match[1]);
   }
 
-  it('registers every imported module in the imports array (or in the quarantine list)', () => {
+  /**
+   * `buildFeatureModules()` gövdesindeki `modules.push(<Module>)` sembolleri
+   * (#482). Deploy flag'ine bağlı modüller doğrudan `imports` dizisinde
+   * görünmez; bu yüzden "import edildi ama kaydedilmedi" kontrolünden
+   * bilinçli olarak muaftır.
+   */
+  function featureGatedSymbols(code: string): string[] {
+    const start = code.indexOf('export function buildFeatureModules');
+    expect(start).toBeGreaterThan(-1);
+    const end = code.indexOf('\n}', start);
+    expect(end).toBeGreaterThan(start);
+    const body = code.slice(start, end);
+    return [...body.matchAll(/modules\.push\(\s*([A-Za-z0-9_]+)\s*\)/g)].map((match) => match[1]);
+  }
+
+  it('registers every imported module in the imports array (or in a deliberate gate)', () => {
     const imports = importsArrayBody(source);
-    const quarantined = quarantinedSymbols(source);
+    const gated = [...quarantinedSymbols(source), ...featureGatedSymbols(source)];
     const unregistered = importedModuleSymbols(source).filter(
-      (symbol) => !imports.includes(symbol) && !quarantined.includes(symbol),
+      (symbol) => !imports.includes(symbol) && !gated.includes(symbol),
     );
     expect(unregistered).toEqual([]);
   });
@@ -76,5 +91,24 @@ describe('AppModule wiring contract (#259/#352 review P1)', () => {
 
   it('keeps the quarantine list explicit (only env-gated modules)', () => {
     expect(quarantinedSymbols(source).sort()).toEqual(['EokulSyncModule', 'ReportsModule']);
+  });
+
+  it('gates StrategicGoalsModule behind a feature flag, never registers it unconditionally', () => {
+    // #482: flag kapalıyken route hiç kaydedilmemeli; doğrudan `imports`
+    // dizisine eklemek kapıyı sessizce kaldırırdı.
+    expect(featureGatedSymbols(source)).toContain('StrategicGoalsModule');
+    expect(importsArrayBody(source)).not.toMatch(/^\s*StrategicGoalsModule,\s*$/m);
+    expect(quarantinedSymbols(source)).not.toContain('StrategicGoalsModule');
+  });
+
+  it('evaluates the feature gate from the flag, not from the calendar of imports', async () => {
+    const { buildFeatureModules } = await import('./app.module');
+    const { StrategicGoalsModule } = await import('./strategic-goals/strategic-goals.module');
+    // Varsayılan ve yanlış yazılmış değerler kapalıdır.
+    expect(buildFeatureModules({})).toEqual([]);
+    expect(buildFeatureModules({ STRATEGIC_GOALS_ENABLED: 'false' })).toEqual([]);
+    expect(buildFeatureModules({ STRATEGIC_GOALS_ENABLED: '1' })).toEqual([]);
+    // Yalnız literal `true` modülü kaydeder.
+    expect(buildFeatureModules({ STRATEGIC_GOALS_ENABLED: 'true' })).toEqual([StrategicGoalsModule]);
   });
 });
