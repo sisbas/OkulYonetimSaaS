@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Stratejik hedefler — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriG_BRELOWe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Yönetim · Stratejik hedefler</p>
+        <h1>Stratejik hedefler ve gerçekleşme</h1>
+        <p class="topbar-subtitle">Akademik yıl bazında metrik hedeflerini tanımlayın, gerçekleşmeyi girin ve oranı takip edin. Okul yöneticileri yazar; öğretmenler salt-okunur görünçtüler.</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="false"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tınımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yONETIM" aria-selected="true"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="empty">
+      <!-- Varsayılan görünçüm: yönetici (strategic_goal:manage) -->
+      <section class="panel goals-panel manager-view" aria-labelledby="goals-heading" data-view="manager">
+        <div>
+          <h2 id="goals-heading">Hedefler — 2026-2027</h2>
+          <form id="goals-scope" class="filter-grid stack" aria-label="Hedef kapsamı" novalidate>
+            <label>
+              Akademik yıl
+              <select id="academic-year" name="academicYear" required>
+                <option value="2025-2026">2025-2026</option>
+                <option value="2026-2027" selected>2026-2027 (bu ödnem)</option>
+                <option value="2027-2028">2027-2028</option>
+              </select>
+              <span class="hint">İstemcide tarihten türetirilir; seçcilen yıl GET /strategic-goals?academicYear= ile sunucuya gider.</span>
+            </label>
+            <button type="button" class="button-primary" data-requires-permission="strategic_goal:manage" id="add-goal">Hedef ekle</button>
+          </form>
+
+          <table id="goals-table" role="grid" aria-labelledby="goals-heading">
+            <caption>Akademik yıl 2026-2027 içcin tanımlıl hedefler</caption>
+            <thead>
+              <tr>
+                <th scope="col">Metrik</th>
+                <th scope="col">Hedef</th>
+                <th scope="col">Gerçekleşme</th>
+                <th scope="col">Oran</th>
+                <th scope="col">Güncellendi</th>
+                <th scope="col">İşlem</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>öğrenci başına dijital kaynak</td>
+                <td>1.200</td>
+                <td>1.200</td>
+                <td>%100</td>
+                <td>24.10.2026</td>
+                <td>
+                  <button type="button" class="button-link" data-action="edit-goal">Düzene</button>
+                  <button type="button" class="button-link" data-action="delete-goal" data-requires-permission="strategic_goal:manage">Sil</button>
+                </td>
+              </tr>
+              <tr>
+                <td>Devam oranı</td>
+                <td>95</td>
+                <td>91</td>
+                <td>%95,8</td>
+                <td>22.10.2026</td>
+                <td>
+                  <button type="button" class="button-link" data-action="edit-goal">Düzene</button>
+                  <button type="button" class="button-link" data-action="delete-goal" data-requires-permission="strategic_goal:manage">Sil</button>
+                </td>
+              </tr>
+              <tr>
+                <td>Ders bitiş oranı</td>
+                <td>90</td>
+                <td>87</td>
+                <td>%96,7</td>
+                <td>21.10.2026</td>
+                <td>
+                  <button type="button" class="button-link" data-action="edit-goal">Düzene</button>
+                  <button type="button" class="button-link" data-action="delete-goal" data-requires-permission="strategic_goal:manage">Sil</button>
+                </td>
+              </tr>
+              <tr>
+                <td>ödev teslim oranı</td>
+                <td>100</td>
+                <td>105</td>
+                <td>%105</td>
+                <td>20.10.2026</td>
+                <td>
+                  <button type="button" class="button-link" data-action="edit-goal">Düzene</button>
+                  <button type="button" class="button-link" data-action="delete-goal" data-requires-permission="strategic_goal:manage">Sil</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <dialog id="delete-confirmation">
+            <form method="dialog">
+              <h3>Hedefi silmek istediğinizden emin misiniz?</h3>
+              <p>Silinen hedef soft delete ile şaretlenir ve listeden kaybolur; şlem geri alınamaz.</p>
+              <div class="stack">
+                <button type="button" class="button-link" data-action="close-delete">İptal</button>
+                <button type="submit" class="button-primary" data-requires-permission="strategic_goal:manage" data-action="confirm-delete">Sil</button>
+              </div>
+            </form>
+          </dialog>
+        </div>
+      </section>
+
+      <!-- öğretmen görünümüm (strategic_goal:read) -->
+      <section class="panel teacher-view" aria-labelledby="teacher-heading" data-view="teacher">
+        <div>
+          <h2 id="teacher-heading">öğretmen görünümüm (strategic_goal:read)</h2>
+          <p class="hint">Yalnız görünçüleme. Yazma kontrolleri DOM'da yok; doğrudan bir yazma isteği 403 döner.</p>
+          <table role="grid" aria-labelledby="teacher-heading">
+            <caption>Okulun hedefleri -- okunur görünüm</caption>
+            <thead>
+              <tr>
+                <th scope="col">Metrik</th>
+                <th scope="col">Hedef</th>
+                <th scope="col">Gerçekleşme</th>
+                <th scope="col">Oran</th>
+                <th scope="col">Güncellendi</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>öğrenci başına dijital kaynak</td>
+                <td>1.200</td>
+                <td>1.200</td>
+                <td>%100</td>
+                <td>24.10.2026</td>
+              </tr>
+              <tr>
+                <td>Devam oranı</td>
+                <td>95</td>
+                <td>91</td>
+                <td>%95,8</td>
+                <td>22.10.2026</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Durum kesitleri: boş / yasak / Çakışlma / ağ hatasıl / ön izleme -->
+      <section class="panel state-slices" aria-labelledby="state-heading">
+        <h2 id="state-heading">Durum kesitleri (kanonik eşleme)</h2>
+        <div class="cards grid-state" role="region" aria-label="Durum kesitleri">
+          <section class="card state-card" id="state-empty" data-state="same_scope_empty" role="region" aria-label="Boş durum">
+            <h3>Boş</h3>
+            <p>Bu akademik yıl içcin henüz hedef tanımlanmamış.</p>
+            <p class="hint">Kapsamı değiştirip yeniden deneyebilirsiniz.</p>
+          </section>
+          <section class="card state-card" id="state-forbidden" data-state="forbidden_non_enumerating" role="region" aria-label="Eri\u015fim s\u0131n\u0131r\u0131">
+            <h3>Erişim sınırlıl (403 / 404)</h3>
+            <p>Bu işlem içcin yetkiniz yok; kapsamız dışndakı kayıtlar listelenmez.</p>
+            <p class="hint">Derin bağlantı /strategic-goals: 403 non-enumerating, var olmayan kayıl: 404 "Kayıl bulunamadıl".</p>
+          </section>
+          <section class="card state-card" id="state-conflict" data-state="conflict_blocking" role="region" aria-label="Çakı\u015fma">
+            <h3>Çakışlma (409)</h3>
+            <p>Bu metrik bu akademik yıl içcin zaten tanımlıl.</p>
+            <p class="hint">Farklı bir metrik veya yıl seçcin.</p>
+          </section>
+          <section class="card state-card" id="state-error" data-state="error_retryable" role="region" aria-label="A\u011f hatas\u0131">
+            <h3>Bağlantıl kurulamadıl.</h3>
+            <p>İşlem tamamlanmadıl.</p>
+            <p class="hint">Bağlantıı kontrol edip yeniden deneyin.</p>
+          </section>
+          <section class="card state-card" id="state-delete-preview" role="region" aria-label="Silme onay i\u015flemi">
+            <h3>Silme onay işlemi (görünür ·ON izleme)</h3>
+            <p>Hedefi silmek istediğinizden emin misiniz?</p>
+            <div class="stack">
+              <button type="button" class="button-link">İptal</button>
+              <button type="button" class="button-primary" data-requires-permission="strategic_goal:manage">Sil</button>
+            </div>
+            <p class="hint">Runtime'da bu ileti <dialog> bileşeniyle açılır; mock-up'ta metin ve düğmelerin doğrudan incelenebilmesi içcin burada görünür baırakıldıl.</p>
+          </section>
+        </div>
+      </section>
+
+      <!-- Env flag kapalı1 — STRATEGIC_GOALS_ENABLED=false -->
+      <section class="panel flag-off" aria-labelledby="flag-heading">
+        <h2 id="flag-heading">Env flag kapalı1 — STRATEGIC_GOALS_ENABLED=false</h2>
+        <p>Stratejik hedefler sekmesi görünmez. /strategic-goals* rotalarıl 404 döner (varlık sızırmaz).</p>
+        <p class="hint">AÇma: STRATEGIC_GOALS_ENABLED=true (deploy seviyesinde, tüm okullar birlikte). Geri alma: değişkeni false yapmak; capability anahtarıl aynı anda düfşer.</p>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu Çalısma ortamıl.</p>
+    </footer>
+  </body>
+</html>
