@@ -172,6 +172,7 @@ main { display: grid; gap: 1rem; }
 .notice[data-tone="success"] { background: #eaf7ef; border-color: #bbf7d0; }
 .notice[data-tone="danger"], .error-state { background: #fee2e2; border: 1px solid #fecaca; }
 .notice[data-tone="warning"] { background: #fff7ed; border-color: #fed7aa; }
+.notice[data-tone="neutral"] { background: #f1f5f9; border-color: #cbd5e1; }
 .loading { background: #f1f5f9; }
 .empty-state { background: #f8fafc; border: 1px dashed #94a3b8; display: grid; gap: 0.25rem; }
 .empty-state p { margin-bottom: 0; }

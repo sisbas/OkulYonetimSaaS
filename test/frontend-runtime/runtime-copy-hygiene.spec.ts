@@ -1,243 +1,304 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { LEAVE_IMPACT_REASON_CODES } from '../../src/daily-operations/leave-impact.types';
-import { CANONICAL_SCHEDULE_REASON_CODES } from '../../src/schedules/m3-schedule-contract';
-import { ATTENDANCE_CORRECTION_REASON_CODES } from '../../src/attendance/attendance-correction';
-import { LEAVE_REASON_CODES } from '../../src/leaves/leave-policy';
-import { LeaveDecisionStatus, LeaveCoverageStatus } from '../../src/leaves/leave-request.entity';
-import { runtime, response } from './runtime-harness';
+import { runtime, response, ALL_PERMISSION_KEYS } from './runtime-harness';
 
-const PROBE = 'state, renderLeaveCard, updateOperationalSnapshot, displayCanonical, displayLeaveReason, displayLeaveDuration, displayConsentType, displayStatus, normalizeApiError, loadCandidates';
+const PROBE =
+  'state, applyCatalog, login, updateContext, apiRequest, loadQueue, loadLeaves, loadConsents, loadNotifications, openNotificationDetail, validateSchedule';
 
-const CONSENT_AND_NOTIFICATION_CODES = [
-  'pending',
-  'approved',
-  'rejected',
-  'revoked',
-  'expired',
-  'blocked_consent',
-  'dispatched',
-  'failed',
-  'queued',
-  'cancelled',
-  'draft',
-  'parent_notification',
-  'sms_notification',
-  'KVKK_CONSENT_REQUIRED',
-];
-
-const LEAVE_COPY_CODES = [
-  ...(LEAVE_REASON_CODES as readonly string[]),
-  'hourly',
-  'full_day',
-  'multi_day',
-  ...(Object.values(LeaveDecisionStatus) as string[]),
-  ...(Object.values(LeaveCoverageStatus) as string[]),
-];
-
-const BACKEND_IDENTIFIER_CODES: readonly string[] = [
-  ...(LEAVE_IMPACT_REASON_CODES as readonly string[]),
-  ...(CANONICAL_SCHEDULE_REASON_CODES as readonly string[]),
-  ...(ATTENDANCE_CORRECTION_REASON_CODES as readonly string[]),
-  ...LEAVE_COPY_CODES,
-  ...CONSENT_AND_NOTIFICATION_CODES,
-];
-
-const LOOKUP_CONTEXT = /renderBlockingState\(|reasonUi\[|stateMessages\[|statusLabels\.|statusTones\[|uiStateTitles\[|statusStates\[|displayStatus\(|displayCanonical\(|statusTone\(|displayLeaveReason\(|displayLeaveDuration\(|displayConsentType\(|findReasonInMessage\(|looksLikeBackendCode\(|GENERIC_NEST_/;
-const MAP_ENTRY = /^\s*[A-Za-z_$][\w$]*\s*:\s*[\['"`]/;
-const COMMENT_LINE = /^\s*\/\//;
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Yalnızca görünen metin: öznitelik değerleri (tanılama için tutulan kimlikler) hariç. */
+function renderedText(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-function readRuntimeAsset(name: string): string {
-  return fs.readFileSync(path.join(process.cwd(), 'frontend', 'runtime', name), 'utf8');
-}
-
-function executableLines(source: string): string[] {
-  // Tanıma kümeleri (GENERIC_NEST_*) kopya seçimine girdir; kopya konumu değildir.
-  const withoutRecognitionSets = source.replace(/GENERIC_NEST_\w+ = new Set\(\[[^\]]*\]\)/gs, '');
-  return withoutRecognitionSets.split(/\r?\n/).filter((line) => !COMMENT_LINE.test(line));
-}
-
-/** app.js'te bir backend tanımlayıcısı yalnız kanonik harita anahtarı ya da harita araması olarak geçebilir. */
-function copyHygieneViolations(lines: string[], codes: readonly string[]): string[] {
-  const violations: string[] = [];
-  for (const code of codes) {
-    const pattern = new RegExp(`\\b${escapeRegExp(code)}\\b`);
-    for (const line of lines) {
-      if (!pattern.test(line)) continue;
-      if (MAP_ENTRY.test(line) || LOOKUP_CONTEXT.test(line)) continue;
-      violations.push(`backend identifier '${code}' outside a mapping position: ${line.trim().slice(0, 120)}`);
+/** `escapeHtml(` çağrısının gerçek argümanını parantez dengesiyle çıkarır. */
+function balancedArgument(source: string, openIndex: number): string {
+  const start = openIndex + 'escapeHtml('.length;
+  let depth = 1;
+  for (let i = start; i < source.length; i += 1) {
+    if (source[i] === '(') depth += 1;
+    else if (source[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i);
     }
   }
-  return violations;
+  return source.slice(start, start + 200);
 }
 
-/** HTML'de yalnız kullanıcının gördüğü metin taranır; API'ye giden value="" öznitelikleri kopya değildir. */
-function visibleHtmlText(html: string): string {
-  const withoutTags = html.replace(/<[^>]*>/g, ' ');
-  const ariaLabels = [...html.matchAll(/aria-label="([^"]*)"/g)].map((m) => m[1]).join(' ');
-  const placeholders = [...html.matchAll(/placeholder="([^"]*)"/g)].map((m) => m[1]).join(' ');
-  return `${withoutTags} ${ariaLabels} ${placeholders}`;
+function signedIn() {
+  const ui = runtime(PROBE);
+  ui.probe.state.accessToken = 'token';
+  ui.probe.state.branchId = 'ANKARA';
+  // Bu kopya testleri yetkili full-permisson persona üzerinden çalışır (#445):
+  // yetki kararını role-navigation/boundary specleri taşır.
+  ui.probe.state.permissions = ALL_PERMISSION_KEYS;
+  return ui;
 }
 
-describe('runtime copy hygiene (#446)', () => {
-  describe('static check: no backend identifier literal in a rendered-copy position', () => {
-    it('keeps every known backend code out of the runtime HTML surface', () => {
-      const html = readRuntimeAsset('index.html');
-      const visible = visibleHtmlText(html);
-      const violations: string[] = [];
-      for (const code of BACKEND_IDENTIFIER_CODES) {
-        const pattern = new RegExp(`\\b${escapeRegExp(code)}\\b`);
-        if (pattern.test(visible)) violations.push(`'${code}' reaches visible runtime HTML text`);
-      }
-      expect(violations).toEqual([]);
-    });
+const STAMP = '2026-10-01T10:00:00.000Z';
 
-    it('allows backend codes in app.js only as canonical map keys or copy-selecting lookups', () => {
-      const app = readRuntimeAsset('app.js');
-      const violations = copyHygieneViolations(executableLines(app), BACKEND_IDENTIFIER_CODES);
-      expect(violations).toEqual([]);
-    });
-
-    it('keeps backend codes out of the stylesheet copy surface', () => {
-      const css = readRuntimeAsset('styles.css');
-      const violations: string[] = [];
-      for (const code of BACKEND_IDENTIFIER_CODES) {
-        const pattern = new RegExp(`\\b${escapeRegExp(code)}\\b`);
-        if (pattern.test(css)) violations.push(`'${code}' appears in styles.css`);
-      }
-      expect(violations).toEqual([]);
-    });
-  });
-
-  describe('leave cards resolve canonical Turkish copy', () => {
-    it('renders leave state, duration, reason and coverage without echoing backend codes', () => {
-      const ui = runtime(PROBE);
-      ui.probe.state.activeLeaveEtag = 'etag-1';
-      const card = ui.probe.renderLeaveCard({
-        leaveRequestId: '9b2c1a5e-0000-0000-0000-000000000001',
-        decisionStatus: 'pending',
-        coverageStatus: 'partially_covered',
-        durationType: 'full_day',
-        reasonCode: 'annual_leave',
-      }, 'Kendi izin talebiniz');
-      expect(card).toContain('Kendi izin talebiniz');
-      expect(card).toContain('Beklemede');
-      expect(card).toContain('Kısmen karşılandı');
-      expect(card).toContain('Tam gün izin');
-      expect(card).toContain('Yıllık izin');
-      expect(card).toMatch(/data-leave-id="/);
-      expect(card).toMatch(/data-reason-code="annual_leave"/);
-      for (const raw of ['decisionStatus', 'coverageStatus', 'durationType', 'reasonCode', 'pending', 'partially_covered', 'full_day']) {
-        const textOnly = card.replace(/data-[a-z-]+="[^"]*"/g, '');
-        expect(textOnly).not.toMatch(new RegExp(`\\b${escapeRegExp(raw)}\\b`));
-      }
-    });
-
-    it('falls back to neutral copy when the server sends an unrecognised reason or duration', () => {
-      const ui = runtime(PROBE);
-      expect(ui.probe.displayLeaveReason({ reasonCode: 'brand_new_reason_code' })).toBe('Gerekçe bilgisi çözümlenemedi');
-      expect(ui.probe.displayLeaveDuration('mid_day_split')).toBe('Süre bilgisi çözümlenemedi');
-      expect(ui.probe.displayLeaveReason({ reasonCode: 'health', reasonLabel: 'Sağlık raporlu izin' })).toBe('Sağlık raporlu izin');
-    });
-  });
-
-  describe('consent and notification statuses resolve canonical copy', () => {
-    it('maps consent type, delivery and consent-blocked statuses to Turkish copy', () => {
-      const ui = runtime(PROBE);
-      expect(ui.probe.displayConsentType('parent_notification')).toBe('Veli bilgilendirme izni');
-      expect(ui.probe.displayConsentType('sms_notification')).toBe('SMS bilgilendirme izni');
-      expect(ui.probe.displayConsentType('unheard_of_type')).toBe('Bilgilendirme izni');
-      expect(ui.probe.displayStatus('dispatched')).toBe('Gönderildi');
-      expect(ui.probe.displayStatus('failed')).toBe('Gönderilemedi');
-      expect(ui.probe.displayStatus('blocked_consent')).toBe('İletişim izni yok');
-      expect(ui.probe.displayStatus('queued')).toBe('Onaylandı · gönderim bekliyor');
-      expect(ui.probe.displayStatus('revoked')).toBe('İzin geri alınmış');
-      expect(ui.probe.displayStatus('expired')).toBe('İznin süresi geçmiş');
-    });
-  });
-
-  describe('summary cockpit keeps identifiers in diagnostics, not rendered copy', () => {
-    it('shows a human label for the selected leave and keeps the id as data', () => {
-      const ui = runtime(PROBE);
-      ui.probe.state.activeLeaveId = '9b2c1a5e-0000-0000-0000-000000000001';
-      ui.probe.updateOperationalSnapshot();
-      const summary = ui.element('#summary-leave');
-      expect(summary.textContent).toBe('Seçili izin talebi');
-      expect(summary.dataset.leaveId).toBe('9b2c1a5e-0000-0000-0000-000000000001');
-      expect(summary.textContent).not.toContain('9b2c1a5e');
-
-      ui.probe.state.activeLeaveId = '';
-      ui.probe.updateOperationalSnapshot();
-      expect(summary.textContent).toBe('Talep seçilmedi');
-      expect(summary.dataset.leaveId).toBeUndefined();
-    });
-  });
-
-  describe('unrecognised server states never echo an identifier', () => {
-    it('a code-like server message falls back to the canonical neutral message', () => {
-      const ui = runtime(PROBE);
-      const error = ui.probe.normalizeApiError(
-        { status: 409 },
-        { message: 'KVKK_CONSENT_REQUIRED', error: 'Conflict', statusCode: 409 },
+describe('#446 copy hygiene', () => {
+  describe('leave cards', () => {
+    it('shows a human reason and duration instead of the backend codes', async () => {
+      const ui = signedIn();
+      ui.fetch.mockResolvedValueOnce(
+        response({
+          leaves: [
+            {
+              id: 'l1',
+              decisionStatus: 'pending',
+              coverageStatus: 'uncovered',
+              reasonCode: 'health',
+              durationType: 'full_day',
+              etag: 'e1',
+              createdAt: STAMP,
+            },
+          ],
+        }),
       );
-      expect(error.reasonCode).toBe('');
-      expect(error.uiState).toBe('conflict_blocking');
-      expect(error.message).not.toContain('KVKK_CONSENT_REQUIRED');
-      expect(error.message).toMatch(/çakışıyor|güncel kaydı alıp/i);
+      await ui.probe.loadLeaves();
+      const text = renderedText(ui.element('#leaves-output').innerHTML);
+      expect(text).toContain('Sağlık izni');
+      expect(text).toContain('Tam gün');
+      expect(text).not.toContain('health');
+      expect(text).not.toContain('full_day');
+      expect(text).not.toContain('uncovered');
+      expect(text).not.toContain('pending');
+      expect(ui.element('#leaves-output').innerHTML).toContain('data-reason-code="health"');
     });
 
-    it('a snake_case server message falls back instead of being echoed', () => {
-      const ui = runtime(PROBE);
-      const error = ui.probe.normalizeApiError(
-        { status: 500 },
-        { message: 'some_new_backend_code' },
+    it('falls back to a neutral phrase for a reason code the map does not know', async () => {
+      const ui = signedIn();
+      ui.fetch.mockResolvedValueOnce(
+        response({ leaves: [{ id: 'l1', decisionStatus: 'pending', reasonCode: 'annual_leave_v2', etag: 'e1' }] }),
       );
-      expect(error.reasonCode).toBe('');
-      expect(error.message).toBe('İşlem tamamlanamadı. Kısa süre sonra tekrar deneyin.');
-    });
-
-    it('a single-token backend enum is never echoed as copy', () => {
-      const ui = runtime(PROBE);
-      for (const code of ['failed', 'pending', 'health', 'approved', 'blocked_consent']) {
-        const error = ui.probe.normalizeApiError({ status: 409 }, { message: code });
-        expect(error.reasonCode).toBe('');
-        expect(error.message).not.toBe(code);
-        expect(error.message).not.toMatch(new RegExp(`\\b${code}\\b`));
-        expect(error.message.length).toBeGreaterThan(10);
-      }
-    });
-
-    it('a human server message is preserved while known codes keep their own copy', () => {
-      const ui = runtime(PROBE);
-      const human = ui.probe.normalizeApiError(
-        { status: 409 },
-        { message: 'Karar reddi başarısız: LEAVE_VERSION_MISMATCH', error: 'Conflict', statusCode: 409 },
-      );
-      expect(human.message).toContain('güncel sürümü yükleyip');
-
-      const freeText = ui.probe.normalizeApiError(
-        { status: 422 },
-        { message: 'Yoklama oturumu bu saatte kapatılamaz.' },
-      );
-      expect(freeText.message).toBe('Yoklama oturumu bu saatte kapatılamaz.');
+      await ui.probe.loadLeaves();
+      const text = renderedText(ui.element('#leaves-output').innerHTML);
+      expect(text).not.toContain('annual_leave_v2');
+      expect(text).toMatch(/Belirtilmemiş/i);
     });
   });
 
-  describe('rendered copy over driven flows stays clean', () => {
-    it('an error path through loadCandidates renders canonical copy only', async () => {
-      const ui = runtime(PROBE);
-      ui.probe.state.accessToken = 'token';
-      ui.probe.state.activeLeaveId = 'leave-1';
-      ui.probe.state.activeScheduleEventId = 'event-1';
-      ui.fetch.mockResolvedValueOnce(response({ message: 'ASSIGNMENT_ALREADY_EXISTS', error: 'Conflict', statusCode: 409 }, 409));
-      await ui.probe.loadCandidates('event-1');
-      const rendered = ui.renderedStrings();
-      expect(rendered).toContain('aktif bir görevlendirme');
-      expect(rendered).not.toContain('ASSIGNMENT_ALREADY_EXISTS');
+  describe('consent cards', () => {
+    it('shows a human consent type and subject instead of the backend codes', async () => {
+      const ui = signedIn();
+      ui.fetch.mockResolvedValueOnce(
+        response({
+          consents: [
+            {
+              id: 'c1',
+              subjectType: 'student',
+              subjectRefId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+              consentType: 'parent_notification',
+              status: 'approved',
+              version: 2,
+              legalBasis: 'consent',
+              retentionDays: 3650,
+              createdAt: STAMP,
+            },
+          ],
+        }),
+      );
+      await ui.probe.loadConsents();
+      const html = ui.element('#consents-output').innerHTML;
+      const text = renderedText(html);
+      expect(text).toContain('Veli bilgilendirmesi');
+      expect(text).toContain('Öğrenci');
+      expect(text).not.toContain('parent_notification');
+      expect(text).not.toContain('student');
+      expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/i);
+      expect(html).toContain('data-consent-type="parent_notification"');
+    });
+  });
+
+  describe('notification cards and receipts', () => {
+    it('shows a human event name and channel instead of the backend identifiers', async () => {
+      const ui = signedIn();
+      ui.fetch.mockResolvedValueOnce(
+        response({
+          notifications: [
+            {
+              id: 'n1',
+              eventType: 'attendance.absent.locked',
+              channel: 'sms',
+              status: 'delivered',
+              attempts: 1,
+              createdAt: STAMP,
+            },
+          ],
+        }),
+      );
+      await ui.probe.loadNotifications();
+      const text = renderedText(ui.element('#notifications-list').innerHTML);
+      expect(text).toContain('Devamsızlık bildirimi');
+      expect(text).toContain('SMS');
+      expect(text).not.toContain('attendance.absent.locked');
+    });
+
+    it('shows a human dispatch outcome and keeps provider references out of the copy', async () => {
+      const ui = signedIn();
+      ui.probe.state.activeNotificationId = 'n1';
+      ui.fetch.mockResolvedValueOnce(
+        response({
+          row: {
+            id: 'n1',
+            eventType: 'attendance.absent.locked',
+            channel: 'sms',
+            status: 'delivered',
+            version: 2,
+            attempts: 1,
+            reason: 'blocked_consent',
+            createdAt: STAMP,
+          },
+          availableActions: [],
+          receipts: [
+            {
+              attempt: 1,
+              outcome: 'provider_delivered',
+              createdAt: STAMP,
+              providerRef: 'sim:9f3ac1',
+              simulated: true,
+              errorCode: 'SIMULATED_REJECTION',
+            },
+          ],
+        }),
+      );
+      await ui.probe.openNotificationDetail('n1');
+      const html = ui.element('#notification-detail').innerHTML;
+      const text = renderedText(html);
+      expect(text).toContain('Sağlayıcı teslim etti');
+      expect(text).toContain('simüle');
+      expect(text).not.toContain('provider_delivered');
+      expect(text).not.toContain('sim:9f3ac1');
+      expect(text).not.toContain('SIMULATED_REJECTION');
+      expect(text).not.toContain('blocked_consent');
+      expect(text).not.toContain('attendance.absent.locked');
+      expect(html).toContain('data-provider-outcome="provider_delivered"');
+      expect(html).toContain('data-provider-ref="sim:9f3ac1"');
+      expect(html).toContain('data-receipt-error="SIMULATED_REJECTION"');
+    });
+
+    it('never writes a missing dispatch outcome into the diagnostics channel', async () => {
+      const ui = signedIn();
+      ui.probe.state.activeNotificationId = 'n1';
+      ui.fetch.mockResolvedValueOnce(
+        response({
+          row: { id: 'n1', eventType: 'attendance.absent.locked', status: 'dispatched', version: 1 },
+          availableActions: [],
+          receipts: [{ attempt: 1, createdAt: STAMP, simulated: true }],
+        }),
+      );
+      await ui.probe.openNotificationDetail('n1');
+      const html = ui.element('#notification-detail').innerHTML;
+      expect(html).toContain('data-provider-outcome=""');
+      expect(renderedText(html)).not.toMatch(/undefined|null/);
+      expect(renderedText(html)).toContain('Sonuç okunamadı');
+    });
+  });
+
+  describe('internal identifiers stay available to diagnostics', () => {
+    it('keeps the notification identifier on the control that needs it', async () => {
+      const ui = signedIn();
+      ui.fetch.mockResolvedValueOnce(
+        response({ notifications: [{ id: 'n1', eventType: 'attendance.absent.locked', status: 'pending', attempts: 0 }] }),
+      );
+      await ui.probe.loadNotifications();
+      const html = ui.element('#notifications-list').innerHTML;
+      expect(html).toContain('data-notification-id="n1"');
+      expect(renderedText(html)).not.toContain('n1');
+    });
+  });
+
+  describe('schedule validation findings', () => {
+    const CANONICAL_CODES = [
+      'TEACHER_TIME_OVERLAP',
+      'STUDENT_GROUP_TIME_OVERLAP',
+      'ROOM_TIME_OVERLAP',
+      'TIMESLOT_INACTIVE',
+      'TEACHER_INACTIVE',
+      'STUDENT_GROUP_INACTIVE',
+      'TEACHER_BRANCH_ASSIGNMENT_MISSING',
+      'TEACHER_COURSE_MISMATCH',
+      'TENANT_REFERENCE_MISMATCH',
+      'BRANCH_REFERENCE_MISMATCH',
+      'PUBLISHED_SCHEDULE_IMMUTABLE',
+      'SCHEDULE_EMPTY',
+      'SCHEDULE_VALIDATION_STALE',
+      'SCHEDULE_HARD_CONFLICTS_PRESENT',
+      'PUBLISHED_SCHEDULE_PERIOD_CONFLICT',
+      'SCHEDULE_VERSION_MISMATCH',
+      'SCHEDULE_VERSION_REQUIRED',
+    ];
+
+    it('renders every canonical finding in human copy, never the raw code', async () => {
+      const ui = signedIn();
+      ui.probe.state.scheduleId = 'sch-1';
+      ui.probe.state.scheduleRevision = 1;
+      ui.fetch.mockResolvedValueOnce(
+        response({
+          status: 'invalid',
+          canPublish: false,
+          hardConflictCount: 3,
+          reasons: CANONICAL_CODES.map((code) => ({ code })),
+        }),
+      );
+      await ui.probe.validateSchedule({ preventDefault: () => {} });
+      const html = ui.element('#schedule-status').innerHTML;
+      const text = renderedText(html);
+      for (const code of CANONICAL_CODES) {
+        expect(text).not.toContain(code);
+        expect(html).toContain(`data-schedule-reason="${code}"`);
+      }
+      expect(text).toContain('Öğretmenin aynı saatte başka dersi var');
+      expect(text).toContain('Programda ders yok');
+    });
+  });
+
+  describe('static copy-hygiene guard', () => {
+    const runtimeDir = path.join(process.cwd(), 'frontend', 'runtime');
+    const sources = [
+      fs.readFileSync(path.join(runtimeDir, 'app.js'), 'utf8'),
+      ...['decisions', 'consents', 'notifications', 'schedule', 'attendance'].map((name) =>
+        fs.readFileSync(path.join(runtimeDir, 'screens', `${name}.js`), 'utf8'),
+      ),
+    ];
+const GOVERNED = [
+      'reasonCode',
+      'reason',
+      'consentType',
+      'subjectType',
+      'eventType',
+      'channel',
+      'outcome',
+      'errorCode',
+      'providerRef',
+      'studentId',
+    ];
+    const MAPPERS = ['displayTerm(', 'displayStatus('];
+
+    // A governed identifier may reach rendered copy only through a display
+    // mapper. Raw `escapeHtml(field)`, `escapeHtml(pick(x, ['field']))` and any
+    // concatenation are violations. A `data-*` attribute is the diagnostics
+    // channel, not rendered copy, so those call sites are exempt.
+    it('lets a governed identifier reach copy only through a display mapper', () => {
+      const offenders: string[] = [];
+      for (const source of sources) {
+        for (const escape of source.matchAll(/escapeHtml\(/g)) {
+          const index = escape.index ?? 0;
+          const before = source.slice(Math.max(0, index - 48), index);
+          if (/data-[\w-]*="\$\{\s*$/.test(before)) continue;
+          const argument = balancedArgument(source, index);
+          if (MAPPERS.some((mapper) => argument.includes(mapper))) continue;
+          for (const field of GOVERNED) {
+            if (new RegExp(`\\b${field}\\b`).test(argument)) {
+              offenders.push(`${escape[0]}${argument.slice(0, 56)} (${field})`);
+            }
+          }
+        }
+      }
+      expect(offenders).toEqual([]);
     });
   });
 });

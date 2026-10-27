@@ -5,13 +5,9 @@ import { timingSafeEqual } from 'crypto';
 
 import { AuditLogRepository } from './audit-log.repository';
 import {
-  AUDIT_CHAIN_GENESIS_HASH,
-  AuditChainPayload,
-  AuditChainVerification,
   auditHmacKeyResolver,
   resolveAuditHmacKeyRing,
   signAuditEntryHash,
-  verifyAuditChain,
 } from './audit-chain';
 import { redactAuditRowsForExport } from './audit-tenant-query.builder';
 import {
@@ -23,9 +19,6 @@ import {
   TRANSACTIONAL_AUDIT_WRITER,
   TransactionalAuditWriter,
 } from './transactional-audit-writer';
-
-export const DEFAULT_AUDIT_VERIFY_LIMIT = 5_000;
-export const MAX_AUDIT_VERIFY_LIMIT = 50_000;
 
 export type AuditQueryActor = Readonly<{
   actorUserId: string;
@@ -45,40 +38,17 @@ export type AuditChainCheckpointRow = Readonly<{
   createdAt: string;
 }>;
 
-export type AuditVerificationResult = AuditChainVerification &
-  Readonly<{
-    checkedRows: number;
-    lastCheckpoint: AuditChainCheckpointRow | null;
-    startedFromCheckpoint: boolean;
-    verificationScope: 'bounded-segment';
-    limitReached: boolean;
-  }>;
-
-type AuditLogRow = {
-  seq: string | number;
-  prev_hash: string | null;
-  entry_hash: string | null;
-  signature: string | null;
-  signature_key_id: string | null;
-  tenant_id: string | null;
-  actor_user_id: string | null;
-  actor_session_id: string | null;
-  action: string;
-  entity_type: string | null;
-  entity_id: string | null;
-  request_id: string;
-  metadata_json: Record<string, unknown> | null;
-  created_at: Date;
-};
-
 /**
- * Audit okuma + zincir doğrulama servisi (#259).
+ * Audit okuma servisi (#259).
  *
  * - `list`: tenant-scoped filtreli okuma; satırlar KVKK maskesinden geçirilir ve
  *   okuma işlemi `dataprotection.export.redacted` olarak durable audit'e yazılır
  *   (`redactionReceipt` ile — hassas okuma denetlenebilir olmalıdır).
- * - `verify`: zinciri (varsa son retention checkpoint'inden başlayarak) doğrular;
- *   kurcalama/kırpma tespitini HTTP yüzeyine taşır.
+ *
+ * #373: `verify()` metodu kaldırıldı — global zincir doğrulaması hiçbir
+ * runtime yüzeyine açık değil. `verifyAuditChain` pure fonksiyonu
+ * `audit-chain.ts` + `audit-chain.spec.ts` içinde korunuyor. Platform
+ * authority tanımı ayrı bir security review gerektirir (#358).
  */
 @Injectable()
 export class AuditQueryService {
@@ -122,53 +92,6 @@ export class AuditQueryService {
     );
 
     return { rows: redacted.map((item) => item.row), receipt };
-  }
-
-  async verify(input: {
-    tenantId: string;
-    expectedHeadHash?: string;
-    expectedLastSequence?: number;
-    limit?: number;
-  }): Promise<AuditVerificationResult> {
-    const limit = clampLimit(input.limit);
-    const checkpoint = await this.lastCheckpoint();
-    const startPrevHash = checkpoint?.headHash ?? AUDIT_CHAIN_GENESIS_HASH;
-
-    const rows = (await this.dataSource.query(
-      `SELECT seq, prev_hash, entry_hash, signature, signature_key_id,
-              tenant_id, actor_user_id, actor_session_id, action,
-              entity_type, entity_id, request_id, metadata_json, created_at
-         FROM audit_logs
-        WHERE seq > $1
-        ORDER BY seq ASC
-        LIMIT $2`,
-      [checkpoint?.upToSequence ?? 0, limit],
-    )) as AuditLogRow[];
-
-    // Rotasyon sözleşmesi: doğrulama anahtarı satırın KENDİ `signature_key_id`'si
-    // ile seçilir (aktif anahtar + emekliye ayrılmış anahtarlar). Tek sabit
-    // anahtar kullanmak, rotasyon sonrası eski satırların tamamını
-    // `signature-mismatch` ile düşürürdü (#259 review P1).
-    const keyRing = resolveAuditHmacKeyRing();
-    const verification = verifyAuditChain(rows.map(toVerifiable), {
-      resolveHmacKey: auditHmacKeyResolver(keyRing),
-      startPrevHash,
-      ...(input.expectedHeadHash
-        ? { expectedHeadHash: input.expectedHeadHash }
-        : {}),
-      ...(input.expectedLastSequence !== undefined
-        ? { expectedLastSequence: input.expectedLastSequence }
-        : {}),
-    });
-
-    return {
-      ...verification,
-      checkedRows: rows.length,
-      lastCheckpoint: checkpoint,
-      startedFromCheckpoint: checkpoint !== null,
-      verificationScope: 'bounded-segment',
-      limitReached: rows.length >= limit,
-    };
   }
 
   /** En son retention checkpoint'i (yoksa null: zincir genesis'ten başlar). */
@@ -242,33 +165,5 @@ function combineReceipts(receipts: readonly RedactionReceipt[]): RedactionReceip
     evaluatedFieldCount: redactedFieldCount + skippedFieldCount,
     strategy: redactedFieldCount > 0 ? 'full-redact' : 'none',
     appliedAt: new Date().toISOString(),
-  };
-}
-
-function clampLimit(value: number | undefined): number {
-  if (value === undefined || !Number.isFinite(value)) {
-    return DEFAULT_AUDIT_VERIFY_LIMIT;
-  }
-  return Math.min(Math.max(Math.floor(value), 1), MAX_AUDIT_VERIFY_LIMIT);
-}
-
-function toVerifiable(row: AuditLogRow) {
-  return {
-    sequence: Number(row.seq),
-    prevHash: row.prev_hash,
-    entryHash: row.entry_hash,
-    signature: row.signature,
-    signatureKeyId: row.signature_key_id,
-    payload: {
-      tenantId: row.tenant_id,
-      actorUserId: row.actor_user_id,
-      actorSessionId: row.actor_session_id,
-      action: row.action,
-      entityType: row.entity_type,
-      entityId: row.entity_id,
-      requestId: row.request_id,
-      metadataJson: row.metadata_json,
-      createdAt: new Date(row.created_at).toISOString(),
-    } as AuditChainPayload,
   };
 }

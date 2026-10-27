@@ -41,6 +41,9 @@ export const PERMISSION_SEED = [
   { code: 'parent_notification:send', description: 'parent_notification:send' },
   { code: 'parent_notification:failure:read', description: 'parent_notification:failure:read' },
   { code: 'parent_notification:history:read', description: 'parent_notification:history:read' },
+  { code: 'notification:draft:read', description: 'notification:draft:read' },
+  { code: 'notification:draft:approve', description: 'notification:draft:approve' },
+  { code: 'notification:draft:close', description: 'notification:draft:close' },
   { code: 'message_template:read', description: 'message_template:read' },
   { code: 'message_template:create', description: 'message_template:create' },
   { code: 'message_template:update', description: 'message_template:update' },
@@ -63,7 +66,6 @@ export const PERMISSION_SEED = [
   { code: 'role:permission:update', description: 'role:permission:update' },
   { code: 'role:audit:read', description: 'role:audit:read' },
   { code: 'audit_log:read', description: 'audit_log:read' },
-  { code: 'audit_log:operations:read', description: 'audit_log:operations:read' },
   // #259: audit retention kırpma koşusu (yıkıcı işlem; yalnız tenant_admin).
   { code: 'audit_log:retention:run', description: 'audit_log:retention:run' },
   { code: 'audit_log:security:read', description: 'audit_log:security:read' },
@@ -87,6 +89,8 @@ export const PERMISSION_SEED = [
   // #266 N1a: encrypted parent contact yönetimi (create/update/link).
   { code: 'student:parent_contact:manage', description: 'student:parent_contact:manage' },
   { code: 'student:kvkk:read', description: 'student:kvkk:read' },
+  { code: 'consent:read', description: 'consent:read' },
+  { code: 'consent:revoke', description: 'consent:revoke' },
   { code: 'student:enrollment:read', description: 'student:enrollment:read' },
   { code: 'student:enrollment:update', description: 'student:enrollment:update' },
   { code: 'student:attendance:read', description: 'student:attendance:read' },
@@ -121,6 +125,9 @@ export const PERMISSION_SEED = [
   { code: 'tenant:member:read', description: 'tenant:member:read' },
   { code: 'tenant:member:update', description: 'tenant:member:update' },
   { code: 'tenant:billing:read', description: 'tenant:billing:read' },
+  // #457: stratejik hedefler — yönetici yazar, öğretmen okur; veli hiç göremez.
+  { code: 'strategic_goal:manage', description: 'strategic_goal:manage' },
+  { code: 'strategic_goal:read', description: 'strategic_goal:read' },
 ] as const;
 
 export const ROLE_PERMISSION_SEED = {
@@ -137,7 +144,8 @@ export const ROLE_PERMISSION_SEED = {
     'attendance:report:read',
     'attendance:submit',
     'attendance:update',
-    'audit_log:operations:read',
+    'consent:read',
+    'consent:revoke',
     'course:archive',
     'course:assign_teacher',
     'course:create',
@@ -163,6 +171,9 @@ export const ROLE_PERMISSION_SEED = {
     'message_template:deactivate',
     'message_template:read',
     'message_template:update',
+    'notification:draft:approve',
+    'notification:draft:close',
+    'notification:draft:read',
     'parent_notification:approve',
     'parent_notification:draft:create',
     'parent_notification:failure:read',
@@ -227,6 +238,8 @@ export const ROLE_PERMISSION_SEED = {
     'course:read',
     'room:read',
     'time_slot:read',
+    // #457: öğretmen okur, yazamaz — okulun planı değiştirilemez.
+    'strategic_goal:read',
   ],
   // --- OKUL-01 yeni rolleri (permission matrix'inden türetildi) ---
   // Rol -> izin eşlemesi, src/rbac/roles.extended.ts OKUL01_PERMISSION_MATRIX

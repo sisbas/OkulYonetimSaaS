@@ -15,7 +15,7 @@ rmSync(outputDir, { recursive: true, force: true });
 mkdirSync(outputDir, { recursive: true });
 cpSync(sourceDir, outputDir, { recursive: true });
 
-for (const name of ['app', 'ux']) {
+for (const name of ['app', 'ux', 'landing']) {
   cpSync(join(projectRoot, 'frontend', name), join(outputDir, name), {
     recursive: true,
   });

@@ -54,16 +54,18 @@ describe('runtime context catalog wiring (#397)', () => {
     expect(ui.element('#context-institution').textContent).toBe('');
   });
 
-  it('surfaces a Turkish branch-not-visible message for a non-enumerating 404 from branch selection', async () => {
+  it('surfaces the canonical forbidden state for a non-enumerating 404 from branch selection', async () => {
     const ui = runtime();
     ui.probe.state.accessToken = 'memory-only-token';
     ui.probe.applyCatalog({ ...catalog, activeBranch: catalog.branches[0] });
     ui.element('#branch-id').value = 'IZMIR';
     ui.fetch.mockResolvedValueOnce(response({ message: 'Kayıt bulunamadı' }, 404));
     await ui.probe.updateContext({ preventDefault: () => {} });
-    const queueHtml = String(ui.element('#queue-output').innerHTML);
-    expect(queueHtml).toContain('şube');
-    expect(queueHtml.toLowerCase()).not.toContain('kayıt bulunamadı');
+    const output = ui.element('#queue-output');
+    expect(output.dataset.state).toBe('forbidden_non_enumerating');
+    expect(output.innerHTML).toContain('yetkiniz yok');
+    expect(output.innerHTML.toLowerCase()).not.toContain('kayıt bulunamadı');
+    expect(output.innerHTML).not.toMatch(/IZMIR/);
   });
 
   it('never renders UUID patterns, ETag tokens, snake_case codes, or English tenant/branch terms from catalog data', () => {

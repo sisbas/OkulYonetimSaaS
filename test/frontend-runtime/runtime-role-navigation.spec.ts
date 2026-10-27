@@ -1,16 +1,29 @@
-import { runtime, response } from './runtime-harness';
+import {
+  runtime,
+  TEACHER_PERMISSION_KEYS,
+  OPS_PERMISSION_KEYS,
+  TENANT_ADMIN_PERMISSION_KEYS,
+  VIEWER_PERMISSION_KEYS,
+} from './runtime-harness';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+// #445 — capability-driven navigation. Navigasyon artık sunucu /context'ten
+// gelen makine-okur izin anahtarlarından (catalog.permissions) türetilir;
+// client kendi akıl yürütmez. Persona kotları runtime-harness'ta tek
+// kaynaklıdır (sunucu seeds gerçekliği); rol etiketi yalnız ekran metnidir.
+
 const PROBE = 'state, applyCatalog, login, updateContext, apiRequest, retryCatalog, navSectionsFor, renderNavigation';
 const PROBE_TAB = `${PROBE}, activateTab`;
+const PROBE_FETCH = `fetch ${PROBE}`;
 
-const catalogFor = (roleLabel: string | null) => ({
+const catalogFor = (permissions: string[]) => ({
   version: 1,
   institution: { name: 'Atatürk Anadolu Lisesi' },
-  role: roleLabel ? { label: roleLabel } : null,
+  role: { label: 'Yetki Etiketi' },
   branches: [{ name: 'Merkez', code: 'ANKARA' }],
   activeBranch: { name: 'Merkez', code: 'ANKARA' },
+  permissions,
 });
 
 const visibleTabs = (ui: { elements: Map<string, any> }) =>
@@ -20,92 +33,120 @@ const visibleTabs = (ui: { elements: Map<string, any> }) =>
     .filter((t) => !t.classList.contains('hidden'))
     .map((t) => t.dataset.tab);
 
-describe('runtime role-aware navigation (#398)', () => {
-  it('stores the catalog role label in state for navigation derivation', () => {
+describe('runtime capability-driven navigation (#445)', () => {
+  it('applyCatalog stores the server-provided permission keys, deduped in order', () => {
     const ui = runtime(PROBE);
-    ui.probe.applyCatalog(catalogFor('Operasyon Yöneticisi'));
-    expect(ui.probe.state.authLabel).toBe('Operasyon Yöneticisi');
+    ui.probe.applyCatalog(catalogFor(['user:read', 'leave:own:read', 'user:read']));
+    expect(ui.probe.state.permissions).toEqual(['user:read', 'leave:own:read']);
   });
 
-  it('navSectionsFor returns distinct entry sets per role label', () => {
+  it('navSectionsFor returns capability-derived entry sets per persona', () => {
     const ui = runtime(PROBE);
-    const teacher = ui.probe.navSectionsFor('Öğretmen');
-    const ops = ui.probe.navSectionsFor('Operasyon Yöneticisi');
-    const admin = ui.probe.navSectionsFor('Kurum Yöneticisi');
-    // Teacher does not see ops-only sections
+    // Öğretmen: teacher + attendance; program/ops/notifications anahtarı yok
+    const teacher = ui.probe.navSectionsFor(TEACHER_PERMISSION_KEYS);
+    expect(teacher).toEqual(expect.arrayContaining(['bugun', 'teacher', 'attendance']));
+    expect(teacher).not.toContain('program');
     expect(teacher).not.toContain('ops');
     expect(teacher).not.toContain('notifications');
-    // Ops does not see teacher leave tab
-    expect(ops).not.toContain('teacher');
-    // Admin sees everything
-    expect(admin).toEqual(expect.arrayContaining(['bugun', 'teacher', 'ops', 'program', 'attendance', 'notifications']));
-    // All roles see bugün
-    expect(teacher).toContain('bugun');
-    expect(ops).toContain('bugun');
-    expect(admin).toContain('bugun');
+    // Ops, teacher anahtarlarını da içerdiğinden teacher sekmesi de görünür
+    expect(ui.probe.navSectionsFor(OPS_PERMISSION_KEYS)).toEqual(
+      expect.arrayContaining(['bugun', 'teacher', 'ops', 'program', 'attendance', 'notifications']),
+    );
+    // Yalnız-okur ve boş aktör: yalnız bugün
+    expect(ui.probe.navSectionsFor(VIEWER_PERMISSION_KEYS)).toEqual(['bugun']);
+    expect(ui.probe.navSectionsFor([])).toEqual(['bugun']);
   });
 
-  it('unknown or missing role gets safe default (bugün only)', () => {
+  it('renders only capability-authorized tabs for teacher persona', () => {
     const ui = runtime(PROBE);
-    expect(ui.probe.navSectionsFor(null)).toEqual(['bugun']);
-    expect(ui.probe.navSectionsFor('Bilinmeyen Rol')).toEqual(['bugun']);
-  });
-
-  it('renders only authorized tabs for teacher role', () => {
-    const ui = runtime(PROBE);
-    ui.probe.applyCatalog(catalogFor('Öğretmen'));
+    ui.probe.applyCatalog(catalogFor(TEACHER_PERMISSION_KEYS));
     const tabs = visibleTabs(ui);
     expect(tabs).toContain('bugun');
     expect(tabs).toContain('teacher');
-    expect(tabs).toContain('program');
     expect(tabs).toContain('attendance');
+    expect(tabs).not.toContain('program');
     expect(tabs).not.toContain('ops');
     expect(tabs).not.toContain('notifications');
   });
 
-  it('renders only authorized tabs for operations manager role', () => {
+  it('renders every tab for operations persona (teacher included as superset member)', () => {
     const ui = runtime(PROBE);
-    ui.probe.applyCatalog(catalogFor('Operasyon Yöneticisi'));
-    const tabs = visibleTabs(ui);
-    expect(tabs).toContain('bugun');
-    expect(tabs).toContain('ops');
-    expect(tabs).toContain('program');
-    expect(tabs).toContain('attendance');
-    expect(tabs).toContain('notifications');
-    expect(tabs).not.toContain('teacher');
-  });
-
-  it('renders all tabs for admin role', () => {
-    const ui = runtime(PROBE);
-    ui.probe.applyCatalog(catalogFor('Kurum Yöneticisi'));
+    ui.probe.applyCatalog(catalogFor(OPS_PERMISSION_KEYS));
     const tabs = visibleTabs(ui);
     expect(tabs).toEqual(expect.arrayContaining(['bugun', 'teacher', 'ops', 'program', 'attendance', 'notifications']));
   });
 
+  it('renders only bugün for read-only viewer persona (published program hidden entirely)', () => {
+    const ui = runtime(PROBE);
+    ui.probe.applyCatalog(catalogFor(VIEWER_PERMISSION_KEYS));
+    const tabs = visibleTabs(ui);
+    expect(tabs).toEqual(['bugun']);
+  });
+
+  it('renders every tab for tenant administrator persona (ops superset + user/tenant management)', () => {
+    const ui = runtime(PROBE);
+    ui.probe.applyCatalog(catalogFor(TENANT_ADMIN_PERMISSION_KEYS));
+    const tabs = visibleTabs(ui);
+    expect(tabs).toEqual(expect.arrayContaining(['bugun', 'teacher', 'ops', 'program', 'attendance', 'notifications']));
+  });
+
+  it('apiRequest refuses an unauthorized request before fetch is called', async () => {
+    const ui = runtime(PROBE);
+    ui.probe.applyCatalog(catalogFor(TEACHER_PERMISSION_KEYS));
+    await expect(
+      ui.probe.apiRequest('/schedules/77/draft', { method: 'POST', body: {} }),
+    ).rejects.toMatchObject({ status: 403, uiState: 'forbidden_non_enumerating' });
+    expect(ui.fetch).not.toHaveBeenCalled();
+  });
+
+  it('apiRequest allows an authorized request through to the network', async () => {
+    const ui = runtime(PROBE);
+    ui.probe.applyCatalog(catalogFor(TEACHER_PERMISSION_KEYS));
+    ui.probe.state.accessToken = 'tok';
+    ui.fetch.mockResolvedValue({ ok: true, status: 200, text: async () => '{}', headers: { get: () => null } });
+    await ui.probe.apiRequest('/leaves/me', { method: 'POST', body: {} });
+    expect(ui.fetch).toHaveBeenCalledWith(expect.stringContaining('/leaves/me'), expect.anything());
+  });
+
+  it('renderNavigation falls back to bugün when the active tab loses its capability', () => {
+    const ui = runtime(PROBE_TAB);
+    ui.probe.applyCatalog(catalogFor(TEACHER_PERMISSION_KEYS));
+    ui.probe.activateTab('teacher');
+    expect(ui.element('.tab[data-tab="teacher"]').getAttribute('aria-selected')).toBe('true');
+    // Bağlam tazelendiğinde teacher anahtarı düştü: render → bugün'e dönüş
+    ui.probe.applyCatalog(catalogFor(['user:read']));
+    expect(ui.element('.tab[data-tab="teacher"]').getAttribute('aria-selected')).toBe('false');
+    expect(ui.element('.tab[data-tab="bugun"]').getAttribute('aria-selected')).toBe('true');
+    expect(ui.element('#teacher-panel').classList.contains('hidden')).toBe(true);
+  });
+
   it('unauthorized tab click shows Turkish forbidden state with safe exit', () => {
     const ui = runtime(PROBE_TAB);
-    ui.probe.applyCatalog(catalogFor('Öğretmen'));
-    // Teacher tries to deep-link to ops (unauthorized)
+    ui.probe.applyCatalog(catalogFor(TEACHER_PERMISSION_KEYS));
     ui.probe.activateTab('ops');
-    // The forbidden state should appear in the message region
     expect(ui.element('#message-region').innerHTML).toContain('yetkiniz yok');
-    // Fallback to bugun tab
     expect(ui.element('.tab[data-tab="bugun"]').getAttribute('aria-selected')).toBe('true');
-    // Ops panel should not be shown
     expect(ui.element('#ops-panel').classList.contains('hidden')).toBe(true);
+  });
+
+  it('viewer deep-linking to program also refuses with safe exit', () => {
+    const ui = runtime(PROBE_TAB);
+    ui.probe.applyCatalog(catalogFor(VIEWER_PERMISSION_KEYS));
+    ui.probe.activateTab('program');
+    expect(ui.element('#message-region').innerHTML).toContain('yetkiniz yok');
+    expect(ui.element('.tab[data-tab="bugun"]').getAttribute('aria-selected')).toBe('true');
   });
 
   it('bugün is the default landing tab after catalog load', () => {
     const ui = runtime(PROBE_TAB);
-    ui.probe.applyCatalog(catalogFor('Operasyon Yöneticisi'));
-    // bugun panel should be visible by default
+    ui.probe.applyCatalog(catalogFor(OPS_PERMISSION_KEYS));
     expect(ui.element('#bugun-panel').classList.contains('hidden')).toBe(false);
     expect(ui.element('.tab[data-tab="bugun"]').getAttribute('aria-selected')).toBe('true');
   });
 
   it('no navigation label or aria text exposes backend jargon', () => {
     const ui = runtime(PROBE);
-    ui.probe.applyCatalog(catalogFor('Kurum Yöneticisi'));
+    ui.probe.applyCatalog(catalogFor(OPS_PERMISSION_KEYS));
     const rendered = ui.renderedStrings();
     expect(rendered).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     expect(rendered).not.toMatch(/etag/i);
@@ -113,11 +154,12 @@ describe('runtime role-aware navigation (#398)', () => {
     expect(rendered).not.toMatch(/\bbranch\b/i);
     expect(rendered).not.toMatch(/\bqueue\b/i);
     expect(rendered).not.toMatch(/coverage/i);
+    // İzin kodları makine-okur veridir; düz metne sızmaz
+    expect(rendered).not.toMatch(/user:read|leave:create|schedule:draft:/i);
   });
 
   it('static HTML labels and aria text expose no backend jargon', () => {
     const html = readFileSync(join(__dirname, '../../frontend/runtime/index.html'), 'utf8');
-    // Extract visible text and aria-label values (not IDs or attributes)
     const ariaLabels = [...html.matchAll(/aria-label="([^"]+)"/g)].map((m) => m[1]);
     const strongTexts = [...html.matchAll(/<strong>([^<]+)<\/strong>/g)].map((m) => m[1]);
     const smallTexts = [...html.matchAll(/<small>([^<]+)<\/small>/g)].map((m) => m[1]);
@@ -131,7 +173,7 @@ describe('runtime role-aware navigation (#398)', () => {
 
   it('deep-linking to a forbidden section shows operational Turkish message, not raw denial', () => {
     const ui = runtime(PROBE_TAB);
-    ui.probe.applyCatalog(catalogFor('Öğretmen'));
+    ui.probe.applyCatalog(catalogFor(VIEWER_PERMISSION_KEYS));
     ui.probe.activateTab('notifications');
     const message = ui.element('#message-region').innerHTML;
     expect(message).toContain('yetkiniz yok');
