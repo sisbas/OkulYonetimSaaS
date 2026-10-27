@@ -29,89 +29,6 @@ const state = {
   activeAttendanceSessionId: '',
   rateLimitedUntil: 0,
   lastAction: 'Henüz işlem yapılmadı.',
-  rateLimitedUntil: 0,
-};
-
-const RATE_LIMIT_RETRY_MS = 20000;
-
-const reasonUi = {
-  LEAVE_NOT_APPROVED: ['empty_or_not_found_same_scope', 'Bu izin talebinde onay kararı bekleniyor.'],
-  NO_PUBLISHED_SCHEDULE_EVENT: ['empty_or_not_found_same_scope', 'Bu izin için yayınlanmış program olayı bulunmuyor.'],
-  BRANCH_NOT_VISIBLE: ['forbidden_non_enumerating', 'Bu şube görüntülenemiyor.'],
-  TEACHER_COURSE_ELIGIBILITY_NOT_READY: ['eligibility_not_ready', 'Öğretmen-ders uygunluk kaynağı hazır değil.'],
-  TEACHER_COURSE_MISMATCH: ['candidate_unavailable', 'Seçilen aday bu dersi veremez.'],
-  SUBSTITUTE_TEACHER_INACTIVE: ['candidate_unavailable', 'Seçilen aday şu anda görevlendirmeye uygun değil.'],
-  SUBSTITUTE_BRANCH_ASSIGNMENT_MISSING: ['candidate_unavailable', 'Seçilen aday bu şube kapsamında öğretmen olarak kayıtlı değil.'],
-  SUBSTITUTE_LEAVE_OVERLAP: ['conflict_blocking', 'Seçilen adayın bu saatte onaylı izni var.'],
-  SUBSTITUTE_TIME_CONFLICT: ['conflict_blocking', 'Görevlendirme mevcut program veya yedek görevle çakışıyor.'],
-  ASSIGNMENT_ALREADY_EXISTS: ['locked_state', 'Bu ders için aktif bir görevlendirme var.'],
-  ASSIGNMENT_NOT_FOUND: ['empty_or_not_found_same_scope', 'Temizlenecek aktif görevlendirme bulunamadı.'],
-  LEAVE_VERSION_REQUIRED: ['version_required', 'Kayıt sürümü doğrulanmadan işlem yapılamaz.'],
-  LEAVE_VERSION_MISMATCH: ['stale_version', 'Kayıt karar aşamasında değişti; güncel sürümü yükleyip yeniden deneyin.'],
-};
-
-const GENERIC_NEST_ERRORS = new Set(['Bad Request', 'Forbidden', 'Conflict', 'Precondition Failed', 'Not Found', 'Unauthorized']);
-const GENERIC_NEST_MESSAGES = new Set([
-  'leave version mismatch',
-  'kayıt bulunamadı',
-  'not found',
-  'forbidden',
-  'unauthorized',
-  'bad request',
-  'conflict',
-  'precondition failed',
-  'precondition required',
-  'internal server error',
-  'service unavailable',
-]);
-
-const statusStates = {
-  0: 'offline_or_unavailable',
-  400: 'validation_error',
-  401: 'auth_required',
-  403: 'forbidden_non_enumerating',
-  404: 'empty_or_not_found_same_scope',
-  409: 'conflict_blocking',
-  412: 'stale_version',
-  424: 'eligibility_not_ready',
-  428: 'version_required',
-  429: 'rate_limited',
-};
-
-const stateMessages = {
-  auth_required: 'Oturumunuz yenilenmelidir.',
-  tenant_context_required: 'Kurum bağlamı doğrulanamadı. Kurum seçiminizi kontrol edin.',
-  branch_context_required: 'Şube bağlamı doğrulanamadı. Şube seçiminizi kontrol edin.',
-  forbidden_non_enumerating: 'Bu işlem için yetkiniz yok.',
-  empty_or_not_found_same_scope: 'Bu kapsam ve tarihte kayıt bulunamadı.',
-  validation_error: 'Girilen bilgileri kontrol edin.',
-  version_required: 'İşlem, güncel izin kaydı doğrulanmadan yapılamaz.',
-  stale_version: 'Kayıt başka bir işlemle güncellendi; güncel kaydı alıp yeniden deneyin.',
-  rate_limited: 'İşlem sıklığı sınırına ulaşıldı. Kısa bir süre bekleyip yeniden deneyin.',
-  eligibility_not_ready: 'Öğretmen-ders uygunluk kaynağı hazır değil. Uygunluk tamamlandığında yeniden deneyin.',
-  candidate_unavailable: 'Seçilen aday bu ders veya şube kapsamı için uygun değil.',
-  conflict_blocking: 'İşlem, kaydın başka bir değişikliğiyle çakışıyor. Güncel kaydı alıp yeniden deneyin.',
-  locked_state: 'Bu ders için aktif bir görevlendirme var. Görevlendirmeyi temizleyip yeniden deneyin.',
-  error_retryable: 'İşlem tamamlanamadı. Kısa süre sonra tekrar deneyin.',
-  offline_or_unavailable: 'Bağlantı kurulamadı. Bağlantınızı kontrol edip tekrar deneyin.',
-};
-
-const uiStateTitles = {
-  auth_required: 'Oturum yenilenmeli',
-  tenant_context_required: 'Kurum seçimi doğrulanamadı',
-  branch_context_required: 'Şube seçimi doğrulanamadı',
-  forbidden_non_enumerating: 'Bu işlem için yetkiniz yok',
-  empty_or_not_found_same_scope: 'Kayıt bulunamadı',
-  validation_error: 'Bilgileri kontrol edin',
-  version_required: 'Güncel kayıt bekleniyor',
-  stale_version: 'Kayıt güncellendi',
-  eligibility_not_ready: 'Uygunluk bekleniyor',
-  candidate_unavailable: 'Aday uygun değil',
-  conflict_blocking: 'Çakışma var',
-  locked_state: 'İşlem kilitli',
-  rate_limited: 'Kısa süre bekleyin',
-  error_retryable: 'İşlem tamamlanamadı',
-  offline_or_unavailable: 'Bağlantı kurulamadı',
 };
 
 const UI_STATES = {
@@ -536,7 +453,7 @@ async function apiRequest(path, options = {}, _refreshAttempted = false) {
     throw normalizeApiError({ status: 403, headers: { get: () => null } }, {}, options);
   }
   const headers = { Accept: 'application/json', ...(options.headers || {}) };
-  if (state.accessToken) headers.Authorization = 'Bearer ' + state.accessToken;
+  if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
   if (state.branchId && !path.startsWith('/context') && !path.startsWith('/auth/')) {
     headers['x-branch-code'] = state.branchId;
   }
@@ -586,78 +503,6 @@ function flattenMessage(value) {
   return String(message || '');
 }
 
-function findReasonInMessage(message) {
-  const normalized = String(message || '').toUpperCase();
-  return Object.keys(reasonUi).find((code) => normalized.includes(code));
-}
-
-function normalizeApiError(response, body) {
-  const messageText = flattenMessage(body);
-  const explicitReason = pick(body, ['reasonCode', 'code']);
-  const messageReason = findReasonInMessage(messageText);
-  const genericError = GENERIC_NEST_ERRORS.has(String(body?.error || ''))
-    || GENERIC_NEST_MESSAGES.has(messageText.toLowerCase());
-  const errorReason = !genericError && reasonUi[body?.error] ? body.error : '';
-  const reasonCode = String(explicitReason || messageReason || errorReason);
-  const mapped = reasonUi[reasonCode];
-  const uiState = mapped?.[0] || statusStates[response.status] || 'error_retryable';
-  const knownReasonCode = Boolean(mapped);
-  // Sunucunun ham taşıma hatası metni kullanıcıya gösterilmez: HTML/proxy
-  // gövdesi, 5xx ve 429 yanıtları kanonik durum kopyasının arkasında kalır.
-  const untrustedTransport =
-    response.status === 429 || response.status >= 500 || /[<>]/.test(messageText);
-  const message = knownReasonCode || genericError || !messageText || untrustedTransport
-    ? mapped?.[1] || stateMessages[uiState]
-    : messageText;
-  return { status: response.status, reasonCode, uiState, message };
-}
-
-function armRateLimit() {
-  state.rateLimitedUntil = Date.now() + RATE_LIMIT_RETRY_MS;
-}
-
-function refuseRepeatedAction() {
-  if (Date.now() < state.rateLimitedUntil) {
-    announce(stateMessages.rate_limited, 'warning');
-    return true;
-  }
-  return false;
-}
-
-function renderError(target, error) {
-  const uiState = error?.uiState || 'error_retryable';
-  if (uiState === 'rate_limited') armRateLimit();
-  const title = uiStateTitles[uiState] || 'İşlem tamamlanamadı';
-  const message = error?.message || stateMessages[uiState] || 'İşlem tamamlanamadı.';
-  target.innerHTML = `<div class="error-state" data-state="${escapeHtml(uiState)}">
-    <strong>${escapeHtml(title)}</strong>
-    <p>${escapeHtml(message)}</p>
-    <small class="recovery-hint">${escapeHtml(recoveryHint(uiState))}</small>
-  </div>`;
-  announce(message, 'danger');
-}
-
-function recoveryHint(uiState) {
-  const hints = {
-    auth_required: 'Oturumu yenileyip işlemi tekrar deneyin.',
-    tenant_context_required: 'Kurum seçimini kontrol edin.',
-    branch_context_required: 'Şube seçimini kontrol edin.',
-    forbidden_non_enumerating: 'Yetki kapsamınız dışında kalan kayıtlar listelenmez.',
-    empty_or_not_found_same_scope: 'Kapsamı yenileyin veya farklı tarih/şube deneyin.',
-    validation_error: 'Zorunlu alanları ve tarih aralığını gözden geçirin.',
-    version_required: 'Önce güncel izin kaydını tekrar yükleyin.',
-    stale_version: 'Kayıt değişmiş; etki listesini yenileyin.',
-    eligibility_not_ready: 'Uygunluk kaynağı tamamlandığında adaylar yeniden getirilebilir.',
-    candidate_unavailable: 'Başka bir adayı seçin veya ders kapsamını kontrol edin.',
-    conflict_blocking: 'Çakışma çözüldükten sonra yeniden deneyin.',
-    locked_state: 'Aktif görevlendirmeyi temizleyip yeniden işlem yapın.',
-    rate_limited: 'Kısa bir süre sonra aynı işlemi tekrar deneyin.',
-    error_retryable: 'Sorun devam ederse günlük işleri yeniden yükleyin.',
-    offline_or_unavailable: 'Bağlantıyı kontrol edip yeniden deneyin.',
-  };
-  return hints[uiState] || '';
-}
-
 function serverAuthoredCode(body) {
   const explicit = pick(body, ['reasonCode', 'code']);
   if (explicit) return String(explicit);
@@ -677,38 +522,17 @@ function canonicalUiState(response, body, options = {}) {
 }
 
 function normalizeApiError(response, body, options = {}) {
-  const serverCode = serverAuthoredCode(body);
   const uiState = canonicalUiState(response, body, options);
-  const mapped = SERVER_REASON_UI[serverCode];
+  const mapped = SERVER_REASON_UI[serverAuthoredCode(body)];
   const copy = UI_STATES[uiState] || UI_STATES.error_retryable;
   const retryAfterHeader = response.headers?.get ? response.headers.get('retry-after') : null;
   return {
     status: response.status,
-    reasonCode: serverCode,
-    serverCode,
+    serverCode: serverAuthoredCode(body),
     uiState,
     message: mapped?.message || copy.message,
     retryAfterSeconds: Number(retryAfterHeader) || 0,
   };
-}
-
-function renderBlockingState(target, reasonCode) {
-  const mapped = reasonUi[reasonCode];
-  const uiState = mapped?.[0] || 'eligibility_not_ready';
-  const message = mapped?.[1] || stateMessages[uiState] || 'İşlem bekleniyor.';
-  const title = uiStateTitles[uiState] || 'İşlem bekliyor';
-  target.innerHTML = `<div class="error-state" data-state="${escapeHtml(uiState)}">
-    <strong>${escapeHtml(title)}</strong>
-    <p>${escapeHtml(message)}</p>
-  </div>`;
-  announce(message, 'warning');
-}
-
-function branchSelectionOutcome(error) {
-  if (error?.status === 404 && !reasonUi[error.reasonCode]) {
-    return { ...error, uiState: 'forbidden_non_enumerating', message: 'Bu şube görüntülenemiyor; yetki kapsamınız dışındaki şubeler listelenmez.' };
-  }
-  return error;
 }
 
 function canonicalStateBlock(uiState, message = '', title = '') {
@@ -962,7 +786,6 @@ function logout() {
   state.branchId = '';
   state.branchLabel = '';
   state.branches = [];
-  state.rateLimitedUntil = 0;
   state.tenantId = '';
   state.pendingRoute = '';
   state.pendingBranch = '';
@@ -988,7 +811,6 @@ function logout() {
 
 async function retryCatalog() {
   if (!requireSession()) return;
-  if (refuseRepeatedAction()) return;
   const loaded = await loadCatalog({ announceOnSuccess: 'Kurum bilgisi güncellendi.' });
   if (loaded) setStatus('Oturum aktif', 'success');
 }
@@ -996,7 +818,6 @@ async function retryCatalog() {
 async function updateContext(event) {
   event.preventDefault();
   if (!requireSession()) return;
-  if (refuseRepeatedAction()) return;
   const branch = state.branches.find((entry) => entry.code === $('#branch-id').value);
   if (!branch) return announce('Şube seçin.', 'warning');
   state.branchId = '';
@@ -1012,7 +833,7 @@ async function updateContext(event) {
     });
   } catch (error) {
     updateWorkflowProgress('context', 'Şube seçimi doğrulanamadı');
-    return renderError($('#queue-output'), branchSelectionOutcome(error));
+    return renderError($('#queue-output'), error);
   }
   applyCatalog(selection.body);
   await loadQueue();
@@ -1098,7 +919,6 @@ function activateTab(name) {
 async function createLeave(event) {
   event.preventDefault();
   if (!requireSession()) return;
-  if (refuseRepeatedAction()) return;
   const branchId = getBranchId();
   if (!branchId) {
     updateWorkflowProgress('context', 'İzin talebi için şube seçin');
@@ -1129,7 +949,6 @@ async function createLeave(event) {
 
 async function loadOwnLeave() {
   if (!requireSession()) return;
-  if (refuseRepeatedAction()) return;
   if (!state.activeLeaveId) return announce('Önce bir izin talebi seçin veya oluşturun.', 'warning');
   const target = $('#teacher-output');
   target.innerHTML = loading('Kendi izin talebi getiriliyor');
@@ -1145,7 +964,6 @@ async function loadOwnLeave() {
 
 async function loadQueue() {
   if (!requireSession()) return;
-  if (refuseRepeatedAction()) return;
   const target = $('#queue-output');
   const branchId = getBranchId();
   if (!branchId) {
@@ -1196,7 +1014,6 @@ function renderQueueItem(item) {
 
 async function loadImpact(leaveId, eventId, courseLabel = '') {
   if (!requireSession()) return;
-  if (refuseRepeatedAction()) return;
   state.activeLeaveId = leaveId || state.activeLeaveId;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
   state.activeLessonLabel = courseLabel || state.activeLessonLabel;
@@ -1254,7 +1071,6 @@ function renderImpact(body, events) {
 
 async function loadCandidates(eventId, courseLabel = '') {
   if (!requireSession()) return;
-  if (refuseRepeatedAction()) return;
   state.activeScheduleEventId = eventId || state.activeScheduleEventId;
   state.activeLessonLabel = courseLabel || state.activeLessonLabel;
   updateWorkflowProgress();
@@ -1266,7 +1082,7 @@ async function loadCandidates(eventId, courseLabel = '') {
   target.innerHTML = loading('Adaylar getiriliyor');
   try {
     const { body } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/candidates`);
-    if (body?.eligibilityFinalized !== true) {
+    if (body?.eligibilityFinalized === false) {
       updateWorkflowProgress('assignment', 'Uygunluk kaynağı bekleniyor');
       return renderRegionState(target, 'eligibility_not_ready');
     }
@@ -1329,7 +1145,6 @@ function syncCandidateAssignmentActions() {
 
 async function createAssignment(teacherId) {
   if (!state.activeLeaveEtag) return announce('Güncel izin kaydı alınmadan görevlendirme yapılamaz.', 'warning');
-  if (refuseRepeatedAction()) return;
   const target = $('#candidate-output');
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/substitution`, {
@@ -1353,7 +1168,6 @@ async function createAssignment(teacherId) {
 
 async function clearAssignment() {
   if (!state.activeLeaveEtag) return announce('Güncel izin kaydı alınmadan görevlendirme temizlenemez.', 'warning');
-  if (refuseRepeatedAction()) return;
   const target = $('#candidate-output');
   try {
     const { body, etag } = await apiRequest(`/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/substitution`, {
