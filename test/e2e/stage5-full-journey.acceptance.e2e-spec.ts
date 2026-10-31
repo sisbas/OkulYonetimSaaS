@@ -877,7 +877,14 @@ async function expectRawStatus(
 
 function assertNoBlockingAxeViolations(
   label: string,
-  violations: ReadonlyArray<{ id: string; impact: string | null; help: string; nodes: number }>,
+  violations: ReadonlyArray<{
+    id: string;
+    impact: string | null;
+    help: string;
+    nodes: number;
+    targets?: readonly string[];
+    failureSummary?: string;
+  }>,
 ): void {
   const blocking = violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
   recordEvidence(
@@ -890,7 +897,14 @@ function assertNoBlockingAxeViolations(
   if (blocking.length > 0) {
     throw new Error(
       `${label}: axe critical/serious violations: ` +
-        blocking.map((v) => `${v.id}[${v.impact}] ${v.help} (${v.nodes} nodes)`).join('; '),
+        blocking
+          .map(
+            (v) =>
+              `${v.id}[${v.impact}] ${v.help} (${v.nodes} nodes)` +
+              ` targets=${(v.targets ?? []).join(' | ')}` +
+              ` summary=${v.failureSummary ?? ''}`,
+          )
+          .join('; '),
     );
   }
 }

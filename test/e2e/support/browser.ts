@@ -68,6 +68,8 @@ export type AxeViolation = Readonly<{
   impact: 'minor' | 'moderate' | 'serious' | 'critical' | null;
   help: string;
   nodes: number;
+  targets?: readonly string[];
+  failureSummary?: string;
 }>;
 
 export type TraceResult = Readonly<{
@@ -354,6 +356,13 @@ export async function createUiSession(input: Readonly<{
           impact: violation.impact,
           help: violation.help,
           nodes: violation.nodes.length,
+          targets: violation.nodes
+            .map((node) => (node as { target?: unknown }).target)
+            .filter((target): target is string[] => Array.isArray(target))
+            .map((target) => target.join(' ')),
+          failureSummary: String(
+            (violation.nodes[0] as { failureSummary?: unknown } | undefined)?.failureSummary ?? '',
+          ).slice(0, 400),
         }));
       }, context);
       return result as AxeViolation[];
