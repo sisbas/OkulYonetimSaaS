@@ -1,0 +1,57 @@
+name: Post-merge synthetic canary
+
+# S5-B2 (#269 AC-7): merge sonrası geri alınabilir sentetik canary + SLO gözlemi.
+# Bu workflow bir kabul kanıtı değildir; merge sonrası ortam gözlemidir.
+# CANARY_ENABLED != 'true' ise job SKIPPED olur. Skip PASS sayılmaz.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-merge-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: Reversible synthetic canary + SLO observation
+    if: vars.CANARY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact main head
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Run read-only synthetic canary
+        env:
+          CANARY_BASE_URL: ${{ secrets.CANARY_BASE_URL }}
+          CANARY_EMAIL: ${{ secrets.CANARY_EMAIL }}
+          CANARY_PASSWORD: ${{ secrets.CANARY_PASSWORD }}
+          CANARY_BRANCH_CODE: ${{ secrets.CANARY_BRANCH_CODE }}
+          CANARY_TENANT_ID: ${{ secrets.CANARY_TENANT_ID }}
+          CANARY_SLO_P95_MS: ${{ vars.CANARY_SLO_P95_MS || '1500' }}
+        run: node scripts/synthetic-canary.js
+
+      - name: Upload canary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-merge-canary-${{ github.sha }}
+          path: artifacts/post-merge-canary
+          if-no-files-found: error
+          retention-days: 30

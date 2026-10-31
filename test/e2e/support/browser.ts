@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import puppeteer, { type Browser, type KeyInput, type Page } from 'puppeteer-core';
 import { E2eEnvironmentError } from './env';
+import { sanitizeTraceFile } from './trace';
 
 /**
  * S0-A1 (#269 AC-2) — gerçek tarayıcı oturumu.
@@ -62,6 +63,20 @@ export type NetworkEntry = {
   status: number | 'PENDING';
 };
 
+export type AxeViolation = Readonly<{
+  id: string;
+  impact: 'minor' | 'moderate' | 'serious' | 'critical' | null;
+  help: string;
+  nodes: number;
+  targets?: readonly string[];
+  failureSummary?: string;
+}>;
+
+export type TraceResult = Readonly<{
+  path: string;
+  redactionFindings: string[];
+}>;
+
 export type UiSession = Readonly<{
   page: Page;
   consoleErrors: string[];
@@ -91,6 +106,27 @@ export type UiSession = Readonly<{
   countElements: (selector: string) => Promise<number>;
   maskCredentialInputs: () => Promise<void>;
   screenshot: (name: string) => Promise<string>;
+  /** S5-B2: görünür viewport (desktop/mobile) değiştirir. */
+  setViewport: (width: number, height: number) => Promise<void>;
+  /** S5-B2: gerçek ağ kesintisi (offline durumu). */
+  setOffline: (offline: boolean) => Promise<void>;
+  /**
+   * S5-B2: yaln�zca eşleşen isteği geciktirir; loading durumunun gerçekten
+   * render edildiğini kanıtlamak için kullanılır. İşlemsel istek üretmez.
+   */
+  withDelayedRequest: <T>(
+    urlFragment: string,
+    delayMs: number,
+    action: () => Promise<T>,
+  ) => Promise<T>;
+  /** S5-B2: axe-core WCAG 2.2 A/AA taraması; DOM'a yazmaz. */
+  axeScan: (options?: Readonly<{ include?: string }>) => Promise<AxeViolation[]>;
+  /** S5-B2: yatay taşma (responsive kırılma) ölçümü. */
+  hasHorizontalOverflow: () => Promise<boolean>;
+  /** S5-B2: Chrome trace kaydını başlatır. */
+  startTrace: (filePath: string) => Promise<void>;
+  /** S5-B2: trace'i durdurur, PII/secret maskeler ve artefakt yolunu döner. */
+  stopTrace: () => Promise<TraceResult>;
   close: () => Promise<void>;
 }>;
 
@@ -101,12 +137,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function resolveAxeSource(): string {
+  try {
+    return require.resolve('axe-core/axe.min.js');
+  } catch (error) {
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    throw new E2eEnvironmentError(`axe-core could not be resolved after npm ci (${detail}).`);
+  }
+}
+
 export async function createUiSession(input: Readonly<{
   browser: Browser;
   baseUrl: string;
   screenshotDir: string;
   index: { value: number };
   timeZone?: string;
+  viewport?: Readonly<{ width: number; height: number }>;
 }>): Promise<UiSession> {
   fs.mkdirSync(input.screenshotDir, { recursive: true });
 
@@ -121,7 +167,11 @@ export async function createUiSession(input: Readonly<{
   // gözlendi: Expected 200 / Received 304). Kabul kanıtı her seferinde gerçek
   // bir ağ yanıtına bağlanmalıdır.
   await page.setCacheEnabled(false);
-  await page.setViewport({ width: 1440, height: 900 });
+  await page.setViewport(
+    input.viewport === undefined
+      ? { width: 1440, height: 900 }
+      : { width: input.viewport.width, height: input.viewport.height },
+  );
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text());
@@ -142,6 +192,8 @@ export async function createUiSession(input: Readonly<{
 
   const readOnlyText = async (selector: string): Promise<string> =>
     page.$eval(selector, (element) => element.textContent ?? '').catch(() => '');
+
+  const traceState: { path: string | null } = { path: null };
 
   const session: UiSession = {
     page,
@@ -243,6 +295,100 @@ export async function createUiSession(input: Readonly<{
       ) as `${string}.png`;
       await page.screenshot({ path: file, fullPage: true });
       return path.relative(path.dirname(input.screenshotDir), file).replace(/\\/g, '/');
+    },
+    setViewport: async (width: number, height: number) => {
+      await page.setViewport({ width, height });
+    },
+    setOffline: async (offline: boolean) => {
+      await page.setOfflineMode(offline);
+    },
+    withDelayedRequest: async <T>(
+      urlFragment: string,
+      delayMs: number,
+      action: () => Promise<T>,
+    ): Promise<T> => {
+      await page.setRequestInterception(true);
+      const handler = (request: import('puppeteer-core').HTTPRequest): void => {
+        if (request.url().includes(urlFragment)) {
+          setTimeout(() => {
+            request.continue().catch(() => undefined);
+          }, delayMs);
+        } else {
+          request.continue().catch(() => undefined);
+        }
+      };
+      page.on('request', handler);
+      try {
+        return await action();
+      } finally {
+        page.off('request', handler);
+        await page.setRequestInterception(false).catch(() => undefined);
+      }
+    },
+    axeScan: async (options = {}) => {
+      await page.addScriptTag({ path: resolveAxeSource() });
+      // Selector resolution happens INSIDE the page context; passing `document`
+      // from the Node test process would throw `ReferenceError: document is not
+      // defined` (observed in CI run 41210193163).
+      const context = options.include ?? null;
+      const result = await page.evaluate(async (selector: string | null) => {
+        // `axe` is injected by addScriptTag above; the check keeps a missing
+        // injection from reading as a clean scan (fail-closed).
+        const axeRuntime = (globalThis as unknown as { axe?: { run: Function } }).axe;
+        if (axeRuntime === undefined || typeof axeRuntime.run !== 'function') {
+          throw new Error('axe-core was not injected into the page.');
+        }
+        const target = selector === null ? document : document.querySelector(selector);
+        if (target === null) throw new Error(`axeScan target not found: ${String(selector)}`);
+        const scan = await axeRuntime.run(target, {
+          runOnly: {
+            type: 'tag',
+            values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'],
+          },
+        });
+        return (scan.violations ?? []).map((violation: {
+          id: string;
+          impact: string | null;
+          help: string;
+          nodes: unknown[];
+        }) => ({
+          id: violation.id,
+          impact: violation.impact,
+          help: violation.help,
+          nodes: violation.nodes.length,
+          targets: violation.nodes
+            .map((node) => (node as { target?: unknown }).target)
+            .filter((target): target is string[] => Array.isArray(target))
+            .map((target) => target.join(' ')),
+          failureSummary: String(
+            (violation.nodes[0] as { failureSummary?: unknown } | undefined)?.failureSummary ?? '',
+          ).slice(0, 400),
+        }));
+      }, context);
+      return result as AxeViolation[];
+    },
+    hasHorizontalOverflow: async () =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth > document.documentElement.clientWidth + 1 ||
+          document.body.scrollWidth > document.body.clientWidth + 1,
+      ),
+    startTrace: async (filePath: string) => {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      traceState.path = filePath;
+      await page.tracing.start({
+        path: filePath as `${string}.json`,
+        screenshots: false,
+        categories: ['devtools.timeline', 'disabled-by-default-devtools.timeline'],
+      });
+    },
+    stopTrace: async () => {
+      const target = traceState.path;
+      if (target === null) throw new Error('stopTrace called without startTrace.');
+      await page.tracing.stop();
+      traceState.path = null;
+      const result = sanitizeTraceFile(target);
+      return { path: target, redactionFindings: result.findings };
     },
     close: async () => {
       await page.close();
