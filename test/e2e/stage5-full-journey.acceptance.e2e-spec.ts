@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Browser } from 'puppeteer-core';
@@ -76,6 +77,8 @@ const SCENARIO_NAMES = [
   'Oturum düzeyinde toplu onay + SIMULATED gönderim + durable receipt (tek efekt).',
   'UI KVKK onay geri çekme + enqueue/execute yeniden doğrulama reddi.',
   'İzolasyon + yeniden giriş kalıcılığı + ham PII/depolama taraması.',
+  'S5-B2 negatif matris: invalid date, stale/conflict, forbidden, session expiry, cross-tenant, 404, empty/loading/offline.',
+  'S5-B2 a11y/klavye/responsive: axe critical/serious=0 (desktop+mobile), focus, overflow, trace.',
 ] as const;
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -113,6 +116,7 @@ let server: RuntimeServer | undefined;
 let browser: Browser | undefined;
 let sessionA: UiSession | undefined;
 let sessionB: UiSession | undefined;
+let sessionC: UiSession | undefined;
 let dbClient: PgClient | undefined;
 let opsApi: BootstrapApi;
 let opsApiB: BootstrapApi;
@@ -791,6 +795,90 @@ async function seedSubstituteTeacher(client: PgClient): Promise<string> {
   return teacherId;
 }
 
+function base64Url(value: Buffer | string): string {
+  return Buffer.from(value).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+/**
+ * Gerçek oturum token'ının payload'ını koruyup `exp` alanını geçmişe çeker.
+ * İmza gerçek JWT_ACCESS_SECRET ile üretilir; böylece "bozuk imza" değil,
+ * gerçek "süresi dolmuş oturum" negatifi kanıtlanır.
+ */
+function expiredAccessTokenFrom(validToken: string): string {
+  const secret = process.env.JWT_ACCESS_SECRET;
+  if (secret === undefined || secret.length < 32) {
+    throw new Error('JWT_ACCESS_SECRET is required to mint the expired-session negative.');
+  }
+  const parts = validToken.split('.');
+  if (parts.length !== 3) throw new Error('Unexpected access token format.');
+  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, unknown>;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const forgedPayload = { ...payload, iat: nowSeconds - 3_600, exp: nowSeconds - 60, nbf: undefined };
+  const header = base64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const body = base64Url(JSON.stringify(forgedPayload));
+  const signature = base64Url(crypto.createHmac('sha256', secret).update(`${header}.${body}`).digest());
+  return `${header}.${body}.${signature}`;
+}
+
+async function rawApiCall(
+  api: BootstrapApi,
+  method: string,
+  requestPath: string,
+  options: Readonly<{ token?: string; headers?: Record<string, string>; body?: unknown }> = {},
+): Promise<{ status: number; text: string }> {
+  const headers: Record<string, string> = { Accept: 'application/json', ...(options.headers ?? {}) };
+  headers.Authorization = `Bearer ${options.token ?? api.token}`;
+  if (api.branchCode !== null && !requestPath.startsWith('/context') && !requestPath.startsWith('/auth/')) {
+    headers['x-branch-code'] = api.branchCode;
+  }
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch(`${api.baseUrl}/api/v1${requestPath}`, {
+    method,
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    keepalive: false,
+    signal: AbortSignal.timeout(40_000),
+  });
+  return { status: response.status, text: await response.text() };
+}
+
+async function expectRawStatus(
+  api: BootstrapApi,
+  method: string,
+  requestPath: string,
+  status: number,
+  options: Readonly<{ token?: string; headers?: Record<string, string>; body?: unknown }> = {},
+): Promise<string> {
+  const result = await rawApiCall(api, method, requestPath, options);
+  if (result.status !== status) {
+    throw new Error(
+      `expected HTTP ${status} for ${method} ${requestPath}, got ${result.status}: ${scrubText(result.text).slice(0, 400)}`,
+    );
+  }
+  recordEvidence(currentScenario, `${method} ${requestPath} -> HTTP ${status}`);
+  return result.text;
+}
+
+function assertNoBlockingAxeViolations(
+  label: string,
+  violations: ReadonlyArray<{ id: string; impact: string | null; help: string; nodes: number }>,
+): void {
+  const blocking = violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+  recordEvidence(
+    currentScenario,
+    `${label}: axe total=${violations.length}, critical/serious=${blocking.length}` +
+      (violations.length === 0
+        ? ''
+        : `; ${violations.map((v) => `${v.impact ?? '?'}:${v.id}(${v.nodes})`).join(', ')}`),
+  );
+  if (blocking.length > 0) {
+    throw new Error(
+      `${label}: axe critical/serious violations: ` +
+        blocking.map((v) => `${v.id}[${v.impact}] ${v.help} (${v.nodes} nodes)`).join('; '),
+    );
+  }
+}
+
 beforeAll(async () => {
   environment = readE2eEnvironment();
   startedAt = new Date().toISOString();
@@ -870,6 +958,14 @@ beforeAll(async () => {
   attachNetworkRecorder(sessionA, 'opsA');
   sessionB = await createUiSession({ browser, baseUrl: environment.baseUrl, screenshotDir, index: screenshotIndex });
   attachNetworkRecorder(sessionB, 'teacher');
+  sessionC = await createUiSession({
+    browser,
+    baseUrl: environment.baseUrl,
+    screenshotDir,
+    index: screenshotIndex,
+  });
+  attachNetworkRecorder(sessionC, 'mobile');
+  await sessionA.startTrace(path.join(environment.artifactDir, 'traces', 's5-journey-trace.json'));
 });
 
 describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leave → attendance → notifications)', () => {
@@ -1483,6 +1579,199 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await snap(sessionA!, '06-isolation-persistence-pii');
     recordScenario(SCENARIO_NAMES[5], 'PASS');
   });
+
+  it('S5-B2 negatif matris: invalid date, stale/conflict, forbidden, session expiry, cross-tenant, 404, empty/loading/offline.', async () => {
+    currentScenario = SCENARIO_NAMES[6];
+
+    // 1) Geçersiz tarih: sunucu doğrulaması 400 döner; UI bunu hata durumuna çevirir.
+    const invalidDate = await rawApiCall(
+      opsApi,
+      'GET',
+      `/daily-operations/today?branchId=${encodeURIComponent(fixture.branchCode)}&date=2026-02-31`,
+    );
+    expect(invalidDate.status).toBe(400);
+    negatives['invalid-date'] = `daily-operations invalid date -> HTTP ${invalidDate.status}`;
+    recordEvidence(currentScenario, 'invalid date -> 400 (server-side DTO validation)');
+
+    // 2) Stale/conflict: zaten onaylanmış izin, eski If-Match ile tekrar onaylanamaz.
+    const stale = await rawApiCall(opsApi, 'PATCH', `/leaves/${leaveId}/approve`, {
+      headers: { 'If-Match': `W/"leave:${leaveId}:v1"` },
+    });
+    expect(stale.status).toBe(409);
+    const leaveAfterStale = await readLeave(leaveId);
+    expect(leaveAfterStale.decisionStatus).toBe('approved');
+    negatives['stale-conflict'] = `stale If-Match approve -> HTTP 409; DB decision_status=approved unchanged`;
+    recordEvidence(currentScenario, 'stale/conflict -> 409, no double decision');
+
+    // 3) Forbidden: öğretmen rolü yönetici kararını veremez.
+    const forbidden = await rawApiCall(teacherApi, 'PATCH', `/leaves/${leaveId}/approve`, {
+      headers: { 'If-Match': `W/"leave:${leaveId}:v2"` },
+    });
+    expect([403, 404]).toContain(forbidden.status);
+    negatives['forbidden'] = `teacher approve -> HTTP ${forbidden.status} (manager capability denied)`;
+    recordEvidence(currentScenario, 'forbidden -> manager-only action rejected for teacher');
+
+    // 4) Session expiry: gerçek imzalı ama süresi geçmiş token 401.
+    const expired = await rawApiCall(opsApi, 'GET', '/notifications?limit=1&offset=0', {
+      token: expiredAccessTokenFrom(opsApi.token),
+    });
+    expect(expired.status).toBe(401);
+    negatives['session-expiry'] = 'expired signed access token -> HTTP 401';
+    recordEvidence(currentScenario, 'session expiry -> 401 (signature valid, exp past)');
+
+    // 5) Cross-tenant/branch: B şubesi A şubesinin kaynağını göremez (non-enumerating).
+    const crossTenant = await rawApiCall(opsApiB, 'GET', `/notifications/drafts/${rows.r0}`);
+    expect([403, 404]).toContain(crossTenant.status);
+    const crossLeave = await rawApiCall(opsApiB, 'GET', `/leaves/${leaveId}`);
+    expect([403, 404]).toContain(crossLeave.status);
+    negatives['cross-tenant'] = `branch-B draft=${crossTenant.status}, leave=${crossLeave.status} (non-enumerating)`;
+    recordEvidence(currentScenario, 'cross-tenant/branch -> non-enumerating 404/403');
+
+    // 6) 404: bilinmeyen kaynak.
+    const unknown = await rawApiCall(opsApi, 'GET', `/notifications/drafts/00000000-0000-4000-8000-000000000000`);
+    expect(unknown.status).toBe(404);
+    negatives['not-found'] = 'unknown draft -> HTTP 404';
+    recordEvidence(currentScenario, '404 -> unknown resource stays unknown');
+
+    // 7) Empty: B şubesinde bildirim yok; UI boş durumu gösterir.
+    await sessionA!.clickElement('.tab[data-tab="notifications"]');
+    await ensureBranch(sessionA!, branchB.branchCode);
+    await sessionA!.clickElement('#refresh-notifications');
+    await sessionA!.waitForText('#notifications-list [data-state="same_scope_empty"]', /./, 20_000);
+    negatives['empty-state'] = 'branch B notifications -> data-state=same_scope_empty';
+    recordEvidence(currentScenario, 'empty -> canonical same_scope_empty region');
+
+    // 8) Loading: istek geciktirilirken gerçek loading bölgesi görünür.
+    await ensureBranch(sessionA!, fixture.branchCode);
+    await sessionA!.withDelayedRequest('/notifications?', 2_500, async () => {
+      await sessionA!.clickElement('#refresh-notifications');
+      await sessionA!.waitForText('#notifications-list .loading', /getiriliyor/i, 5_000);
+      await waitForCountAtLeast(sessionA!, '#notifications-list article.card', 3, 30_000);
+    });
+    negatives['loading-state'] = 'delayed /notifications -> .loading role=status rendered, then 3 cards';
+    recordEvidence(currentScenario, 'loading -> role=status loading region then settled data');
+
+    // 9) Offline: ağ kesintisi offline_or_unavailable durumuna düşer; geri dönünce toparlanır.
+    await sessionA!.setOffline(true);
+    try {
+      await sessionA!.clickElement('#refresh-notifications');
+      await sessionA!.waitForText(
+        '#notifications-list [data-state="offline_or_unavailable"]',
+        /./,
+        20_000,
+      );
+    } finally {
+      await sessionA!.setOffline(false);
+    }
+    await sessionA!.clickElement('#refresh-notifications');
+    await waitForCountAtLeast(sessionA!, '#notifications-list article.card', 3, 30_000);
+    negatives['offline-state'] = 'offline -> data-state=offline_or_unavailable; reconnect recovers';
+    recordEvidence(currentScenario, 'offline -> canonical offline state; recovery -> data');
+
+    // 10) Aynı origin /api/v1 canlı erişim + authenticated 200 (network kanıtı).
+    const live200 = await rawApiCall(opsApi, 'GET', '/notifications?limit=1&offset=0');
+    expect(live200.status).toBe(200);
+    negatives['same-origin-live'] = 'same-origin /api/v1 authenticated GET -> 200';
+    recordEvidence(currentScenario, 'same-origin /api/v1 reachable + authenticated 200');
+
+    // DB audit kanıtı: journey'in işlemsel adımları denetim zincirine yazılmış olmalı.
+    const auditRows = await dbClient!.query(
+      `SELECT action, COUNT(*)::int AS n, MIN(created_at)::text AS first_at
+         FROM audit_logs
+        WHERE tenant_id = $1::uuid AND created_at >= $2::timestamptz
+        GROUP BY action
+        ORDER BY action`,
+      [fixture.tenantId, startedAt],
+    );
+    const auditActions = auditRows.rows.map((row) => String(row.action));
+    expect(auditActions).toEqual(
+      expect.arrayContaining([
+        'leave.requested.v1',
+        'leave.approved.v1',
+        'leave.substitution_assigned.v1',
+        'leave.substitution_cleared.v1',
+        'attendance.session.opened',
+        'attendance.record.marked',
+        'attendance.session.closed',
+        'notification.sent',
+      ]),
+    );
+    const auditMetadata = await dbClient!.query(
+      `SELECT COALESCE(metadata_json::text, '') AS metadata
+         FROM audit_logs
+        WHERE tenant_id = $1::uuid AND created_at >= $2::timestamptz`,
+      [fixture.tenantId, startedAt],
+    );
+    const metadataText = auditMetadata.rows.map((row) => String(row.metadata)).join('\n');
+    expect(scanTextForLeaks(scrubText(metadataText))).toEqual([]);
+    const auditSummary = auditRows.rows
+      .map((row) => `${String(row.action)}=${Number(row.n)}`)
+      .join(', ');
+    recordEvidence(currentScenario, `DB audit: ${auditSummary}; metadata PII scan clean`);
+    negatives['audit-evidence'] = `audit rows bound to ${environment.headSha.slice(0, 12)}: ${auditActions.length} actions, PII clean`;
+
+    await snap(sessionA!, '07-negative-matrix');
+    recordScenario(SCENARIO_NAMES[6], 'PASS');
+  });
+
+  it('S5-B2 a11y/klavye/responsive: axe critical/serious=0 (desktop+mobile), focus, overflow, trace.', async () => {
+    currentScenario = SCENARIO_NAMES[7];
+    const mobileSession = sessionC!;
+    await mobileSession.navigateToRuntime();
+    assertNoBlockingAxeViolations('axe login desktop', await mobileSession.axeScan());
+
+    // Klavye-only giriş: Tab ile alanlara ulaş, Enter ile formu gönder.
+    let emailReached = false;
+    for (let i = 0; i < 12; i += 1) {
+      await mobileSession.press('Tab');
+      if ((await mobileSession.activeElementId()) === 'email') {
+        emailReached = true;
+        break;
+      }
+    }
+    expect(emailReached).toBe(true);
+    const focusRing = await mobileSession.page.evaluate(() => {
+      const element = document.activeElement as HTMLElement | null;
+      if (element === null) return { outlineStyle: 'none', outlineWidth: '0px' };
+      const style = window.getComputedStyle(element);
+      return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth };
+    });
+    expect(focusRing.outlineStyle).not.toBe('none');
+    expect(parseFloat(focusRing.outlineWidth)).toBeGreaterThan(0);
+    recordEvidence(currentScenario, `keyboard: Tab reaches #email, focus ring ${focusRing.outlineStyle}/${focusRing.outlineWidth}`);
+
+    await mobileSession.page.keyboard.type(fixture.opsUser.email, { delay: 5 });
+    await mobileSession.press('Tab');
+    await mobileSession.page.keyboard.type(fixture.opsUser.credential, { delay: 5 });
+    const loginArmed = mobileSession.armResponse('/api/v1/auth/login', 'POST');
+    await mobileSession.press('Enter');
+    expect(await loginArmed).toBeGreaterThanOrEqual(200);
+    await mobileSession.waitForText('#session-status', /Oturum aktif/i, 20_000);
+    recordEvidence(currentScenario, 'keyboard: Enter submits login form (no mouse)');
+
+    await mobileSession.waitForText('#summary-scope', /./, 20_000);
+    await mobileSession.clickElement('.tab[data-tab="notifications"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe authenticated desktop', await mobileSession.axeScan());
+    expect(await mobileSession.hasHorizontalOverflow()).toBe(false);
+    await snap(mobileSession, '08-a11y-keyboard-desktop');
+
+    await mobileSession.setViewport(390, 844);
+    assertNoBlockingAxeViolations('axe authenticated mobile', await mobileSession.axeScan());
+    expect(await mobileSession.hasHorizontalOverflow()).toBe(false);
+    await snap(mobileSession, '09-mobile-viewport');
+    recordEvidence(currentScenario, 'desktop+mobile: axe critical/serious=0, no horizontal overflow');
+
+    const trace = await sessionA!.stopTrace();
+    const traceStat = fs.statSync(trace.path);
+    expect(traceStat.size).toBeGreaterThan(0);
+    const traceText = fs.readFileSync(trace.path, 'utf8');
+    expect(scanTextForLeaks(scrubText(traceText))).toEqual([]);
+    recordEvidence(
+      currentScenario,
+      `trace: ${path.relative(environment.artifactDir, trace.path).replace(/\\/g, '/')} (${traceStat.size} bytes), redacted=${trace.redactionFindings.join(',') || 'patterns-not-observed'}`,
+    );
+    recordScenario(SCENARIO_NAMES[7], 'PASS');
+  });
 });
 
 function safeReportJson(value: unknown): string {
@@ -1493,7 +1782,8 @@ async function writeReport(verdict: ScenarioStatus): Promise<void> {
   const finishedAt = new Date().toISOString();
   const report = {
     slice: SLICE_ID,
-    issue: 266,
+    issue: 269,
+    issues: [266, 269],
     contract: 'Stage 5 — E1 full journey (UI-driven schedule → leave/approval/impact/assign/clear → attendance → notifications → consent)',
     headSha: environment.headSha,
     baseUrl: environment.baseUrl,
@@ -1533,6 +1823,21 @@ async function writeReport(verdict: ScenarioStatus): Promise<void> {
       },
     },
     screenshots,
+    trace: {
+      path: 'traces/s5-journey-trace.json',
+      redaction: 'JWT/Bearer/cookie/password/phone/PII patterns masked in-place before upload',
+      scan: 'post-sanitize scanTextForLeaks = []',
+    },
+    a11y: {
+      engine: 'axe-core 4.14.0',
+      rules: 'wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa',
+      gate: 'critical+serious = 0 on login, authenticated desktop and mobile viewport',
+      evidence: evidence[SCENARIO_NAMES[7]] ?? [],
+    },
+    negativeMatrix: {
+      cases: negatives,
+      rule: 'no negative/skip/neutral/cancelled outcome is reported as PASS',
+    },
     backend: {
       pid: server?.pid ?? -1,
       readinessBoundToSpawnedProcess: true,
@@ -1574,7 +1879,8 @@ afterAll(async () => {
         .then(task)
         .catch(() => undefined);
     };
-    for (const s of [sessionA, sessionB]) {
+    if (sessionA !== undefined) await stop(() => sessionA!.stopTrace());
+    for (const s of [sessionA, sessionB, sessionC]) {
       if (s !== undefined) await stop(() => s.close());
     }
     const b = browser;
