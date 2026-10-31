@@ -9,6 +9,7 @@ import {
   AUTH_TOKEN_ISSUER,
   AuthService,
 } from './auth.service';
+import { resolveJwtKeyId } from './jwt-keyring';
 
 const USER_ID = '10000000-0000-4000-8000-000000000001';
 const TENANT_ID = '20000000-0000-4000-8000-000000000001';
@@ -22,7 +23,13 @@ function authService(query: jest.Mock) {
     query,
     transaction: jest.fn(async (callback: (entityManager: EntityManager) => Promise<unknown>) => callback(manager)),
   } as unknown as DataSource;
-  const jwt = { signAsync: jest.fn(async (payload: unknown) => `signed:${JSON.stringify(payload)}`), verifyAsync: jest.fn() } as unknown as JwtService;
+  const jwt = {
+    signAsync: jest.fn(async (payload: unknown) => `signed:${JSON.stringify(payload)}`),
+    verifyAsync: jest.fn(),
+    // #259: refresh doğrulaması `kid` başlığını fail-closed kontrol eder; test
+    // çiftliği aktif anahtar kimliğini taşıyan bir başlık döndürür.
+    decode: jest.fn(() => ({ header: { kid: resolveJwtKeyId() } })),
+  } as unknown as JwtService;
   return { service: new AuthService(jwt, dataSource), jwt: jwt as jest.Mocked<JwtService>, dataSource };
 }
 

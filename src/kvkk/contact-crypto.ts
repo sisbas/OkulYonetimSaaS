@@ -5,6 +5,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from 'crypto';
+import { resolveRuntimeProfile } from '../common/security/environment-profile';
 
 /**
  * #266 N1a — Purpose-bound authenticated-encryption adapter for parent
@@ -109,7 +110,7 @@ export type ContactBlindIndexInput = Readonly<{
 }>;
 
 function isProduction(env: NodeJS.ProcessEnv): boolean {
-  return (env.NODE_ENV ?? '').toLowerCase() === 'production';
+  return resolveRuntimeProfile(env, `${CONTACT_KEY_ENV} resolution`) === 'production';
 }
 
 function parseKey(

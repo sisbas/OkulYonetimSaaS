@@ -1,4 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
+import { resolveRuntimeProfile } from '../security/environment-profile';
+
 
 /**
  * Durable, tamper-evident audit zinciri (#259 P1B-02).
@@ -21,11 +23,17 @@ export const AUDIT_HMAC_KEY_ID_ENV = 'AUDIT_HMAC_KEY_ID';
 /** Üretimde HMAC anahtarı en az 256-bit olmalı (fail-closed, #259 AC-2). */
 export const MIN_AUDIT_HMAC_KEY_BYTES = 32;
 
+/** Key-id biçimi: `kid` sütunu varchar(40) ile uyumlu. */
+const AUDIT_KEY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
+
 /**
  * Local/test izolasyonu: üretimde FİZİKSEL OLARAK kullanılamaz çünkü
- * `resolveAuditHmacKey` production'da env yoksa hata fırlatır.
+ * `resolveAuditHmacKey` production'da env yoksa hata fırlatır ve fallback
+ * yalnız NODE_ENV açıkça local/test/development olarak verildiğinde döner
+ * (#259 AC-2: NODE_ENV set edilmemişse fallback YOK — fail-closed).
  */
 export const TEST_AUDIT_HMAC_KEY = 'local-test-audit-hmac-key-min-32-bytes';
+
 
 /** Zinciri uzatırken serileştirme için transaction-scoped advisory lock anahtarı. */
 export const AUDIT_CHAIN_LOCK_KEY = 8412374650021;
@@ -98,7 +106,8 @@ export function resolveAuditHmacKey(
   env: NodeJS.ProcessEnv = process.env,
 ): AuditHmacKey {
   const configured = env[AUDIT_HMAC_KEY_ENV];
-  const isProduction = (env.NODE_ENV ?? '').toLowerCase() === 'production';
+  const profile = resolveRuntimeProfile(env, `${AUDIT_HMAC_KEY_ENV} resolution`);
+  const isProduction = profile === 'production';
 
   if (configured) {
     if (configured.length < MIN_AUDIT_HMAC_KEY_BYTES) {
@@ -106,7 +115,7 @@ export function resolveAuditHmacKey(
         `FATAL: ${AUDIT_HMAC_KEY_ENV} is too weak (${configured.length} chars, need >= ${MIN_AUDIT_HMAC_KEY_BYTES}).`,
       );
     }
-    return { key: configured, keyId: env[AUDIT_HMAC_KEY_ID_ENV] ?? 'key-1' };
+    return { key: configured, keyId: resolveAuditHmacKeyId(env) };
   }
 
   if (isProduction) {
@@ -117,6 +126,32 @@ export function resolveAuditHmacKey(
 
   return { key: TEST_AUDIT_HMAC_KEY, keyId: 'local-test-key' };
 }
+
+/**
+ * Aktif imza anahtarı kimliğini fail-closed çözer.
+ *
+ * Production'da `AUDIT_HMAC_KEY_ID` zorunludur: kimliksiz bir aktif anahtar,
+ * rotasyon sonrası eski/yeni kayıtların ayrımını imkânsız kılar. Local profilde
+ * `key-1` varsayılanı kullanılır.
+ */
+export function resolveAuditHmacKeyId(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = (env[AUDIT_HMAC_KEY_ID_ENV] ?? '').trim();
+  if (configured === '') {
+    if (resolveRuntimeProfile(env, `${AUDIT_HMAC_KEY_ID_ENV} resolution`) === 'production') {
+      throw new Error(
+        `FATAL: ${AUDIT_HMAC_KEY_ID_ENV} is required in production but missing from environment.`,
+      );
+    }
+    return 'key-1';
+  }
+  if (!AUDIT_KEY_ID_PATTERN.test(configured)) {
+    throw new Error(
+      `FATAL: ${AUDIT_HMAC_KEY_ID_ENV} must match ${AUDIT_KEY_ID_PATTERN.source} (1..40 chars).`,
+    );
+  }
+  return configured;
+}
+
 
 /**
  * Rotasyon sözleşmesi (`.env.example`): yeni anahtar `AUDIT_HMAC_KEY_ID`'ye
