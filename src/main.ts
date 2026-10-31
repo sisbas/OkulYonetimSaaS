@@ -4,6 +4,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { join } from 'node:path';
 import { AppModule } from './app.module';
+import { assertSecurityPostureAtStartup } from './common/security/security-bootstrap';
 import { assertDatabaseUrlConfigured } from './database/data-source';
 
 // Guard/interceptor/controller katmanından düşen istekleri yalnız meta veriyle
@@ -58,7 +59,31 @@ class RequestFailureFilter implements ExceptionFilter {
 }
 
 async function bootstrap() {
+  // #259 P1B-02: gizli anahtar sözleşmesi Nest uygulaması oluşturulmadan ÖNCE
+  // doğrulanır. Eksik/zayıf/belirsiz yapılandırmada süreç burada durur; kısmi
+  // servis veren bir runtime asla ayağa kalkmaz.
+  const posture = assertSecurityPostureAtStartup();
+  console.log(
+    JSON.stringify({
+      event: 'security.posture.validated',
+      profile: posture.profile,
+      jwtKeyId: posture.jwt.keyId,
+      jwtAccessSecretChars: posture.jwt.accessSecretChars,
+      jwtRefreshSecretChars: posture.jwt.refreshSecretChars,
+      auditKeyId: posture.audit.keyId,
+      auditRetiredKeyIds: posture.audit.retiredKeyIds,
+      pseudonymKeyVersion: posture.kvkk.pseudonymKeyVersion,
+      contactKeyId: posture.kvkk.contactKeyId,
+      localFallbacks: posture.localFallbacks,
+      warningCount: posture.warnings.length,
+    }),
+  );
+  for (const warning of posture.warnings) {
+    console.warn(JSON.stringify({ event: 'security.posture.warning', detail: warning }));
+  }
+
   assertDatabaseUrlConfigured();
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useStaticAssets(join(process.cwd(), 'dist', 'runtime'), { prefix: '/runtime' });
   app.setGlobalPrefix('api/v1');

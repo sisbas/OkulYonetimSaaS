@@ -1,4 +1,6 @@
 import { createHmac } from 'crypto';
+import { resolveRuntimeProfile } from '../common/security/environment-profile';
+
 
 /**
  * KVKK pseudonymization (P1B · A3 redaction).
@@ -65,8 +67,10 @@ export function resolvePseudonymKey(
   env: NodeJS.ProcessEnv = process.env,
 ): PseudonymKey {
   const configured = env[PSEUDONYM_KEY_ENV];
-  const isProduction = (env.NODE_ENV ?? '').toLowerCase() === 'production';
+  const isProduction =
+    resolveRuntimeProfile(env, `${PSEUDONYM_KEY_ENV} resolution`) === 'production';
   const version = (env[PSEUDONYM_KEY_VERSION_ENV] ?? DEFAULT_PSEUDONYM_KEY_VERSION).trim();
+
 
   if (configured) {
     if (configured.length < MIN_PSEUDONYM_KEY_BYTES) {

@@ -16,6 +16,7 @@ import handler, {
 } from '../../api/v1/index';
 import { AppModule } from '../../src/app.module';
 import { AuthService, AUTH_ACCESS_TOKEN_AUDIENCE, AUTH_TOKEN_ISSUER } from '../../src/auth/auth.service';
+import { resolveJwtKey } from '../../src/auth/jwt-keyring';
 import type { RequestUser } from '../../src/common/context/request-context';
 import { BranchScopeService } from '../../src/rbac/branch-scope.service';
 import { NotificationDispatchService } from '../../src/notifications/notification-dispatch.service';
@@ -166,7 +167,10 @@ describe('notification operations API routing + permission authority', () => {
         authorization_version: authenticatedUser.authorizationVersion,
       },
       {
-        secret: process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret',
+        // #259 P1B-02: erisim token'i aktif anahtar kimligi (`kid`) ile imzalanir;
+// dogrulama kid eslesmesini zorunlu kilar.
+secret: resolveJwtKey('access').secret,
+      keyid: resolveJwtKey('access').keyId,
         issuer: AUTH_TOKEN_ISSUER,
         audience: AUTH_ACCESS_TOKEN_AUDIENCE,
         expiresIn: '15m',

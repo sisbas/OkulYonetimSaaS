@@ -4,49 +4,34 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { DataSource, EntityManager } from 'typeorm';
+import {
+  assertTokenKeyId,
+  loadJwtAccessSecret,
+  loadJwtRefreshSecret,
+  LOCAL_JWT_ACCESS_AUDIENCE,
+  LOCAL_JWT_ISSUER,
+  LOCAL_JWT_REFRESH_AUDIENCE,
+  resolveJwtKey,
+  resolveJwtTokenContract,
+} from './jwt-keyring';
+
+export { loadJwtAccessSecret, loadJwtRefreshSecret };
 
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL = '30d';
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-export const AUTH_TOKEN_ISSUER = process.env.JWT_ISSUER ?? 'okul-yonetim-saas';
-export const AUTH_ACCESS_TOKEN_AUDIENCE = process.env.JWT_ACCESS_AUDIENCE ?? 'okul-yonetim-saas-api';
-export const AUTH_REFRESH_TOKEN_AUDIENCE = process.env.JWT_REFRESH_AUDIENCE ?? 'okul-yonetim-saas-refresh';
+export const AUTH_TOKEN_ISSUER = process.env.JWT_ISSUER ?? LOCAL_JWT_ISSUER;
+export const AUTH_ACCESS_TOKEN_AUDIENCE =
+  process.env.JWT_ACCESS_AUDIENCE ?? LOCAL_JWT_ACCESS_AUDIENCE;
+export const AUTH_REFRESH_TOKEN_AUDIENCE =
+  process.env.JWT_REFRESH_AUDIENCE ?? LOCAL_JWT_REFRESH_AUDIENCE;
 
-// Fail-closed JWT secret loader (#259 P1B-02). Predictable dev fallback values are
-// removed: in production the secret MUST be present and sufficiently strong, otherwise
-// the process refuses to boot. Local/test runs set explicit test secrets via env, so the
-// dev fallback is physically impossible in a production build.
-const MIN_SECRET_BYTES = 32; // 256-bit
+// Fail-closed JWT anahtar sözleşmesi (#259 P1B-02) `jwt-keyring.ts` içinde
+// yaşar: tahmin edilebilir dev fallback YOK, eksik/zayıf secret süreci boot
+// ettirmez, access ve refresh secret'ları farklı olmalıdır ve her token `kid`
+// başlığıyla imzalanıp doğrulamada aktif `kid` ile eşleşmesi zorunludur.
 
-function validateSecretStrength(name: string, value: string): void {
-  if (value.length < MIN_SECRET_BYTES) {
-    throw new Error(
-      `FATAL: ${name} is too weak (${value.length} chars, need >= ${MIN_SECRET_BYTES}). ` +
-        `Set a strong ${name} before starting in production.`,
-    );
-  }
-}
-
-function loadJwtAccessSecret(): string {
-  const secret = process.env.JWT_ACCESS_SECRET;
-  if (!secret) {
-    throw new Error('FATAL: JWT_ACCESS_SECRET is required but missing from environment.');
-  }
-  validateSecretStrength('JWT_ACCESS_SECRET', secret);
-  return secret;
-}
-
-function loadJwtRefreshSecret(): string {
-  const secret = process.env.JWT_REFRESH_SECRET;
-  if (!secret) {
-    throw new Error('FATAL: JWT_REFRESH_SECRET is required but missing from environment.');
-  }
-  validateSecretStrength('JWT_REFRESH_SECRET', secret);
-  return secret;
-}
-
-export { loadJwtAccessSecret, loadJwtRefreshSecret };
 
 export type LoginCommand = Readonly<{
   email: string;
@@ -141,6 +126,9 @@ export class AuthService {
     subject: Pick<AuthenticatedRequestUser, 'userId' | 'tenantId' | 'authorizationVersion'>,
   ) {
     const sessionId = randomUUID();
+    const contract = resolveJwtTokenContract();
+    const accessKey = resolveJwtKey('access');
+    const refreshKey = resolveJwtKey('refresh');
     const accessToken = await this.jwt.signAsync(
       {
         sub: subject.userId,
@@ -150,9 +138,12 @@ export class AuthService {
         authorization_version: subject.authorizationVersion,
       },
       {
-        secret: loadJwtAccessSecret(),
-        issuer: AUTH_TOKEN_ISSUER,
-        audience: AUTH_ACCESS_TOKEN_AUDIENCE,
+        secret: accessKey.secret,
+        // Rotasyon sözleşmesi: token'ın hangi anahtar sürümüyle imzalandığı
+        // `kid` başlığında taşınır ve doğrulamada zorunludur.
+        keyid: accessKey.keyId,
+        issuer: contract.issuer,
+        audience: contract.accessAudience,
         expiresIn: ACCESS_TOKEN_TTL,
       },
     );
@@ -164,12 +155,14 @@ export class AuthService {
         jti: sessionId,
       },
       {
-        secret: loadJwtRefreshSecret(),
-        issuer: AUTH_TOKEN_ISSUER,
-        audience: AUTH_REFRESH_TOKEN_AUDIENCE,
+        secret: refreshKey.secret,
+        keyid: refreshKey.keyId,
+        issuer: contract.issuer,
+        audience: contract.refreshAudience,
         expiresIn: REFRESH_TOKEN_TTL,
       },
     );
+
     await manager.query(
       `
         INSERT INTO user_sessions (
@@ -250,12 +243,9 @@ export class AuthService {
   async rotateRefreshToken(refreshToken: string, requestId?: string) {
     let payload: Pick<AccessTokenPayload, 'sub' | 'tenant_id' | 'session_id'>;
     try {
-      payload = await this.jwt.verifyAsync(refreshToken, {
-        secret: loadJwtRefreshSecret(),
-        issuer: AUTH_TOKEN_ISSUER,
-        audience: AUTH_REFRESH_TOKEN_AUDIENCE,
-      });
+      payload = await this.verifyRefreshToken(refreshToken);
     } catch {
+
       this.emitAuthenticationDenied('invalid_session', { action: 'refresh', requestId });
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -305,10 +295,30 @@ export class AuthService {
   async assertRefreshToken(refreshToken: string, storedHash: string) {
     const ok = await bcrypt.compare(refreshToken, storedHash);
     if (!ok) throw new UnauthorizedException('Invalid refresh token');
+    try {
+      return await this.verifyRefreshToken(refreshToken);
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+  }
+
+  /**
+   * Refresh token doğrulaması (#259 P1B-02 AC-3).
+   *
+   * Fail-closed sıra: `kid` başlığı aktif anahtar kimliğiyle eşleşmeli, imza
+   * geçerli olmalı, issuer ve audience uyuşmalı. Rotasyon sonrası emekliye
+   * ayrılmış bir anahtarla imzalanmış refresh token sessizce kabul edilmez.
+   */
+  private async verifyRefreshToken(refreshToken: string) {
+    const decoded = this.jwt.decode(refreshToken, { complete: true }) as
+      | { header?: { kid?: string } }
+      | null;
+    assertTokenKeyId('refresh', decoded?.header?.kid);
+    const contract = resolveJwtTokenContract();
     return this.jwt.verifyAsync(refreshToken, {
-      secret: loadJwtRefreshSecret(),
-      issuer: AUTH_TOKEN_ISSUER,
-      audience: AUTH_REFRESH_TOKEN_AUDIENCE,
+      secret: resolveJwtKey('refresh').secret,
+      issuer: contract.issuer,
+      audience: contract.refreshAudience,
     });
   }
 
