@@ -2,8 +2,7 @@
 
 Bu belge, `[P1B-02][SECURITY] Fail-closed auth secrets and durable redacted audit`
 (#259) kabul kriterlerinin main üzerinde hangi kod, test ve komutla karşılandığını
-kaydeder. Kanıt, kod commit'ine (`Code HEAD`) bağlıdır; bu doküman onu izleyen
-docs-only commit'te eklenir.
+kaydeder. Kanıt, kod commit'i `c01174d` (`cline/t5a1nq3x`) üzerinde üretilmiştir.
 
 ## 0. Bu dilimin ekledikleri (delta)
 
