@@ -1651,9 +1651,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
 
     // 7) Loading: istek geciktirilirken gerçek loading bölgesi görünür.
     // Bu adım, senaryo 6'dan kalan aktif A şubesi üzerinde çalışır; istek
-    // kesintisi (request interception) yalnız ağ boştayken devreye alınır.
+    // kesintisi (request interception) yalnız liste oturmuşken devreye alınır.
     await sessionA!.clickElement('.tab[data-tab="notifications"]');
-    await waitForNetworkIdle(sessionA!);
+    await waitForCountAtLeast(sessionA!, '#notifications-list article.card', 3, 20_000);
     await sessionA!.withDelayedRequest('/notifications?', 2_500, async () => {
       await sessionA!.clickElement('#refresh-notifications');
       await sessionA!.waitForText('#notifications-list .loading', /getiriliyor/i, 5_000);
@@ -1682,7 +1682,6 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     // 9) Empty: B şubesinde bildirim yok; UI boş durumu gösterir. Bu adım en
     // sonda çalışır ki şube değişimi sonraki ağ senaryolarını kirletmesin.
     await ensureBranch(sessionA!, branchB.branchCode);
-    await waitForNetworkIdle(sessionA!);
     await sessionA!.clickElement('#refresh-notifications');
     await sessionA!.waitForText('#notifications-list [data-state="same_scope_empty"]', /./, 20_000);
     negatives['empty-state'] = 'branch B notifications -> data-state=same_scope_empty';

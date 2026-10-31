@@ -1,4 +1,8 @@
-@import url("../app/tokens.css");
+/* Runtime assets are served under /runtime, so the token sheet must resolve
+   inside that prefix (/runtime/app/tokens.css). The old `../app/...` path
+   resolved to /app/tokens.css, which is not served, leaving every var(--…)
+   declaration invalid — including the :focus-visible outline. */
+@import url("app/tokens.css");
 
 :root {
   color-scheme: light;
