@@ -7,6 +7,12 @@ import {
 import { leaveEtag } from '../daily-operations/leave-impact.types';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
+import { ListOwnLeaveRequestsQueryDto } from './dto/list-own-leave-requests-query.dto';
+import {
+  assertLeaveWindow,
+  localCalendarParts,
+  resolveLeaveTimeZone,
+} from './leave-window';
 import {
   APPROVED_IMPACT_DETAIL,
   REJECTED_IMPACT_DETAIL,
@@ -109,9 +115,18 @@ export class LeaveService {
 
   async createOwn(ctx: RequestContext, dto: CreateLeaveRequestDto): Promise<LeaveResponse> {
     const range = parseDateRange(dto.startsAt, dto.endsAt);
+    const timeZone = await this.leaves.loadTenantTimeZone(ctx);
+    // Takvim/süre/sınır doğrulaması DB'ye yazmadan ÖNCE, tenant saat diliminde
+    // yapılır (#263 AC-3). Geçersiz aralık 400 döner; hiçbir satır yazılmaz.
+    assertLeaveWindow({
+      durationType: dto.durationType,
+      startsAt: range.startsAt,
+      endsAt: range.endsAt,
+      timeZone: resolveLeaveTimeZone(timeZone),
+    });
     const identity = await this.identity.resolveTeacherIdentity(ctx, {
       branchId: dto.branchId,
-      businessDate: range.startsAt.toISOString().slice(0, 10),
+      businessDate: localCalendarParts(range.startsAt, resolveLeaveTimeZone(timeZone)).date,
     });
     const saved = await this.leaves.create(ctx, {
       tenantId: ctx.tenantId!,
@@ -141,6 +156,24 @@ export class LeaveService {
     const leave = await this.leaves.findOwn(ctx, id, identity.teacherId, identity.branchId);
     if (!leave) throw new LeaveNotFoundException();
     return this.toResponse(leave);
+  }
+
+  /**
+   * Öğretmenin kendi izin geçmişi (#263 AC-1).
+   *
+   * Kapsam sunucuda çözülür: `teacherId` istemciden ALINMAZ. `branchId` ve
+   * `decisionStatus` yalnız filtre olarak kullanılır.
+   */
+  async listOwn(ctx: RequestContext, query: ListOwnLeaveRequestsQueryDto): Promise<LeaveResponse[]> {
+    const identity = await this.identity.resolveTeacherIdentity(ctx, { branchId: query.branchId });
+    const leaves = await this.leaves.listOwn(ctx, {
+      teacherId: identity.teacherId,
+      branchId: query.branchId,
+      decisionStatus: query.decisionStatus,
+      from: query.from,
+      to: query.to,
+    });
+    return leaves.map((leave) => this.toResponse(leave));
   }
 
   async decide(

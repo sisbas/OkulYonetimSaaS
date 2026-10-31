@@ -2,7 +2,7 @@ import { RequestContext } from '../common/context/request-context';
 import { ForbiddenException } from '@nestjs/common';
 import { LeaveExpectedVersionRequiredException, LeaveNotFoundException } from './leave-errors';
 import { LeaveSelfDecisionException } from './leave-errors';
-import { LeaveCoverageStatus, LeaveDecisionStatus, LeaveRequest } from './leave-request.entity';
+import { LeaveCoverageStatus, LeaveDecisionStatus, LeaveDurationType, LeaveReasonCode, LeaveRequest } from './leave-request.entity';
 import { LEAVE_DECISION_RESPONSE_FIELDS } from './leave-decision-labels';
 import { LeaveService } from './leave.service';
 
@@ -218,4 +218,101 @@ describe('LeaveService', () => {
       expect(leaves.decide).not.toHaveBeenCalled();
     });
   });
+
+describe('LeaveService create/history (#263 AC-1 / AC-3)', () => {
+  const branchId = '30000000-0000-4000-8000-000000000001';
+  const teacherId = '20000000-0000-4000-8000-000000000001';
+
+  function setup(timeZone: string | null) {
+    const leaves = {
+      loadTenantTimeZone: jest.fn(async () => timeZone),
+      create: jest.fn(async (_ctx: RequestContext, values: Record<string, unknown>) => ({
+        ...decidedLeave({
+          decisionStatus: LeaveDecisionStatus.PENDING,
+          version: 1,
+          coverageStatus: LeaveCoverageStatus.NOT_REQUIRED,
+          decidedAt: null,
+          decidedByUserId: null,
+        }),
+        ...values,
+      })),
+      listOwn: jest.fn(async () => []),
+    };
+    const identity = {
+      resolveTeacherIdentity: jest.fn(async () => ({
+        actorUserId: '10000000-0000-4000-8000-000000000001',
+        teacherId,
+        branchId,
+      })),
+    };
+    return { service: new LeaveService(leaves as any, identity as any), leaves, identity };
+  }
+
+  it('writes a valid hourly request resolved from the tenant time zone', async () => {
+    const { service, leaves, identity } = setup('Europe/Istanbul');
+
+    await service.createOwn(ctx, {
+      branchId,
+      durationType: LeaveDurationType.HOURLY,
+      reasonCode: LeaveReasonCode.ADMINISTRATIVE,
+      startsAt: '2026-09-14T07:00:00.000Z',
+      endsAt: '2026-09-14T08:00:00.000Z',
+    });
+
+    expect(leaves.create).toHaveBeenCalledWith(ctx, expect.objectContaining({
+      tenantId: ctx.tenantId,
+      branchId,
+      teacherId,
+    }));
+    // İş günü tenant saat dilimindeki takvim günüdür (UTC günü değil).
+    expect(identity.resolveTeacherIdentity).toHaveBeenCalledWith(ctx, expect.objectContaining({
+      branchId,
+      businessDate: '2026-09-14',
+    }));
+  });
+
+  it('rejects a misaligned full-day request before writing anything', async () => {
+    const { service, leaves, identity } = setup('Europe/Istanbul');
+
+    await expect(service.createOwn(ctx, {
+      branchId,
+      durationType: LeaveDurationType.FULL_DAY,
+      reasonCode: LeaveReasonCode.ANNUAL_LEAVE,
+      startsAt: '2026-09-14T07:00:00.000Z',
+      endsAt: '2026-09-15T07:00:00.000Z',
+    })).rejects.toMatchObject({ code: 'FULL_DAY_NOT_ALIGNED' });
+
+    expect(leaves.create).not.toHaveBeenCalled();
+    expect(identity.resolveTeacherIdentity).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the tenant time zone is missing instead of guessing UTC', async () => {
+    const { service, leaves } = setup(null);
+
+    await expect(service.createOwn(ctx, {
+      branchId,
+      durationType: LeaveDurationType.HOURLY,
+      reasonCode: LeaveReasonCode.OTHER,
+      startsAt: '2026-09-14T07:00:00.000Z',
+      endsAt: '2026-09-14T08:00:00.000Z',
+    })).rejects.toMatchObject({ code: 'INVALID_TIME_ZONE' });
+
+    expect(leaves.create).not.toHaveBeenCalled();
+  });
+
+  it('scopes the history to the server-resolved teacher, never to a client teacherId', async () => {
+    const { service, leaves } = setup('Europe/Istanbul');
+
+    await service.listOwn(ctx, { decisionStatus: LeaveDecisionStatus.PENDING });
+
+    expect(leaves.listOwn).toHaveBeenCalledWith(ctx, {
+      teacherId,
+      branchId: undefined,
+      decisionStatus: LeaveDecisionStatus.PENDING,
+      from: undefined,
+      to: undefined,
+    });
+  });
+});
+
 });

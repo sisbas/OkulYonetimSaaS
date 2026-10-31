@@ -18,11 +18,40 @@ the same transaction, approval fails closed with `IMPACT_ANALYSIS_NOT_READY`.
 | Method | Path | Permission | Scope |
 |---|---|---|---|
 | POST | `/api/v1/leaves/me` | `leave:create` | teacher own; branch must belong to active tenant |
+| GET | `/api/v1/leaves/me` | `leave:own:read` | teacher own history (filter: `branchId`, `decisionStatus`, `from`, `to`) |
 | GET | `/api/v1/leaves/me/:id` | `leave:own:read` | teacher own |
 | GET | `/api/v1/leaves` | `leave:read` | operations tenant/branch |
 | GET | `/api/v1/leaves/:id` | `leave:read` | operations tenant/branch |
-| PATCH | `/api/v1/leaves/:id/approve` | `leave:approve` | operations tenant/branch; fail-closed until impact transaction |
+| PATCH | `/api/v1/leaves/:id/approve` | `leave:approve` | operations tenant/branch; impact + projection in the same transaction |
 | PATCH | `/api/v1/leaves/:id/reject` | `leave:reject` | operations tenant/branch; bodyless decision command |
+
+Own-scope history is scoped by the server-resolved teacher; a client-supplied
+`teacherId` query parameter is rejected (BOLA). `teacherId` in a create body is
+rejected as a non-whitelisted field.
+
+## Calendar window (tenant time zone)
+
+The request window is validated **before** any row is written, in the tenant's
+`tenants.timezone`:
+
+- `start < end` and the total range cannot exceed 366 days.
+- `hourly`: <= 24 hours and at most one local day boundary.
+- `full_day`: both ends at local midnight, exactly one local calendar day.
+- `multi_day`: both ends at local midnight, at least two local calendar days.
+- An unknown/invalid tenant time zone fails closed (`400`); UTC is never assumed.
+
+Midnight alignment is computed from local calendar parts, so a DST day (23 or 25
+hours) still counts as one full day. The repository takes a transaction-scoped
+PostgreSQL advisory lock on `(tenant, branch:teacher)` before the overlap select,
+so two concurrent requests for the same teacher cannot both pass the TOCTOU check.
+
+## On-behalf policy
+
+On-behalf creation is not supported: a manager cannot open a leave request for
+another teacher through this surface. `teacherId` and `requesterUserId` are never
+accepted from the client; the identity is resolved from the authenticated JWT
+(`#141`). This is an explicit policy, not a silent override.
+
 
 Decision endpoints require exact resource-bound `If-Match: "leave:<id>:v<version>"`.
 An ETag issued for another leave request is rejected. The repository repeats the
