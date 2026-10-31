@@ -216,7 +216,23 @@ async function waitForCountAtLeast(
     if (last >= minimum) return last;
     await sleep(200);
   }
-  throw new Error(`waitForCountAtLeast timeout: ${selector} expected >= ${minimum}, last ${last}.`);
+  const region = await session.text('#notifications-list').catch(() => '');
+  const state = await session.page
+    .evaluate(() => {
+      const list = document.querySelector('#notifications-list');
+      return {
+        listState: list instanceof HTMLElement ? list.dataset.state ?? '' : 'missing',
+        listHtml: (list?.innerHTML ?? '').slice(0, 500),
+        message: document.querySelector('#message-region')?.textContent ?? '',
+      };
+    })
+    .catch(() => ({ listState: 'inspect-failed', listHtml: '', message: '' }));
+  throw new Error(
+    `waitForCountAtLeast timeout: ${selector} expected >= ${minimum}, last ${last}; ` +
+      `text=${region.slice(0, 300)}; state=${state.listState}; ` +
+      `html=${state.listHtml}; message=${state.message.slice(0, 300)}; ` +
+      `consoleErrors=${session.consoleErrors.slice(-5).join(' | ')}.`,
+  );
 }
 
 async function textOf(session: UiSession, selector: string): Promise<string> {
@@ -1633,16 +1649,11 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     negatives['not-found'] = 'unknown draft -> HTTP 404';
     recordEvidence(currentScenario, '404 -> unknown resource stays unknown');
 
-    // 7) Empty: B şubesinde bildirim yok; UI boş durumu gösterir.
+    // 7) Loading: istek geciktirilirken gerçek loading bölgesi görünür.
+    // Bu adım, senaryo 6'dan kalan aktif A şubesi üzerinde çalışır; istek
+    // kesintisi (request interception) yalnız ağ boştayken devreye alınır.
     await sessionA!.clickElement('.tab[data-tab="notifications"]');
-    await ensureBranch(sessionA!, branchB.branchCode);
-    await sessionA!.clickElement('#refresh-notifications');
-    await sessionA!.waitForText('#notifications-list [data-state="same_scope_empty"]', /./, 20_000);
-    negatives['empty-state'] = 'branch B notifications -> data-state=same_scope_empty';
-    recordEvidence(currentScenario, 'empty -> canonical same_scope_empty region');
-
-    // 8) Loading: istek geciktirilirken gerçek loading bölgesi görünür.
-    await ensureBranch(sessionA!, fixture.branchCode);
+    await waitForNetworkIdle(sessionA!);
     await sessionA!.withDelayedRequest('/notifications?', 2_500, async () => {
       await sessionA!.clickElement('#refresh-notifications');
       await sessionA!.waitForText('#notifications-list .loading', /getiriliyor/i, 5_000);
@@ -1651,7 +1662,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     negatives['loading-state'] = 'delayed /notifications -> .loading role=status rendered, then 3 cards';
     recordEvidence(currentScenario, 'loading -> role=status loading region then settled data');
 
-    // 9) Offline: ağ kesintisi offline_or_unavailable durumuna düşer; geri dönünce toparlanır.
+    // 8) Offline: ağ kesintisi offline_or_unavailable durumuna düşer; geri dönünce toparlanır.
     await sessionA!.setOffline(true);
     try {
       await sessionA!.clickElement('#refresh-notifications');
@@ -1667,6 +1678,15 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await waitForCountAtLeast(sessionA!, '#notifications-list article.card', 3, 30_000);
     negatives['offline-state'] = 'offline -> data-state=offline_or_unavailable; reconnect recovers';
     recordEvidence(currentScenario, 'offline -> canonical offline state; recovery -> data');
+
+    // 9) Empty: B şubesinde bildirim yok; UI boş durumu gösterir. Bu adım en
+    // sonda çalışır ki şube değişimi sonraki ağ senaryolarını kirletmesin.
+    await ensureBranch(sessionA!, branchB.branchCode);
+    await waitForNetworkIdle(sessionA!);
+    await sessionA!.clickElement('#refresh-notifications');
+    await sessionA!.waitForText('#notifications-list [data-state="same_scope_empty"]', /./, 20_000);
+    negatives['empty-state'] = 'branch B notifications -> data-state=same_scope_empty';
+    recordEvidence(currentScenario, 'empty -> canonical same_scope_empty region');
 
     // 10) Aynı origin /api/v1 canlı erişim + authenticated 200 (network kanıtı).
     const live200 = await rawApiCall(opsApi, 'GET', '/notifications?limit=1&offset=0');

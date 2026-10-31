@@ -325,15 +325,18 @@ export async function createUiSession(input: Readonly<{
     },
     axeScan: async (options = {}) => {
       await page.addScriptTag({ path: resolveAxeSource() });
-      const context: string | Document = options.include === undefined ? document : options.include;
-      const result = await page.evaluate(async (selector: string | Document) => {
+      // Selector resolution happens INSIDE the page context; passing `document`
+      // from the Node test process would throw `ReferenceError: document is not
+      // defined` (observed in CI run 41210193163).
+      const context = options.include ?? null;
+      const result = await page.evaluate(async (selector: string | null) => {
         // `axe` is injected by addScriptTag above; the check keeps a missing
         // injection from reading as a clean scan (fail-closed).
         const axeRuntime = (globalThis as unknown as { axe?: { run: Function } }).axe;
         if (axeRuntime === undefined || typeof axeRuntime.run !== 'function') {
           throw new Error('axe-core was not injected into the page.');
         }
-        const target = typeof selector === 'string' ? document.querySelector(selector) : selector;
+        const target = selector === null ? document : document.querySelector(selector);
         if (target === null) throw new Error(`axeScan target not found: ${String(selector)}`);
         const scan = await axeRuntime.run(target, {
           runOnly: {
