@@ -1783,7 +1783,11 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'keyboard: Enter submits login form (no mouse)');
 
     await mobileSession.waitForText('#summary-scope', /./, 20_000);
+    // Tarama, gerçek liste içeriği oturmuşken yapılır: boş/geçiş halindeki
+    // bir DOM üzerinde axe çalıştırmak deterministik kanıt üretmez.
+    await ensureBranch(mobileSession, fixture.branchCode);
     await mobileSession.clickElement('.tab[data-tab="notifications"]').catch(() => undefined);
+    await waitForCountAtLeast(mobileSession, '#notifications-list article.card', 3, 30_000);
     assertNoBlockingAxeViolations('axe authenticated desktop', await mobileSession.axeScan());
     expect(await mobileSession.hasHorizontalOverflow()).toBe(false);
     await snap(mobileSession, '08-a11y-keyboard-desktop');
