@@ -53,12 +53,65 @@ function authorityContext(ctx: RequestContext, tenantId: string, userId: string)
   };
 }
 
+export type ResolvedOwnHistoryIdentity = Readonly<{
+  tenantId: string;
+  userId: string;
+  teacherId: string;
+  businessDate: string;
+  /** Aktif şube üyelikleri (en fazla 2 — varlık kanıtı için yeterli). */
+  branchIds: readonly string[];
+}>;
+
 @Injectable()
 export class TeacherIdentityService {
   constructor(
     private readonly teachers: TeacherRepository,
     private readonly audit: SecurityAuditService,
   ) {}
+
+  /**
+   * Öğretmenin KENDİ verisini okuyan (salt-okuma, öğretmen kapsamlı) yüzeyler
+   * için kimlik çözümü (#263 review P2).
+   *
+   * `resolveForRequest` yazma/karar akışlarında TEK şube seçimi zorunlu kılar
+   * ve birden fazla aktif şube üyeliği olan öğretmeni reddeder (belirsiz şube
+   * adına yazmak güvenli değildir). Ancak kendi izin geçmişini okumak şube
+   * seçimi gerektirmez: kayıtlar `(tenant, teacher)` ile kapsanır. Bu yüzden bu
+   * yol `>= 1` aktif üyelik ister, `!== 1` kuralı KULLANILMAZ; böylece iki
+   * şubede çalışan öğretmen 403 yerine geçmişini görür.
+   *
+   * Fail-closed kalır: kimlik/tenant çözülemezse, aktif üyelik yoksa veya
+   * istenen `branchId` öğretmenin üyeliklerinde değilse istek reddedilir.
+   */
+  async resolveForOwnHistory(
+    ctx: RequestContext,
+    input: TeacherIdentityResolutionInput = {},
+  ): Promise<ResolvedOwnHistoryIdentity> {
+    const userId = ctx.user?.userId;
+    const tenantId = ctx.tenantId;
+    if (!tenantId || !userId) return this.deny(ctx);
+
+    const businessDate = tenantLocalBusinessDate(ctx, tenantId);
+    if (!businessDate) return this.deny(ctx);
+
+    const safeCtx = authorityContext(ctx, tenantId, userId);
+    const teacher = await this.teachers.findActiveTeacherForUser(safeCtx);
+    if (!teacher) return this.deny(safeCtx);
+
+    const memberships = await this.teachers.listActiveBranchMemberships(safeCtx, teacher.teacherId, {
+      branchId: input.branchId,
+      effectiveDate: businessDate,
+    });
+    if (memberships.length === 0) return this.deny(safeCtx);
+
+    return {
+      tenantId,
+      userId,
+      teacherId: teacher.teacherId,
+      businessDate,
+      branchIds: memberships.map((membership) => membership.branchId),
+    };
+  }
 
   async resolveForRequest(
     ctx: RequestContext,

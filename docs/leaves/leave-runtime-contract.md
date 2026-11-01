@@ -27,7 +27,10 @@ the same transaction, approval fails closed with `IMPACT_ANALYSIS_NOT_READY`.
 
 Own-scope history is scoped by the server-resolved teacher; a client-supplied
 `teacherId` query parameter is rejected (BOLA). `teacherId` in a create body is
-rejected as a non-whitelisted field.
+rejected as a non-whitelisted field. History reads do NOT require a unique active
+branch: a teacher working in two branches still sees their own history (`>= 1`
+membership is required, `!== 1` is not). Branch-scoped writes and decisions keep
+the strict single-branch rule.
 
 ## Calendar window (tenant time zone)
 

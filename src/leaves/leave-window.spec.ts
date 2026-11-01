@@ -189,6 +189,30 @@ describe('leave window alignment and bounds (#263 AC-3)', () => {
     );
   });
 
+  it('is exact to the local day even with nonzero seconds and milliseconds', () => {
+    // Aynı yerel gün içinde saniye/ms dolu aralık kabul edilir...
+    const sameDay = assertLeaveWindow({
+      durationType: LeaveDurationType.FULL_DAY,
+      startsAt: new Date('2026-09-14T05:00:30.500Z'),
+      endsAt: new Date('2026-09-14T15:00:59.999Z'),
+      timeZone: ISTANBUL,
+    });
+    expect(sameDay.localDaySpan).toBe(0);
+
+    // ...ama gece yarısını saniye/ms ile aşan aralık REDDEDİLİR: yerel gün
+    // gerçekten değişir (dakika hassasiyetiyle yuvarlama yapılmaz).
+    expectCode(
+      () =>
+        assertLeaveWindow({
+          durationType: LeaveDurationType.FULL_DAY,
+          startsAt: new Date('2026-09-14T20:59:59.999Z'),
+          endsAt: new Date('2026-09-14T21:00:00.001Z'),
+          timeZone: ISTANBUL,
+        }),
+      'FULL_DAY_NOT_SINGLE_LOCAL_DAY',
+    );
+  });
+
   it('resolves local calendar parts in the tenant time zone', () => {
     expect(localCalendarParts(new Date('2026-09-14T21:30:00.000Z'), ISTANBUL)).toEqual({
       date: '2026-09-15',

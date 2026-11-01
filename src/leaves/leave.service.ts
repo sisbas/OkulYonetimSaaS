@@ -162,10 +162,17 @@ export class LeaveService {
    * Öğretmenin kendi izin geçmişi (#263 AC-1).
    *
    * Kapsam sunucuda çözülür: `teacherId` istemciden ALINMAZ. `branchId` ve
-   * `decisionStatus` yalnız filtre olarak kullanılır.
+   * `decisionStatus` yalnız filtre olarak kullanılır. Çok şubeli öğretmen de
+   * geçmişini görebilir (`resolveOwnHistoryScope` tek şube seçimi istemez).
    */
   async listOwn(ctx: RequestContext, query: ListOwnLeaveRequestsQueryDto): Promise<LeaveResponse[]> {
-    const identity = await this.identity.resolveTeacherIdentity(ctx, { branchId: query.branchId });
+    const timeZone = resolveLeaveTimeZone(await this.leaves.loadTenantTimeZone(ctx));
+    const identity = await this.identity.resolveOwnHistoryScope(ctx, {
+      branchId: query.branchId,
+      businessDate: query.from
+        ? localCalendarParts(new Date(query.from), timeZone).date
+        : localCalendarParts(new Date(), timeZone).date,
+    });
     const leaves = await this.leaves.listOwn(ctx, {
       teacherId: identity.teacherId,
       branchId: query.branchId,

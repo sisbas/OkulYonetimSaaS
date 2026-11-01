@@ -238,11 +238,16 @@ describe('LeaveService create/history (#263 AC-1 / AC-3)', () => {
       })),
       listOwn: jest.fn(async () => []),
     };
-    const identity = {
+    const identity: any = {
       resolveTeacherIdentity: jest.fn(async () => ({
         actorUserId: '10000000-0000-4000-8000-000000000001',
         teacherId,
         branchId,
+      })),
+      resolveOwnHistoryScope: jest.fn(async () => ({
+        actorUserId: '10000000-0000-4000-8000-000000000001',
+        teacherId,
+        branchIds: [branchId],
       })),
     };
     return { service: new LeaveService(leaves as any, identity as any), leaves, identity };
@@ -312,6 +317,22 @@ describe('LeaveService create/history (#263 AC-1 / AC-3)', () => {
       from: undefined,
       to: undefined,
     });
+  });
+
+  it('uses the own-history identity path so a multi-branch teacher is not denied', async () => {
+    const { service, identity } = setup('Europe/Istanbul');
+    identity.resolveOwnHistoryScope = jest.fn(async () => ({
+      actorUserId: '10000000-0000-4000-8000-000000000001',
+      teacherId,
+      branchIds: ['30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002'],
+    }));
+
+    await service.listOwn(ctx, {});
+
+    expect(identity.resolveOwnHistoryScope).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ businessDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }),
+    );
   });
 });
 
