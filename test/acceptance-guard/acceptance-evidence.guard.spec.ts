@@ -124,6 +124,12 @@ const WRITE_STATEMENT = new RegExp(
 
 const PAGE_EVALUATE = /\bpage\.(?:evaluate|evaluateHandle|evaluateOnNewDocument)\s*\(/g;
 
+/**
+ * S5-B2 (#269): skip/todo/failing = PASS degildir. Kabul harness'inda bu
+ * isaretler bulunursa kanit eksik demektir; check yesile donmemelidir.
+ */
+const SKIPPED_ACCEPTANCE = /\b(?:describe|it|test)\.(?:skip|todo|failing)\s*\(|\b(?:xit|xdescribe|xtest)\s*\(/g;
+
 /** Yorumları boşlukla nötralize eder; satır numaraları korunur. */
 export function stripComments(source: string): string {
   return source
@@ -231,6 +237,18 @@ export function scanSource(relativePath: string, rawSource: string): GuardFindin
         file,
         line,
         detail: 'Acceptance states must not be fabricated by writing into the DOM.',
+      });
+    }
+  }
+
+  if (isHarnessFile(file)) {
+    for (const match of source.matchAll(SKIPPED_ACCEPTANCE)) {
+      findings.push({
+        rule: 'skipped-acceptance',
+        file,
+        line: lineAt(source, match.index ?? 0),
+        detail:
+          'Acceptance specs must not be skipped/todo/failing: an unexecuted journey is not PASS evidence.',
       });
     }
   }
@@ -379,6 +397,15 @@ describe('acceptance evidence guard (fail-closed)', () => {
     expect(
       findingsFor('page-evaluate-dom-write', 'test/e2e/negative.e2e-spec.ts', domWrite).length,
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it('R5 - kabul spec\'inde skip/todo/failing kabul edilmez', () => {
+    const skipped = "describe.skip('journey', () => { it('x', () => {}); });";
+    expect(findingsFor('skipped-acceptance', 'test/e2e/negative.e2e-spec.ts', skipped)).toHaveLength(1);
+    const todo = "it.todo('journey');";
+    expect(findingsFor('skipped-acceptance', 'test/e2e/negative.e2e-spec.ts', todo)).toHaveLength(1);
+    const normal = "it('journey', () => { expect(1).toBe(1); });";
+    expect(scanSource('test/e2e/negative.e2e-spec.ts', normal)).toEqual([]);
   });
 
   it('yorum içindeki ihlalleri saymaz', () => {

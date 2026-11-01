@@ -65,28 +65,28 @@
         <button id="context-retry" type="button" hidden>Kurum bilgisini yeniden dene</button>
       </aside>
 
-      <nav class="tabs" aria-label="Runtime akışları">
-        <button class="tab" data-tab="bugun" aria-controls="bugun-panel" aria-selected="true">
+      <nav class="tabs" role="tablist" aria-label="Runtime akışları">
+        <button class="tab" role="tab" data-tab="bugun" aria-controls="bugun-panel" aria-selected="true">
           <strong>Bugün</strong>
           <small>Görev merkezi</small>
         </button>
-        <button class="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="false">
+        <button class="tab" role="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="false">
           <strong>İzin</strong>
           <small>Talep oluştur</small>
         </button>
-        <button class="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">
+        <button class="tab" role="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">
           <strong>Operasyon</strong>
           <small>Ders karşılığı</small>
         </button>
-        <button class="tab" data-tab="notifications" aria-controls="notifications-panel" aria-selected="false">
+        <button class="tab" role="tab" data-tab="notifications" aria-controls="notifications-panel" aria-selected="false">
           <strong>Bildirimler</strong>
           <small>Gönderim operasyonu</small>
         </button>
-        <button class="tab" data-tab="program" aria-controls="program-panel" aria-selected="false">
+        <button class="tab" role="tab" data-tab="program" aria-controls="program-panel" aria-selected="false">
           <strong>Program</strong>
           <small>Ders çizelgesi</small>
         </button>
-        <button class="tab" data-tab="attendance" aria-controls="attendance-panel" aria-selected="false">
+        <button class="tab" role="tab" data-tab="attendance" aria-controls="attendance-panel" aria-selected="false">
           <strong>Yoklama</strong>
           <small>Oturum ve kayıt</small>
         </button>
@@ -130,7 +130,7 @@
             <li>Güncel kayıt kontrolüyle çakışan işlem engellenir</li>
             <li>Yedek öğretmen seçimi ders ve zaman uygunluğuna göre yapılır</li>
           </ul>
-          <div class="quick-actions" aria-label="Hızlı geçişler">
+          <div class="quick-actions" role="group" aria-label="Hızlı geçişler">
             <button type="button" data-action="focus-teacher" data-section="teacher">İzin ekranına git</button>
             <button type="button" data-action="focus-ops" data-section="ops">Operasyon ekranına git</button>
           </div>
@@ -358,7 +358,7 @@
           <form id="schedule-event-form" class="stack" data-requires-permission="schedule:draft:update">
             <div id="schedule-events" class="cards" role="region" aria-label="Program olayları"></div>
             <button id="add-schedule-event" type="button">Olay satırı ekle</button>
-            <div class="quick-actions">
+            <div class="quick-actions" role="group">
               <button id="save-schedule-draft" type="button">Taslağı kaydet</button>
               <button id="validate-schedule" type="button" data-requires-permission="schedule:read">Doğrula</button>
               <button id="publish-schedule" type="button" data-requires-permission="schedule:publish">Yayınla</button>
