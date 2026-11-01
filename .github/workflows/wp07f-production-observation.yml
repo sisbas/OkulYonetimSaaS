@@ -33,6 +33,11 @@ on:
         required: false
         type: boolean
         default: false
+      smoke_credentials_missing:
+        description: If true, skip auth smoke test and record REACHABILITY_ONLY verdict; if false and credentials missing, fail the workflow
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -131,13 +136,34 @@ jobs:
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
         run: npm run observe:production-runtime
 
+      - name: Run production auth smoke test
+        if: always()
+        env:
+          PRODUCTION_SMOKE_EMAIL: ${{ secrets.PRODUCTION_SMOKE_EMAIL }}
+          PRODUCTION_SMOKE_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_PASSWORD }}
+          PRODUCTION_TARGET_URL: ${{ inputs.target_base_url || 'https://okul-yonetim-saas.vercel.app' }}
+          SMOKE_CREDENTIALS_MISSING: ${{ inputs.smoke_credentials_missing }}
+        run: |
+          node scripts/production-auth-smoke.cjs
+          # Receipt is automatically written to artifacts/production-auth-smoke/receipt.json
+          # Upload it as a workflow artifact
+          RECEIPT_PATH='artifacts/production-auth-smoke/receipt.json'
+          if [ -f "$RECEIPT_PATH" ]; then
+            cp "$RECEIPT_PATH" "artifacts/production-auth-smoke-receipt-${{ github.sha }}.json"
+            echo "Auth smoke receipt artifact prepared"
+          else
+            echo "::warning ::Auth smoke receipt not found; script may have skipped or failed before writing."
+          fi
+
       - name: Upload production observation artifact
         id: upload-production-observation
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wp07f-production-observation-${{ github.sha }}
-          path: artifacts/wp07f-production-observation
+          path:
+            - artifacts/wp07f-production-observation
+            - artifacts/production-auth-smoke-receipt-${{ github.sha }}.json
           if-no-files-found: error
           retention-days: 14
 

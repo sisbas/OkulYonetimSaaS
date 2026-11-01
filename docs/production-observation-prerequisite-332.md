@@ -15,6 +15,26 @@ npm script against `package.json`, preventing another dead prerequisite.
 
 ## Observation remains UNPROVEN
 
+## Required Production Environment Variables (value-free contract)
+
+This gate requires the following environment variables to be present in the **production** Vercel scope for `/api/v1` to bootstrap successfully. Values are never logged or committed; only variable **names, presence, and length-class** are specified.
+
+| Variable | Kind | Min Length | Deferred This Round? |
+|---|---|---|---|
+| `JWT_ACCESS_SECRET` | bootstrap | ≥32 chars | no |
+| `JWT_REFRESH_SECRET` | bootstrap | ≥32 chars | no |
+| `AUDIT_HMAC_KEY` | bootstrap | ≥32 chars | no |
+| `AUDIT_HMAC_KEY_ID` | bootstrap | ≥1 char | no |
+| `KVKK_PSEUDONYM_KEY` | lazy | ≥32 chars | ✅ yes |
+| `KVKK_CONTACT_KEY` | lazy | exactly 32 bytes | ✅ yes |
+| `KVKK_CONTACT_KEY_ID` | lazy | ≥1 char | ❌ no (optional) |
+| `DATABASE_URL` | bootstrap | n/a | no |
+| `NODE_ENV` | optional | n/a | no |
+
+⚠️ **Residual fail-closed gaps**: `KVKK_PSEUDONYM_KEY` and `KVKK_CONTACT_KEY` are deferred this round per decision. Parent-contact and pseudonym generation flows will fail-closed in production if these are absent, but application bootstrap does not require them. See `artifacts/332/production-env-contract-receipt.md` for the full value-free contract.
+
+
+
 A successful Vercel commit status, including deployment dashboard reference
 `8d6SxiumYa8KnGzwzu8n9y3bWZtk`, is not independently verified deployment SHA
 evidence. Setting `expected_head_sha` does not establish the deployed SHA.
