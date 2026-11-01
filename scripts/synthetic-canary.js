@@ -126,8 +126,13 @@ async function main() {
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, ...(tenantId === null ? {} : { tenantId }) }),
     });
-    record('auth.login', login.status === 200, `HTTP ${login.status}`, login.ms);
-    const loginBody = JSON.parse(login.text);
+    record('auth.login', login.status >= 200 && login.status < 300, `HTTP ${login.status}`, login.ms);
+    let loginBody;
+    try {
+      loginBody = JSON.parse(login.text);
+    } catch {
+      throw new Error('auth.login response was not valid JSON.');
+    }
     const token = loginBody.accessToken;
     if (typeof token !== 'string' || token.length === 0) {
       throw new Error('auth.login response did not include accessToken.');

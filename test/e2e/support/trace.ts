@@ -1,13 +1,13 @@
 import * as fs from 'node:fs';
 
 /**
- * S5-B2 (#269 AC-6) �?" trace artefakt�n�n PII/secret redaksiyonu.
+ * S5-B2 (#269 AC-6) — trace artefaktının PII/secret redaksiyonu.
  *
- * Chrome trace dosyas� a� istek başl�klar�n�, yan�t gövdelerini ve DOM metnini
- * olay argümanlar� içinde taş�yabilir. Ham trace yüklenirse access token,
- * `Authorization: Bearer ...` başl��� veya sentetik olmayan e-posta s�zabilir.
- * Bu y�zden trace durdurulduktan hemen sonra dosya okunur, bilinen desenler
- * maskelenir ve yaln�z maskelenmiş kopya artefakt dizininde kal�r.
+ * Chrome trace dosyası ağ istek başlıklarını, yanıt gövdelerini ve DOM metnini
+ * olay argümanları içinde taşıyabilir. Ham trace yüklenirse access token,
+ * `Authorization: Bearer ...` başlığı veya sentetik olmayan e-posta sızabilir.
+ * Bu yüzden trace durdurulduktan hemen sonra dosya okunur, bilinen desenler
+ * maskelenir ve yalnız maskelenmiş kopya artefakt dizininde kalır.
  */
 
 const JWT_RE = /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g;
@@ -27,10 +27,38 @@ export function redactTraceText(value: string): string {
     .replace(PHONE_RE, '<phone-redacted>');
 }
 
+function redactJsonValue(value: unknown): unknown {
+  if (typeof value === 'string') return redactTraceText(value);
+  if (Array.isArray(value)) return value.map(redactJsonValue);
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = redactJsonValue(entry);
+    }
+    return result;
+  }
+  return value;
+}
+
 /**
- * Trace dosyas�n� yerinde maskeler. Chrome trace format� JSON array'dir; metin
- * tabanl� redaksiyon JSON yap�s�n� bozmaz çünkü desenler yaln�z string
- * değerlerin içinde geçer.
+ * JSON parse edilemeyen (ör. yarım kalmış) trace'lerde yalnız string
+ * literal'leri maskeler; sayısal alanlara (ör. `"ts":5321234567`) dokunmaz.
+ */
+function redactJsonStringLiterals(text: string): string {
+  return text.replace(/"(?:[^"\\\r\n]|\\.)*"/g, (literal) => {
+    try {
+      return JSON.stringify(redactTraceText(JSON.parse(literal) as string));
+    } catch {
+      return literal;
+    }
+  });
+}
+
+/**
+ * Trace dosyasını yerinde maskeler. Chrome trace formatı JSON'dur; önce
+ * yapısal olarak parse edilip yalnız string değerler maskelenir, böylece
+ * telefon desenine benzeyen sayısal alanlar (ör. `ts`) bozulmaz. Parse
+ * başarısız olursa yalnız string literal'ler üzerinden redaksiyon uygulanır.
  */
 export function sanitizeTraceFile(filePath: string): { bytes: number; findings: string[] } {
   if (!fs.existsSync(filePath)) return { bytes: 0, findings: ['trace-missing'] };
@@ -42,7 +70,13 @@ export function sanitizeTraceFile(filePath: string): { bytes: number; findings: 
   JWT_RE.lastIndex = 0;
   BEARER_RE.lastIndex = 0;
   COOKIE_RE.lastIndex = 0;
-  let sanitized = redactTraceText(raw);
+  let sanitized: string;
+  try {
+    sanitized = JSON.stringify(redactJsonValue(JSON.parse(raw)));
+  } catch {
+    findings.push('trace-unparsed-fallback');
+    sanitized = redactJsonStringLiterals(raw);
+  }
   const credential = process.env.E2E_SYNTHETIC_CREDENTIAL;
   if (credential !== undefined && credential.length >= 8) {
     if (sanitized.includes(credential)) findings.push('synthetic-credential');
