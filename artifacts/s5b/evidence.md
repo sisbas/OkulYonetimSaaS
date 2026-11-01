@@ -1,6 +1,6 @@
 # Evidence — S5-B1/S5-B2 (#269)
 
-- Baz main: `1d441da` · PR: #506 · Doğrulanan head: `20a2cf7becaf1fe5d4fee5e5fedbd33cf0c82460` · Tarih: 2026-11-01
+- Baz main: `1d441da` · PR: #506 · Doğrulanan head: `2c0c1b44beb26947c74dee911828bec300672782` · Tarih: 2026-11-01
 - Claim: #269 journey'i (`schedule draft/publish → teacher leave request → manager approval → impact →
   candidate assign/clear → attendance submit/lock → notification draft`) fresh DB + gerçek Nest backend +
   gerçek Chromium üzerinde görünür UI ile yürütülür; S5-B1/S5-B2 negatif matrisi, a11y, responsive,
@@ -16,26 +16,26 @@
 | 4 | E2E tip güvenliği | `tsc --noEmit --strict` (harness dosyaları) | PASS — exit 0 |
 | 5 | Fresh-DB journey | `npm run test:e2e` | CI'da `postgres:16` service ile (bu makinede PostgreSQL/Docker yok) |
 
-## CI — exact head `20a2cf7`
+## CI — exact head `2c0c1b4`
 | Check | Sonuç | Run |
 |---|---|---|
-| WP-07F P0 Browser E2E | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535776 |
-| Backend CI | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535844 |
-| DB Smoke | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535702 |
-| Sprint 1 Quality Gate | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535683 |
-| Gate 1 CI | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535656 |
-| Sensitive Pattern Scanner | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535750 |
-| GitGuardian scan | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535703 |
-| PR Governance | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535741 |
-| Identity Teacher Reference Cycle | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535706 |
-| TeacherCourse Eligibility Cycle | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535697 |
-| Room Migration Cycle | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41298535748 |
+| WP-07F P0 Browser E2E | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300374041 |
+| Backend CI | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300373996 |
+| DB Smoke | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300374083 |
+| Sprint 1 Quality Gate | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300373992 |
+| Gate 1 CI | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300374013 |
+| Sensitive Pattern Scanner | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300374034 |
+| GitGuardian scan | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300373998 |
+| PR Governance | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300418178 |
+| Identity Teacher Reference Cycle | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300373993 |
+| TeacherCourse Eligibility Cycle | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300374007 |
+| Room Migration Cycle | success | https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41300374094 |
 
 `Demo Frontend Smoke` ve `Full-Vision Demo Smoke` bu değişiklik yolunda path filtresiyle **skipped**;
 kabul kanıtı olarak sayılmazlar (aşağıdaki "skip PASS değildir" kuralı).
 
 ## WP-07F artefaktları (`stage5-full-journey-report.json`)
-- `verdict: PASS`, `headSha: 20a2cf7…`, 8/8 senaryo PASS; tümü gerçek UI/klavye/tıklama ile.
+- `verdict: PASS`, `headSha: 2c0c1b4…`, 8/8 senaryo PASS; tümü gerçek UI/klavye/tıklama ile.
 - Fresh DB seed yalnız referans fixture: `jobOutcomeRowsCreated=0`, `students=3`, `consents=6`.
 - Coverage: schedule revision 2 / published v1; leave approved + covered→unresolved; attendance
   absent/present/absent + 2 outbox; notifications bulk-approved + simulated delivered receipt.
@@ -70,6 +70,12 @@ Bu dilimde bulunan gerçek kusurlar düzeltildi:
 - `frontend/runtime/styles.css` `@import ../app/tokens.css` `/runtime` altında 404 veriyordu →
   `app/tokens.css`; aksi halde tüm `var(--…)` (focus outline dahil) geçersizdi.
 - 390px'te `.tabs` sarmıyordu → `flex-wrap: wrap`; kart ayırıcı `#94a3b8` kontrastı → `#5b6680`.
+- axe taraması `document` bağlamını Node'da değerlendiriyordu → hedef bağlam tarayıcı içinde verildi.
+- Review bulgusu: canary `auth.login` yalnız 200 bekliyordu; Nest `POST /auth/login` 201 döndürür →
+  tüm 2xx başarı sayılır, geçersiz JSON gövdesi net hata verir.
+- Review bulgusu: trace metin tabanlı redaksiyon sayısal `ts` alanını bozabiliyordu → trace JSON olarak
+  parse edilip yalnız string değerler maskelenir; parse edilemezse string literal redaksiyonuna düşer.
+  Regresyon: `test/e2e/support/trace-sanitize.e2e-spec.ts` (sayısal `ts` korunur, PII maskelenir).
 
 ## Kabul kriterleri eşlemesi
 | #269 AC | Durum | Kanıt |
@@ -93,7 +99,7 @@ Bu dilimde bulunan gerçek kusurlar düzeltildi:
 - DB audit metadata ve backend log aynı taramadan geçer.
 
 ## Rollback
-- `git revert 20a2cf7` (veya PR #506 revert) — migration yok, şema/veri etkisi yok.
+- `git revert 2c0c1b4` (veya PR #506 revert) — migration yok, şema/veri etkisi yok.
 - Canary salt-okunur; `CANARY_ENABLED` kapatılarak devre dışı bırakılabilir; veri rollback gerekmez.
 - Runtime CSS düzeltmeleri yalnız görsel/erişilebilirlik; iş kuralları değişmedi.
 
@@ -101,7 +107,7 @@ Bu dilimde bulunan gerçek kusurlar düzeltildi:
 1. **Post-merge canary çalıştırılmadı**: `CANARY_ENABLED=true` + canary secret/base URL merge sonrası
    gerekir; sonuç `post-merge-canary` workflow run URL'i ile bu dosyaya eklenmelidir.
 2. **Terminal rol verdict'leri**: PR #506 review/approval süreci tamamlanmadan AC-10 kapanmaz.
-   Verdict'ler exact `head_sha=20a2cf7` üzerinden bağlanmalıdır.
+   Verdict'ler exact `head_sha=2c0c1b4` üzerinden bağlanmalıdır.
 3. **Video yok**: AC-6 "video/screenshots" ifadesi trace + 9 screenshot ile karşılandı; video artefaktı
    üretilmedi (zorunlu görülürse ayrı iş kalemi).
 4. **Global P0/P1'ler**: #259 (terminal verdict altyapısı) ve #266 (gerçek provider) bu PR'ın kapsamı
