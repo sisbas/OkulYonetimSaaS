@@ -280,7 +280,7 @@ describe('LeaveService create/history (#263 AC-1 / AC-3)', () => {
       reasonCode: LeaveReasonCode.ANNUAL_LEAVE,
       startsAt: '2026-09-14T07:00:00.000Z',
       endsAt: '2026-09-15T07:00:00.000Z',
-    })).rejects.toMatchObject({ code: 'FULL_DAY_NOT_ALIGNED' });
+    })).rejects.toMatchObject({ code: 'FULL_DAY_NOT_SINGLE_LOCAL_DAY' });
 
     expect(leaves.create).not.toHaveBeenCalled();
     expect(identity.resolveTeacherIdentity).not.toHaveBeenCalled();

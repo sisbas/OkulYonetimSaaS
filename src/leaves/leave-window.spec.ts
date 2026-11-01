@@ -63,33 +63,35 @@ describe('leave window contract (#263 AC-3)', () => {
     );
   });
 
-  it('accepts a full-day leave aligned to local midnights', () => {
+  it('accepts a full-day leave within a single local day (working hours)', () => {
+    // Ürün semantiği: tam gün = tek yerel takvim günü (ör. 08:00-18:00).
     const result = assertLeaveWindow({
       durationType: LeaveDurationType.FULL_DAY,
-      startsAt: new Date('2026-09-13T21:00:00.000Z'),
-      endsAt: new Date('2026-09-14T21:00:00.000Z'),
+      startsAt: new Date('2026-09-14T05:00:00.000Z'),
+      endsAt: new Date('2026-09-14T15:00:00.000Z'),
       timeZone: ISTANBUL,
     });
 
-    expect(result.localDaySpan).toBe(1);
+    expect(result.localDaySpan).toBe(0);
   });
 
   it('keeps full-day alignment correct across a DST transition', () => {
-    // America/New_York 2026-03-08 02:00'de ileri alır: 03-08 yerel günü 23 saattir.
+    // America/New_York 2026-03-08 02:00'de ileri alır: o yerel gün 23 saattir.
+    // 00:30 yerel -> 23:30 yerel aynı yerel gündür.
     const result = assertLeaveWindow({
       durationType: LeaveDurationType.FULL_DAY,
-      startsAt: new Date('2026-03-08T05:00:00.000Z'),
-      endsAt: new Date('2026-03-09T04:00:00.000Z'),
+      startsAt: new Date('2026-03-08T05:30:00.000Z'),
+      endsAt: new Date('2026-03-09T03:30:00.000Z'),
       timeZone: 'America/New_York',
     });
 
-    expect(result.localDaySpan).toBe(1);
-    expect(result.totalHours).toBe(23);
+    expect(result.localDaySpan).toBe(0);
+    expect(result.totalHours).toBe(22);
   });
 });
 
 describe('leave window alignment and bounds (#263 AC-3)', () => {
-  it('rejects a full-day leave that is not midnight aligned', () => {
+  it('rejects a full-day leave that spans two local days', () => {
     expectCode(
       () =>
         assertLeaveWindow({
@@ -98,7 +100,7 @@ describe('leave window alignment and bounds (#263 AC-3)', () => {
           endsAt: new Date('2026-09-15T07:00:00.000Z'),
           timeZone: ISTANBUL,
         }),
-      'FULL_DAY_NOT_ALIGNED',
+      'FULL_DAY_NOT_SINGLE_LOCAL_DAY',
     );
   });
 
@@ -111,41 +113,31 @@ describe('leave window alignment and bounds (#263 AC-3)', () => {
           endsAt: new Date('2026-09-15T21:00:00.000Z'),
           timeZone: ISTANBUL,
         }),
-      'FULL_DAY_NOT_ALIGNED',
+      'FULL_DAY_NOT_SINGLE_LOCAL_DAY',
     );
   });
 
-  it('accepts a multi-day leave of three aligned local days', () => {
+  it('accepts a multi-day leave of three local days', () => {
     const result = assertLeaveWindow({
       durationType: LeaveDurationType.MULTI_DAY,
-      startsAt: new Date('2026-09-13T21:00:00.000Z'),
-      endsAt: new Date('2026-09-16T21:00:00.000Z'),
+      startsAt: new Date('2026-09-14T05:00:00.000Z'),
+      endsAt: new Date('2026-09-16T15:00:00.000Z'),
       timeZone: ISTANBUL,
     });
 
-    expect(result.localDaySpan).toBe(3);
+    expect(result.localDaySpan).toBe(2);
   });
 
-  it('rejects a single-day multi-day leave and a non-aligned multi-day leave', () => {
+  it('rejects a multi-day leave that only touches one local day', () => {
     expectCode(
       () =>
         assertLeaveWindow({
           durationType: LeaveDurationType.MULTI_DAY,
-          startsAt: new Date('2026-09-13T21:00:00.000Z'),
-          endsAt: new Date('2026-09-14T21:00:00.000Z'),
+          startsAt: new Date('2026-09-14T05:00:00.000Z'),
+          endsAt: new Date('2026-09-14T15:00:00.000Z'),
           timeZone: ISTANBUL,
         }),
-      'MULTI_DAY_NOT_ALIGNED',
-    );
-    expectCode(
-      () =>
-        assertLeaveWindow({
-          durationType: LeaveDurationType.MULTI_DAY,
-          startsAt: new Date('2026-09-14T09:00:00.000Z'),
-          endsAt: new Date('2026-09-16T09:00:00.000Z'),
-          timeZone: ISTANBUL,
-        }),
-      'MULTI_DAY_NOT_ALIGNED',
+      'MULTI_DAY_TOO_SHORT',
     );
   });
 

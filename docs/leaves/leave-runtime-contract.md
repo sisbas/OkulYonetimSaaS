@@ -36,12 +36,13 @@ The request window is validated **before** any row is written, in the tenant's
 
 - `start < end` and the total range cannot exceed 366 days.
 - `hourly`: <= 24 hours and at most one local day boundary.
-- `full_day`: both ends at local midnight, exactly one local calendar day.
-- `multi_day`: both ends at local midnight, at least two local calendar days.
+- `full_day`: start and end on the **same** local calendar day (product meaning:
+  e.g. 08:00-18:00 on one day is a full day).
+- `multi_day`: spans at least two local calendar days.
 - An unknown/invalid tenant time zone fails closed (`400`); UTC is never assumed.
 
-Midnight alignment is computed from local calendar parts, so a DST day (23 or 25
-hours) still counts as one full day. The repository takes a transaction-scoped
+Local-day span is computed from local calendar parts, so a DST day (23 or 25 hours)
+still counts as one calendar day and is not rejected. The repository takes a transaction-scoped
 PostgreSQL advisory lock on `(tenant, branch:teacher)` before the overlap select,
 so two concurrent requests for the same teacher cannot both pass the TOCTOU check.
 

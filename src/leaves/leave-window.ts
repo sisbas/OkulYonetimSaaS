@@ -15,8 +15,9 @@ import { LeaveDurationType } from './leave-request.entity';
  *   onay anındaki occurrence üretimini de sınırlar).
  * - `hourly`  : toplam süre <= 24 saat ve en fazla bir yerel gün sınırı aşılabilir
  *   (gece yarısını aşan 23:00 -> 01:00 gibi gerçek durumlar reddedilmez).
- * - `full_day`: iki uç da yerel gece yarısı (00:00) ve tam 1 gün.
- * - `multi_day`: iki uç da yerel gece yarısı ve >= 2 gün.
+ * - `full_day`: iki uç da AYNI yerel takvim gününde (ör. 08:00-18:00). Ürün
+ *   semantiği budur; gece yarısı hizalaması zorunlu değildir, gün sayısı tektir.
+ * - `multi_day`: en az 2 yerel takvim gününe yayılır.
  *
  * Saat dilimi çözülemezse sessizce UTC'ye düşmek YASAK: istek reddedilir
  * (fail-closed) — aksi hâlde gece yarısı hizalaması yanlış hesaplanır.
@@ -31,8 +32,8 @@ export type LeaveWindowCode =
   | 'INVALID_TIME_ZONE'
   | 'UNKNOWN_DURATION'
   | 'HOURLY_RANGE_TOO_LONG'
-  | 'FULL_DAY_NOT_ALIGNED'
-  | 'MULTI_DAY_NOT_ALIGNED';
+  | 'FULL_DAY_NOT_SINGLE_LOCAL_DAY'
+  | 'MULTI_DAY_TOO_SHORT';
 
 export class LeaveWindowError extends BadRequestException {
   constructor(
@@ -130,7 +131,6 @@ export function assertLeaveWindow(input: LeaveWindowInput): LeaveWindowResult {
   const startParts = localCalendarParts(start, timeZone);
   const endParts = localCalendarParts(end, timeZone);
   const localDaySpan = localDayNumber(endParts.date) - localDayNumber(startParts.date);
-  const atLocalMidnight = startParts.time === '00:00' && endParts.time === '00:00';
 
   switch (input.durationType) {
     case LeaveDurationType.HOURLY:
@@ -142,18 +142,18 @@ export function assertLeaveWindow(input: LeaveWindowInput): LeaveWindowResult {
       }
       break;
     case LeaveDurationType.FULL_DAY:
-      if (!atLocalMidnight || localDaySpan !== 1) {
+      if (localDaySpan !== 0) {
         throw new LeaveWindowError(
-          'FULL_DAY_NOT_ALIGNED',
-          'Full-day leave must span exactly one full local calendar day (midnight to midnight)',
+          'FULL_DAY_NOT_SINGLE_LOCAL_DAY',
+          'Full-day leave must start and end on the same local calendar day',
         );
       }
       break;
     case LeaveDurationType.MULTI_DAY:
-      if (!atLocalMidnight || localDaySpan < 2) {
+      if (localDaySpan < 2) {
         throw new LeaveWindowError(
-          'MULTI_DAY_NOT_ALIGNED',
-          'Multi-day leave must span at least two full local calendar days (midnight to midnight)',
+          'MULTI_DAY_TOO_SHORT',
+          'Multi-day leave must span at least two local calendar days',
         );
       }
       break;

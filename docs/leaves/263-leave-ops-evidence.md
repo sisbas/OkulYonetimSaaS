@@ -33,7 +33,7 @@ kaldırılmış durumda ve aşağıdakiler gerçekten çalışıyor:
 | # | Boşluk | Değişiklik | AC |
 |---|---|---|---|
 | A | Öğretmen yalnız tek kaydı okuyabiliyordu; **geçmiş listesi** yoktu | `GET /api/v1/leaves/me` (`leave:own:read`) + `LeaveRepository.listOwn` + `ListOwnLeaveRequestsQueryDto` | AC-1 |
-| B | `durationType` ile tarih aralığı **hiç karşılaştırılmıyordu** (3 günlük "hourly" kabul ediliyordu), aralık sınırsızdı, takvim hizalaması UTC varsayımına açıktı | `src/leaves/leave-window.ts`: tenant saat diliminde `hourly/full_day/multi_day` hizalaması + 366 gün üst sınırı; geçersiz/eksik TZ fail-closed | AC-3 |
+| B | `durationType` ile tarih aralığı **hiç karşılaştırılmıyordu** (3 günlük "hourly" kabul ediliyordu), aralık sınırsızdı, takvim hizalaması UTC varsayımına açıktı | `src/leaves/leave-window.ts`: tenant saat diliminde `hourly/full_day/multi_day` gün-sayısı sözleşmesi + 366 gün üst sınırı; geçersiz/eksik TZ fail-closed | AC-3 |
 | C | Çakışma kontrolü SELECT-then-INSERT idi → eşzamanlı iki talep **çift rezervasyon** yapabilirdi | `pg_advisory_xact_lock(tenant, branch:teacher)` kontrolünden önce | AC-3 |
 | D | "On-behalf" politikası yazılı değildi | Sözleşme dokümanı + test: istemciden `teacherId`/`requesterUserId` kabul edilmez, kimlik JWT'den çözülür, whitelist dışı alan 400 | AC-2 |
 | E | P0 browser kanıt script'i onaylı izni **doğrudan SQL** ile yazıyordu (kullanıcı yolculuğu atlanıyordu) | `scripts/qa-p0-browser-e2e.js` artık: öğretmen `POST /leaves/me` → yönetici `PATCH /leaves/{id}/approve` (If-Match) → etki doğrulaması | AC-9 |
