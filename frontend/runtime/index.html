@@ -227,6 +227,22 @@
             <button type="submit" data-requires-permission="leave:create">İzin talebi oluştur</button>
           </form>
           <div id="teacher-output" class="state-box" role="region" aria-label="Öğretmen izin sonucu"></div>
+
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">İzinlerim</p>
+              <h3>Kendi izin geçmişim</h3>
+            </div>
+            <button id="refresh-my-leaves" type="button" data-requires-permission="leave:own:read">Geçmişimi yenile</button>
+          </div>
+          <div class="chip-row" id="my-leaves-status-filter" role="group" aria-label="İzinlerim durum filtresi">
+            <button type="button" class="chip" data-own-status="" aria-pressed="true">Tümü</button>
+            <button type="button" class="chip" data-own-status="pending" aria-pressed="false">Beklemede</button>
+            <button type="button" class="chip" data-own-status="approved" aria-pressed="false">Onaylandı</button>
+            <button type="button" class="chip" data-own-status="rejected" aria-pressed="false">Reddedildi</button>
+          </div>
+          <p class="hint">Yalnızca size ait talepler listelenir; başka bir öğretmenin kaydı bu görünümde yer almaz.</p>
+          <div id="my-leaves-output" class="cards" role="region" aria-label="Kendi izin taleplerim"></div>
         </section>
 
         <section id="ops-panel" class="panel runtime-panel hidden" data-panel="ops">
@@ -244,6 +260,13 @@
               <li>Onay ders karşılığı akışını başlatır; ret talebi kapatır.</li>
               <li>Kayıt değişmişse yenileme gerekir.</li>
             </ol>
+          </div>
+          <div class="chip-row" id="leave-status-filter" role="group" aria-label="İzin listesi durum filtresi">
+            <button type="button" class="chip" data-leave-status="" aria-pressed="true">Tümü</button>
+            <button type="button" class="chip" data-leave-status="draft" aria-pressed="false">Taslak</button>
+            <button type="button" class="chip" data-leave-status="pending" aria-pressed="false">Beklemede</button>
+            <button type="button" class="chip" data-leave-status="approved" aria-pressed="false">Onaylandı</button>
+            <button type="button" class="chip" data-leave-status="rejected" aria-pressed="false">Reddedildi</button>
           </div>
           <div id="leaves-output" class="cards" role="region" aria-label="Bekleyen izin talebi kararları"></div>
           <div class="section-head">
