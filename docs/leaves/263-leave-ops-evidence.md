@@ -84,15 +84,32 @@ Dosyalar:
 
 ```text
 $ npx tsc -p tsconfig.json --noEmit                    -> 0 hata
-$ npx jest --runInBand src/leaves                      -> 56 test PASS
+$ npx jest --runInBand src/leaves                      -> 57 test PASS
 $ npx jest --runInBand test/contracts                  -> 93 test PASS
-$ npx jest --runInBand (src + test, DB/E2E hariç)       -> 145 suite / 1390 test PASS
+$ npx jest --runInBand (src + test, DB/E2E hariç)       -> 145 suite / 1395 test PASS
 $ node --check scripts/qa-p0-browser-e2e.js            -> syntax OK
 ```
 
 DB ve tarayıcı gerektiren suite'ler bu ortamda PostgreSQL olmadığı için
 çalıştırılmadı: CI'da `DB Smoke` (`test/database`) ve `WP-07F P0 Browser E2E`
 (gerçek login + onay yolculuğu) ile koşar.
+
+
+## 3.1 Review bulgularına yanıt (PR review thread'leri)
+
+1. **P2 — çok şubeli öğretmen geçmişi** (`fixed:bcef3fd`): `GET /leaves/me` artık
+   `TeacherIdentityService.resolveForOwnHistory` kullanır; `>= 1` aktif şube
+   üyeliği yeterlidir (tek şube zorunluluğu yok). Kimlik/tenant çözülemezse, hiç
+   aktif üyelik yoksa veya istenen `branchId` öğretmenin üyeliklerinde değilse
+   istek yine fail-closed 403 döner. Yazma/karar yolları katı tek-şube kuralını
+   (`resolveForRequest`) korur.
+2. **P2 — gece yarısı saniye/ms hassasiyeti** (`rejected:d00a05b`): bulgu
+   `5f44523`'teki gece-yarısı kuralına aitti; kural `d00a05b`'de kaldırıldı
+   (`full_day` = tek yerel takvim günü). Gün sınırı karşılaştırması anlık
+   değerden türetilen yerel **tarih** dizelerinden yapıldığı için saniye/ms
+   kaybı yoktur; `20:59:59.999Z -> 21:00:00.001Z` (yerel gece yarısı geçişi)
+   reddedilir. Kanıt testi: `leave-window.spec.ts` — "is exact to the local day
+   even with nonzero seconds and milliseconds".
 
 ## 4. Bilinçli sınırlar
 
