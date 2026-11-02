@@ -37,17 +37,21 @@ import {
 } from './leave-approval-impact';
 import {
   CandidateResponse,
+  DailyOperationsAttendanceSummary,
+  DailyOperationsCoverageSummary,
+  DailyOperationsDayLesson,
+  DailyOperationsDayResponse,
+  DailyOperationsDayStats,
   DailyOperationsQueueResponse,
   DEFAULT_TENANT_TIME_ZONE,
   EventOccurrence,
   LeaveImpactEvent,
   LeaveImpactResponse,
   computeCoverageStatus,
+  dateStringInTimeZone,
+  isoDayOfWeek,
   leaveEtag,
   projectionKey,
-} from './leave-impact.types';
-import {
-  dateStringInTimeZone,
 } from './leave-impact.types';
 
 type LeaveRow = {
@@ -94,6 +98,58 @@ type QueueLessonRow = {
   timeSlotId: string;
   startTime: string;
   endTime: string;
+};
+
+/** #461 F2: yayınlanmış gün satırı; yalnız published versiyonlardan gelir. */
+type DayLessonRow = {
+  scheduleEventId: string;
+  scheduleId: string;
+  scheduleVersionId: string;
+  branchId: string;
+  teacherId: string;
+  studentGroupId: string;
+  courseId: string;
+  roomId: string;
+  timeSlotId: string;
+  startTime: string;
+  endTime: string;
+  dayOfWeek: number;
+  teacherLabel: string | null;
+  courseLabel: string | null;
+  groupLabel: string | null;
+  roomLabel: string | null;
+  timeSlotLabel: string | null;
+};
+
+type DayAttendanceRow = {
+  sessionId: string;
+  scheduleEventId: string;
+  status: 'draft' | 'published' | 'locked';
+  rosterCount: number;
+  recordedCount: number;
+  presentCount: number;
+  absentCount: number;
+  lateCount: number;
+  excusedCount: number;
+};
+
+type DayCoverageRow = {
+  scheduleEventId: string;
+  total: number;
+  resolved: number;
+  leaveRequestId: string | null;
+  substituteAssignmentId: string | null;
+};
+
+type DayLeaveRow = {
+  id: string;
+  version: number;
+};
+
+type DaySubstituteRow = {
+  assignmentId: string;
+  substituteTeacherId: string;
+  substituteTeacherLabel: string | null;
 };
 
 /** Only known eligibility rejections may be omitted from candidate results. */
@@ -182,6 +238,392 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
         roomId: row.roomId,
         timeSlotId: row.timeSlotId,
       })),
+    };
+  }
+
+  /**
+   * #461 F2 — günün TAM yayınlanmış programı.
+   *
+   * `today` yalnız izin projeksiyonundan doğan dersleri döndürür. Operasyon
+   * ekranı ise günün tüm akışını görmek zorundadır; bu yüzey yayınlanmış
+   * `schedule_versions` + aktif `schedules` üzerinden okur. Draft versiyonlar
+   * hiçbir koşulda yanıta girmez; yoklama özeti, kapsama ve roster sayısı aynı
+   * yanıtta gelir.
+   */
+  async day(
+    ctx: RequestContext,
+    input: { branchId: string; date: string },
+  ): Promise<DailyOperationsDayResponse> {
+    assertTenantScope(ctx, 'daily_operation_lessons');
+    await this.assertBranchOwnership(this.dataSource.manager, ctx.tenantId!, input.branchId);
+
+    const dayOfWeek = isoDayOfWeek(new Date(`${input.date}T00:00:00.000Z`));
+    const rows = (await this.dataSource.manager.query(
+      `SELECT
+          event.id::text AS "scheduleEventId",
+          event.schedule_id::text AS "scheduleId",
+          event.version_id::text AS "scheduleVersionId",
+          event.branch_id::text AS "branchId",
+          event.teacher_id::text AS "teacherId",
+          event.student_group_id::text AS "studentGroupId",
+          event.course_id::text AS "courseId",
+          event.room_id::text AS "roomId",
+          event.time_slot_id::text AS "timeSlotId",
+          event.start_time::text AS "startTime",
+          event.end_time::text AS "endTime",
+          event.day_of_week AS "dayOfWeek",
+          NULLIF(BTRIM(COALESCE(teacher.first_name, '') || ' ' || COALESCE(teacher.last_name, '')), '') AS "teacherLabel",
+          course.name AS "courseLabel",
+          student_group.name AS "groupLabel",
+          room.name AS "roomLabel",
+          time_slot.name AS "timeSlotLabel"
+       FROM schedule_events event
+       JOIN schedule_versions version
+         ON version.id = event.version_id
+        AND version.tenant_id = event.tenant_id
+        AND version.branch_id = event.branch_id
+        AND version.schedule_id = event.schedule_id
+        AND version.status = 'published'
+       JOIN schedules schedule
+         ON schedule.id = event.schedule_id
+        AND schedule.tenant_id = event.tenant_id
+        AND schedule.branch_id = event.branch_id
+        AND schedule.active_version_id = version.id
+        AND schedule.status = 'published'
+       LEFT JOIN teachers teacher
+         ON teacher.id = event.teacher_id
+        AND teacher.tenant_id = event.tenant_id
+       LEFT JOIN courses course
+         ON course.id = event.course_id
+        AND course.tenant_id = event.tenant_id
+       LEFT JOIN student_groups student_group
+         ON student_group.id = event.student_group_id
+        AND student_group.tenant_id = event.tenant_id
+       LEFT JOIN rooms room
+         ON room.id = event.room_id
+        AND room.tenant_id = event.tenant_id
+       LEFT JOIN time_slots time_slot
+         ON time_slot.id = event.time_slot_id
+        AND time_slot.tenant_id = event.tenant_id
+       WHERE event.tenant_id = $1
+         AND event.branch_id = $2
+         AND event.day_of_week = $3
+         AND schedule.effective_from <= $4::date
+         AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= $4::date
+       ORDER BY event.start_time ASC, event.id ASC`,
+      [ctx.tenantId, input.branchId, dayOfWeek, input.date],
+    )) as DayLessonRow[];
+
+    if (rows.length === 0) {
+      return this.emptyDay(input.branchId, input.date, dayOfWeek);
+    }
+
+    const eventIds = rows.map((row) => row.scheduleEventId);
+    const groupIds = [...new Set(rows.map((row) => row.studentGroupId))];
+
+    const attendanceRows = (await this.dataSource.manager.query(
+      `SELECT
+          session.id::text AS "sessionId",
+          session.schedule_event_id::text AS "scheduleEventId",
+          session.status AS "status",
+          jsonb_array_length(session.roster_snapshot)::int AS "rosterCount",
+          count(record.id)::int AS "recordedCount",
+          count(record.id) FILTER (WHERE record.status = 'present')::int AS "presentCount",
+          count(record.id) FILTER (WHERE record.status = 'absent')::int AS "absentCount",
+          count(record.id) FILTER (WHERE record.status = 'late')::int AS "lateCount",
+          count(record.id) FILTER (WHERE record.status = 'excused')::int AS "excusedCount"
+       FROM attendance_sessions session
+       LEFT JOIN attendance_records record
+         ON record.tenant_id = session.tenant_id
+        AND record.session_id = session.id
+       WHERE session.tenant_id = $1
+         AND session.schedule_event_id = ANY($2::uuid[])
+         AND session.session_date = $3::date
+       GROUP BY session.id`,
+      [ctx.tenantId, eventIds, input.date],
+    )) as DayAttendanceRow[];
+
+    const membershipRows = (await this.dataSource.manager.query(
+      `SELECT
+          member.student_group_id::text AS "studentGroupId",
+          count(*)::int AS "rosterCount"
+       FROM student_group_members member
+       JOIN students student
+         ON student.id = member.student_id
+        AND student.tenant_id = member.tenant_id
+        AND student.branch_id = member.branch_id
+       WHERE member.tenant_id = $1
+         AND member.student_group_id = ANY($2::uuid[])
+         AND member.status = 'active'
+         AND member.deleted_at IS NULL
+         AND student.deleted_at IS NULL
+         AND student.enrollment_status = 'active'
+       GROUP BY member.student_group_id`,
+      [ctx.tenantId, groupIds],
+    )) as Array<{ studentGroupId: string; rosterCount: number }>;
+
+    const coverageRows = (await this.dataSource.manager.query(
+      `SELECT
+          lesson.schedule_event_id::text AS "scheduleEventId",
+          count(*)::int AS "total",
+          count(*) FILTER (WHERE lesson.state = 'resolved')::int AS "resolved",
+          (array_agg(lesson.leave_request_id::text ORDER BY (lesson.state = 'open') DESC, lesson.updated_at DESC))[1] AS "leaveRequestId",
+          (array_agg(lesson.substitute_assignment_id::text ORDER BY (lesson.state = 'resolved') DESC, lesson.updated_at DESC))[1] AS "substituteAssignmentId"
+       FROM daily_operation_lessons lesson
+       WHERE lesson.tenant_id = $1
+         AND lesson.schedule_event_id = ANY($2::uuid[])
+         AND lesson.occurrence_date = $3::date
+       GROUP BY lesson.schedule_event_id`,
+      [ctx.tenantId, eventIds, input.date],
+    )) as DayCoverageRow[];
+
+    const leaveIds = [
+      ...new Set(
+        coverageRows
+          .map((row) => row.leaveRequestId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const assignmentIds = [
+      ...new Set(
+        coverageRows
+          .map((row) => row.substituteAssignmentId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+
+    const leaveRows: DayLeaveRow[] = leaveIds.length
+      ? ((await this.dataSource.manager.query(
+          `SELECT id::text AS "id", version
+             FROM leave_requests
+            WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+          [ctx.tenantId, leaveIds],
+        )) as DayLeaveRow[])
+      : [];
+    const substituteRows: DaySubstituteRow[] = assignmentIds.length
+      ? ((await this.dataSource.manager.query(
+          `SELECT
+              assignment.id::text AS "assignmentId",
+              assignment.substitute_teacher_id::text AS "substituteTeacherId",
+              NULLIF(BTRIM(COALESCE(teacher.first_name, '') || ' ' || COALESCE(teacher.last_name, '')), '') AS "substituteTeacherLabel"
+             FROM leave_substitution_assignments assignment
+             LEFT JOIN teachers teacher
+               ON teacher.id = assignment.substitute_teacher_id
+              AND teacher.tenant_id = assignment.tenant_id
+            WHERE assignment.tenant_id = $1 AND assignment.id = ANY($2::uuid[])`,
+          [ctx.tenantId, assignmentIds],
+        )) as DaySubstituteRow[])
+      : [];
+
+    const attendanceByEvent = new Map(attendanceRows.map((row) => [row.scheduleEventId, row]));
+    const rosterByGroup = new Map(membershipRows.map((row) => [row.studentGroupId, row.rosterCount]));
+    const coverageByEvent = new Map(coverageRows.map((row) => [row.scheduleEventId, row]));
+    const leaveVersionById = new Map(leaveRows.map((row) => [row.id, Number(row.version)]));
+    const substituteByAssignment = new Map(substituteRows.map((row) => [row.assignmentId, row]));
+
+    const lessons = rows.map((row) =>
+      this.toDayLesson(
+        row,
+        input.date,
+        attendanceByEvent.get(row.scheduleEventId) ?? null,
+        rosterByGroup.get(row.studentGroupId) ?? 0,
+        coverageByEvent.get(row.scheduleEventId) ?? null,
+        leaveVersionById,
+        substituteByAssignment,
+      ),
+    );
+
+    return {
+      tenantScoped: true,
+      branchId: input.branchId,
+      date: input.date,
+      dayOfWeek,
+      permission: 'daily_operations:read',
+      lessons,
+      stats: this.dayStats(lessons),
+    };
+  }
+
+  private emptyDay(
+    branchId: string,
+    date: string,
+    dayOfWeek: number,
+  ): DailyOperationsDayResponse {
+    return {
+      tenantScoped: true,
+      branchId,
+      date,
+      dayOfWeek,
+      permission: 'daily_operations:read',
+      lessons: [],
+      stats: this.dayStats([]),
+    };
+  }
+
+  private toDayLesson(
+    row: DayLessonRow,
+    date: string,
+    attendanceRow: DayAttendanceRow | null,
+    membershipRosterCount: number,
+    coverageRow: DayCoverageRow | null,
+    leaveVersionById: Map<string, number>,
+    substituteByAssignment: Map<string, DaySubstituteRow>,
+  ): DailyOperationsDayLesson {
+    const startTime = row.startTime;
+    const endTime = row.endTime;
+    const timeLabel = formatTimeLabel(startTime, endTime);
+    const courseLabel = row.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
+    const groupLabel = row.groupLabel ?? NO_GROUP_LABEL_FALLBACK;
+    const total = Number(coverageRow?.total ?? 0);
+    const resolved = Number(coverageRow?.resolved ?? 0);
+    const coverageStatus = computeCoverageStatus(total, resolved);
+    const leaveRequestId = coverageRow?.leaveRequestId ?? null;
+    const leaveVersion = leaveRequestId ? (leaveVersionById.get(leaveRequestId) ?? null) : null;
+    const substituteAssignmentId = coverageRow?.substituteAssignmentId ?? null;
+    const substitute = substituteAssignmentId
+      ? (substituteByAssignment.get(substituteAssignmentId) ?? null)
+      : null;
+
+    const coverage: DailyOperationsCoverageSummary = {
+      state: coverageStatus,
+      leaveRequestId,
+      leaveVersion,
+      leaveEtag:
+        leaveRequestId && leaveVersion !== null
+          ? leaveEtag(leaveRequestId, leaveVersion)
+          : null,
+      substituteAssignmentId,
+      substituteTeacherId: substitute?.substituteTeacherId ?? null,
+      substituteTeacherLabel: substitute?.substituteTeacherLabel ?? null,
+    };
+
+    if (!attendanceRow) {
+      const rosterCount = membershipRosterCount;
+      const attendance: DailyOperationsAttendanceSummary = {
+        sessionId: null,
+        status: 'not_started',
+        rosterCount,
+        recordedCount: 0,
+        unrecordedCount: rosterCount,
+        presentCount: 0,
+        absentCount: 0,
+        lateCount: 0,
+        excusedCount: 0,
+      };
+      return {
+        scheduleEventId: row.scheduleEventId,
+        scheduleId: row.scheduleId,
+        scheduleVersionId: row.scheduleVersionId,
+        branchId: row.branchId,
+        occurrenceDate: date,
+        dayOfWeek: Number(row.dayOfWeek),
+        startTime,
+        endTime,
+        startsAt: `${date}T${startTime}`,
+        endsAt: `${date}T${endTime}`,
+        timeLabel,
+        teacherId: row.teacherId,
+        teacherLabel: row.teacherLabel ?? NO_TEACHER_LABEL_FALLBACK,
+        studentGroupId: row.studentGroupId,
+        groupLabel,
+        courseId: row.courseId,
+        courseLabel,
+        roomId: row.roomId,
+        roomLabel: row.roomLabel ?? NO_ROOM_LABEL_FALLBACK,
+        timeSlotId: row.timeSlotId,
+        timeSlotLabel: row.timeSlotLabel ?? timeLabel,
+        lessonLabel: composeLessonLabel({
+          courseLabel,
+          groupLabel,
+          timeLabel,
+          occurrenceLabel: formatOccurrenceLabel(date),
+        }),
+        attendance,
+        coverage,
+        needsCoverage:
+          coverageStatus === LeaveCoverageStatus.UNRESOLVED ||
+          coverageStatus === LeaveCoverageStatus.PARTIALLY_COVERED,
+        needsAttendance: rosterCount > 0,
+      };
+    }
+
+    const rosterCount = Number(attendanceRow.rosterCount);
+    const recordedCount = Number(attendanceRow.recordedCount);
+    const attendance: DailyOperationsAttendanceSummary = {
+      sessionId: attendanceRow.sessionId,
+      status: attendanceRow.status,
+      rosterCount,
+      recordedCount,
+      unrecordedCount: Math.max(rosterCount - recordedCount, 0),
+      presentCount: Number(attendanceRow.presentCount),
+      absentCount: Number(attendanceRow.absentCount),
+      lateCount: Number(attendanceRow.lateCount),
+      excusedCount: Number(attendanceRow.excusedCount),
+    };
+
+    return {
+      scheduleEventId: row.scheduleEventId,
+      scheduleId: row.scheduleId,
+      scheduleVersionId: row.scheduleVersionId,
+      branchId: row.branchId,
+      occurrenceDate: date,
+      dayOfWeek: Number(row.dayOfWeek),
+      startTime,
+      endTime,
+      startsAt: `${date}T${startTime}`,
+      endsAt: `${date}T${endTime}`,
+      timeLabel,
+      teacherId: row.teacherId,
+      teacherLabel: row.teacherLabel ?? NO_TEACHER_LABEL_FALLBACK,
+      studentGroupId: row.studentGroupId,
+      groupLabel,
+      courseId: row.courseId,
+      courseLabel,
+      roomId: row.roomId,
+      roomLabel: row.roomLabel ?? NO_ROOM_LABEL_FALLBACK,
+      timeSlotId: row.timeSlotId,
+      timeSlotLabel: row.timeSlotLabel ?? timeLabel,
+      lessonLabel: composeLessonLabel({
+        courseLabel,
+        groupLabel,
+        timeLabel,
+        occurrenceLabel: formatOccurrenceLabel(date),
+      }),
+      attendance,
+      coverage,
+      needsCoverage:
+        coverageStatus === LeaveCoverageStatus.UNRESOLVED ||
+        coverageStatus === LeaveCoverageStatus.PARTIALLY_COVERED,
+      needsAttendance: rosterCount > recordedCount,
+    };
+  }
+
+  private dayStats(lessons: DailyOperationsDayLesson[]): DailyOperationsDayStats {
+    const sum = (select: (lesson: DailyOperationsDayLesson) => number): number =>
+      lessons.reduce((total, lesson) => total + select(lesson), 0);
+
+    return {
+      lessonCount: lessons.length,
+      coveredLessonCount: lessons.filter((lesson) => !lesson.needsCoverage).length,
+      uncoveredLessonCount: lessons.filter((lesson) => lesson.needsCoverage).length,
+      completedSessionCount: lessons.filter(
+        (lesson) =>
+          lesson.attendance.sessionId !== null &&
+          lesson.attendance.rosterCount > 0 &&
+          lesson.attendance.recordedCount >= lesson.attendance.rosterCount &&
+          lesson.attendance.status !== 'draft',
+      ).length,
+      lockedSessionCount: lessons.filter(
+        (lesson) => lesson.attendance.status === 'locked',
+      ).length,
+      rosterCount: sum((lesson) => lesson.attendance.rosterCount),
+      recordedCount: sum((lesson) => lesson.attendance.recordedCount),
+      unrecordedCount: sum((lesson) => lesson.attendance.unrecordedCount),
+      presentCount: sum((lesson) => lesson.attendance.presentCount),
+      absentCount: sum((lesson) => lesson.attendance.absentCount),
+      lateCount: sum((lesson) => lesson.attendance.lateCount),
+      excusedCount: sum((lesson) => lesson.attendance.excusedCount),
+      readOnly: true,
     };
   }
 

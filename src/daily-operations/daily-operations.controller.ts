@@ -19,6 +19,7 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 import { DailyOperationsService } from './daily-operations.service';
 import { CreateSubstitutionAssignmentDto } from './dto/create-substitution-assignment.dto';
+import { DayQueryDto } from './dto/day-query.dto';
 
 function getRequestContext(request: RequestWithContext): RequestContext {
   if (!request.user && !request.context?.user) throw new UnauthorizedException('Authentication required');
@@ -40,6 +41,20 @@ export class DailyOperationsQueueController {
     @Query('date') date?: string,
   ) {
     return this.dailyOperations.today(getRequestContext(request), { branchId, date });
+  }
+
+  /**
+   * #461 F2 — günün tam yayınlanmış programı (akış + yoklama + kapsama).
+   * `today` yalnız izin etkisiyle oluşan dersleri döndürür; bu uç günün
+   * tamamını döndürür ve draft program sürümlerini asla sızdırmaz.
+   */
+  @Get('day')
+  @Permissions('daily_operations:read')
+  day(
+    @Req() request: RequestWithContext,
+    @Query() query: DayQueryDto,
+  ) {
+    return this.dailyOperations.day(getRequestContext(request), query);
   }
 }
 
