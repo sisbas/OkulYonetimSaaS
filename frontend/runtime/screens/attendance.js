@@ -181,7 +181,7 @@ function renderAttendanceDetail(session) {
       </div>
       <p class="hint" data-lock-state="open">Tamamlamak = kilitlemek (K-50). Kilitlenince devamsızlık bildirimleri kuyruğa alınır ve kayıtlar yalnız kontrollü düzeltme ile değişir.</p>`;
   $('#attendance-detail').innerHTML = `<article class="card" data-state="${locked ? 'locked_state' : 'ready'}">
-    <h3>Yoklama ${attendanceCompletionBadge(session)} · Sürüm ${escapeHtml(version)}</h3>
+    <h3>Yoklama · ${escapeHtml(displayStatus(status))} ${attendanceCompletionBadge(session)} · Sürüm ${escapeHtml(version)}</h3>
     <p>${roster.length ? `Roster: ${roster.length} öğrenci` : 'Roster boş'}</p>
     <ul class="impact-list">${rosterRows || '<li>Roster yok.</li>'}</ul>
     ${canLock ? actions : '<p class="hint">Kilitleme yetkiniz kapsamında değil; kayıtlar yalnızca görüntülenir.</p>'}
