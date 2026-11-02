@@ -51,6 +51,8 @@ export const LEAVE_IMPACT_REASON_CODES = [
   'SUBSTITUTE_TIME_CONFLICT',
   'ASSIGNMENT_ALREADY_EXISTS',
   'ASSIGNMENT_NOT_FOUND',
+  'LEAVE_COVERAGE_REQUIRED',
+  'LEAVE_SUBSTITUTION_INVALID',
   'LEAVE_VERSION_REQUIRED',
   'LEAVE_VERSION_MISMATCH',
 ] as const;
@@ -77,6 +79,19 @@ export type LeaveImpactEvent = Readonly<{
   state: DailyOperationState;
   substituteAssignmentId: string | null;
   substituteTeacherId: string | null;
+  /**
+   * #461 F4 — karar rayı için okunabilir etiketler.
+   *
+   * Ham kimlikler yalnız aday/yedek seçimi için taşınır; operatör ekranı
+   * `lessonLabel`/`teacherLabel` gösterir, UUID göstermez.
+   */
+  teacherLabel: string;
+  courseLabel: string;
+  groupLabel: string;
+  roomLabel: string;
+  timeLabel: string;
+  occurrenceLabel: string;
+  lessonLabel: string;
 }>;
 
 export type LeaveImpactResponse = Readonly<{
@@ -124,6 +139,10 @@ export type DailyOperationsQueueResponse = Readonly<{
 export type SubstituteCandidate = Readonly<{
   teacherId: string;
   teacherBranchId: string;
+  /** #461 F4 — seçim için okunabilir ad; ham UUID gösterilmez. */
+  teacherLabel: string;
+  branchLabel: string;
+  availabilityLabel: string;
   decisionSupportOnly: true;
   eligible: true;
 }>;

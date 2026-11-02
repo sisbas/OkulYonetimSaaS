@@ -21,6 +21,7 @@ import {
   LeaveApprovalImpactLesson,
   LeaveApprovalImpactRequest,
   LeaveApprovalImpactResult,
+  LeaveApprovalSubstitution,
   LeaveZeroImpactCode,
   MAX_APPROVAL_OCCURRENCES,
   NO_BRANCH_LABEL_FALLBACK,
@@ -629,17 +630,24 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
 
   async impact(ctx: RequestContext, leaveId: string): Promise<LeaveImpactResponse> {
     assertTenantScope(ctx, 'daily_operations_leave_impact');
-    const leave = await this.findApprovedLeave(this.dataSource.manager, ctx.tenantId!, leaveId, false);
-    if (!leave) throw new Error('LEAVE_NOT_APPROVED');
+    // #461 F4: karar ÖNCESİ etki — pending izin de okunabilir.
+    const leave = await this.findLeaveForPreview(this.dataSource.manager, ctx.tenantId!, leaveId);
+    if (!leave) throw new Error('LEAVE_NOT_FOUND');
     const events = await this.loadImpactedEvents(this.dataSource.manager, leave);
     const assignments = this.currentAssignments(events, await this.loadAssignments(this.dataSource.manager, leave));
-    return this.toImpact(leave, events, assignments);
+    const teacherLabel = await this.loadTeacherLabel(
+      this.dataSource.manager,
+      leave.tenantId,
+      leave.teacherId,
+    );
+    return this.toImpact(leave, events, assignments, teacherLabel);
   }
 
   async candidates(ctx: RequestContext, leaveId: string, scheduleEventId: string): Promise<CandidateResponse> {
     assertTenantScope(ctx, 'daily_operations_leave_impact');
-    const leave = await this.findApprovedLeave(this.dataSource.manager, ctx.tenantId!, leaveId, false);
-    if (!leave) throw new Error('LEAVE_NOT_APPROVED');
+    // #461 F4: aday listesi de karar öncesinde sunulur.
+    const leave = await this.findLeaveForPreview(this.dataSource.manager, ctx.tenantId!, leaveId);
+    if (!leave) throw new Error('LEAVE_NOT_FOUND');
     const matchingEvents = (await this.loadImpactedEvents(this.dataSource.manager, leave))
       .filter((item) => item.scheduleEventId === scheduleEventId);
     if (matchingEvents.length === 0) throw new Error('NO_PUBLISHED_SCHEDULE_EVENT');
@@ -655,13 +663,25 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       };
     }
     const candidates = await this.findEligibleCandidates(this.dataSource.manager, leave, matchingEvents, 'all');
+    const labels = new Map(
+      (await this.candidateLabels(this.dataSource.manager, leave.tenantId, candidates))
+        .map((label) => [label.teacherId, label]),
+    );
     return {
       leaveRequestId: leave.id,
       scheduleEventId,
       courseId: event.courseId,
       eligibilityAuthority: 'teacher_courses',
       eligibilityFinalized: true,
-      candidates,
+      candidates: candidates.map((candidate) => ({
+        ...candidate,
+        teacherLabel: labels.get(candidate.teacherId)?.teacherLabel ?? NO_TEACHER_LABEL_FALLBACK,
+        branchLabel: labels.get(candidate.teacherId)?.branchLabel ?? NO_BRANCH_LABEL_FALLBACK,
+        availabilityLabel:
+          labels.get(candidate.teacherId)?.availabilityLabel ?? CANDIDATE_AVAILABLE_LABEL,
+        decisionSupportOnly: true as const,
+        eligible: true as const,
+      })),
     };
   }
 
@@ -701,7 +721,12 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       await this.project(manager, leave, events, assignments);
       await this.auditLeave(manager, ctx, 'leave.substitution_assigned.v1', leave.id, ['coverageStatus', 'substitutionAssignment', 'dailyOperationsProjection', 'version']);
       await this.outbox(manager, leave, 'leave.substitution_assigned.v1', rows[0].id, event.scheduleEventId);
-      return this.toImpact(leave, events, assignments);
+      return this.toImpact(
+        leave,
+        events,
+        assignments,
+        await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId),
+      );
     });
   }
 
@@ -733,7 +758,12 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       await this.project(manager, leave, events, assignments);
       await this.auditLeave(manager, ctx, 'leave.substitution_cleared.v1', leave.id, ['coverageStatus', 'substitutionAssignment', 'dailyOperationsProjection', 'version']);
       await this.outbox(manager, leave, 'leave.substitution_cleared.v1', assignment.id, input.scheduleEventId);
-      return this.toImpact(leave, events, assignments);
+      return this.toImpact(
+        leave,
+        events,
+        assignments,
+        await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId),
+      );
     });
   }
 
@@ -753,7 +783,12 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       await this.project(manager, leave, events, assignments);
       await this.auditLeave(manager, ctx, 'daily_operations.projected.v1', leave.id, ['coverageStatus', 'dailyOperationsProjection', 'version']);
       await this.outbox(manager, leave, 'daily_operations.projected.v1', null, null);
-      return this.toImpact(leave, events, assignments);
+      return this.toImpact(
+        leave,
+        events,
+        assignments,
+        await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId),
+      );
     });
   }
 
@@ -783,6 +818,119 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       coverageStatus: coverage,
       impact: this.toApprovalImpact(
         events,
+        [],
+        coverage,
+        teacherLabel,
+        candidates,
+        this.zeroImpactReasonFor(published.length, events.length),
+      ),
+    };
+  }
+
+  /**
+   * #461 F4 — yedeksiz onay yok.
+   *
+   * Onayın AYNI transaction'ında çağrılır. Her açık ders için tam bir yedek
+   * ister; eksik/yanlış eşleme `LEAVE_COVERAGE_REQUIRED`, tanınmayan veya
+   * yinelenen olay `LEAVE_SUBSTITUTION_INVALID` fırlatır. Aday uygunluğu
+   * yalnız sunucuda doğrulanır.
+   */
+  async applyApprovalCoverage(
+    manager: EntityManager,
+    ctx: RequestContext,
+    leave: LeaveApprovalImpactRequest,
+    substitutions: readonly LeaveApprovalSubstitution[],
+  ): Promise<LeaveApprovalImpactResult> {
+    assertTenantScope(ctx, 'daily_operations_leave_impact');
+    const timeZone = await this.loadTenantTimeZone(manager, leave.tenantId);
+    const published = await this.loadPublishedEvents(manager, leave, timeZone);
+    const events = this.expandOccurrences(published, leave, timeZone);
+    const existingAssignments = this.currentAssignments(
+      events,
+      await this.loadAssignments(manager, leave),
+    );
+    const coveredEvents = new Set(
+      existingAssignments.map((assignment) => assignmentKey(assignment)),
+    );
+    const openEvents = events.filter((event) => !coveredEvents.has(assignmentKey(event)));
+
+    const requested = new Map<string, LeaveApprovalSubstitution>();
+    for (const substitution of substitutions) {
+      if (requested.has(substitution.scheduleEventId)) {
+        throw new Error('LEAVE_SUBSTITUTION_INVALID');
+      }
+      requested.set(substitution.scheduleEventId, substitution);
+    }
+
+    const openEventIds = new Set(openEvents.map((event) => event.scheduleEventId));
+    for (const scheduleEventId of requested.keys()) {
+      if (!openEventIds.has(scheduleEventId)) {
+        throw new Error('LEAVE_SUBSTITUTION_INVALID');
+      }
+    }
+    if (requested.size !== openEventIds.size) {
+      throw new Error('LEAVE_COVERAGE_REQUIRED');
+    }
+
+    const teacherIds = [...new Set([...requested.values()].map((item) => item.substituteTeacherId))];
+    for (const teacherId of teacherIds) {
+      await this.lockSubstituteTeacherForMutation(manager, leave.tenantId, teacherId);
+    }
+
+    for (const [scheduleEventId, substitution] of requested) {
+      const matchingEvents = openEvents.filter(
+        (event) => event.scheduleEventId === scheduleEventId,
+      );
+      for (const event of matchingEvents) {
+        try {
+          await this.assertEligibleCandidate(
+            manager,
+            leave,
+            event,
+            substitution.substituteTeacherId,
+            event.startsAt,
+            event.endsAt,
+          );
+        } catch (error) {
+          // Port sınırı: iç hata sınıfları dışarı sızmaz; karar katmanı
+          // yalnız kararlı kodları görür.
+          if (error instanceof SubstituteIneligibleError) {
+            throw new Error(`LEAVE_SUBSTITUTE_INELIGIBLE:${error.message}`);
+          }
+          if (error instanceof Error && error.message === 'TEACHER_COURSE_ELIGIBILITY_NOT_READY') {
+            throw new Error('LEAVE_SUBSTITUTE_ELIGIBILITY_NOT_READY');
+          }
+          throw error;
+        }
+      }
+      const event = matchingEvents[0];
+      await manager.query(
+        `INSERT INTO leave_substitution_assignments
+          (tenant_id, branch_id, leave_request_id, schedule_version_id, schedule_event_id, substitute_teacher_id, course_id, created_by_user_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [
+          leave.tenantId,
+          leave.branchId,
+          leave.id,
+          event.scheduleVersionId,
+          event.scheduleEventId,
+          substitution.substituteTeacherId,
+          event.courseId,
+          this.actorUserId(ctx),
+        ],
+      );
+    }
+
+    const assignments = this.currentAssignments(events, await this.loadAssignments(manager, leave));
+    const coverage = this.coverageFor(events, assignments);
+    await this.project(manager, leave, events, assignments);
+    const teacherLabel = await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId);
+    const candidates = await this.approvalCandidates(manager, leave, events);
+    return {
+      coverageStatus: coverage,
+      impact: this.toApprovalImpact(
+        events,
+        assignments,
         coverage,
         teacherLabel,
         candidates,
@@ -812,15 +960,21 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       ...base,
       finalized: true,
       gapDetail: null,
-      items: await this.candidateLabels(manager, leave.tenantId, eligible),
+      items: (await this.candidateLabels(manager, leave.tenantId, eligible)).map(
+        ({ teacherLabel, branchLabel, availabilityLabel }) => ({
+          teacherLabel,
+          branchLabel,
+          availabilityLabel,
+        }),
+      ),
     };
   }
 
   private async candidateLabels(
     manager: EntityManager,
     tenantId: string,
-    eligible: CandidateResponse['candidates'],
-  ): Promise<LeaveApprovalCandidate[]> {
+    eligible: ReadonlyArray<{ teacherId: string; teacherBranchId: string }>,
+  ): Promise<Array<{ teacherId: string; teacherLabel: string; branchLabel: string; availabilityLabel: string }>> {
     if (eligible.length === 0) return [];
     const teacherRows: Array<{ teacherId: string; teacherLabel: string | null }> = await manager.query(
       `SELECT teacher.id::text AS "teacherId",
@@ -846,6 +1000,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     const teacherLabels = new Map(teacherRows.map((row) => [row.teacherId, row.teacherLabel]));
     const branchLabels = new Map(branchRows.map((row) => [row.id, row.name]));
     return eligible.map((candidate) => ({
+      teacherId: candidate.teacherId,
       teacherLabel: teacherLabels.get(candidate.teacherId) ?? NO_TEACHER_LABEL_FALLBACK,
       branchLabel: branchLabels.get(candidate.teacherBranchId) ?? NO_BRANCH_LABEL_FALLBACK,
       availabilityLabel: CANDIDATE_AVAILABLE_LABEL,
@@ -872,16 +1027,19 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
 
   private toApprovalImpact(
     events: ImpactedScheduleEventRow[],
+    assignments: AssignmentRow[],
     coverage: LeaveCoverageStatus,
     teacherLabel: string,
     candidates: LeaveApprovalCandidates,
     zeroImpactReason: LeaveZeroImpactCode | null,
   ): LeaveApprovalImpact {
+    const byEvent = new Map(assignments.map((item) => [assignmentKey(item), item]));
     const lessons: LeaveApprovalImpactLesson[] = events.map((event) => {
       const courseLabel = event.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
       const groupLabel = event.groupLabel ?? NO_GROUP_LABEL_FALLBACK;
       const timeLabel = formatTimeLabel(event.startTime, event.endTime);
       const occurrenceLabel = formatOccurrenceLabel(event.occurrenceDate);
+      const assignment = byEvent.get(assignmentKey(event)) ?? null;
       return {
         lessonLabel: composeLessonLabel({ courseLabel, groupLabel, timeLabel, occurrenceLabel }),
         courseLabel,
@@ -890,16 +1048,17 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
         timeLabel,
         occurrenceLabel,
         teacherLabel,
-        stateLabel: lessonStateLabel('open'),
+        stateLabel: lessonStateLabel(assignment ? 'resolved' : 'open'),
       };
     });
+    const resolvedLessonCount = this.resolvedLessonCount(events, assignments);
     // Sıfır etki sessizce geçilemez: gerekçe kodu ve okunabilir açıklama zorunlu.
     return {
       coverageStatus: coverage,
       coverageLabel: coverageLabel(coverage),
       impactedLessonCount: lessons.length,
-      resolvedLessonCount: 0,
-      openLessonCount: lessons.length,
+      resolvedLessonCount,
+      openLessonCount: lessons.length - resolvedLessonCount,
       zeroImpact: lessons.length === 0,
       zeroImpactReason,
       zeroImpactDetail: zeroImpactReason ? zeroImpactDetailFor(zeroImpactReason) : null,
@@ -924,6 +1083,25 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
        FROM leave_requests
        WHERE tenant_id = $1 AND id = $2 AND decision_status = 'approved'
        ${lock ? 'FOR UPDATE' : ''}`,
+      [tenantId, leaveId],
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
+   * #461 F4 — karar öncesi okuma: pending veya approved izin.
+   *
+   * Mutasyon yolları (`assign`/`clear`/`replayProjection`) hâlâ yalnız
+   * onaylı izinle çalışır; bu okuyucu etki/aday önizlemesi içindir.
+   */
+  private async findLeaveForPreview(manager: EntityManager, tenantId: string, leaveId: string): Promise<LeaveRow | null> {
+    const rows = await manager.query(
+      `SELECT id, tenant_id AS "tenantId", branch_id AS "branchId", teacher_id AS "teacherId",
+              decision_status AS "decisionStatus", coverage_status AS "coverageStatus",
+              starts_at AS "startsAt", ends_at AS "endsAt", version
+       FROM leave_requests
+       WHERE tenant_id = $1 AND id = $2
+       LIMIT 1`,
       [tenantId, leaveId],
     );
     return rows[0] ?? null;
@@ -1130,7 +1308,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     if (substitutionConflict.length > 0) throw new SubstituteIneligibleError('SUBSTITUTE_TIME_CONFLICT');
   }
 
-  private async findEligibleCandidates(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[], occurrencePolicy: 'any' | 'all' = 'any'): Promise<CandidateResponse['candidates']> {
+  private async findEligibleCandidates(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[], occurrencePolicy: 'any' | 'all' = 'any'): Promise<Array<{ teacherId: string; teacherBranchId: string }>> {
     const firstEvent = events[0];
     if (occurrencePolicy === 'all') {
       const rows: Array<{ teacherId: string; teacherBranchId: string }> = await manager.query(
@@ -1270,7 +1448,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
        ORDER BY teacher.id ASC`,
       [leave.tenantId, leave.teacherId, leave.branchId, firstEvent.occurrenceDate],
     );
-    const candidates: CandidateResponse['candidates'] = [];
+    const candidates: Array<{ teacherId: string; teacherBranchId: string }> = [];
     for (const row of rows) {
       // #263 review P2: aday, etkilenen olayların KESİŞİMİ değil BİRLEŞİMİdir.
       // Yedek görevlendirme olay (ders) bazında yapılır; bir matematik ve başka
@@ -1288,7 +1466,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
         }
       }
       if (eligibleForAnyEvent) {
-        candidates.push({ teacherId: row.teacherId, teacherBranchId: row.teacherBranchId, decisionSupportOnly: true, eligible: true });
+        candidates.push({ teacherId: row.teacherId, teacherBranchId: row.teacherBranchId });
       }
     }
     return candidates;
@@ -1370,10 +1548,14 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     );
   }
 
-  private toImpact(leave: LeaveRow, events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): LeaveImpactResponse {
+  private toImpact(leave: LeaveRow, events: ImpactedScheduleEventRow[], assignments: AssignmentRow[], teacherLabel: string): LeaveImpactResponse {
     const byEvent = new Map(assignments.map((item) => [assignmentKey(item), item]));
     const responseEvents: LeaveImpactEvent[] = events.map((event) => {
       const assignment = byEvent.get(assignmentKey(event)) ?? null;
+      const courseLabel = event.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
+      const groupLabel = event.groupLabel ?? NO_GROUP_LABEL_FALLBACK;
+      const timeLabel = formatTimeLabel(event.startTime, event.endTime);
+      const occurrenceLabel = formatOccurrenceLabel(event.occurrenceDate);
       return {
         scheduleEventId: event.scheduleEventId,
         scheduleId: event.scheduleId,
@@ -1390,6 +1572,13 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
         state: assignment ? 'resolved' : 'open',
         substituteAssignmentId: assignment?.id ?? null,
         substituteTeacherId: assignment?.substituteTeacherId ?? null,
+        teacherLabel,
+        courseLabel,
+        groupLabel,
+        roomLabel: event.roomLabel ?? NO_ROOM_LABEL_FALLBACK,
+        timeLabel,
+        occurrenceLabel,
+        lessonLabel: composeLessonLabel({ courseLabel, groupLabel, timeLabel, occurrenceLabel }),
       };
     });
     const resolved = responseEvents.filter((event) => event.state === 'resolved').length;

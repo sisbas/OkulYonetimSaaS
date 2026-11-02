@@ -4,13 +4,17 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import { RequestContext } from '../common/context/request-context';
 import { assertTenantScope } from '../common/tenant/assert-tenant-scope';
-import { LeaveApprovalImpact } from '../daily-operations/leave-approval-impact';
+import { LeaveApprovalImpact, LeaveApprovalSubstitution } from '../daily-operations/leave-approval-impact';
 import { LEAVE_APPROVAL_IMPACT_PORT, LeaveApprovalImpactPort } from './leave-approval-impact.port';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import {
+  LeaveCoverageRequiredException,
   LeaveNotFoundException,
   LeaveOverlapException,
   LeaveStaleVersionException,
+  LeaveSubstituteEligibilityNotReadyException,
+  LeaveSubstituteIneligibleException,
+  LeaveSubstitutionInvalidException,
   LeaveTerminalStateException,
 } from './leave-errors';
 import { LEAVE_AUDIT_PORT, LeaveAuditPort } from './leave-audit.adapter';
@@ -25,6 +29,13 @@ export type LeaveDecisionValues = {
   decision: LeaveDecisionStatus.APPROVED | LeaveDecisionStatus.REJECTED;
   decidedByUserId: string;
   expectedVersion: number;
+  /**
+   * #461 F4 — onayla aynı transaction'da yazılacak yedek seçimleri.
+   *
+   * Ret kararında yok sayılır. Onayda açık ders varsa zorunludur; eksik
+   * kapsama `LEAVE_COVERAGE_REQUIRED` ile onayı engeller.
+   */
+  substitutions?: readonly LeaveApprovalSubstitution[];
 };
 
 /**
@@ -127,6 +138,23 @@ export class LeaveRepository {
         const prepared = await this.impact.prepareApprovalImpact(manager, ctx, existing);
         impact = prepared.impact;
         existing.coverageStatus = prepared.coverageStatus;
+
+        // #461 F4 — yedeksiz onay yok. Açık ders varsa (veya çağıran yedek
+        // gönderdiyse) kapsama AYNI transaction'da doğrulanır ve yazılır.
+        if (prepared.impact.openLessonCount > 0 || (values.substitutions?.length ?? 0) > 0) {
+          try {
+            const covered = await this.impact.applyApprovalCoverage(
+              manager,
+              ctx,
+              existing,
+              values.substitutions ?? [],
+            );
+            impact = covered.impact;
+            existing.coverageStatus = covered.coverageStatus;
+          } catch (error) {
+            throw this.mapCoverageError(error, prepared.impact.openLessonCount);
+          }
+        }
       }
 
       existing.decisionStatus = values.decision;
@@ -155,6 +183,29 @@ export class LeaveRepository {
       await this.insertOutbox(manager, eventName, saved, impact);
       return { leave: saved, impact };
     });
+  }
+
+  /**
+   * #461 F4 — port hata kodlarını HTTP sözleşmesine çevirir.
+   *
+   * Bilinmeyen hatalar olduğu gibi yukarı çıkar; böylece altyapı arızası
+   * "kapsama eksik" gibi yanlış bir iş sonucuna dönüşmez.
+   */
+  private mapCoverageError(error: unknown, openLessonCount: number): unknown {
+    if (!(error instanceof Error)) return error;
+    if (error.message === 'LEAVE_COVERAGE_REQUIRED') {
+      return new LeaveCoverageRequiredException(openLessonCount);
+    }
+    if (error.message === 'LEAVE_SUBSTITUTION_INVALID') {
+      return new LeaveSubstitutionInvalidException();
+    }
+    if (error.message === 'LEAVE_SUBSTITUTE_ELIGIBILITY_NOT_READY') {
+      return new LeaveSubstituteEligibilityNotReadyException();
+    }
+    if (error.message.startsWith('LEAVE_SUBSTITUTE_INELIGIBLE:')) {
+      return new LeaveSubstituteIneligibleException(error.message.split(':')[1]);
+    }
+    return error;
   }
 
   private async assertNoOverlappingLeaveRequest(
