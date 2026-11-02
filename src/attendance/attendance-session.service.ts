@@ -38,15 +38,33 @@ import {
   ATTENDANCE_ABSENCE_NOTIFICATION_PORT,
   AttendanceAbsenceNotificationPort,
 } from './attendance-absence-notification.port';
+import { StudentRepository } from '../students/student.repository';
 
 export interface CreateSessionInput {
   tenantId: string;
   scheduleEventId: string;
   sessionDate: Date;
-  studentIds: string[];
+  /**
+   * #461 F3 — eski istemciler için geriye dönük uyumlu açık roster.
+   *
+   * Verilmezse roster SUNUCUDA `student_group_members` üzerinden türetilir;
+   * böylece arayüz `teacherBranchId` veya öğrenci listesi bilmek zorunda
+   * kalmaz. Boş dizi yine fail-closed reddedilir.
+   */
+  studentIds?: string[];
   actorId?: string | null;
   /** Correlation ID; controller `AttendanceActor.requestId` geçirir (#259). */
   requestId?: string | null;
+}
+
+/** #461 F3 — tek eylemde "tüm sınıf var" sonucu. */
+export interface MarkAllPresentResult {
+  sessionId: string;
+  sessionVersion: number;
+  rosterCount: number;
+  presentCount: number;
+  /** Durumu `present` olmayan, bu eylemde değişen kayıt sayısı. */
+  changedCount: number;
 }
 
 export interface MarkSessionRecordInput {
@@ -101,15 +119,16 @@ export class AttendanceSessionService {
     // #266: kilitli devamsızlık → idempotent outbox olayı (aynı transaction).
     @Inject(ATTENDANCE_ABSENCE_NOTIFICATION_PORT)
     private readonly absenceNotifications: AttendanceAbsenceNotificationPort,
+    // #461 F3: roster sunucuda türetilir; istemci öğrenci listesi bilmez.
+    private readonly students: StudentRepository,
   ) {}
 
   async createFromPublishedOccurrence(
     input: CreateSessionInput,
     ctx?: RequestContext,
   ): Promise<AttendanceSession> {
-    // Immutable roster snapshot: boş roster ile oturum asla işaretlenemez
-    // (AC-2); oluşturmayı baştan reddederiz.
-    if (!input.studentIds?.length) {
+    // Açık roster verildiyse boş olamaz (AC-2). Verilmediyse sunucu türetir.
+    if (input.studentIds !== undefined && !input.studentIds.length) {
       throw new ForbiddenException(
         'AttendanceSession requires a non-empty roster snapshot',
       );
@@ -170,6 +189,24 @@ export class AttendanceSessionService {
           );
         }
 
+        // #461 F3: roster yoksa yayınlanmış dersin grubundan türetilir.
+        // Açık liste veren eski istemciler aynen çalışmaya devam eder.
+        const roster =
+          input.studentIds ??
+          (await this.students.listRosterStudentIds(
+            {
+              tenantId: input.tenantId,
+              requestId: ctx?.requestId ?? input.requestId ?? 'unknown',
+            },
+            event.branchId,
+            event.studentGroupId,
+          ));
+        if (!roster.length) {
+          throw new ForbiddenException(
+            'AttendanceSession requires a non-empty roster snapshot',
+          );
+        }
+
         const session = em.create(AttendanceSession, {
           tenantId: input.tenantId,
           // branchId istemciden DEĞİL, ScheduleEvent'ten alınır (server-authoritative).
@@ -180,7 +217,7 @@ export class AttendanceSessionService {
           courseId: event.courseId,
           roomId: event.roomId,
           sessionDate: input.sessionDate,
-          rosterSnapshot: input.studentIds,
+          rosterSnapshot: roster,
           status: AttendanceSessionStatus.PUBLISHED,
           version: 1,
         });
@@ -200,14 +237,14 @@ export class AttendanceSessionService {
           changedFields: ['openedAt'],
           // Denetlenebilir kanıt: oluşturulan durum ve roster büyüklüğü (PII yok).
           newStatus: AttendanceSessionStatus.PUBLISHED,
-          rosterSize: input.studentIds.length,
+          rosterSize: roster.length,
         });
         this.logger.log(
           JSON.stringify({
             event: 'attendance.session.created',
             tenantId: input.tenantId,
             sessionId: inserted.id,
-            rosterSize: input.studentIds.length,
+            rosterSize: roster.length,
             actorId: ctx?.userId ?? input.actorId ?? 'system',
           }),
         );
@@ -349,6 +386,101 @@ export class AttendanceSessionService {
       });
 
       return saved!;
+    });
+  }
+
+  /**
+   * #461 F3 — tek eylemde "tüm sınıf var".
+   *
+   * Roster oturumun immutable snapshot'ıdır; istemci öğrenci listesi göndermez.
+   * Kilitli oturumda düzeltme akışı dışında yazım yoktur. Zaten `present`
+   * olan kayıtlar yeniden yazılmaz; değişiklik yoksa audit de üretilmez.
+   */
+  async markAllPresent(
+    actor: AttendanceActor,
+    sessionId: string,
+  ): Promise<MarkAllPresentResult> {
+    return this.sessionRepo.manager.transaction(async (em: EntityManager) => {
+      const session = await em.findOne(AttendanceSession, {
+        where: { id: sessionId, tenantId: actor.tenantId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!session) {
+        throw new NotFoundException('AttendanceSession not found');
+      }
+      // BOLA (fail-closed): öğretmen yalnız kendi dersinin yoklamasını işaretler.
+      assertAttendanceSessionAccess(actor, session);
+      if (session.status === AttendanceSessionStatus.LOCKED) {
+        throw new ConflictException(
+          'Session is locked; corrections require controlled flow',
+        );
+      }
+      const roster = session.rosterSnapshot ?? [];
+      if (!roster.length) {
+        throw new ForbiddenException(
+          'AttendanceSession requires a non-empty roster snapshot',
+        );
+      }
+
+      const existing = await em.find(AttendanceRecord, {
+        where: { tenantId: actor.tenantId, sessionId },
+      });
+      const statusByStudent = new Map(
+        existing.map((record) => [record.studentId, record.status]),
+      );
+      const changedStudentIds = roster.filter(
+        (studentId) => statusByStudent.get(studentId) !== AttendanceStatus.PRESENT,
+      );
+
+      if (changedStudentIds.length) {
+        const records = roster.map((studentId) =>
+          em.create(AttendanceRecord, {
+            tenantId: actor.tenantId,
+            studentId,
+            sessionId,
+            status: AttendanceStatus.PRESENT,
+            markedById: actor.userId,
+            notes: null,
+          }),
+        );
+        await em.upsert(AttendanceRecord, records, {
+          conflictPaths: ['tenantId', 'sessionId', 'studentId'],
+        });
+
+        await this.audit.write(em, 'attendance.record.marked', {
+          schemaVersion: 1,
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          actorSessionId: null,
+          requestId: actor.requestId,
+          entityType: 'attendance',
+          entityId: session.id,
+          result: 'success',
+          changedFields: ['status'],
+          // Denetlenebilir kanıt: tek eylemde işaretlenen durum ve roster.
+          newStatus: AttendanceStatus.PRESENT,
+          rosterSize: roster.length,
+        });
+      }
+
+      this.logger.log(
+        JSON.stringify({
+          event: 'attendance.session.marked_all_present',
+          tenantId: actor.tenantId,
+          sessionId,
+          rosterSize: roster.length,
+          changedCount: changedStudentIds.length,
+          actorId: actor.userId,
+        }),
+      );
+
+      return {
+        sessionId: session.id,
+        sessionVersion: session.version,
+        rosterCount: roster.length,
+        presentCount: roster.length,
+        changedCount: changedStudentIds.length,
+      };
     });
   }
 

@@ -16,6 +16,7 @@ import { AttendanceSessionStatus } from './attendance-session.entity';
 import { AttendanceActor } from './attendance-access';
 import { ATTENDANCE_AUDIT_PORT } from './attendance-audit.adapter';
 import { ATTENDANCE_ABSENCE_NOTIFICATION_PORT } from './attendance-absence-notification.port';
+import { StudentRepository } from '../students/student.repository';
 
 describe('AttendanceSessionService (OKUL-06, #265)', () => {
   let service: AttendanceSessionService;
@@ -33,6 +34,8 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
   let audit: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let absenceNotifications: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let students: any;
 
   const makeRepo = () => ({
     findOne: jest.fn(),
@@ -88,6 +91,10 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
         if (entity === AttendanceRecord) return recordRepo.findOne(opts);
         return sessionRepo.findOne(opts);
       }),
+      find: jest.fn(async (entity: unknown, opts: unknown) => {
+        if (entity === AttendanceRecord) return recordRepo.find(opts);
+        return [];
+      }),
       create: jest.fn((entity: unknown, data: unknown) =>
         entity === AttendanceRecord ? recordRepo.create(data) : sessionRepo.create(data),
       ),
@@ -108,6 +115,7 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
       ),
     };
     audit = { write: jest.fn(async () => undefined) };
+    students = { listRosterStudentIds: jest.fn(async () => ['s1', 's2', 's3']) };
     absenceNotifications = {
       enqueueLockedAbsenceNotifications: jest.fn(async () => ({
         sessionStatus: 'locked',
@@ -128,6 +136,7 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
           provide: ATTENDANCE_ABSENCE_NOTIFICATION_PORT,
           useValue: absenceNotifications,
         },
+        { provide: StudentRepository, useValue: students },
       ],
     }).compile();
     service = moduleRef.get(AttendanceSessionService);
@@ -201,6 +210,43 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
       service.createFromPublishedOccurrence({ ...baseInput, studentIds: [] }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(eventRepo.findOne).not.toHaveBeenCalled();
+    expect(sessionRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('derives the roster server-side from the event group when studentIds is omitted (#461 F3)', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () => publishedVersion());
+    students.listRosterStudentIds.mockResolvedValueOnce(['s1', 's4']);
+
+    const session = await service.createFromPublishedOccurrence({
+      tenantId: 't1',
+      scheduleEventId: 'evt-1',
+      sessionDate: new Date('2026-09-01'),
+      actorId: 'user-1',
+    });
+
+    expect(students.listRosterStudentIds).toHaveBeenCalledWith(
+      { tenantId: 't1', requestId: 'unknown' },
+      'b1',
+      'grp-1',
+    );
+    expect(session.rosterSnapshot).toEqual(['s1', 's4']);
+  });
+
+  it('rejects an empty server-derived roster instead of opening a session (#461 F3)', async () => {
+    eventRepo.findOne = jest.fn(async () => publishedEvent());
+    sessionRepo.findOne = jest.fn(async () => null);
+    versionRepo.findOne = jest.fn(async () => publishedVersion());
+    students.listRosterStudentIds.mockResolvedValueOnce([]);
+
+    await expect(
+      service.createFromPublishedOccurrence({
+        tenantId: 't1',
+        scheduleEventId: 'evt-1',
+        sessionDate: new Date('2026-09-01'),
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(sessionRepo.save).not.toHaveBeenCalled();
   });
 
@@ -335,6 +381,81 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
         status: 'present' as never,
       }),
     ).resolves.toBeDefined();
+  });
+
+  it('markAllPresent marks the whole immutable roster present in one action (#461 F3)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    recordRepo.find = jest.fn(async () => [
+      { studentId: 's1', status: 'absent' },
+      { studentId: 's2', status: 'present' },
+    ]);
+
+    const result = await service.markAllPresent(ownerActor, 'sess-1');
+
+    expect(recordRepo.upsert).toHaveBeenCalledTimes(1);
+    const [records] = recordRepo.upsert.mock.calls[0];
+    expect(records).toHaveLength(3);
+    expect(records.map((record: { studentId: string }) => record.studentId)).toEqual([
+      's1',
+      's2',
+      's3',
+    ]);
+    expect(
+      records.every(
+        (record: { status: string; markedById: string }) =>
+          record.status === 'present' && record.markedById === 'teach-1',
+      ),
+    ).toBe(true);
+    expect(result).toEqual({
+      sessionId: 'sess-1',
+      sessionVersion: 1,
+      rosterCount: 3,
+      presentCount: 3,
+      changedCount: 2,
+    });
+    expect(audit.write).toHaveBeenCalledWith(
+      em,
+      'attendance.record.marked',
+      expect.objectContaining({
+        entityId: 'sess-1',
+        newStatus: 'present',
+        rosterSize: 3,
+        changedFields: ['status'],
+      }),
+    );
+  });
+
+  it('markAllPresent is idempotent and does not audit a no-op (#461 F3)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+    recordRepo.find = jest.fn(async () =>
+      ['s1', 's2', 's3'].map((studentId) => ({ studentId, status: 'present' })),
+    );
+
+    const result = await service.markAllPresent(ownerActor, 'sess-1');
+
+    expect(recordRepo.upsert).not.toHaveBeenCalled();
+    expect(audit.write).not.toHaveBeenCalled();
+    expect(result.changedCount).toBe(0);
+  });
+
+  it('markAllPresent rejects a locked session (controlled correction required)', async () => {
+    sessionRepo.findOne = jest.fn(async () =>
+      publishedSession({ status: AttendanceSessionStatus.LOCKED }),
+    );
+
+    await expect(
+      service.markAllPresent(ownerActor, 'sess-1'),
+    ).rejects.toThrow(/locked/);
+    expect(recordRepo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('markAllPresent rejects a teacher who is not the session owner (BOLA negative)', async () => {
+    sessionRepo.findOne = jest.fn(async () => publishedSession());
+
+    await expect(
+      service.markAllPresent(otherTeacherActor, 'sess-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(recordRepo.upsert).not.toHaveBeenCalled();
   });
 
   it('markRecord rejects an unknown session (fail-closed)', async () => {

@@ -108,6 +108,23 @@ export class AttendanceSessionController {
   }
 
   /**
+   * #461 F3 — "tüm sınıf var" tek eylem.
+   *
+   * Öğrenci listesi gövdede taşınmaz; sunucu oturumun immutable roster
+   * snapshot'ını kullanır. Kilitli oturum 409 döner.
+   */
+  @Post(':id/records/present')
+  @Permissions('attendance:record:update')
+  @UseGuards(TeacherOwnLessonGuard)
+  async markAllPresent(
+    @Req() req: RequestWithContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const actor = await this.resolveActor(req);
+    return this.sessionService.markAllPresent(actor, id);
+  }
+
+  /**
    * Kontrollü düzeltme (AC-4, #265).
    *
    * Yalnız kilitli oturum + gözetim rolü + kapalı sözlükten gerekçe kodu +
