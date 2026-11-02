@@ -392,8 +392,17 @@
             <p id="attendance-roster-help" class="hint wide">Roster: her satırda veya virgülle ayırarak öğrenci UUID'leri.</p>
             <button type="submit">Yoklama oturumu aç</button>
           </form>
+          <h3>Oturum listesi</h3>
+          <div class="chip-row" id="attendance-status-filter" role="group" aria-label="Oturum tamamlanma filtresi">
+            <button type="button" class="chip" data-action="attendance-filter" data-attendance-status="" aria-pressed="true">Tümü</button>
+            <button type="button" class="chip" data-action="attendance-filter" data-attendance-status="incomplete" aria-pressed="false">Eksik</button>
+            <button type="button" class="chip" data-action="attendance-filter" data-attendance-status="complete" aria-pressed="false">Tamamlanmış</button>
+          </div>
           <div id="attendance-sessions" class="cards" role="region" aria-label="Yoklama oturumları listesi"></div>
           <div id="attendance-detail" class="cards" role="region" aria-label="Yoklama oturumu detayı ve kayıt eylemleri"></div>
+          <h3>Devamsızlık sonuçları</h3>
+          <p class="hint">İşaretlenmemiş öğrenci devamsız sayılmaz; sonuç yalnız açıkça "Gelmedi" işaretlenen kayıtlardan oluşur.</p>
+          <div id="attendance-absences" class="cards" role="region" aria-label="Devamsızlık sonuçları"></div>
         </section>
       </main>
       <footer class="shell-footer">

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Yoklama — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Operasyon · Yoklama</p>
+        <h1>Yoklama oturumları ve devamsızlık</h1>
+        <p class="topbar-subtitle">
+          Oturum yayınlanmış programdan açılır, öğretmen kayıtları işaretler, oturum tamamlanınca
+          kilitlenir. Tamamlamak = kilitlemek; kilitli kayıt yalnız kontrollü düzeltme ile değişir.
+        </p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="false"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="true"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanimlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yonetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+
+    <main id="design-main" tabindex="-1" data-state="ready">
+      <!-- 1) Oturum listesi: eksik / tamamlanmış ayrımı -->
+      <section class="panel" aria-labelledby="session-list-heading" data-view="ops">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Oturumlar</p>
+            <h2 id="session-list-heading">Yoklama oturumları</h2>
+          </div>
+          <button type="button">Kayıtları yenile</button>
+        </div>
+        <div class="chip-row" role="group" aria-label="Oturum tamamlanma filtresi">
+          <button type="button" class="chip" aria-pressed="true">Tümü</button>
+          <button type="button" class="chip" aria-pressed="false">Eksik</button>
+          <button type="button" class="chip" aria-pressed="false">Tamamlanmış</button>
+        </div>
+        <p class="hint">3 / 5 oturum gösteriliyor</p>
+        <div class="cards">
+          <article class="card" data-attendance-state="incomplete">
+            <h3>Yoklama oturumu <span class="tag" data-tone="warning" data-attendance-state="incomplete">Eksik</span></h3>
+            <p class="card-meta">
+              <span>21.09.2026</span>
+              <span>Sürüm: 1</span>
+              <span>Öğrenci: 24</span>
+            </p>
+            <p class="hint">Eksik oturum: işaretleme tamamlanınca oturum kilitlenir.</p>
+            <button type="button">Oturumu aç ve kayıtları yönet</button>
+          </article>
+          <article class="card" data-attendance-state="complete">
+            <h3>Yoklama oturumu <span class="tag" data-tone="success" data-attendance-state="complete">Tamamlanmış</span></h3>
+            <p class="card-meta">
+              <span>20.09.2026</span>
+              <span>Sürüm: 2</span>
+              <span>Öğrenci: 22</span>
+            </p>
+            <p class="hint">Tamamlanmış oturum kilitlidir; kayıtlar yalnız kontrollü düzeltme ile değişir.</p>
+            <button type="button">Oturumu aç ve kayıtları yönet</button>
+          </article>
+        </div>
+      </section>
+
+      <!-- 2) İşaretleyici: beş işaret + toplu geldi + tamamla -->
+      <section class="panel" aria-labelledby="marker-heading" data-view="teacher">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">İşaretleyici</p>
+            <h2 id="marker-heading">Yoklama · Eksik · Sürüm 1</h2>
+          </div>
+        </div>
+        <p class="hint">
+          İşaretler: Geldi · Gelmedi · Geç geldi · İzinli · İşaretlenmedi. "İşaretlenmedi" bir kayıt
+          değildir: kaydın yokluğudur ve devamsız sayılmaz.
+        </p>
+        <ul class="impact-list" role="list" aria-label="Öğrenci işaretleyici">
+          <li>
+            <strong>Öğrenci 1</strong>
+            <span class="tag" data-tone="neutral" data-mark-state="unmarked">İşaretlenmedi</span>
+            <span class="quick-actions">
+              <button type="button" aria-pressed="false">Geldi</button>
+              <button type="button" aria-pressed="false">Gelmedi</button>
+              <button type="button" aria-pressed="false">Geç geldi</button>
+              <button type="button" aria-pressed="false">İzinli</button>
+            </span>
+          </li>
+          <li>
+            <strong>Öğrenci 2</strong>
+            <span class="tag" data-tone="success" data-mark-state="present">Geldi</span>
+            <span class="quick-actions">
+              <button type="button" aria-pressed="true">Geldi</button>
+              <button type="button" aria-pressed="false">Gelmedi</button>
+              <button type="button" aria-pressed="false">Geç geldi</button>
+              <button type="button" aria-pressed="false">İzinli</button>
+            </span>
+          </li>
+          <li>
+            <strong>Öğrenci 3</strong>
+            <span class="tag" data-tone="danger" data-mark-state="absent">Gelmedi</span>
+            <span class="quick-actions">
+              <button type="button" aria-pressed="false">Geldi</button>
+              <button type="button" aria-pressed="true">Gelmedi</button>
+              <button type="button" aria-pressed="false">Geç geldi</button>
+              <button type="button" aria-pressed="false">İzinli</button>
+            </span>
+          </li>
+        </ul>
+        <div class="quick-actions">
+          <button type="button" class="button-primary" data-requires-permission="attendance:record:update">Toplu geldi (1)</button>
+          <button type="button" data-requires-permission="attendance:lock">Tamamla ve kilitle</button>
+        </div>
+        <p class="hint" data-lock-state="open">
+          Tamamlamak = kilitlemek (K-50). Kilitlenince devamsızlık bildirimleri kuyruğa alınır ve
+          kayıtlar yalnız kontrollü düzeltme ile değişir.
+        </p>
+      </section>
+
+
+      <!-- 3) Tamamlanmış (kilitli) görünüm -->
+      <section class="panel" aria-labelledby="locked-heading" data-view="teacher">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Kilitli oturum</p>
+            <h2 id="locked-heading">Yoklama · Tamamlanmış · Sürüm 2</h2>
+          </div>
+        </div>
+        <p class="hint" data-lock-state="locked">
+          Oturum kilitli (tamamlanmış); kayıtlar kontrollü düzeltme (gözetim) akışıyla değişir.
+          İşaretleme düğmeleri kapalıdır.
+        </p>
+        <ul class="impact-list" role="list" aria-label="Kilitli oturum kayıtları">
+          <li>
+            <strong>Öğrenci 1</strong>
+            <span class="tag" data-tone="success" data-mark-state="present">Geldi</span>
+            <button type="button" disabled>Kontrollü düzeltme</button>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 4) Absences: dürüst kopya -->
+      <section class="panel" aria-labelledby="absences-heading" data-view="ops">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Sonuçlar</p>
+            <h2 id="absences-heading">Devamsızlık sonuçları</h2>
+          </div>
+        </div>
+        <div class="cards">
+          <article class="card" data-absence-summary>
+            <h3>Devamsızlık sonuçları <span class="tag" data-tone="success" data-attendance-state="complete">Tamamlanmış</span></h3>
+            <p class="card-meta">
+              <span>Geldi: 18</span>
+              <span>Gelmedi: 2</span>
+              <span>Geç geldi: 1</span>
+              <span>İzinli: 1</span>
+              <span>İşaretlenmedi: 2</span>
+            </p>
+            <p>Devamsız sayısı: <strong data-absent-count="2">2</strong></p>
+            <p class="hint" data-not-marked-copy>
+              İşaretlenmemiş öğrenci devamsız sayılmaz; yalnız açıkça "Gelmedi" işaretlenen kayıtlar
+              devamsızlık sonucuna girer.
+            </p>
+            <ul class="impact-list">
+              <li>Öğrenci 3 · Gelmedi</li>
+              <li>Öğrenci 11 · Gelmedi</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <!-- 5) Durum matrisi (K-40/K-41) -->
+      <section class="panel" aria-labelledby="states-heading">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Durum kesitleri</p>
+            <h2 id="states-heading">Yükleniyor / boş / kilit / hata</h2>
+          </div>
+        </div>
+        <div class="cards">
+          <article class="card" data-state="loading">
+            <h3>Yükleniyor</h3>
+            <p>Yoklama oturumları getiriliyor…</p>
+          </article>
+          <article class="card" data-state="same_scope_empty">
+            <h3>Yoklama oturumu yok</h3>
+            <p>Bu kapsamda yoklama oturumu yok.</p>
+          </article>
+          <article class="card" data-state="locked_state">
+            <h3>Kilitli</h3>
+            <p>Oturum kilitli; kayıtlar yalnız kontrollü düzeltme ile değişir.</p>
+          </article>
+          <article class="card" data-state="stale_version">
+            <h3>Kayıt değişmiş</h3>
+            <p>Oturum siz işaretlerken güncellendi. Yenileyip yeniden deneyin.</p>
+          </article>
+          <article class="card" data-state="forbidden_non_enumerating">
+            <h3>Yetki dışı</h3>
+            <p>Bu oturum erişim kapsamınızda değil.</p>
+          </article>
+        </div>
+      </section>
+
+    </main>
+  </body>
+</html>
