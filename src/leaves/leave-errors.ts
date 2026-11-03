@@ -1,4 +1,10 @@
-import { ConflictException, HttpException, NotFoundException, PreconditionFailedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  NotFoundException,
+  PreconditionFailedException,
+} from '@nestjs/common';
 
 export const LEAVE_NOT_FOUND_MESSAGE = 'Leave request not found';
 
@@ -58,6 +64,62 @@ export class LeaveImpactRangeTooLargeException extends HttpException {
 export class LeaveOverlapException extends ConflictException {
   constructor() {
     super('Leave request period overlaps an existing request');
+  }
+}
+
+/**
+ * #461 F4 — yedeksiz onay yok.
+ *
+ * Etkilenen her ders için onayla AYNI transaction'da yedek seçilmelidir;
+ * eksik kapsama onayı engeller ve hangi sayıda dersin açık kaldığını söyler.
+ */
+export class LeaveCoverageRequiredException extends ConflictException {
+  constructor(readonly openLessonCount: number) {
+    super({
+      statusCode: 409,
+      code: 'LEAVE_COVERAGE_REQUIRED',
+      message:
+        'Leave cannot be approved while impacted lessons have no substitute coverage',
+      openLessonCount,
+    });
+  }
+}
+
+/** #461 F4 — onay gövdesindeki yedek seçimi geçersiz (bilinmeyen/yinelenen olay). */
+export class LeaveSubstitutionInvalidException extends BadRequestException {
+  constructor() {
+    super({
+      statusCode: 400,
+      code: 'LEAVE_SUBSTITUTION_INVALID',
+      message: 'Substitutions must cover each impacted lesson exactly once',
+    });
+  }
+}
+
+/** #461 F4 — seçilen yedek uygun değil; onay yazılmaz. */
+export class LeaveSubstituteIneligibleException extends ConflictException {
+  constructor(readonly reasonCode?: string) {
+    super({
+      statusCode: 409,
+      code: 'LEAVE_SUBSTITUTE_INELIGIBLE',
+      message: 'Selected substitute is not eligible for every impacted lesson',
+      reasonCode: reasonCode ?? null,
+    });
+  }
+}
+
+/**
+ * #461 F4 — yedek uygunluğu doğrulanamıyor.
+ *
+ * Öğretmen-ders uygunluk kaynağı yokken "uygun" varsayımı yapılamaz; onay
+ * fail-closed reddedilir (424), böylece karar yanlış kapsama ile yazılmaz.
+ */
+export class LeaveSubstituteEligibilityNotReadyException extends HttpException {
+  constructor() {
+    super(
+      'Substitute eligibility source is not ready; leave approval cannot be validated',
+      424,
+    );
   }
 }
 

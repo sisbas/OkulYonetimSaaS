@@ -6,6 +6,7 @@ export const DAILY_OPERATION_STATES = ['open', 'resolved'] as const;
 export type DailyOperationState = (typeof DAILY_OPERATION_STATES)[number];
 
 export const DAILY_OPERATIONS_TODAY_ROUTE = '/api/v1/daily-operations/today' as const;
+export const DAILY_OPERATIONS_DAY_ROUTE = '/api/v1/daily-operations/day' as const;
 export const DAILY_OPERATIONS_TODAY_PERMISSION = 'daily_operations:read' as const;
 
 export const DAILY_OPERATIONS_QUEUE_LESSON_FIELDS = [
@@ -50,6 +51,8 @@ export const LEAVE_IMPACT_REASON_CODES = [
   'SUBSTITUTE_TIME_CONFLICT',
   'ASSIGNMENT_ALREADY_EXISTS',
   'ASSIGNMENT_NOT_FOUND',
+  'LEAVE_COVERAGE_REQUIRED',
+  'LEAVE_SUBSTITUTION_INVALID',
   'LEAVE_VERSION_REQUIRED',
   'LEAVE_VERSION_MISMATCH',
 ] as const;
@@ -76,6 +79,19 @@ export type LeaveImpactEvent = Readonly<{
   state: DailyOperationState;
   substituteAssignmentId: string | null;
   substituteTeacherId: string | null;
+  /**
+   * #461 F4 — karar rayı için okunabilir etiketler.
+   *
+   * Ham kimlikler yalnız aday/yedek seçimi için taşınır; operatör ekranı
+   * `lessonLabel`/`teacherLabel` gösterir, UUID göstermez.
+   */
+  teacherLabel: string;
+  courseLabel: string;
+  groupLabel: string;
+  roomLabel: string;
+  timeLabel: string;
+  occurrenceLabel: string;
+  lessonLabel: string;
 }>;
 
 export type LeaveImpactResponse = Readonly<{
@@ -123,6 +139,10 @@ export type DailyOperationsQueueResponse = Readonly<{
 export type SubstituteCandidate = Readonly<{
   teacherId: string;
   teacherBranchId: string;
+  /** #461 F4 — seçim için okunabilir ad; ham UUID gösterilmez. */
+  teacherLabel: string;
+  branchLabel: string;
+  availabilityLabel: string;
   decisionSupportOnly: true;
   eligible: true;
 }>;
@@ -291,3 +311,94 @@ export function eventOccurrencesForRange(input: {
 export function eventOccurrenceForRange(input: Parameters<typeof eventOccurrencesForRange>[0]): EventOccurrence | null {
   return eventOccurrencesForRange(input)[0] ?? null;
 }
+
+/**
+ * #461 F2 — günün tam programı (yalnız yayınlanmış versiyon).
+ *
+ * `today` yalnız izin etkisiyle oluşan dersleri döndürür; bu yüzey günün
+ * TAMAMINI yayınlanmış programdan okur, böylece Operasyon ekranı akışı
+ * gösterebilir. Draft versiyonlar hiçbir koşulda yanıta girmez.
+ */
+export type DailyOperationsAttendanceState =
+  | 'not_started'
+  | 'draft'
+  | 'published'
+  | 'locked';
+
+export type DailyOperationsAttendanceSummary = Readonly<{
+  sessionId: string | null;
+  status: DailyOperationsAttendanceState;
+  rosterCount: number;
+  recordedCount: number;
+  unrecordedCount: number;
+  presentCount: number;
+  absentCount: number;
+  lateCount: number;
+  excusedCount: number;
+}>;
+
+export type DailyOperationsCoverageSummary = Readonly<{
+  state: LeaveCoverageStatus;
+  leaveRequestId: string | null;
+  leaveVersion: number | null;
+  leaveEtag: string | null;
+  substituteAssignmentId: string | null;
+  substituteTeacherId: string | null;
+  substituteTeacherLabel: string | null;
+}>;
+
+export type DailyOperationsDayLesson = Readonly<{
+  scheduleEventId: string;
+  scheduleId: string;
+  scheduleVersionId: string;
+  branchId: string;
+  occurrenceDate: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  startsAt: string;
+  endsAt: string;
+  timeLabel: string;
+  teacherId: string;
+  teacherLabel: string;
+  studentGroupId: string;
+  groupLabel: string;
+  courseId: string;
+  courseLabel: string;
+  roomId: string;
+  roomLabel: string;
+  timeSlotId: string;
+  timeSlotLabel: string;
+  lessonLabel: string;
+  attendance: DailyOperationsAttendanceSummary;
+  coverage: DailyOperationsCoverageSummary;
+  needsCoverage: boolean;
+  needsAttendance: boolean;
+}>;
+
+export type DailyOperationsDayStats = Readonly<{
+  lessonCount: number;
+  coveredLessonCount: number;
+  uncoveredLessonCount: number;
+  completedSessionCount: number;
+  lockedSessionCount: number;
+  rosterCount: number;
+  recordedCount: number;
+  unrecordedCount: number;
+  presentCount: number;
+  absentCount: number;
+  lateCount: number;
+  excusedCount: number;
+  /** Okunabilir, salt-okunur canlı yoklama şeridi; dönem raporu DEĞİLDİR. */
+  readOnly: true;
+}>;
+
+export type DailyOperationsDayResponse = Readonly<{
+  tenantScoped: true;
+  branchId: string;
+  date: string;
+  dayOfWeek: number;
+  permission: typeof DAILY_OPERATIONS_TODAY_PERMISSION;
+  lessons: DailyOperationsDayLesson[];
+  stats: DailyOperationsDayStats;
+}>;

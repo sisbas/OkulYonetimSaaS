@@ -23,6 +23,7 @@ import { EokulSyncModule } from './eokul-sync/eokul-sync.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { ReportsModule } from './reports/reports.module';
 import { TeachersModule } from './teachers/teachers.module';
+import { StudentsModule } from './students/students.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { TimeSlotsModule } from './time-slots/time-slots.module';
 import { UsersModule } from './users/users.module';
@@ -76,6 +77,8 @@ export function buildFeatureModules(env: NodeJS.ProcessEnv = process.env): any[]
     DailyOperationsModule,
     TeachersModule,
     TeacherCoursesModule,
+    // #461 F1: salt-okunur öğrenci roster yüzeyi.
+    StudentsModule,
     AttendanceModule,
     NotificationsModule,
     ScheduleModule,

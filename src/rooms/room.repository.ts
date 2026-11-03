@@ -59,7 +59,7 @@ export class RoomRepository {
     }
 
     const [data, total] = await qb
-      .orderBy('room.created_at', 'DESC')
+      .orderBy('room.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();

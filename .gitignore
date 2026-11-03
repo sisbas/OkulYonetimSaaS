@@ -118,7 +118,7 @@ coverage/
 
 # TypeORM
 ormconfig.json
-migrations/
+/migrations/
 
 # Swagger
 .swagger-codegen-ignore

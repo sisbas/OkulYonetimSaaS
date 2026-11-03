@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { RequestContext } from '../common/context/request-context';
+import { ConsentAuthority } from '../kvkk/consent-authority';
 
 import { NotificationOutboxStatus } from './notification-outbox.entity';
 
@@ -63,6 +64,15 @@ function extractRows<T>(result: unknown): T[] {
  */
 @Injectable()
 export class NotificationOutboxRepository {
+  /**
+   * #461 F5 — onay anında consent yeniden doğrulanır.
+   *
+   * Snapshot anındaki onay yeterli DEĞİLDİR: veli onayı geri çekmiş veya
+   * kanal onayı düşmüş olabilir. Onay, güncel consent satırına göre
+   * yapılmadıkça taslak `approved` olamaz (fail-closed).
+   */
+  private readonly consentAuthority = new ConsentAuthority();
+
   async enqueueMany(
     entityManager: EntityManager,
     rows: readonly EnqueueOutboxRow[],
@@ -210,6 +220,34 @@ const rows = (await entityManager.query(
   }
 
   /**
+   * #461 F5 — onay öncesi güncel consent kapısı.
+   *
+   * `student` + `channel` için consent authority'den taze karar alınır.
+   * Onay yoksa `NOTIFICATION_CONSENT_REQUIRED` (409) fırlatılır; çağıran
+   * transaction geri alınır ve hiçbir satır `approved` olmaz.
+   */
+  private async assertCurrentConsent(
+    entityManager: EntityManager,
+    tenantId: string,
+    rows: ReadonlyArray<{ studentId: string; channel: string }>,
+  ): Promise<void> {
+    for (const row of rows) {
+      const decision = await this.consentAuthority.resolveNotificationConsent(entityManager, {
+        subject: { tenantId, subjectType: 'student', subjectRefId: row.studentId },
+        channel: row.channel,
+      });
+      if (!decision.approved) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'NOTIFICATION_CONSENT_REQUIRED',
+          message: 'Notification consent is not currently approved; draft cannot be approved',
+          reason: decision.reason,
+        });
+      }
+    }
+  }
+
+  /**
    * Draft durum geçişi — approve/close (N1c).
    *
    * `approve`: `pending` VEYA `blocked_consent` durumundan (onay geri
@@ -234,6 +272,24 @@ const rows = (await entityManager.query(
     }
     const fromStatuses =
       input.targetStatus === 'approved' ? ['pending', 'blocked_consent'] : ['pending'];
+    if (input.targetStatus === 'approved') {
+      const pendingRows = (await entityManager.query(
+        `SELECT o.id, o.student_id AS "studentId", o.channel
+           FROM notification_outbox o
+           JOIN attendance_sessions s
+             ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+          WHERE o.tenant_id = $1 AND o.id = $2 AND s.branch_id = $3
+            AND o.status = ANY($4::varchar[]) AND o.version = $5
+          FOR UPDATE OF o`,
+        [input.tenantId, input.id, input.branchId, fromStatuses, input.expectedVersion],
+      )) as Array<{ id: string; studentId: string; channel: string }>;
+      if (pendingRows.length !== 1) {
+        throw new ConflictException(
+          'Notification draft version conflict, not found, or in invalid status',
+        );
+      }
+      await this.assertCurrentConsent(entityManager, input.tenantId, pendingRows);
+    }
     const updated = extractRows<{ id: string; status: string; version: number }>(
       await entityManager.query(
         `UPDATE notification_outbox
@@ -293,6 +349,27 @@ const rows = (await entityManager.query(
     const ids = bounded.map((v) => v.id);
     const versions = bounded.map((v) => v.version);
     const fromStatuses = ['pending', 'blocked_consent'];
+
+    // #461 F5 — toplu onayda da her satır için güncel consent zorunlu.
+    const pendingRows = (await entityManager.query(
+      `SELECT o.id, o.student_id AS "studentId", o.channel
+         FROM notification_outbox o
+         JOIN attendance_sessions s
+           ON s.id = o.session_id AND s.tenant_id = o.tenant_id
+         JOIN unnest($3::uuid[], $4::int[]) AS expected(id, version)
+           ON expected.id = o.id AND expected.version = o.version
+        WHERE o.tenant_id = $1 AND o.session_id = $2 AND s.branch_id = $5
+          AND o.status = ANY($6::varchar[])
+        ORDER BY o.id
+        FOR UPDATE OF o`,
+      [input.tenantId, input.sessionId, ids, versions, input.branchId, fromStatuses],
+    )) as Array<{ id: string; studentId: string; channel: string }>;
+    if (pendingRows.length !== bounded.length) {
+      throw new ConflictException(
+        'Notification draft bulk version conflict, not found, or in invalid status',
+      );
+    }
+    await this.assertCurrentConsent(entityManager, input.tenantId, pendingRows);
 
     const updated = extractRows<{ id: string; status: string; version: number }>(
       await entityManager.query(

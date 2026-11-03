@@ -166,7 +166,7 @@ describe('candidate lookup across multiple impacted events (union, #263 review P
   it('public event candidates query all occurrences and return the database-filtered set', async () => {
     const { repository, manager, check } = setup();
     (repository as any).dataSource.manager = manager;
-    jest.spyOn(repository as any, 'findApprovedLeave').mockResolvedValue(leave);
+    jest.spyOn(repository as any, 'findLeaveForPreview').mockResolvedValue(leave);
     jest.spyOn(repository as any, 'loadImpactedEvents').mockResolvedValue(
       events.map((event) => ({ ...event, scheduleEventId: 'lesson', courseId: 'course' })),
     );

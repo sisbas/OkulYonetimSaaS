@@ -70,9 +70,9 @@ export class TimeSlotRepository {
     }
 
     const [data, total] = await qb
-      .orderBy('slot.day_of_week', 'ASC')
-      .addOrderBy('slot.order_index', 'ASC', 'NULLS LAST')
-      .addOrderBy('slot.start_time', 'ASC')
+      .orderBy('slot.dayOfWeek', 'ASC')
+      .addOrderBy('slot.orderIndex', 'ASC', 'NULLS LAST')
+      .addOrderBy('slot.startTime', 'ASC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
@@ -89,9 +89,9 @@ export class TimeSlotRepository {
       .andWhere('slot.status = :status', { status: TimeSlotStatus.ACTIVE });
     if (dayOfWeek !== undefined) qb.andWhere('slot.day_of_week = :dayOfWeek', { dayOfWeek });
     return qb
-      .orderBy('slot.day_of_week', 'ASC')
-      .addOrderBy('slot.order_index', 'ASC', 'NULLS LAST')
-      .addOrderBy('slot.start_time', 'ASC')
+      .orderBy('slot.dayOfWeek', 'ASC')
+      .addOrderBy('slot.orderIndex', 'ASC', 'NULLS LAST')
+      .addOrderBy('slot.startTime', 'ASC')
       .getMany();
   }
 

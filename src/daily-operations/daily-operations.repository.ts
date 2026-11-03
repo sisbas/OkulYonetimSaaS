@@ -21,6 +21,7 @@ import {
   LeaveApprovalImpactLesson,
   LeaveApprovalImpactRequest,
   LeaveApprovalImpactResult,
+  LeaveApprovalSubstitution,
   LeaveZeroImpactCode,
   MAX_APPROVAL_OCCURRENCES,
   NO_BRANCH_LABEL_FALLBACK,
@@ -37,17 +38,21 @@ import {
 } from './leave-approval-impact';
 import {
   CandidateResponse,
+  DailyOperationsAttendanceSummary,
+  DailyOperationsCoverageSummary,
+  DailyOperationsDayLesson,
+  DailyOperationsDayResponse,
+  DailyOperationsDayStats,
   DailyOperationsQueueResponse,
   DEFAULT_TENANT_TIME_ZONE,
   EventOccurrence,
   LeaveImpactEvent,
   LeaveImpactResponse,
   computeCoverageStatus,
+  dateStringInTimeZone,
+  isoDayOfWeek,
   leaveEtag,
   projectionKey,
-} from './leave-impact.types';
-import {
-  dateStringInTimeZone,
 } from './leave-impact.types';
 
 type LeaveRow = {
@@ -72,6 +77,8 @@ type AssignmentRow = {
   id: string;
   scheduleEventId: string;
   scheduleVersionId: string;
+  /** F4: karşılama satırları occurrence-düzeyi yazılır; operasyonel satırlar NULL kalabilir. */
+  occurrenceDate: string | null;
   substituteTeacherId: string;
 };
 
@@ -96,11 +103,77 @@ type QueueLessonRow = {
   endTime: string;
 };
 
+/** #461 F2: yayınlanmış gün satırı; yalnız published versiyonlardan gelir. */
+type DayLessonRow = {
+  scheduleEventId: string;
+  scheduleId: string;
+  scheduleVersionId: string;
+  branchId: string;
+  teacherId: string;
+  studentGroupId: string;
+  courseId: string;
+  roomId: string;
+  timeSlotId: string;
+  startTime: string;
+  endTime: string;
+  dayOfWeek: number;
+  teacherLabel: string | null;
+  courseLabel: string | null;
+  groupLabel: string | null;
+  roomLabel: string | null;
+  timeSlotLabel: string | null;
+};
+
+type DayAttendanceRow = {
+  sessionId: string;
+  scheduleEventId: string;
+  status: 'draft' | 'published' | 'locked';
+  rosterCount: number;
+  recordedCount: number;
+  presentCount: number;
+  absentCount: number;
+  lateCount: number;
+  excusedCount: number;
+};
+
+type DayCoverageRow = {
+  scheduleEventId: string;
+  total: number;
+  resolved: number;
+  leaveRequestId: string | null;
+  substituteAssignmentId: string | null;
+};
+
+type DayLeaveRow = {
+  id: string;
+  version: number;
+};
+
+type DaySubstituteRow = {
+  assignmentId: string;
+  substituteTeacherId: string;
+  substituteTeacherLabel: string | null;
+};
+
 /** Only known eligibility rejections may be omitted from candidate results. */
 export class SubstituteIneligibleError extends Error {}
 
 function assignmentKey(input: { scheduleEventId: string; scheduleVersionId: string }): string {
   return `${input.scheduleVersionId}:${input.scheduleEventId}`;
+}
+
+/**
+ * #461 F4 occurrence kimliği: haftalık tekrar eden bir ders birden fazla
+ * occurrence'a genişler ve hepsi AYNI `schedule_event_id`'yi taşır; bu yüzden
+ * açık ders ve yedek ataması `(version, event, occurrence)` üçlüsüyle
+ * eşleşir. `NULL` occurrence_date event-düzeyi satırlar içindir.
+ */
+function occurrenceKey(input: {
+  scheduleEventId: string;
+  scheduleVersionId: string;
+  occurrenceDate?: string | null;
+}): string {
+  return `${input.scheduleVersionId}:${input.scheduleEventId}@${input.occurrenceDate ?? 'null'}`;
 }
 
 @Injectable()
@@ -185,19 +258,412 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     };
   }
 
+  /**
+   * #461 F2 — günün TAM yayınlanmış programı.
+   *
+   * `today` yalnız izin projeksiyonundan doğan dersleri döndürür. Operasyon
+   * ekranı ise günün tüm akışını görmek zorundadır; bu yüzey yayınlanmış
+   * `schedule_versions` + aktif `schedules` üzerinden okur. Draft versiyonlar
+   * hiçbir koşulda yanıta girmez; yoklama özeti, kapsama ve roster sayısı aynı
+   * yanıtta gelir.
+   */
+  async day(
+    ctx: RequestContext,
+    input: { branchId: string; date: string },
+  ): Promise<DailyOperationsDayResponse> {
+    assertTenantScope(ctx, 'daily_operation_lessons');
+    await this.assertBranchOwnership(this.dataSource.manager, ctx.tenantId!, input.branchId);
+
+    const dayOfWeek = isoDayOfWeek(new Date(`${input.date}T00:00:00.000Z`));
+    const rows = (await this.dataSource.manager.query(
+      `SELECT
+          event.id::text AS "scheduleEventId",
+          event.schedule_id::text AS "scheduleId",
+          event.version_id::text AS "scheduleVersionId",
+          event.branch_id::text AS "branchId",
+          event.teacher_id::text AS "teacherId",
+          event.student_group_id::text AS "studentGroupId",
+          event.course_id::text AS "courseId",
+          event.room_id::text AS "roomId",
+          event.time_slot_id::text AS "timeSlotId",
+          event.start_time::text AS "startTime",
+          event.end_time::text AS "endTime",
+          event.day_of_week AS "dayOfWeek",
+          NULLIF(BTRIM(COALESCE(teacher.first_name, '') || ' ' || COALESCE(teacher.last_name, '')), '') AS "teacherLabel",
+          course.name AS "courseLabel",
+          student_group.name AS "groupLabel",
+          room.name AS "roomLabel",
+          time_slot.name AS "timeSlotLabel"
+       FROM schedule_events event
+       JOIN schedule_versions version
+         ON version.id = event.version_id
+        AND version.tenant_id = event.tenant_id
+        AND version.branch_id = event.branch_id
+        AND version.schedule_id = event.schedule_id
+        AND version.status = 'published'
+       JOIN schedules schedule
+         ON schedule.id = event.schedule_id
+        AND schedule.tenant_id = event.tenant_id
+        AND schedule.branch_id = event.branch_id
+        AND schedule.active_version_id = version.id
+        AND schedule.status = 'published'
+       LEFT JOIN teachers teacher
+         ON teacher.id = event.teacher_id
+        AND teacher.tenant_id = event.tenant_id
+       LEFT JOIN courses course
+         ON course.id = event.course_id
+        AND course.tenant_id = event.tenant_id
+       LEFT JOIN student_groups student_group
+         ON student_group.id = event.student_group_id
+        AND student_group.tenant_id = event.tenant_id
+       LEFT JOIN rooms room
+         ON room.id = event.room_id
+        AND room.tenant_id = event.tenant_id
+       LEFT JOIN time_slots time_slot
+         ON time_slot.id = event.time_slot_id
+        AND time_slot.tenant_id = event.tenant_id
+       WHERE event.tenant_id = $1
+         AND event.branch_id = $2
+         AND event.day_of_week = $3
+         AND schedule.effective_from <= $4::date
+         AND COALESCE(schedule.effective_to, '9999-12-31'::date) >= $4::date
+       ORDER BY event.start_time ASC, event.id ASC`,
+      [ctx.tenantId, input.branchId, dayOfWeek, input.date],
+    )) as DayLessonRow[];
+
+    if (rows.length === 0) {
+      return this.emptyDay(input.branchId, input.date, dayOfWeek);
+    }
+
+    const eventIds = rows.map((row) => row.scheduleEventId);
+    const groupIds = [...new Set(rows.map((row) => row.studentGroupId))];
+
+    const attendanceRows = (await this.dataSource.manager.query(
+      `SELECT
+          session.id::text AS "sessionId",
+          session.schedule_event_id::text AS "scheduleEventId",
+          session.status AS "status",
+          jsonb_array_length(session.roster_snapshot)::int AS "rosterCount",
+          count(record.id)::int AS "recordedCount",
+          count(record.id) FILTER (WHERE record.status = 'present')::int AS "presentCount",
+          count(record.id) FILTER (WHERE record.status = 'absent')::int AS "absentCount",
+          count(record.id) FILTER (WHERE record.status = 'late')::int AS "lateCount",
+          count(record.id) FILTER (WHERE record.status = 'excused')::int AS "excusedCount"
+       FROM attendance_sessions session
+       LEFT JOIN attendance_records record
+         ON record.tenant_id = session.tenant_id
+        AND record.session_id = session.id
+       WHERE session.tenant_id = $1
+         AND session.schedule_event_id = ANY($2::uuid[])
+         AND session.session_date = $3::date
+       GROUP BY session.id`,
+      [ctx.tenantId, eventIds, input.date],
+    )) as DayAttendanceRow[];
+
+    const membershipRows = (await this.dataSource.manager.query(
+      `SELECT
+          member.student_group_id::text AS "studentGroupId",
+          count(*)::int AS "rosterCount"
+       FROM student_group_members member
+       JOIN students student
+         ON student.id = member.student_id
+        AND student.tenant_id = member.tenant_id
+        AND student.branch_id = member.branch_id
+       WHERE member.tenant_id = $1
+         AND member.student_group_id = ANY($2::uuid[])
+         AND member.status = 'active'
+         AND member.deleted_at IS NULL
+         AND student.deleted_at IS NULL
+         AND student.enrollment_status = 'active'
+       GROUP BY member.student_group_id`,
+      [ctx.tenantId, groupIds],
+    )) as Array<{ studentGroupId: string; rosterCount: number }>;
+
+    const coverageRows = (await this.dataSource.manager.query(
+      `SELECT
+          lesson.schedule_event_id::text AS "scheduleEventId",
+          count(*)::int AS "total",
+          count(*) FILTER (WHERE lesson.state = 'resolved')::int AS "resolved",
+          (array_agg(lesson.leave_request_id::text ORDER BY (lesson.state = 'open') DESC, lesson.updated_at DESC))[1] AS "leaveRequestId",
+          (array_agg(lesson.substitute_assignment_id::text ORDER BY (lesson.state = 'resolved') DESC, lesson.updated_at DESC))[1] AS "substituteAssignmentId"
+       FROM daily_operation_lessons lesson
+       WHERE lesson.tenant_id = $1
+         AND lesson.schedule_event_id = ANY($2::uuid[])
+         AND lesson.occurrence_date = $3::date
+       GROUP BY lesson.schedule_event_id`,
+      [ctx.tenantId, eventIds, input.date],
+    )) as DayCoverageRow[];
+
+    const leaveIds = [
+      ...new Set(
+        coverageRows
+          .map((row) => row.leaveRequestId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const assignmentIds = [
+      ...new Set(
+        coverageRows
+          .map((row) => row.substituteAssignmentId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+
+    const leaveRows: DayLeaveRow[] = leaveIds.length
+      ? ((await this.dataSource.manager.query(
+          `SELECT id::text AS "id", version
+             FROM leave_requests
+            WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+          [ctx.tenantId, leaveIds],
+        )) as DayLeaveRow[])
+      : [];
+    const substituteRows: DaySubstituteRow[] = assignmentIds.length
+      ? ((await this.dataSource.manager.query(
+          `SELECT
+              assignment.id::text AS "assignmentId",
+              assignment.substitute_teacher_id::text AS "substituteTeacherId",
+              NULLIF(BTRIM(COALESCE(teacher.first_name, '') || ' ' || COALESCE(teacher.last_name, '')), '') AS "substituteTeacherLabel"
+             FROM leave_substitution_assignments assignment
+             LEFT JOIN teachers teacher
+               ON teacher.id = assignment.substitute_teacher_id
+              AND teacher.tenant_id = assignment.tenant_id
+            WHERE assignment.tenant_id = $1 AND assignment.id = ANY($2::uuid[])`,
+          [ctx.tenantId, assignmentIds],
+        )) as DaySubstituteRow[])
+      : [];
+
+    const attendanceByEvent = new Map(attendanceRows.map((row) => [row.scheduleEventId, row]));
+    const rosterByGroup = new Map(membershipRows.map((row) => [row.studentGroupId, row.rosterCount]));
+    const coverageByEvent = new Map(coverageRows.map((row) => [row.scheduleEventId, row]));
+    const leaveVersionById = new Map(leaveRows.map((row) => [row.id, Number(row.version)]));
+    const substituteByAssignment = new Map(substituteRows.map((row) => [row.assignmentId, row]));
+
+    const lessons = rows.map((row) =>
+      this.toDayLesson(
+        row,
+        input.date,
+        attendanceByEvent.get(row.scheduleEventId) ?? null,
+        rosterByGroup.get(row.studentGroupId) ?? 0,
+        coverageByEvent.get(row.scheduleEventId) ?? null,
+        leaveVersionById,
+        substituteByAssignment,
+      ),
+    );
+
+    return {
+      tenantScoped: true,
+      branchId: input.branchId,
+      date: input.date,
+      dayOfWeek,
+      permission: 'daily_operations:read',
+      lessons,
+      stats: this.dayStats(lessons),
+    };
+  }
+
+  private emptyDay(
+    branchId: string,
+    date: string,
+    dayOfWeek: number,
+  ): DailyOperationsDayResponse {
+    return {
+      tenantScoped: true,
+      branchId,
+      date,
+      dayOfWeek,
+      permission: 'daily_operations:read',
+      lessons: [],
+      stats: this.dayStats([]),
+    };
+  }
+
+  private toDayLesson(
+    row: DayLessonRow,
+    date: string,
+    attendanceRow: DayAttendanceRow | null,
+    membershipRosterCount: number,
+    coverageRow: DayCoverageRow | null,
+    leaveVersionById: Map<string, number>,
+    substituteByAssignment: Map<string, DaySubstituteRow>,
+  ): DailyOperationsDayLesson {
+    const startTime = row.startTime;
+    const endTime = row.endTime;
+    const timeLabel = formatTimeLabel(startTime, endTime);
+    const courseLabel = row.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
+    const groupLabel = row.groupLabel ?? NO_GROUP_LABEL_FALLBACK;
+    const total = Number(coverageRow?.total ?? 0);
+    const resolved = Number(coverageRow?.resolved ?? 0);
+    const coverageStatus = computeCoverageStatus(total, resolved);
+    const leaveRequestId = coverageRow?.leaveRequestId ?? null;
+    const leaveVersion = leaveRequestId ? (leaveVersionById.get(leaveRequestId) ?? null) : null;
+    const substituteAssignmentId = coverageRow?.substituteAssignmentId ?? null;
+    const substitute = substituteAssignmentId
+      ? (substituteByAssignment.get(substituteAssignmentId) ?? null)
+      : null;
+
+    const coverage: DailyOperationsCoverageSummary = {
+      state: coverageStatus,
+      leaveRequestId,
+      leaveVersion,
+      leaveEtag:
+        leaveRequestId && leaveVersion !== null
+          ? leaveEtag(leaveRequestId, leaveVersion)
+          : null,
+      substituteAssignmentId,
+      substituteTeacherId: substitute?.substituteTeacherId ?? null,
+      substituteTeacherLabel: substitute?.substituteTeacherLabel ?? null,
+    };
+
+    if (!attendanceRow) {
+      const rosterCount = membershipRosterCount;
+      const attendance: DailyOperationsAttendanceSummary = {
+        sessionId: null,
+        status: 'not_started',
+        rosterCount,
+        recordedCount: 0,
+        unrecordedCount: rosterCount,
+        presentCount: 0,
+        absentCount: 0,
+        lateCount: 0,
+        excusedCount: 0,
+      };
+      return {
+        scheduleEventId: row.scheduleEventId,
+        scheduleId: row.scheduleId,
+        scheduleVersionId: row.scheduleVersionId,
+        branchId: row.branchId,
+        occurrenceDate: date,
+        dayOfWeek: Number(row.dayOfWeek),
+        startTime,
+        endTime,
+        startsAt: `${date}T${startTime}`,
+        endsAt: `${date}T${endTime}`,
+        timeLabel,
+        teacherId: row.teacherId,
+        teacherLabel: row.teacherLabel ?? NO_TEACHER_LABEL_FALLBACK,
+        studentGroupId: row.studentGroupId,
+        groupLabel,
+        courseId: row.courseId,
+        courseLabel,
+        roomId: row.roomId,
+        roomLabel: row.roomLabel ?? NO_ROOM_LABEL_FALLBACK,
+        timeSlotId: row.timeSlotId,
+        timeSlotLabel: row.timeSlotLabel ?? timeLabel,
+        lessonLabel: composeLessonLabel({
+          courseLabel,
+          groupLabel,
+          timeLabel,
+          occurrenceLabel: formatOccurrenceLabel(date),
+        }),
+        attendance,
+        coverage,
+        needsCoverage:
+          coverageStatus === LeaveCoverageStatus.UNRESOLVED ||
+          coverageStatus === LeaveCoverageStatus.PARTIALLY_COVERED,
+        needsAttendance: rosterCount > 0,
+      };
+    }
+
+    const rosterCount = Number(attendanceRow.rosterCount);
+    const recordedCount = Number(attendanceRow.recordedCount);
+    const attendance: DailyOperationsAttendanceSummary = {
+      sessionId: attendanceRow.sessionId,
+      status: attendanceRow.status,
+      rosterCount,
+      recordedCount,
+      unrecordedCount: Math.max(rosterCount - recordedCount, 0),
+      presentCount: Number(attendanceRow.presentCount),
+      absentCount: Number(attendanceRow.absentCount),
+      lateCount: Number(attendanceRow.lateCount),
+      excusedCount: Number(attendanceRow.excusedCount),
+    };
+
+    return {
+      scheduleEventId: row.scheduleEventId,
+      scheduleId: row.scheduleId,
+      scheduleVersionId: row.scheduleVersionId,
+      branchId: row.branchId,
+      occurrenceDate: date,
+      dayOfWeek: Number(row.dayOfWeek),
+      startTime,
+      endTime,
+      startsAt: `${date}T${startTime}`,
+      endsAt: `${date}T${endTime}`,
+      timeLabel,
+      teacherId: row.teacherId,
+      teacherLabel: row.teacherLabel ?? NO_TEACHER_LABEL_FALLBACK,
+      studentGroupId: row.studentGroupId,
+      groupLabel,
+      courseId: row.courseId,
+      courseLabel,
+      roomId: row.roomId,
+      roomLabel: row.roomLabel ?? NO_ROOM_LABEL_FALLBACK,
+      timeSlotId: row.timeSlotId,
+      timeSlotLabel: row.timeSlotLabel ?? timeLabel,
+      lessonLabel: composeLessonLabel({
+        courseLabel,
+        groupLabel,
+        timeLabel,
+        occurrenceLabel: formatOccurrenceLabel(date),
+      }),
+      attendance,
+      coverage,
+      needsCoverage:
+        coverageStatus === LeaveCoverageStatus.UNRESOLVED ||
+        coverageStatus === LeaveCoverageStatus.PARTIALLY_COVERED,
+      needsAttendance: rosterCount > recordedCount,
+    };
+  }
+
+  private dayStats(lessons: DailyOperationsDayLesson[]): DailyOperationsDayStats {
+    const sum = (select: (lesson: DailyOperationsDayLesson) => number): number =>
+      lessons.reduce((total, lesson) => total + select(lesson), 0);
+
+    return {
+      lessonCount: lessons.length,
+      coveredLessonCount: lessons.filter((lesson) => !lesson.needsCoverage).length,
+      uncoveredLessonCount: lessons.filter((lesson) => lesson.needsCoverage).length,
+      completedSessionCount: lessons.filter(
+        (lesson) =>
+          lesson.attendance.sessionId !== null &&
+          lesson.attendance.rosterCount > 0 &&
+          lesson.attendance.recordedCount >= lesson.attendance.rosterCount &&
+          lesson.attendance.status !== 'draft',
+      ).length,
+      lockedSessionCount: lessons.filter(
+        (lesson) => lesson.attendance.status === 'locked',
+      ).length,
+      rosterCount: sum((lesson) => lesson.attendance.rosterCount),
+      recordedCount: sum((lesson) => lesson.attendance.recordedCount),
+      unrecordedCount: sum((lesson) => lesson.attendance.unrecordedCount),
+      presentCount: sum((lesson) => lesson.attendance.presentCount),
+      absentCount: sum((lesson) => lesson.attendance.absentCount),
+      lateCount: sum((lesson) => lesson.attendance.lateCount),
+      excusedCount: sum((lesson) => lesson.attendance.excusedCount),
+      readOnly: true,
+    };
+  }
+
   async impact(ctx: RequestContext, leaveId: string): Promise<LeaveImpactResponse> {
     assertTenantScope(ctx, 'daily_operations_leave_impact');
-    const leave = await this.findApprovedLeave(this.dataSource.manager, ctx.tenantId!, leaveId, false);
-    if (!leave) throw new Error('LEAVE_NOT_APPROVED');
+    // #461 F4: karar ÖNCESİ etki — pending izin de okunabilir.
+    const leave = await this.findLeaveForPreview(this.dataSource.manager, ctx.tenantId!, leaveId);
+    if (!leave) throw new Error('LEAVE_NOT_FOUND');
     const events = await this.loadImpactedEvents(this.dataSource.manager, leave);
     const assignments = this.currentAssignments(events, await this.loadAssignments(this.dataSource.manager, leave));
-    return this.toImpact(leave, events, assignments);
+    const teacherLabel = await this.loadTeacherLabel(
+      this.dataSource.manager,
+      leave.tenantId,
+      leave.teacherId,
+    );
+    return this.toImpact(leave, events, assignments, teacherLabel);
   }
 
   async candidates(ctx: RequestContext, leaveId: string, scheduleEventId: string): Promise<CandidateResponse> {
     assertTenantScope(ctx, 'daily_operations_leave_impact');
-    const leave = await this.findApprovedLeave(this.dataSource.manager, ctx.tenantId!, leaveId, false);
-    if (!leave) throw new Error('LEAVE_NOT_APPROVED');
+    // #461 F4: aday listesi de karar öncesinde sunulur.
+    const leave = await this.findLeaveForPreview(this.dataSource.manager, ctx.tenantId!, leaveId);
+    if (!leave) throw new Error('LEAVE_NOT_FOUND');
     const matchingEvents = (await this.loadImpactedEvents(this.dataSource.manager, leave))
       .filter((item) => item.scheduleEventId === scheduleEventId);
     if (matchingEvents.length === 0) throw new Error('NO_PUBLISHED_SCHEDULE_EVENT');
@@ -213,13 +679,25 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       };
     }
     const candidates = await this.findEligibleCandidates(this.dataSource.manager, leave, matchingEvents, 'all');
+    const labels = new Map(
+      (await this.candidateLabels(this.dataSource.manager, leave.tenantId, candidates))
+        .map((label) => [label.teacherId, label]),
+    );
     return {
       leaveRequestId: leave.id,
       scheduleEventId,
       courseId: event.courseId,
       eligibilityAuthority: 'teacher_courses',
       eligibilityFinalized: true,
-      candidates,
+      candidates: candidates.map((candidate) => ({
+        ...candidate,
+        teacherLabel: labels.get(candidate.teacherId)?.teacherLabel ?? NO_TEACHER_LABEL_FALLBACK,
+        branchLabel: labels.get(candidate.teacherId)?.branchLabel ?? NO_BRANCH_LABEL_FALLBACK,
+        availabilityLabel:
+          labels.get(candidate.teacherId)?.availabilityLabel ?? CANDIDATE_AVAILABLE_LABEL,
+        decisionSupportOnly: true as const,
+        eligible: true as const,
+      })),
     };
   }
 
@@ -243,14 +721,20 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       }
       const existing = await this.activeAssignment(manager, leave.id, input.scheduleEventId);
       if (existing) throw new Error('ASSIGNMENT_ALREADY_EXISTS');
+      // Occurrence-düzeyi kimlik: tekrar eden dersin her açık occurrence'ı
+      // kendi atama satırını taşır (F4 karşılama sözleşmesiyle aynıdır).
       const event = matchingEvents[0];
-      const rows = await manager.query(
-        `INSERT INTO leave_substitution_assignments
-          (tenant_id, branch_id, leave_request_id, schedule_version_id, schedule_event_id, substitute_teacher_id, course_id, created_by_user_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         RETURNING id`,
-        [leave.tenantId, leave.branchId, leave.id, event.scheduleVersionId, event.scheduleEventId, input.substituteTeacherId, event.courseId, this.actorUserId(ctx)],
-      );
+      const insertedIds: string[] = [];
+      for (const occurrence of matchingEvents) {
+        const rows = await manager.query(
+          `INSERT INTO leave_substitution_assignments
+            (tenant_id, branch_id, leave_request_id, schedule_version_id, schedule_event_id, occurrence_date, substitute_teacher_id, course_id, created_by_user_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           RETURNING id`,
+          [leave.tenantId, leave.branchId, leave.id, occurrence.scheduleVersionId, occurrence.scheduleEventId, occurrence.occurrenceDate, input.substituteTeacherId, occurrence.courseId, this.actorUserId(ctx)],
+        );
+        insertedIds.push(String(rows[0].id));
+      }
       const assignments = this.currentAssignments(events, await this.loadAssignments(manager, leave));
       const coverage = this.coverageFor(events, assignments);
       await this.updateLeaveCoverage(manager, leave.id, coverage, leave.version + 1);
@@ -258,8 +742,13 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       leave.version += 1;
       await this.project(manager, leave, events, assignments);
       await this.auditLeave(manager, ctx, 'leave.substitution_assigned.v1', leave.id, ['coverageStatus', 'substitutionAssignment', 'dailyOperationsProjection', 'version']);
-      await this.outbox(manager, leave, 'leave.substitution_assigned.v1', rows[0].id, event.scheduleEventId);
-      return this.toImpact(leave, events, assignments);
+      await this.outbox(manager, leave, 'leave.substitution_assigned.v1', insertedIds[0], event.scheduleEventId);
+      return this.toImpact(
+        leave,
+        events,
+        assignments,
+        await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId),
+      );
     });
   }
 
@@ -277,11 +766,12 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       if (!events.some((item) => item.scheduleEventId === input.scheduleEventId)) throw new Error('NO_PUBLISHED_SCHEDULE_EVENT');
       const assignment = await this.activeAssignment(manager, leave.id, input.scheduleEventId);
       if (!assignment) throw new Error('ASSIGNMENT_NOT_FOUND');
+      // Occurrence-düzeyi satırların tamamı temizlenir (F4 sözleşmesi).
       await manager.query(
         `UPDATE leave_substitution_assignments
          SET state = 'cleared', cleared_by_user_id = $1, cleared_at = now(), version = version + 1, updated_at = now()
-         WHERE id = $2 AND tenant_id = $3`,
-        [this.actorUserId(ctx), assignment.id, leave.tenantId],
+         WHERE tenant_id = $2 AND leave_request_id = $3 AND schedule_event_id = $4 AND state = 'assigned'`,
+        [this.actorUserId(ctx), leave.tenantId, leave.id, input.scheduleEventId],
       );
       const assignments = this.currentAssignments(events, await this.loadAssignments(manager, leave));
       const coverage = this.coverageFor(events, assignments);
@@ -291,7 +781,12 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       await this.project(manager, leave, events, assignments);
       await this.auditLeave(manager, ctx, 'leave.substitution_cleared.v1', leave.id, ['coverageStatus', 'substitutionAssignment', 'dailyOperationsProjection', 'version']);
       await this.outbox(manager, leave, 'leave.substitution_cleared.v1', assignment.id, input.scheduleEventId);
-      return this.toImpact(leave, events, assignments);
+      return this.toImpact(
+        leave,
+        events,
+        assignments,
+        await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId),
+      );
     });
   }
 
@@ -311,7 +806,12 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       await this.project(manager, leave, events, assignments);
       await this.auditLeave(manager, ctx, 'daily_operations.projected.v1', leave.id, ['coverageStatus', 'dailyOperationsProjection', 'version']);
       await this.outbox(manager, leave, 'daily_operations.projected.v1', null, null);
-      return this.toImpact(leave, events, assignments);
+      return this.toImpact(
+        leave,
+        events,
+        assignments,
+        await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId),
+      );
     });
   }
 
@@ -341,6 +841,143 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       coverageStatus: coverage,
       impact: this.toApprovalImpact(
         events,
+        [],
+        coverage,
+        teacherLabel,
+        candidates,
+        this.zeroImpactReasonFor(published.length, events.length),
+      ),
+    };
+  }
+
+  /**
+   * #461 F4 — yedeksiz onay yok.
+   *
+   * Onayın AYNI transaction'ında çağrılır. Her açık ders için tam bir yedek
+   * ister; eksik/yanlış eşleme `LEAVE_COVERAGE_REQUIRED`, tanınmayan veya
+   * yinelenen olay `LEAVE_SUBSTITUTION_INVALID` fırlatır. Aday uygunluğu
+   * yalnız sunucuda doğrulanır.
+   */
+  async applyApprovalCoverage(
+    manager: EntityManager,
+    ctx: RequestContext,
+    leave: LeaveApprovalImpactRequest,
+    substitutions: readonly LeaveApprovalSubstitution[],
+  ): Promise<LeaveApprovalImpactResult> {
+    assertTenantScope(ctx, 'daily_operations_leave_impact');
+    const timeZone = await this.loadTenantTimeZone(manager, leave.tenantId);
+    const published = await this.loadPublishedEvents(manager, leave, timeZone);
+    const events = this.expandOccurrences(published, leave, timeZone);
+    const existingAssignments = this.currentAssignments(
+      events,
+      await this.loadAssignments(manager, leave),
+    );
+    const coveredOccurrences = new Set(
+      existingAssignments.map((assignment) => occurrenceKey(assignment)),
+    );
+    const openEvents = events.filter((event) => !coveredOccurrences.has(occurrenceKey(event)));
+
+    /**
+     * #461 F4 sözleşmesi: her substitution girişi BİR açık occurrence'ı
+     * karşılar. Tekrar eden dersin occurrence'ları AYNI scheduleEventId'yi
+     * taşır; bu yüzden eşleştirme olay bazında sırayla yapılır:
+     * - bilinmeyen olay kimliği → LEAVE_SUBSTITUTION_INVALID,
+     * - bir olay için istek sayısı açık occurrence sayısını aşarsa → INVALID
+     *   (fazladan/yinelenen seçim),
+     * - toplam geçersiz eksiği kalırsa → LEAVE_COVERAGE_REQUIRED.
+     */
+    const entriesByEventId = new Map<string, LeaveApprovalSubstitution[]>();
+    for (const substitution of substitutions) {
+      const queue = entriesByEventId.get(substitution.scheduleEventId) ?? [];
+      queue.push(substitution);
+      entriesByEventId.set(substitution.scheduleEventId, queue);
+    }
+
+    const openOccurrencesByEventId = new Map<string, number>();
+    for (const event of openEvents) {
+      openOccurrencesByEventId.set(
+        event.scheduleEventId,
+        (openOccurrencesByEventId.get(event.scheduleEventId) ?? 0) + 1,
+      );
+    }
+
+    for (const [scheduleEventId, entries] of entriesByEventId) {
+      const openCount = openOccurrencesByEventId.get(scheduleEventId) ?? 0;
+      if (openCount === 0 || entries.length > openCount) {
+        throw new Error('LEAVE_SUBSTITUTION_INVALID');
+      }
+    }
+
+    const requestedCount = [...entriesByEventId.values()].reduce(
+      (total, entries) => total + entries.length,
+      0,
+    );
+    if (requestedCount !== openEvents.length) {
+      throw new Error('LEAVE_COVERAGE_REQUIRED');
+    }
+
+    const pairs: Array<{ event: ImpactedScheduleEventRow; substitution: LeaveApprovalSubstitution }> = [];
+    for (const event of openEvents) {
+      const queue = entriesByEventId.get(event.scheduleEventId);
+      const substitution = queue?.shift();
+      if (!substitution) continue;
+      pairs.push({ event, substitution });
+    }
+
+    const teacherIds = [...new Set(pairs.map((pair) => pair.substitution.substituteTeacherId))];
+    for (const teacherId of teacherIds) {
+      await this.lockSubstituteTeacherForMutation(manager, leave.tenantId, teacherId);
+    }
+
+    for (const pair of pairs) {
+      try {
+        await this.assertEligibleCandidate(
+          manager,
+          leave,
+          pair.event,
+          pair.substitution.substituteTeacherId,
+          pair.event.startsAt,
+          pair.event.endsAt,
+        );
+      } catch (error) {
+        // Port sınırı: iç hata sınıfları dışarı sızmaz; karar katmanı
+        // yalnız kararlı kodları görür.
+        if (error instanceof SubstituteIneligibleError) {
+          throw new Error(`LEAVE_SUBSTITUTE_INELIGIBLE:${error.message}`);
+        }
+        if (error instanceof Error && error.message === 'TEACHER_COURSE_ELIGIBILITY_NOT_READY') {
+          throw new Error('LEAVE_SUBSTITUTE_ELIGIBILITY_NOT_READY');
+        }
+        throw error;
+      }
+      await manager.query(
+        `INSERT INTO leave_substitution_assignments
+          (tenant_id, branch_id, leave_request_id, schedule_version_id, schedule_event_id, occurrence_date, substitute_teacher_id, course_id, created_by_user_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          leave.tenantId,
+          leave.branchId,
+          leave.id,
+          pair.event.scheduleVersionId,
+          pair.event.scheduleEventId,
+          pair.event.occurrenceDate,
+          pair.substitution.substituteTeacherId,
+          pair.event.courseId,
+          this.actorUserId(ctx),
+        ],
+      );
+    }
+
+    const assignments = this.currentAssignments(events, await this.loadAssignments(manager, leave));
+    const coverage = this.coverageFor(events, assignments);
+    await this.project(manager, leave, events, assignments);
+    const teacherLabel = await this.loadTeacherLabel(manager, leave.tenantId, leave.teacherId);
+    const candidates = await this.approvalCandidates(manager, leave, events);
+    return {
+      coverageStatus: coverage,
+      impact: this.toApprovalImpact(
+        events,
+        assignments,
         coverage,
         teacherLabel,
         candidates,
@@ -370,15 +1007,21 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       ...base,
       finalized: true,
       gapDetail: null,
-      items: await this.candidateLabels(manager, leave.tenantId, eligible),
+      items: (await this.candidateLabels(manager, leave.tenantId, eligible)).map(
+        ({ teacherLabel, branchLabel, availabilityLabel }) => ({
+          teacherLabel,
+          branchLabel,
+          availabilityLabel,
+        }),
+      ),
     };
   }
 
   private async candidateLabels(
     manager: EntityManager,
     tenantId: string,
-    eligible: CandidateResponse['candidates'],
-  ): Promise<LeaveApprovalCandidate[]> {
+    eligible: ReadonlyArray<{ teacherId: string; teacherBranchId: string }>,
+  ): Promise<Array<{ teacherId: string; teacherLabel: string; branchLabel: string; availabilityLabel: string }>> {
     if (eligible.length === 0) return [];
     const teacherRows: Array<{ teacherId: string; teacherLabel: string | null }> = await manager.query(
       `SELECT teacher.id::text AS "teacherId",
@@ -404,6 +1047,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     const teacherLabels = new Map(teacherRows.map((row) => [row.teacherId, row.teacherLabel]));
     const branchLabels = new Map(branchRows.map((row) => [row.id, row.name]));
     return eligible.map((candidate) => ({
+      teacherId: candidate.teacherId,
       teacherLabel: teacherLabels.get(candidate.teacherId) ?? NO_TEACHER_LABEL_FALLBACK,
       branchLabel: branchLabels.get(candidate.teacherBranchId) ?? NO_BRANCH_LABEL_FALLBACK,
       availabilityLabel: CANDIDATE_AVAILABLE_LABEL,
@@ -430,16 +1074,19 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
 
   private toApprovalImpact(
     events: ImpactedScheduleEventRow[],
+    assignments: AssignmentRow[],
     coverage: LeaveCoverageStatus,
     teacherLabel: string,
     candidates: LeaveApprovalCandidates,
     zeroImpactReason: LeaveZeroImpactCode | null,
   ): LeaveApprovalImpact {
+    const byOccurrence = new Map(assignments.map((item) => [occurrenceKey(item), item]));
     const lessons: LeaveApprovalImpactLesson[] = events.map((event) => {
       const courseLabel = event.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
       const groupLabel = event.groupLabel ?? NO_GROUP_LABEL_FALLBACK;
       const timeLabel = formatTimeLabel(event.startTime, event.endTime);
       const occurrenceLabel = formatOccurrenceLabel(event.occurrenceDate);
+      const assignment = byOccurrence.get(occurrenceKey(event)) ?? null;
       return {
         lessonLabel: composeLessonLabel({ courseLabel, groupLabel, timeLabel, occurrenceLabel }),
         courseLabel,
@@ -448,16 +1095,17 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
         timeLabel,
         occurrenceLabel,
         teacherLabel,
-        stateLabel: lessonStateLabel('open'),
+        stateLabel: lessonStateLabel(assignment ? 'resolved' : 'open'),
       };
     });
+    const resolvedLessonCount = this.resolvedLessonCount(events, assignments);
     // Sıfır etki sessizce geçilemez: gerekçe kodu ve okunabilir açıklama zorunlu.
     return {
       coverageStatus: coverage,
       coverageLabel: coverageLabel(coverage),
       impactedLessonCount: lessons.length,
-      resolvedLessonCount: 0,
-      openLessonCount: lessons.length,
+      resolvedLessonCount,
+      openLessonCount: lessons.length - resolvedLessonCount,
       zeroImpact: lessons.length === 0,
       zeroImpactReason,
       zeroImpactDetail: zeroImpactReason ? zeroImpactDetailFor(zeroImpactReason) : null,
@@ -482,6 +1130,25 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
        FROM leave_requests
        WHERE tenant_id = $1 AND id = $2 AND decision_status = 'approved'
        ${lock ? 'FOR UPDATE' : ''}`,
+      [tenantId, leaveId],
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
+   * #461 F4 — karar öncesi okuma: pending veya approved izin.
+   *
+   * Mutasyon yolları (`assign`/`clear`/`replayProjection`) hâlâ yalnız
+   * onaylı izinle çalışır; bu okuyucu etki/aday önizlemesi içindir.
+   */
+  private async findLeaveForPreview(manager: EntityManager, tenantId: string, leaveId: string): Promise<LeaveRow | null> {
+    const rows = await manager.query(
+      `SELECT id, tenant_id AS "tenantId", branch_id AS "branchId", teacher_id AS "teacherId",
+              decision_status AS "decisionStatus", coverage_status AS "coverageStatus",
+              starts_at AS "startsAt", ends_at AS "endsAt", version
+       FROM leave_requests
+       WHERE tenant_id = $1 AND id = $2
+       LIMIT 1`,
       [tenantId, leaveId],
     );
     return rows[0] ?? null;
@@ -574,7 +1241,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
 
   private async loadAssignments(manager: EntityManager, leave: LeaveRow): Promise<AssignmentRow[]> {
     return manager.query(
-      `SELECT id, schedule_version_id AS "scheduleVersionId", schedule_event_id AS "scheduleEventId", substitute_teacher_id AS "substituteTeacherId"
+      `SELECT id, schedule_version_id AS "scheduleVersionId", schedule_event_id AS "scheduleEventId", occurrence_date::text AS "occurrenceDate", substitute_teacher_id AS "substituteTeacherId"
        FROM leave_substitution_assignments
        WHERE tenant_id = $1 AND leave_request_id = $2 AND state = 'assigned'`,
       [leave.tenantId, leave.id],
@@ -688,7 +1355,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     if (substitutionConflict.length > 0) throw new SubstituteIneligibleError('SUBSTITUTE_TIME_CONFLICT');
   }
 
-  private async findEligibleCandidates(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[], occurrencePolicy: 'any' | 'all' = 'any'): Promise<CandidateResponse['candidates']> {
+  private async findEligibleCandidates(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[], occurrencePolicy: 'any' | 'all' = 'any'): Promise<Array<{ teacherId: string; teacherBranchId: string }>> {
     const firstEvent = events[0];
     if (occurrencePolicy === 'all') {
       const rows: Array<{ teacherId: string; teacherBranchId: string }> = await manager.query(
@@ -828,7 +1495,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
        ORDER BY teacher.id ASC`,
       [leave.tenantId, leave.teacherId, leave.branchId, firstEvent.occurrenceDate],
     );
-    const candidates: CandidateResponse['candidates'] = [];
+    const candidates: Array<{ teacherId: string; teacherBranchId: string }> = [];
     for (const row of rows) {
       // #263 review P2: aday, etkilenen olayların KESİŞİMİ değil BİRLEŞİMİdir.
       // Yedek görevlendirme olay (ders) bazında yapılır; bir matematik ve başka
@@ -846,7 +1513,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
         }
       }
       if (eligibleForAnyEvent) {
-        candidates.push({ teacherId: row.teacherId, teacherBranchId: row.teacherBranchId, decisionSupportOnly: true, eligible: true });
+        candidates.push({ teacherId: row.teacherId, teacherBranchId: row.teacherBranchId });
       }
     }
     return candidates;
@@ -865,13 +1532,13 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
   }
 
   private currentAssignments(events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): AssignmentRow[] {
-    const current = new Set(events.map((event) => assignmentKey(event)));
-    return assignments.filter((assignment) => current.has(assignmentKey(assignment)));
+    const current = new Set(events.map((event) => occurrenceKey(event)));
+    return assignments.filter((assignment) => current.has(occurrenceKey(assignment)));
   }
 
   private resolvedLessonCount(events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): number {
-    const byEvent = new Map(assignments.map((item) => [assignmentKey(item), item]));
-    return events.filter((event) => byEvent.has(assignmentKey(event))).length;
+    const byOccurrence = new Map(assignments.map((item) => [occurrenceKey(item), item]));
+    return events.filter((event) => byOccurrence.has(occurrenceKey(event))).length;
   }
 
   private coverageFor(events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): LeaveCoverageStatus {
@@ -879,11 +1546,11 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
   }
 
   private async project(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): Promise<void> {
-    const byEvent = new Map(assignments.map((item) => [assignmentKey(item), item]));
+    const byOccurrence = new Map(assignments.map((item) => [occurrenceKey(item), item]));
     const coverage = this.coverageFor(events, assignments);
     const activeProjectionKeys: string[] = [];
     for (const event of events) {
-      const assignment = byEvent.get(assignmentKey(event)) ?? null;
+      const assignment = byOccurrence.get(occurrenceKey(event)) ?? null;
       const key = projectionKey({
         leaveRequestId: leave.id,
         scheduleVersionId: event.scheduleVersionId,
@@ -928,10 +1595,14 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     );
   }
 
-  private toImpact(leave: LeaveRow, events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): LeaveImpactResponse {
-    const byEvent = new Map(assignments.map((item) => [assignmentKey(item), item]));
+  private toImpact(leave: LeaveRow, events: ImpactedScheduleEventRow[], assignments: AssignmentRow[], teacherLabel: string): LeaveImpactResponse {
+    const byOccurrence = new Map(assignments.map((item) => [occurrenceKey(item), item]));
     const responseEvents: LeaveImpactEvent[] = events.map((event) => {
-      const assignment = byEvent.get(assignmentKey(event)) ?? null;
+      const assignment = byOccurrence.get(occurrenceKey(event)) ?? null;
+      const courseLabel = event.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
+      const groupLabel = event.groupLabel ?? NO_GROUP_LABEL_FALLBACK;
+      const timeLabel = formatTimeLabel(event.startTime, event.endTime);
+      const occurrenceLabel = formatOccurrenceLabel(event.occurrenceDate);
       return {
         scheduleEventId: event.scheduleEventId,
         scheduleId: event.scheduleId,
@@ -948,6 +1619,13 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
         state: assignment ? 'resolved' : 'open',
         substituteAssignmentId: assignment?.id ?? null,
         substituteTeacherId: assignment?.substituteTeacherId ?? null,
+        teacherLabel,
+        courseLabel,
+        groupLabel,
+        roomLabel: event.roomLabel ?? NO_ROOM_LABEL_FALLBACK,
+        timeLabel,
+        occurrenceLabel,
+        lessonLabel: composeLessonLabel({ courseLabel, groupLabel, timeLabel, occurrenceLabel }),
       };
     });
     const resolved = responseEvents.filter((event) => event.state === 'resolved').length;

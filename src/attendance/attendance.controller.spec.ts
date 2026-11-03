@@ -179,6 +179,26 @@ describe('AttendanceSessionController list() (P1: users.id vs teachers.id)', () 
     expect(listByTenant).toHaveBeenCalledWith(TENANT_ID, BRANCH_ID);
   });
 
+  it('delegates "mark all present" without trusting a client roster (#461 F3)', async () => {
+    const SESSION_ID = '55555555-5555-4555-8555-555555555555';
+    const markAllPresent = jest.fn(async () => ({
+      sessionId: SESSION_ID,
+      sessionVersion: 2,
+      rosterCount: 24,
+      presentCount: 24,
+      changedCount: 24,
+    }));
+    const { controller, req } = setup(makeActor(), { markAllPresent });
+
+    const result = await controller.markAllPresent(req, SESSION_ID);
+
+    expect(markAllPresent).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: USERS_ID, tenantId: TENANT_ID }),
+      SESSION_ID,
+    );
+    expect(result).toMatchObject({ rosterCount: 24, presentCount: 24 });
+  });
+
   it('delegates controlled correction with the server-resolved actor and body fields (AC-4)', async () => {
     const SESSION_ID = '55555555-5555-4555-8555-555555555555';
     const STUDENT_ID = '66666666-6666-4666-8666-666666666666';

@@ -1,7 +1,11 @@
 import { RequestContext } from '../common/context/request-context';
 import { LeaveCoverageStatus, LeaveDecisionStatus } from './leave-request.entity';
 import {
+  LeaveCoverageRequiredException,
   LeaveStaleVersionException,
+  LeaveSubstituteEligibilityNotReadyException,
+  LeaveSubstituteIneligibleException,
+  LeaveSubstitutionInvalidException,
   LeaveTerminalStateException,
 } from './leave-errors';
 import { LeaveRepository } from './leave.repository';
@@ -34,6 +38,15 @@ const approvalImpact = {
     decisionSupportDetail: 'Aday listesi yalnız karar desteğidir.',
     items: [],
   },
+};
+
+/** #461 F4 — onayla aynı transaction'da yazılan yedek kapsaması sonrası etki. */
+const coveredImpact = {
+  ...approvalImpact,
+  coverageStatus: LeaveCoverageStatus.COVERED,
+  coverageLabel: 'Karşılandı',
+  resolvedLessonCount: 3,
+  openLessonCount: 0,
 };
 
 describe('LeaveRepository', () => {
@@ -78,6 +91,7 @@ describe('LeaveRepository', () => {
       row?: Record<string, unknown> | null;
       auditError?: Error;
       impactCoverage?: LeaveCoverageStatus;
+      coverageError?: Error;
     } = {}) {
       const manager = {
         findOne: jest.fn(async () => (options.row === null ? null : pendingRow(options.row))),
@@ -105,23 +119,41 @@ describe('LeaveRepository', () => {
             impact: { ...approvalImpact, coverageStatus: coverage },
           };
         }),
+        // #461 F4 — kapsama AYNI transaction'da uygulanır; burada port sınırı taklit edilir.
+        applyApprovalCoverage: jest.fn(
+          async (_manager: unknown, _ctx: unknown, _leave: unknown, substitutions: readonly unknown[]) => {
+            if (options.coverageError) throw options.coverageError;
+            if (substitutions.length === 0) throw new Error('LEAVE_COVERAGE_REQUIRED');
+            return {
+              coverageStatus: LeaveCoverageStatus.COVERED,
+              impact: coveredImpact,
+            };
+          },
+        ),
       };
       const leaves = new LeaveRepository({} as any, dataSource as any, audit as any, impact as any);
       return { leaves, manager, audit, impact, dataSource, impactInputs };
     }
 
-    it('prepares the impact and writes audit plus outbox on the same manager', async () => {
+    it('prepares the impact, applies coverage, and writes audit plus outbox on the same manager', async () => {
       const { leaves, manager, audit, impact, impactInputs } = setup();
+      const substitutions = [
+        { scheduleEventId: '40000000-0000-4000-8000-000000000001', substituteTeacherId: '20000000-0000-4000-8000-000000000002' },
+      ];
 
       const outcome = await leaves.decide(ctx, '90000000-0000-4000-8000-000000000001', {
         decision: LeaveDecisionStatus.APPROVED,
         decidedByUserId: 'manager-user',
         expectedVersion: 1,
+        substitutions,
       });
 
-      // Tek transaction: etki, audit ve outbox AYNI EntityManager örneğini kullanır.
+      // Tek transaction: etki, kapsama, audit ve outbox AYNI EntityManager örneğini kullanır.
       expect(impact.prepareApprovalImpact.mock.calls[0][0]).toBe(manager);
       expect(impact.prepareApprovalImpact.mock.calls[0][1]).toBe(ctx);
+      expect(impact.applyApprovalCoverage.mock.calls[0][0]).toBe(manager);
+      expect(impact.applyApprovalCoverage.mock.calls[0][1]).toBe(ctx);
+      expect(impact.applyApprovalCoverage.mock.calls[0][3]).toBe(substitutions);
       // Etki, karar yazılmadan ÖNCE bekleyen durumla hesaplanır.
       expect(impactInputs[0]).toEqual({
         version: 1,
@@ -135,13 +167,14 @@ describe('LeaveRepository', () => {
       );
       expect(manager.query.mock.calls[0][1][4]).toMatchObject({
         impactedLessonCount: 3,
-        openLessonCount: 3,
+        openLessonCount: 0,
         projectionPersisted: true,
       });
-      expect(outcome?.leave.coverageStatus).toBe(LeaveCoverageStatus.UNRESOLVED);
+      expect(outcome?.leave.coverageStatus).toBe(LeaveCoverageStatus.COVERED);
       expect(outcome?.leave.decisionStatus).toBe(LeaveDecisionStatus.APPROVED);
       expect(outcome?.leave.version).toBe(2);
       expect(outcome?.impact?.impactedLessonCount).toBe(3);
+      expect(outcome?.impact?.openLessonCount).toBe(0);
       expect(audit.write.mock.calls[0][1]).toBe('leave.approved.v1');
       expect(audit.write.mock.calls[0][2].changedFields).toEqual([
         'status',
@@ -149,6 +182,64 @@ describe('LeaveRepository', () => {
         'dailyOperationsProjection',
         'version',
       ]);
+    });
+
+    it('refuses approval while impacted lessons have no substitute coverage', async () => {
+      const { leaves, manager, audit, impact } = setup();
+
+      await expect(
+        leaves.decide(ctx, '90000000-0000-4000-8000-000000000001', {
+          decision: LeaveDecisionStatus.APPROVED,
+          decidedByUserId: 'manager-user',
+          expectedVersion: 1,
+        }),
+      ).rejects.toBeInstanceOf(LeaveCoverageRequiredException);
+
+      expect(impact.applyApprovalCoverage).toHaveBeenCalledWith(
+        manager,
+        ctx,
+        expect.anything(),
+        [],
+      );
+      expect(audit.write).not.toHaveBeenCalled();
+      expect(manager.save).not.toHaveBeenCalled();
+    });
+
+    it('maps invalid coverage selections and ineligible substitutes to explicit errors', async () => {
+      const invalid = setup({ coverageError: new Error('LEAVE_SUBSTITUTION_INVALID') });
+      await expect(
+        invalid.leaves.decide(ctx, '90000000-0000-4000-8000-000000000001', {
+          decision: LeaveDecisionStatus.APPROVED,
+          decidedByUserId: 'manager-user',
+          expectedVersion: 1,
+          substitutions: [],
+        }),
+      ).rejects.toBeInstanceOf(LeaveSubstitutionInvalidException);
+
+      const ineligible = setup({
+        coverageError: new Error('LEAVE_SUBSTITUTE_INELIGIBLE:TEACHER_COURSE_MISMATCH'),
+      });
+      await expect(
+        ineligible.leaves.decide(ctx, '90000000-0000-4000-8000-000000000001', {
+          decision: LeaveDecisionStatus.APPROVED,
+          decidedByUserId: 'manager-user',
+          expectedVersion: 1,
+          substitutions: [],
+        }),
+      ).rejects.toBeInstanceOf(LeaveSubstituteIneligibleException);
+      expect(ineligible.audit.write).not.toHaveBeenCalled();
+
+      const notReady = setup({
+        coverageError: new Error('LEAVE_SUBSTITUTE_ELIGIBILITY_NOT_READY'),
+      });
+      await expect(
+        notReady.leaves.decide(ctx, '90000000-0000-4000-8000-000000000001', {
+          decision: LeaveDecisionStatus.APPROVED,
+          decidedByUserId: 'manager-user',
+          expectedVersion: 1,
+          substitutions: [],
+        }),
+      ).rejects.toBeInstanceOf(LeaveSubstituteEligibilityNotReadyException);
     });
 
     it('does not compute impact for a rejection and keeps coverage untouched', async () => {
@@ -179,6 +270,12 @@ describe('LeaveRepository', () => {
           decision: LeaveDecisionStatus.APPROVED,
           decidedByUserId: 'manager-user',
           expectedVersion: 1,
+          substitutions: [
+            {
+              scheduleEventId: '40000000-0000-4000-8000-000000000001',
+              substituteTeacherId: '20000000-0000-4000-8000-000000000002',
+            },
+          ],
         }),
       ).rejects.toBe(failure);
       // Outbox yalnız audit başarılıysa denenir; rollback DB testinde kanıtlanır.

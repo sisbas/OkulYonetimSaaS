@@ -175,17 +175,24 @@
           <div class="section-head">
             <div>
               <p class="eyebrow">Bugün</p>
-              <h2>Bugün size ne lazım?</h2>
+              <h2>Günün akışı</h2>
             </div>
+            <button id="load-day" type="button">Günün akışını getir</button>
           </div>
           <div class="panel-intro">
-            <strong>Görev merkezi</strong>
-            <p class="hint">Rolünüze uygun görevler burada listelenir. Şube ve tarih seçtikten sonra günlük işler otomatik yüklenir.</p>
+            <strong>Operasyon gün kurulu</strong>
+            <p class="hint">Günün dersleri solda sırayla akar; yoklama dersin olduğu yerde alınır. Seçili dersin yoklama listesi ve karşılık ataması sağdaki kararda bekler.</p>
             <ul class="checklist">
-              <li>Şube ve tarih seçerek günlük işleri getirin.</li>
-              <li>Bekleyen izin taleplerinizi inceleyin.</li>
-              <li>Ders programınızı kontrol edin.</li>
+              <li>Şube ve tarih seçerek günün akışını getirin.</li>
+              <li>Dersin yanında yoklamayı yerinde işaretleyin veya tüm sınıfı Hazır yapın.</li>
+              <li>Devamsızlık istatistikleri her işaretlemeden sonra sunucudan yenilenir.</li>
+              <li>Öğretmensiz derste karşılık ataması aynı kuruldur; adaylar sunucudan listelenir.</li>
             </ul>
+          </div>
+          <div id="day-summary" role="status" aria-live="polite"></div>
+          <div class="day-split">
+            <div id="day-lessons" class="day-lessons" aria-label="Günün dersleri"></div>
+            <div id="day-rail" class="day-rail" aria-label="Ders kararı ve yoklama listesi"></div>
           </div>
         </section>
 
@@ -406,5 +413,6 @@
     <script src="/runtime/screens/notifications.js" defer></script>
     <script src="/runtime/screens/schedule.js" defer></script>
     <script src="/runtime/screens/attendance.js" defer></script>
+    <script src="/runtime/screens/day.js" defer></script>
   </body>
 </html>

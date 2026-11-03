@@ -1,4 +1,5 @@
 import {
+  buildAbsenceMessageBody,
   buildNotificationSnapshot,
   NotificationSnapshot,
 } from './notification-snapshot';
@@ -15,6 +16,8 @@ describe('buildNotificationSnapshot', () => {
     consentId: 'consent-uuid-1',
     consentVersion: 2,
     eventType: 'attendance.absent.locked',
+    messageBody:
+      'Sayın veli, öğrenciniz 14.09.2026 tarihinde 09:00–10:00 saatleri arasındaki derste devamsız olarak işaretlenmiştir. Bilgilerinize sunarız.',
   };
 
   it('builds a complete immutable snapshot', () => {
@@ -33,7 +36,34 @@ describe('buildNotificationSnapshot', () => {
     expect(snapshot.template.eventType).toBe('attendance.absent.locked');
     expect(snapshot.template.channel).toBe('sms');
     expect(snapshot.template.templateRef).toBe('attendance.absent.locked:sms');
+    expect(snapshot.message.subjectLabel).toBe('Devamsızlık bildirimi');
+    expect(snapshot.message.body).toBe(baseInput.messageBody);
+    expect(snapshot.message.containsPii).toBe(false);
     expect(snapshot.enqueuedAt).toBeDefined();
+  });
+
+  it('builds a PII-free absence body with date and time labels', () => {
+    const snapshot = buildNotificationSnapshot({
+      ...baseInput,
+      messageBody: buildAbsenceMessageBody({
+        sessionDate: '2026-09-14',
+        startTime: '09:00:00',
+        endTime: '10:00:00',
+      }),
+    });
+    expect(snapshot.message.body).toBe(
+      'Sayın veli, öğrenciniz 14.09.2026 tarihinde 09:00–10:00 saatleri arasındaki derste devamsız olarak işaretlenmiştir. Bilgilerinize sunarız.',
+    );
+    expect(snapshot.message.body).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/i);
+  });
+
+  it('omits the time claim when the schedule time is unknown', () => {
+    const snapshot = buildNotificationSnapshot({
+      ...baseInput,
+      messageBody: buildAbsenceMessageBody({ sessionDate: '2026-09-14' }),
+    });
+    expect(snapshot.message.body).toContain('14.09.2026 tarihinde devamsız');
+    expect(snapshot.message.body).not.toContain('–');
   });
 
   it('includes masked display and verification status when provided', () => {

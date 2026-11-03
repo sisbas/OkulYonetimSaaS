@@ -6,6 +6,11 @@ import { RequestContext } from '../../src/common/context/request-context';
 import { DailyOperationsRepository } from '../../src/daily-operations/daily-operations.repository';
 import { TransactionalLeaveAuditAdapter } from '../../src/leaves/leave-audit.adapter';
 import { LeaveSelfDecisionException, LeaveOverlapException, LeaveStaleVersionException } from '../../src/leaves/leave-errors';
+import {
+  LeaveCoverageRequiredException,
+  LeaveSubstituteIneligibleException,
+  LeaveSubstitutionInvalidException,
+} from '../../src/leaves/leave-errors';
 import { LeaveIdentityService } from '../../src/leaves/leave-identity.service';
 import { LeaveCoverageStatus, LeaveDecisionStatus, LeaveDurationType, LeaveReasonCode, LeaveRequest } from '../../src/leaves/leave-request.entity';
 import { LeaveRepository } from '../../src/leaves/leave.repository';
@@ -74,10 +79,10 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
   let impactEngine: DailyOperationsRepository;
 
   const tenantScopedTables = [
-    'daily_operation_lessons', 'leave_outbox_events', 'leave_requests', 'schedule_events',
-    'schedule_versions', 'schedules', 'audit_logs', 'teacher_courses', 'teacher_branches',
-    'teachers', 'student_groups', 'courses', 'rooms', 'time_slots', 'tenant_memberships',
-    'branches',
+    'leave_substitution_assignments', 'daily_operation_lessons', 'leave_outbox_events',
+    'leave_requests', 'schedule_events', 'schedule_versions', 'schedules', 'audit_logs',
+    'teacher_courses', 'teacher_branches', 'teachers', 'student_groups', 'courses', 'rooms',
+    'time_slots', 'tenant_memberships', 'branches',
   ] as const;
 
   async function cleanup(): Promise<void> {
@@ -221,19 +226,32 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
     return Number(rows[0].n);
   }
 
-  it('approves with the server-computed impact, readable names and same-transaction rows', async () => {
+  it('approves with server-computed impact, inline substitute coverage and same-transaction rows', async () => {
     await publishSchedule();
     const leave = await createPendingLeave();
 
+    // #461 F4 — karar öncesi önizleme: açık dersler ve okunabilir adlar.
+    const preview = await impactEngine.impact(managerCtx, leave.id);
+    expect(preview.openLessonCount).toBe(3);
+    expect(preview.coverageStatus).toBe(LeaveCoverageStatus.UNRESOLVED);
+    const substitutions = preview.events.map((event) => ({
+      scheduleEventId: event.scheduleEventId,
+      substituteTeacherId: SUBSTITUTE,
+    }));
+
     const response = await leaveService.decide(
-      managerCtx, leave.id, { decision: LeaveDecisionStatus.APPROVED }, leaveEtag(leave.id, leave.version),
+      managerCtx,
+      leave.id,
+      { decision: LeaveDecisionStatus.APPROVED, substitutions },
+      leaveEtag(leave.id, leave.version),
     );
 
-    // Okunabilir etki: ham UUID yok, adlar çözümlendi.
+    // Okunabilir etki: ham UUID yok, adlar çözümlendi; kapsama karşılandı.
     expect(response.decisionLabel).toBe('Onaylandı');
     expect(response.summary).toContain('3 ders etkilendi');
+    expect(response.summary).toContain('0 ders karşılık bekliyor');
     expect(response.impact).toMatchObject({
-      coverageLabel: 'Karşılık bekliyor', impactedLessonCount: 3, zeroImpact: false,
+      coverageLabel: 'Karşılandı', impactedLessonCount: 3, openLessonCount: 0, zeroImpact: false,
     });
     expect(response.impact?.lessons.map((lesson) => lesson.lessonLabel)).toEqual([
       'Matematik · 5-A · 09:00–10:00 · 14.09.2026',
@@ -245,7 +263,7 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
       groupLabel: '5-A',
       roomLabel: 'Derslik 1',
       teacherLabel: 'Ayşe Yılmaz',
-      stateLabel: 'Açık',
+      stateLabel: 'Karşılandı',
     });
     expect(response.impact?.candidates.finalized).toBe(true);
     expect(response.impact?.candidates.items).toEqual([
@@ -254,16 +272,26 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
 
     const leaveRows = await dataSource.query('SELECT decision_status, coverage_status, version, decided_by_user_id FROM leave_requests WHERE id = $1', [leave.id]);
     expect(leaveRows[0]).toMatchObject({
-      decision_status: 'approved', coverage_status: 'unresolved', version: 2, decided_by_user_id: MANAGER_USER,
+      decision_status: 'approved', coverage_status: 'covered', version: 2, decided_by_user_id: MANAGER_USER,
     });
 
+    // Yedek atamaları onayla AYNI transaction'da yazıldı.
+    const assignments = await dataSource.query(
+      `SELECT substitute_teacher_id, schedule_event_id, occurrence_date::text AS occurrence
+       FROM leave_substitution_assignments WHERE leave_request_id = $1 ORDER BY occurrence_date`,
+      [leave.id],
+    );
+    expect(assignments).toHaveLength(3);
+    expect(assignments.every((row: any) => row.substitute_teacher_id === SUBSTITUTE)).toBe(true);
+
     const lessons = await dataSource.query(
-      `SELECT state, coverage_status, occurrence_date::text AS occurrence
+      `SELECT state, coverage_status, substitute_assignment_id, occurrence_date::text AS occurrence
        FROM daily_operation_lessons WHERE leave_request_id = $1 ORDER BY occurrence_date`,
       [leave.id],
     );
     expect(lessons.map((row: any) => row.occurrence)).toEqual(['2026-09-14', '2026-09-21', '2026-09-28']);
-    expect(lessons.every((row: any) => row.state === 'open' && row.coverage_status === 'unresolved')).toBe(true);
+    expect(lessons.every((row: any) => row.state === 'resolved' && row.coverage_status === 'covered')).toBe(true);
+    expect(lessons.every((row: any) => row.substitute_assignment_id !== null)).toBe(true);
 
     const auditRows = await dataSource.query("SELECT action, metadata_json FROM audit_logs WHERE entity_id = $1 AND action = 'leave.approved.v1'", [leave.id]);
     expect(auditRows).toHaveLength(1);
@@ -278,7 +306,7 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
     const outboxRows = await dataSource.query('SELECT event_name, payload_json FROM leave_outbox_events WHERE leave_request_id = $1', [leave.id]);
     expect(outboxRows.map((row: any) => row.event_name).sort()).toEqual(['leave.approved.v1', 'leave.requested.v1']);
     expect(outboxRows.find((row: any) => row.event_name === 'leave.approved.v1').payload_json)
-      .toMatchObject({ impactedLessonCount: 3, openLessonCount: 3, projectionPersisted: true });
+      .toMatchObject({ impactedLessonCount: 3, openLessonCount: 0, projectionPersisted: true });
 
     // KVKK: çözümlenen adlar audit/outbox'a sızmaz.
     const persisted = JSON.stringify([auditRows, outboxRows]);
@@ -286,9 +314,114 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
     expect(persisted).not.toContain('Zeynep');
   });
 
+  it('refuses approval without full substitute coverage and writes nothing', async () => {
+    await publishSchedule();
+    const leave = await createPendingLeave();
+
+    await expect(
+      leaveService.decide(
+        managerCtx,
+        leave.id,
+        { decision: LeaveDecisionStatus.APPROVED },
+        leaveEtag(leave.id, leave.version),
+      ),
+    ).rejects.toBeInstanceOf(LeaveCoverageRequiredException);
+
+    const unchanged = await dataSource.query('SELECT decision_status, coverage_status, version FROM leave_requests WHERE id = $1', [leave.id]);
+    expect(unchanged[0]).toMatchObject({ decision_status: 'pending', coverage_status: 'not_required', version: 1 });
+    expect(await countRows('SELECT COUNT(*)::int AS n FROM leave_substitution_assignments WHERE leave_request_id = $1', [leave.id])).toBe(0);
+    expect(await countRows('SELECT COUNT(*)::int AS n FROM daily_operation_lessons WHERE leave_request_id = $1', [leave.id])).toBe(0);
+    expect(await countRows("SELECT COUNT(*)::int AS n FROM audit_logs WHERE entity_id = $1 AND action = 'leave.approved.v1'", [leave.id])).toBe(0);
+  });
+
+  it('rejects partial, duplicated or unknown substitution selections', async () => {
+    await publishSchedule();
+    const leave = await createPendingLeave();
+    const preview = await impactEngine.impact(managerCtx, leave.id);
+    const [first, second, third] = preview.events;
+
+    await expect(
+      leaveService.decide(
+        managerCtx,
+        leave.id,
+        {
+          decision: LeaveDecisionStatus.APPROVED,
+          substitutions: [
+            { scheduleEventId: first.scheduleEventId, substituteTeacherId: SUBSTITUTE },
+            { scheduleEventId: second.scheduleEventId, substituteTeacherId: SUBSTITUTE },
+          ],
+        },
+        leaveEtag(leave.id, leave.version),
+      ),
+    ).rejects.toBeInstanceOf(LeaveCoverageRequiredException);
+
+    await expect(
+      leaveService.decide(
+        managerCtx,
+        leave.id,
+        {
+          decision: LeaveDecisionStatus.APPROVED,
+          substitutions: [
+            { scheduleEventId: first.scheduleEventId, substituteTeacherId: SUBSTITUTE },
+            { scheduleEventId: first.scheduleEventId, substituteTeacherId: SUBSTITUTE },
+            { scheduleEventId: second.scheduleEventId, substituteTeacherId: SUBSTITUTE },
+            { scheduleEventId: third.scheduleEventId, substituteTeacherId: SUBSTITUTE },
+          ],
+        },
+        leaveEtag(leave.id, leave.version),
+      ),
+    ).rejects.toBeInstanceOf(LeaveSubstitutionInvalidException);
+
+    await expect(
+      leaveService.decide(
+        managerCtx,
+        leave.id,
+        {
+          decision: LeaveDecisionStatus.APPROVED,
+          substitutions: [
+            { scheduleEventId: 'b0000000-0000-4000-8000-0000000000ff', substituteTeacherId: SUBSTITUTE },
+            { scheduleEventId: second.scheduleEventId, substituteTeacherId: SUBSTITUTE },
+            { scheduleEventId: third.scheduleEventId, substituteTeacherId: SUBSTITUTE },
+          ],
+        },
+        leaveEtag(leave.id, leave.version),
+      ),
+    ).rejects.toBeInstanceOf(LeaveSubstitutionInvalidException);
+
+    expect(await countRows('SELECT COUNT(*)::int AS n FROM leave_substitution_assignments WHERE leave_request_id = $1', [leave.id])).toBe(0);
+    expect(await countRows('SELECT COUNT(*)::int AS n FROM daily_operation_lessons WHERE leave_request_id = $1', [leave.id])).toBe(0);
+  });
+
+  it('rejects an ineligible substitute and keeps the leave pending', async () => {
+    await publishSchedule();
+    const leave = await createPendingLeave();
+    const preview = await impactEngine.impact(managerCtx, leave.id);
+
+    await expect(
+      leaveService.decide(
+        managerCtx,
+        leave.id,
+        {
+          decision: LeaveDecisionStatus.APPROVED,
+          // Asıl öğretmenin dersi yok: uygunluk kaynağı reddeder.
+          substitutions: preview.events.map((event) => ({
+            scheduleEventId: event.scheduleEventId,
+            substituteTeacherId: TEACHER,
+          })),
+        },
+        leaveEtag(leave.id, leave.version),
+      ),
+    ).rejects.toBeInstanceOf(LeaveSubstituteIneligibleException);
+
+    const unchanged = await dataSource.query('SELECT decision_status, coverage_status FROM leave_requests WHERE id = $1', [leave.id]);
+    expect(unchanged[0]).toMatchObject({ decision_status: 'pending', coverage_status: 'not_required' });
+    expect(await countRows('SELECT COUNT(*)::int AS n FROM leave_substitution_assignments WHERE leave_request_id = $1', [leave.id])).toBe(0);
+  });
+
   it('rolls back decision, projections, audit and outbox together when the audit insert fails', async () => {
     await publishSchedule();
     const leave = await createPendingLeave();
+    const preview = await impactEngine.impact(managerCtx, leave.id);
     const failingRepository = new LeaveRepository(
       dataSource.getRepository(LeaveRequest),
       dataSource,
@@ -301,14 +434,19 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
         decision: LeaveDecisionStatus.APPROVED,
         decidedByUserId: MANAGER_USER,
         expectedVersion: leave.version,
+        substitutions: preview.events.map((event) => ({
+          scheduleEventId: event.scheduleEventId,
+          substituteTeacherId: SUBSTITUTE,
+        })),
       }),
     ).rejects.toThrow('forced audit failure');
 
-    // Kısmi kayıt YOK: karar, projeksiyon, audit ve outbox birlikte geri alındı.
+    // Kısmi kayıt YOK: karar, yedek atamaları, projeksiyon, audit ve outbox birlikte geri alındı.
     const rolledBack = await dataSource.query('SELECT decision_status, coverage_status, version FROM leave_requests WHERE id = $1', [leave.id]);
     expect(rolledBack[0]).toMatchObject({
       decision_status: 'pending', coverage_status: 'not_required', version: 1,
     });
+    expect(await countRows('SELECT COUNT(*)::int AS n FROM leave_substitution_assignments WHERE leave_request_id = $1', [leave.id])).toBe(0);
     expect(await countRows('SELECT COUNT(*)::int AS n FROM daily_operation_lessons WHERE leave_request_id = $1', [leave.id])).toBe(0);
     expect(await countRows("SELECT COUNT(*)::int AS n FROM audit_logs WHERE entity_id = $1 AND action = 'leave.approved.v1'", [leave.id])).toBe(0);
     expect(await countRows("SELECT COUNT(*)::int AS n FROM leave_outbox_events WHERE leave_request_id = $1 AND event_name = 'leave.approved.v1'", [leave.id])).toBe(0);
@@ -388,14 +526,26 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
 
     const unchanged = await dataSource.query('SELECT decision_status, coverage_status, version FROM leave_requests WHERE id = $1', [leave.id]);
     expect(unchanged[0]).toMatchObject({ decision_status: 'pending', coverage_status: 'not_required', version: 1 });
+    expect(await countRows('SELECT COUNT(*)::int AS n FROM leave_substitution_assignments WHERE leave_request_id = $1', [leave.id])).toBe(0);
     expect(await countRows('SELECT COUNT(*)::int AS n FROM daily_operation_lessons WHERE leave_request_id = $1', [leave.id])).toBe(0);
 
     // Doğru sürümle karar hâlâ verilebilir (kilitli kalan bir kayıt yok).
+    const preview = await impactEngine.impact(managerCtx, leave.id);
     const retried = await leaveService.decide(
-      managerCtx, leave.id, { decision: LeaveDecisionStatus.APPROVED }, leaveEtag(leave.id, leave.version),
+      managerCtx,
+      leave.id,
+      {
+        decision: LeaveDecisionStatus.APPROVED,
+        substitutions: preview.events.map((event) => ({
+          scheduleEventId: event.scheduleEventId,
+          substituteTeacherId: SUBSTITUTE,
+        })),
+      },
+      leaveEtag(leave.id, leave.version),
     );
     expect(retried.version).toBe(2);
     expect(retried.impact?.impactedLessonCount).toBe(3);
+    expect(retried.impact?.openLessonCount).toBe(0);
   });
 
   it('rejects a second overlapping pending leave for the same teacher', async () => {

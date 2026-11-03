@@ -55,7 +55,7 @@ export class CourseRepository {
     }
 
     const [data, total] = await qb
-      .orderBy('course.created_at', 'DESC')
+      .orderBy('course.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
