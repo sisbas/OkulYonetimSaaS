@@ -12,6 +12,9 @@ const branchY = '20000000-0000-4000-8000-000000000002';
 const sessionX = '30000000-0000-4000-8000-000000000001';
 const sessionY = '30000000-0000-4000-8000-000000000002';
 const sessionB = '30000000-0000-4000-8000-000000000003';
+const eventX = '60000000-0000-4000-8000-000000000001';
+const eventY = '60000000-0000-4000-8000-000000000002';
+const eventB = '60000000-0000-4000-8000-000000000003';
 const student = '40000000-0000-4000-8000-000000000001';
 const actor = '50000000-0000-4000-8000-000000000001';
 const ctx: RequestContext = { requestId: 'n0-regression', tenantId: tenantA, branchId: branchX };
@@ -29,7 +32,8 @@ withPostgres('N0 real PostgreSQL scope and canonical transaction regressions', (
 
   async function fixture(manager: EntityManager) {
     await manager.query(`
-      CREATE TEMP TABLE attendance_sessions (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, status text) ON COMMIT DROP;
+      CREATE TEMP TABLE attendance_sessions (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, schedule_event_id uuid, status text) ON COMMIT DROP;
+      CREATE TEMP TABLE schedule_events (id uuid PRIMARY KEY, tenant_id uuid, start_time time, end_time time) ON COMMIT DROP;
       CREATE TEMP TABLE attendance_records (tenant_id uuid, session_id uuid, student_id uuid, status text) ON COMMIT DROP;
       CREATE TEMP TABLE kvkk_consent_subjects (id uuid, tenant_id uuid, subject_ref_id uuid, subject_type text, status text) ON COMMIT DROP;
       CREATE TEMP TABLE kvkk_consents (id uuid, tenant_id uuid, subject_id uuid, consent_type text, status text, revoked_at timestamptz, expires_at timestamptz, version int, created_at timestamptz) ON COMMIT DROP;
@@ -42,9 +46,15 @@ withPostgres('N0 real PostgreSQL scope and canonical transaction regressions', (
         available_at timestamptz DEFAULT now(), UNIQUE (tenant_id, dedupe_key)
       ) ON COMMIT DROP;
     `);
+    // F3 sonrasında attendance_sessions schedule_event_id taşır; absence
+    // bildirimi mesaj saatlerini schedule_events join'inden okur (N0 fixture
+    // sözleşmesi — gerçek şemayla hizalı kalır).
     await manager.query(`INSERT INTO attendance_sessions VALUES
-      ($1, $2, $3, 'locked'), ($4, $2, $5, 'locked'), ($6, $7, $3, 'locked')`,
-      [sessionX, tenantA, branchX, sessionY, branchY, sessionB, tenantB]);
+      ($1, $2, $3, $4, 'locked'), ($5, $2, $6, $7, 'locked'), ($8, $9, $10, $11, 'locked')`,
+      [sessionX, tenantA, branchX, eventX, sessionY, branchY, eventY, sessionB, tenantB, branchX, eventB]);
+    await manager.query(`INSERT INTO schedule_events VALUES
+      ($1, $2, '09:00', '10:00'), ($3, $2, '10:00', '11:00'), ($4, $5, '09:00', '10:00')`,
+      [eventX, tenantA, eventY, eventB, tenantB]);
   }
 
   it('A/X sees only its due pending projection; excludes cross-tenant/session mismatch and non-due states', async () => {
