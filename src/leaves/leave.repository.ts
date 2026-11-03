@@ -106,7 +106,7 @@ export class LeaveRepository {
     if (query.from) qb.andWhere('leave.ends_at >= :from', { from: query.from });
     if (query.to) qb.andWhere('leave.starts_at <= :to', { to: query.to });
 
-    return qb.orderBy('leave.starts_at', 'ASC').addOrderBy('leave.created_at', 'ASC').getMany();
+    return qb.orderBy('leave.startsAt', 'ASC').addOrderBy('leave.createdAt', 'ASC').getMany();
   }
 
   async findTenantScoped(ctx: RequestContext, id: string): Promise<LeaveRequest | null> {

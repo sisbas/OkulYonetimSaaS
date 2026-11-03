@@ -89,8 +89,8 @@ export class StudentRepository {
     }
 
     const [data, total] = await qb
-      .orderBy('student.last_name', 'ASC')
-      .addOrderBy('student.first_name', 'ASC')
+      .orderBy('student.lastName', 'ASC')
+      .addOrderBy('student.firstName', 'ASC')
       .addOrderBy('student.id', 'ASC')
       .skip((page - 1) * limit)
       .take(limit)
@@ -172,8 +172,8 @@ export class StudentRepository {
       });
 
     const [data, total] = await qb
-      .orderBy('student.last_name', 'ASC')
-      .addOrderBy('student.first_name', 'ASC')
+      .orderBy('student.lastName', 'ASC')
+      .addOrderBy('student.firstName', 'ASC')
       .addOrderBy('student.id', 'ASC')
       .skip((page - 1) * limit)
       .take(limit)
@@ -218,8 +218,8 @@ export class StudentRepository {
       .andWhere('member.status = :membershipStatus', {
         membershipStatus: StudentGroupMembershipStatus.ACTIVE,
       })
-      .orderBy('student.last_name', 'ASC')
-      .addOrderBy('student.first_name', 'ASC')
+      .orderBy('student.lastName', 'ASC')
+      .addOrderBy('student.firstName', 'ASC')
       .addOrderBy('student.id', 'ASC')
       .getMany();
     return rows.map((member) => member.studentId);
@@ -247,8 +247,8 @@ export class StudentRepository {
       .andWhere('student.branch_id = :branchId', { branchId })
       .andWhere('student.id IN (:...studentIds)', { studentIds: [...studentIds] })
       .andWhere('student.deleted_at IS NULL')
-      .orderBy('student.last_name', 'ASC')
-      .addOrderBy('student.first_name', 'ASC')
+      .orderBy('student.lastName', 'ASC')
+      .addOrderBy('student.firstName', 'ASC')
       .addOrderBy('student.id', 'ASC')
       .getMany();
     return rows.map((student) => ({

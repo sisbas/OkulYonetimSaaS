@@ -32,7 +32,7 @@ withPostgres('N0 real PostgreSQL scope and canonical transaction regressions', (
 
   async function fixture(manager: EntityManager) {
     await manager.query(`
-      CREATE TEMP TABLE attendance_sessions (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, schedule_event_id uuid, status text) ON COMMIT DROP;
+      CREATE TEMP TABLE attendance_sessions (id uuid PRIMARY KEY, tenant_id uuid, branch_id uuid, schedule_event_id uuid, session_date date, status text) ON COMMIT DROP;
       CREATE TEMP TABLE schedule_events (id uuid PRIMARY KEY, tenant_id uuid, start_time time, end_time time) ON COMMIT DROP;
       CREATE TEMP TABLE attendance_records (tenant_id uuid, session_id uuid, student_id uuid, status text) ON COMMIT DROP;
       CREATE TEMP TABLE kvkk_consent_subjects (id uuid, tenant_id uuid, subject_ref_id uuid, subject_type text, status text) ON COMMIT DROP;
@@ -46,11 +46,12 @@ withPostgres('N0 real PostgreSQL scope and canonical transaction regressions', (
         available_at timestamptz DEFAULT now(), UNIQUE (tenant_id, dedupe_key)
       ) ON COMMIT DROP;
     `);
-    // F3 sonrasında attendance_sessions schedule_event_id taşır; absence
-    // bildirimi mesaj saatlerini schedule_events join'inden okur (N0 fixture
-    // sözleşmesi — gerçek şemayla hizalı kalır).
+    // F3 sonrasında attendance_sessions schedule_event_id ve session_date
+    // taşır; absence bildirimi mesaj saatlerini schedule_events join'inden,
+    // mesaj tarihini session_date'den okur (N0 fixture sözleşmesi — gerçek
+    // şemayla hizalı kalır).
     await manager.query(`INSERT INTO attendance_sessions VALUES
-      ($1, $2, $3, $4, 'locked'), ($5, $2, $6, $7, 'locked'), ($8, $9, $10, $11, 'locked')`,
+      ($1, $2, $3, $4, DATE '2026-09-14', 'locked'), ($5, $2, $6, $7, DATE '2026-09-14', 'locked'), ($8, $9, $10, $11, DATE '2026-09-14', 'locked')`,
       [sessionX, tenantA, branchX, eventX, sessionY, branchY, eventY, sessionB, tenantB, branchX, eventB]);
     await manager.query(`INSERT INTO schedule_events VALUES
       ($1, $2, '09:00', '10:00'), ($3, $2, '10:00', '11:00'), ($4, $5, '09:00', '10:00')`,
