@@ -27,6 +27,8 @@ const state = {
   scheduleRevision: 0,
   scheduleEvents: [],
   activeAttendanceSessionId: '',
+  activeDaySessionId: '',
+  dayLessonCount: 0,
   rateLimitedUntil: 0,
   lastAction: 'Henüz işlem yapılmadı.',
 };
@@ -368,6 +370,7 @@ const ROUTE_PERMISSIONS = [
   { method: 'PATCH', path: '/leaves/:id/approve', permission: 'leave:approve' },
   { method: 'PATCH', path: '/leaves/:id/reject', permission: 'leave:reject' },
   { method: 'GET', path: '/daily-operations/today', permission: 'daily_operations:read' },
+  { method: 'GET', path: '/daily-operations/day', permission: 'daily_operations:read' },
   { method: 'GET', path: '/daily-operations/leaves/:leaveId/impact', permission: 'leave:impact:read' },
   { method: 'GET', path: '/daily-operations/leaves/:leaveId/events/:scheduleEventId/candidates', permission: 'leave:impact:read' },
   { method: 'POST', path: '/daily-operations/leaves/:leaveId/events/:scheduleEventId/substitution', permission: 'daily_operations:update' },
@@ -391,7 +394,9 @@ const ROUTE_PERMISSIONS = [
   { method: 'GET', path: '/attendance/sessions', permission: 'attendance:own:read' },
   { method: 'POST', path: '/attendance/sessions', permission: 'attendance:generate' },
   { method: 'GET', path: '/attendance/sessions/:id/records', permission: 'attendance:own:read' },
+  { method: 'GET', path: '/attendance/sessions/:id/roster', permission: 'attendance:own:read' },
   { method: 'POST', path: '/attendance/sessions/:id/records', permission: 'attendance:record:update' },
+  { method: 'POST', path: '/attendance/sessions/:id/records/present', permission: 'attendance:record:update' },
   { method: 'POST', path: '/attendance/sessions/:id/lock', permission: 'attendance:lock' },
   { method: 'POST', path: '/attendance/sessions/:id/records/:studentId/correction', permission: 'attendance:update' },
 ];
@@ -608,7 +613,9 @@ function clearBranchWork() {
   state.scheduleRevision = 0;
   state.scheduleEvents = [];
   state.activeAttendanceSessionId = '';
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail']) {
+  state.activeDaySessionId = '';
+  state.dayLessonCount = 0;
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail', '#day-summary', '#day-lessons', '#day-rail']) {
     $(id).innerHTML = '';
   }
 }
@@ -1328,6 +1335,14 @@ const EMPTY_COPY = {
   attendance: {
     title: 'Yoklama oturumu yok',
     message: 'Bu kapsamda yoklama oturumu yok.',
+  },
+  day: {
+    title: 'Gün programı boş',
+    message: 'Bu kapsamda yayınlanmış ders yok. Şube veya tarih değiştirip yeniden deneyin.',
+  },
+  dayRail: {
+    title: 'Yoklama listesi boş',
+    message: 'Bu yoklama oturumunun öğrenci kaydı yok.',
   },
   impact: {
     title: 'Etki yok',

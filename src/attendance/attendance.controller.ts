@@ -174,6 +174,22 @@ export class AttendanceSessionController {
     return session;
   }
 
+  /**
+   * #461/#454 — sunucu-türetimli roster okuma yüzeyi: PII-az etiketler,
+   * tek tek kayıt durumları ve sunucu hesaplı canlı özet. Sahiplik/gözetim
+   * TeacherOwnLessonGuard + servis access kontrolüyle fail-closed korunur.
+   */
+  @Get(':id/roster')
+  @Permissions('attendance:own:read')
+  @UseGuards(TeacherOwnLessonGuard)
+  async getSessionRoster(
+    @Req() req: AttendanceRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const actor = await this.resolveActor(req);
+    return this.sessionService.getSessionRoster(actor, id);
+  }
+
   @Get()
   @Permissions('attendance:own:read')
   async list(@Req() req: RequestWithContext) {

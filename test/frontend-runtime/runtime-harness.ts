@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import * as vm from 'node:vm';
 
 const RUNTIME_ROOT = path.join(process.cwd(), 'frontend/runtime');
-const SCREEN_MODULES = ['decisions', 'consents', 'notifications', 'schedule', 'attendance'];
+const SCREEN_MODULES = ['decisions', 'consents', 'notifications', 'schedule', 'attendance', 'day'];
 
 // Core first, then the screen modules in the order index.html loads them, so a
 // probe can drive any screen the way the browser does.

@@ -225,6 +225,39 @@ export class StudentRepository {
     return rows.map((member) => member.studentId);
   }
 
+  /**
+   * #461/#454 — yoklama oturumu roster okuma yüzeyi: PII-az etiketler.
+   *
+   * Kiracı+şube sınırıyla sınırlıdır ve YALNIZ kimlik, öğrenci numarası ve
+   * ad-soyad döner; doğum tarihi/iletişim/veli veya rıza alanları bu yüzeyde
+   * hiçbir koşulda yoktur. Sıra group-roster ile aynı deterministiktir
+   * (soyad, ad, kimlik). Silinmiş student satırı döndürülmez; snapshot'ta
+   * kalan eşleşmeyen kimlikler servis katmanında genel bir satırla temsil edilir.
+   */
+  async listRosterStudentDetails(
+    ctx: RequestContext,
+    branchId: string,
+    studentIds: readonly string[],
+  ): Promise<ReadonlyArray<{ id: string; studentCode: string; studentLabel: string }>> {
+    assertTenantScope(ctx, 'students');
+    if (!studentIds.length) return [];
+    const rows = await this.students
+      .createQueryBuilder('student')
+      .where('student.tenant_id = :tenantId', { tenantId: ctx.tenantId })
+      .andWhere('student.branch_id = :branchId', { branchId })
+      .andWhere('student.id IN (:...studentIds)', { studentIds: [...studentIds] })
+      .andWhere('student.deleted_at IS NULL')
+      .orderBy('student.last_name', 'ASC')
+      .addOrderBy('student.first_name', 'ASC')
+      .addOrderBy('student.id', 'ASC')
+      .getMany();
+    return rows.map((student) => ({
+      id: student.id,
+      studentCode: student.studentCode ?? '',
+      studentLabel: `${student.firstName} ${student.lastName}`.trim(),
+    }));
+  }
+
   async branchExistsInTenant(
     ctx: RequestContext,
     branchId: string,

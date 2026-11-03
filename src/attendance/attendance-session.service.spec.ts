@@ -115,7 +115,10 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
       ),
     };
     audit = { write: jest.fn(async () => undefined) };
-    students = { listRosterStudentIds: jest.fn(async () => ['s1', 's2', 's3']) };
+    students = {
+      listRosterStudentIds: jest.fn(async () => ['s1', 's2', 's3']),
+      listRosterStudentDetails: jest.fn(async () => []),
+    };
     absenceNotifications = {
       enqueueLockedAbsenceNotifications: jest.fn(async () => ({
         sessionStatus: 'locked',
@@ -456,6 +459,108 @@ describe('AttendanceSessionService (OKUL-06, #265)', () => {
       service.markAllPresent(otherTeacherActor, 'sess-1'),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(recordRepo.upsert).not.toHaveBeenCalled();
+  });
+
+  // --- getSessionRoster (#461/#454): salt-okunur roster okuma yüzeyi ---
+
+  it('getSessionRoster merges PII-az labels, record statuses and the server-computed summary', async () => {
+    sessionRepo.findOne = jest.fn(async () =>
+      publishedSession({ branchId: 'b1' }),
+    );
+    recordRepo.find = jest.fn(async () => [
+      { studentId: 's1', status: 'absent' },
+      { studentId: 's2', status: 'late' },
+    ]);
+    students.listRosterStudentDetails = jest.fn(async () => [
+      { id: 's2', studentCode: '102', studentLabel: 'Ece Aydın' },
+      { id: 's1', studentCode: '101', studentLabel: 'Ada Demir' },
+      { id: 's3', studentCode: '103', studentLabel: 'Can Efe' },
+    ]);
+
+    const body = await service.getSessionRoster(managerActor, 'sess-1');
+
+    expect(students.listRosterStudentDetails).toHaveBeenCalledWith(
+      { tenantId: 't1', requestId: 'req-test' },
+      'b1',
+      ['s1', 's2', 's3'],
+    );
+    expect(body.tenantScoped).toBe(true);
+    expect(body.status).toBe(AttendanceSessionStatus.PUBLISHED);
+    expect(body.sessionVersion).toBe(1);
+    expect(body.rows.map((row) => row.studentId)).toEqual(['s1', 's2', 's3']);
+    expect(body.rows[0]).toEqual({
+      studentId: 's1',
+      studentCode: '101',
+      studentLabel: 'Ada Demir',
+      status: 'absent',
+    });
+    expect(body.rows[1].status).toBe('late');
+    expect(body.rows[2]).toEqual({
+      studentId: 's3',
+      studentCode: '103',
+      studentLabel: 'Can Efe',
+      status: 'not_marked',
+    });
+    expect(body.summary).toEqual({
+      rosterCount: 3,
+      recordedCount: 2,
+      unrecordedCount: 1,
+      presentCount: 0,
+      absentCount: 1,
+      lateCount: 1,
+      excusedCount: 0,
+    });
+  });
+
+  it('getSessionRoster keeps a snapshot id without an active student row as a generic row', async () => {
+    sessionRepo.findOne = jest.fn(async () =>
+      publishedSession({ branchId: 'b1' }),
+    );
+    students.listRosterStudentDetails = jest.fn(async () => [
+      { id: 's1', studentCode: '101', studentLabel: 'Ada Demir' },
+    ]);
+
+    const body = await service.getSessionRoster(managerActor, 'sess-1');
+
+    expect(body.rows.map((row) => row.studentId)).toEqual(['s1', 's2', 's3']);
+    expect(body.rows[1]).toEqual({
+      studentId: 's2',
+      studentCode: '',
+      studentLabel: 'Kayıt bekleyen öğrenci',
+      status: 'not_marked',
+    });
+    expect(body.summary.rosterCount).toBe(3);
+  });
+
+  it('getSessionRoster skips record lookup entirely for an empty roster snapshot', async () => {
+    sessionRepo.findOne = jest.fn(async () =>
+      publishedSession({ rosterSnapshot: null, branchId: 'b1' }),
+    );
+
+    const body = await service.getSessionRoster(managerActor, 'sess-1');
+
+    expect(recordRepo.find).not.toHaveBeenCalled();
+    expect(students.listRosterStudentDetails).toHaveBeenCalledWith(
+      expect.anything(),
+      'b1',
+      [],
+    );
+    expect(body.rows).toEqual([]);
+    expect(body.summary.rosterCount).toBe(0);
+  });
+
+  it('getSessionRoster rejects an unknown session and a non-owner teacher (BOLA negative)', async () => {
+    sessionRepo.findOne = jest.fn(async () => null);
+    await expect(
+      service.getSessionRoster(managerActor, 'missing'),
+    ).rejects.toThrow(/not found/);
+
+    sessionRepo.findOne = jest.fn(async () =>
+      publishedSession({ branchId: 'b1' }),
+    );
+    await expect(
+      service.getSessionRoster(otherTeacherActor, 'sess-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('markRecord rejects an unknown session (fail-closed)', async () => {

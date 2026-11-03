@@ -91,6 +91,35 @@ export interface AttendanceCorrectionResult {
   sessionVersion: number;
 }
 
+/** #461/#454 — tek satırın salt-okunur yoklama durumu. */
+export type AttendanceSessionRosterRow = Readonly<{
+  studentId: string;
+  studentCode: string;
+  studentLabel: string;
+  status: AttendanceStatus | 'not_marked';
+}>;
+
+/** #461/#454 — sunucu hesaplı canlı özet (istemci istatistik üretmez). */
+export type AttendanceSessionRosterSummary = Readonly<{
+  rosterCount: number;
+  recordedCount: number;
+  unrecordedCount: number;
+  presentCount: number;
+  absentCount: number;
+  lateCount: number;
+  excusedCount: number;
+}>;
+
+/** #461/#454 — oturum roster okuma yanıtı (yüzeyde PII-az alanlar). */
+export type AttendanceSessionRosterResponse = Readonly<{
+  tenantScoped: true;
+  sessionId: string;
+  status: AttendanceSessionStatus;
+  sessionVersion: number;
+  rows: AttendanceSessionRosterRow[];
+  summary: AttendanceSessionRosterSummary;
+}>;
+
 /**
  * AttendanceSession lifecycle (OKUL-06, M5).
  *
@@ -637,5 +666,79 @@ export class AttendanceSessionService {
     sessionId: string,
   ): Promise<AttendanceSession | null> {
     return this.sessionRepo.findOne({ where: { id: sessionId, tenantId } });
+  }
+
+  /**
+   * #461/#454 — oturum roster okuma yüzeyi (salt-okunur, sunucu-türetimli).
+   *
+   * Snapshot immutable; etiketler `students` kaynağından PII-az alınır ve
+   * kayıt durumları tek yerde birleşir. Satır sırası sunucuda deterministiktir
+   * (soyad, ad, kimlik); istemci asla stat üretmez — özet (canlı şerit) her
+   * zaman sunucudan gelir. Erişim: gözetim rolleri kiracı genelinde, sahibi
+   * öğretmen kendi oturumu (`assertAttendanceSessionAccess`, fail-closed).
+   */
+  async getSessionRoster(
+    actor: AttendanceActor,
+    sessionId: string,
+  ): Promise<AttendanceSessionRosterResponse> {
+    const session = await this.sessionRepo.findOne({
+      where: { id: sessionId, tenantId: actor.tenantId },
+    });
+    if (!session) {
+      throw new NotFoundException('AttendanceSession not found');
+    }
+    assertAttendanceSessionAccess(actor, session);
+
+    const snapshot = session.rosterSnapshot ?? [];
+    const records = snapshot.length
+      ? await this.recordRepo.find({
+          where: { tenantId: actor.tenantId, sessionId: session.id },
+        })
+      : [];
+    const statusByStudent = new Map<string, AttendanceStatus>(
+      records.map((record) => [record.studentId, record.status]),
+    );
+
+    const details = await this.students.listRosterStudentDetails(
+      { tenantId: actor.tenantId, requestId: actor.requestId },
+      session.branchId,
+      snapshot,
+    );
+    const detailById = new Map(details.map((detail) => [detail.id, detail]));
+
+    const rows: AttendanceSessionRosterRow[] = snapshot.map((studentId) => {
+      const detail = detailById.get(studentId);
+      return {
+        studentId,
+        studentCode: detail?.studentCode ?? '',
+        studentLabel: detail?.studentLabel ?? 'Kayıt bekleyen öğrenci',
+        status: statusByStudent.get(studentId) ?? 'not_marked',
+      };
+    });
+
+    const countByStatus = (status: AttendanceStatus) =>
+      rows.filter((row) => row.status === status).length;
+    const recordedCount = rows.filter(
+      (row) => row.status !== 'not_marked',
+    ).length;
+
+    const summary: AttendanceSessionRosterSummary = {
+      rosterCount: rows.length,
+      recordedCount,
+      unrecordedCount: rows.length - recordedCount,
+      presentCount: countByStatus(AttendanceStatus.PRESENT),
+      absentCount: countByStatus(AttendanceStatus.ABSENT),
+      lateCount: countByStatus(AttendanceStatus.LATE),
+      excusedCount: countByStatus(AttendanceStatus.EXCUSED),
+    };
+
+    return {
+      tenantScoped: true,
+      sessionId: session.id,
+      status: session.status,
+      sessionVersion: session.version,
+      rows,
+      summary,
+    };
   }
 }
