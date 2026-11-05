@@ -1138,50 +1138,6 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionA!.waitForText('#leaves-output', /Beklemede/, 10_000);
     leaveId = (await sessionA!.attribute('#leaves-output button[data-leave-decision="approve"]', 'data-leave-id')) ?? '';
     if (!leaveId) throw new Error('leave id not captured from approve button');
-    await clickRetry(sessionA!, '#leaves-output button[data-leave-decision="approve"]');
-    try {
-      await waitForLeaveDecision(leaveId, 'approved');
-    } catch (error) {
-      await rethrowWithDiag(error, currentScenario, [
-        ['message', () => textOf(sessionA!, '#message-region')],
-        ['output', () => textOf(sessionA!, '#leaves-output')],
-        ['etagAttr', () => sessionA!.attribute('#leaves-output button[data-leave-decision="approve"]', 'data-leave-etag').then((v) => v ?? '(yok)').catch(() => '(yok)')],
-        ['net', () => networkTail('opsA', /\/leaves\//)],
-      ]);
-    }
-    await sessionA!.waitForText('#leaves-output', /Onaylandı/, 10_000);
-    let leave = await readLeave(leaveId);
-    try {
-      expect(leave.decisionStatus).toBe('approved');
-      expect(leave.coverageStatus).toBe('unresolved');
-    } catch (error) {
-      await rethrowWithDiag(error, currentScenario, [
-        ['approve200', async () => (await networkTail('opsA', /\/approve/)) || '(yok)'],
-        ['publishedEvents', async () => {
-          const rows = await readPublishedEventsDiag();
-          return rows.length ? rows.join('\n') : '(yok)';
-        }],
-        ['projectedLessons', async () => {
-          const result = await dbClient!.query(
-            `SELECT count(*)::int AS n FROM daily_operation_lessons WHERE tenant_id = $1::uuid AND leave_request_id = $2::uuid`,
-            [fixture.tenantId, leaveId],
-          );
-          return `count=${result.rows[0].n}`;
-        }],
-        ['leaveRange', async () => {
-          const result = await dbClient!.query(
-            `SELECT starts_at::text AS starts_at, ends_at::text AS ends_at FROM leave_requests WHERE tenant_id = $1::uuid AND id = $2::uuid`,
-            [fixture.tenantId, leaveId],
-          );
-          const row = result.rows[0];
-          return row === undefined ? '(yok)' : `${row.starts_at} → ${row.ends_at}`;
-        }],
-      ]);
-    }
-    recordEvidence(currentScenario, 'ops UI onay → DB approved, coverage unresolved (etki açık)');
-    const approveLines = await networkTail('opsA', /\/approve/);
-    recordEvidence(currentScenario, `approve impact yanıtı: ${approveLines.split('\n').find((line) => line.startsWith('{')) ?? approveLines}`);
-
     await sessionA!.clickElement('#refresh-queue');
     await sessionA!.waitForText('#queue-output', new RegExp(leaveMonday), 20_000);
     await sessionA!.waitForText(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`, /./, 20_000);
@@ -1209,9 +1165,38 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(assignment).not.toBeNull();
     expect(assignment!.substituteTeacherId).toBe(substituteTeacherId);
     expect(assignment!.state).toBe('assigned');
-    leave = await readLeave(leaveId);
+    let leave = await readLeave(leaveId);
+    expect(leave.decisionStatus).toBe('pending');
     expect(leave.coverageStatus).toBe('covered');
-    recordEvidence(currentScenario, 'assign → DB state=assigned, coverage covered, substitute=seed teacher');
+    recordEvidence(currentScenario, 'assign → DB state=assigned, leave pending, coverage covered, substitute=seed teacher');
+
+    await sessionA!.clickElement('#refresh-leaves');
+    await sessionA!.waitForText('#leaves-output', /Beklemede/, 10_000);
+    await clickRetry(sessionA!, '#leaves-output button[data-leave-decision="approve"]');
+    try {
+      await waitForLeaveDecision(leaveId, 'approved');
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['message', () => textOf(sessionA!, '#message-region')],
+        ['output', () => textOf(sessionA!, '#leaves-output')],
+        ['etagAttr', () => sessionA!.attribute('#leaves-output button[data-leave-decision="approve"]', 'data-leave-etag').then((v) => v ?? '(yok)').catch(() => '(yok)')],
+        ['net', () => networkTail('opsA', /\/leaves\//)],
+      ]);
+    }
+    await sessionA!.waitForText('#leaves-output', /Onaylandı/, 10_000);
+    leave = await readLeave(leaveId);
+    expect(leave.decisionStatus).toBe('approved');
+    expect(leave.coverageStatus).toBe('covered');
+    recordEvidence(currentScenario, 'ops UI onay → DB approved, coverage covered');
+    const approveLines = await networkTail('opsA', /\/approve/);
+    recordEvidence(currentScenario, `approve impact yanıtı: ${approveLines.split('\n').find((line) => line.startsWith('{')) ?? approveLines}`);
+
+    await sessionA!.clickElement('#refresh-queue');
+    await sessionA!.waitForText(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`, /./, 20_000);
+    await sessionA!.clickElement(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`);
+    await sessionA!.waitForText('#impact-output', /ders etkileniyor/, 20_000);
+    await sessionA!.clickElement('button[data-action="candidates"]');
+    await sessionA!.waitForText('#candidate-output button[data-action="clear"]', /temizle/i, 20_000);
 
     await waitForClearEnabled(sessionA!);
     await sessionA!.clickElement('#candidate-output button[data-action="clear"]');
