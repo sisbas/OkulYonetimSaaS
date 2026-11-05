@@ -106,6 +106,15 @@ function parseDateRange(startsAt: string, endsAt: string): { startsAt: Date; end
   return { startsAt: start, endsAt: end };
 }
 
+function historyBusinessDate(value: string | undefined, timeZone: string): string {
+  if (!value) return localCalendarParts(new Date(), timeZone).date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw new BadRequestException('Leave history date filter is invalid');
+  return localCalendarParts(parsed, timeZone).date;
+}
+
 @Injectable()
 export class LeaveService {
   constructor(
@@ -169,9 +178,7 @@ export class LeaveService {
     const timeZone = resolveLeaveTimeZone(await this.leaves.loadTenantTimeZone(ctx));
     const identity = await this.identity.resolveOwnHistoryScope(ctx, {
       branchId: query.branchId,
-      businessDate: query.from
-        ? localCalendarParts(new Date(query.from), timeZone).date
-        : localCalendarParts(new Date(), timeZone).date,
+      businessDate: historyBusinessDate(query.from, timeZone),
     });
     const leaves = await this.leaves.listOwn(ctx, {
       teacherId: identity.teacherId,
@@ -199,7 +206,7 @@ export class LeaveService {
     const decisionActorUserId = actorUserId(ctx);
     if (decisionActorUserId === current.requesterUserId) throw new LeaveSelfDecisionException();
 
-    const actorTeacher = await this.safeActorTeacherId(ctx);
+    const actorTeacher = await this.identity.resolveDecisionActorTeacherId(ctx);
     if (actorTeacher && actorTeacher === current.teacherId) throw new LeaveSelfDecisionException();
 
     // Onay/ret + etki + açık projeksiyonlar + durable audit + outbox tek
@@ -239,15 +246,6 @@ export class LeaveService {
       decidedAtLabel: instantLabel(leave.decidedAt),
       impact,
     };
-  }
-
-  private async safeActorTeacherId(ctx: RequestContext): Promise<string | null> {
-    try {
-      return await this.identity.resolveDecisionActorTeacherId(ctx);
-    } catch {
-      // Absence is an explicit directory result, never an exception category.
-      throw new LeaveSelfDecisionException();
-    }
   }
 
   private toResponse(leave: LeaveRequest): LeaveResponse {

@@ -194,10 +194,10 @@ describe('LeaveService', () => {
     });
 
     it.each([new ForbiddenException('Identity unavailable'), new Error('Database unavailable')])(
-      'fails closed for unresolved identity: %s', async (error) => {
+      'propagates unresolved identity failures without mutating: %s', async (error) => {
         const { service, leaves } = setup(jest.fn().mockRejectedValue(error));
         await expect(service.decide(ctx, pendingLeave.id, { decision: LeaveDecisionStatus.REJECTED }, ifMatch))
-          .rejects.toBeInstanceOf(LeaveSelfDecisionException);
+          .rejects.toBe(error);
         expect(leaves.decide).not.toHaveBeenCalled();
       },
     );
@@ -333,6 +333,22 @@ describe('LeaveService create/history (#263 AC-1 / AC-3)', () => {
       ctx,
       expect.objectContaining({ businessDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }),
     );
+  });
+
+  it('keeps date-only history filters in the tenant calendar', async () => {
+    const { service, identity } = setup('America/New_York');
+    identity.resolveOwnHistoryScope = jest.fn(async () => ({
+      actorUserId: '10000000-0000-4000-8000-000000000001',
+      teacherId,
+      branchIds: [branchId],
+    }));
+
+    await service.listOwn(ctx, { from: '2026-09-14' });
+
+    expect(identity.resolveOwnHistoryScope).toHaveBeenCalledWith(ctx, {
+      branchId: undefined,
+      businessDate: '2026-09-14',
+    });
   });
 });
 

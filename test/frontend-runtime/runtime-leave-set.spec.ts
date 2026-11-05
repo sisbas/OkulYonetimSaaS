@@ -131,6 +131,7 @@ describe('#491 İzinler seti', () => {
       expect(app).toContain('Saatlik izin en fazla 24 saat olabilir ve iki güne yayılamaz.');
       expect(app).toContain('Tam gün izni tek bir takvim günü içinde kalmalı');
       expect(app).toContain('Çok gün izni en az iki takvim gününe yayılmalı.');
+      expect(app).toContain("if (daySpan < 1)");
       const precheckIndex = app.indexOf('const precheck = validateLeaveWindowInput(');
       const postIndex = app.indexOf("await apiRequest('/leaves/me', { method: 'POST', body })");
       expect(precheckIndex).toBeGreaterThan(-1);

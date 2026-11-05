@@ -128,6 +128,17 @@ describe('leave window alignment and bounds (#263 AC-3)', () => {
     expect(result.localDaySpan).toBe(2);
   });
 
+  it('accepts a multi-day leave spanning exactly two local days', () => {
+    const result = assertLeaveWindow({
+      durationType: LeaveDurationType.MULTI_DAY,
+      startsAt: new Date('2026-09-14T05:00:00.000Z'),
+      endsAt: new Date('2026-09-15T15:00:00.000Z'),
+      timeZone: ISTANBUL,
+    });
+
+    expect(result.localDaySpan).toBe(1);
+  });
+
   it('rejects a multi-day leave that only touches one local day', () => {
     expectCode(
       () =>
@@ -220,4 +231,3 @@ describe('leave window alignment and bounds (#263 AC-3)', () => {
     });
   });
 });
-

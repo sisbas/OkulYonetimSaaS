@@ -54,7 +54,7 @@ export type LeaveWindowInput = Readonly<{
 
 export type LeaveWindowResult = Readonly<{
   timeZone: string;
-  /** Yerel takvim günü farkı (full_day: 1, multi_day: >= 2). */
+  /** Yerel takvim günü farkı (full_day: 0, multi_day: >= 1). */
   localDaySpan: number;
   totalHours: number;
 }>;
@@ -150,7 +150,7 @@ export function assertLeaveWindow(input: LeaveWindowInput): LeaveWindowResult {
       }
       break;
     case LeaveDurationType.MULTI_DAY:
-      if (localDaySpan < 2) {
+      if (localDaySpan < 1) {
         throw new LeaveWindowError(
           'MULTI_DAY_TOO_SHORT',
           'Multi-day leave must span at least two local calendar days',

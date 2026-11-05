@@ -960,7 +960,7 @@ function validateLeaveWindowInput(durationType, startsAtValue, endsAtValue) {
     return { ok: true };
   }
   if (durationType === 'multi_day') {
-    if (daySpan < 2) {
+    if (daySpan < 1) {
       return { ok: false, message: 'Çok gün izni en az iki takvim gününe yayılmalı.' };
     }
     return { ok: true };
