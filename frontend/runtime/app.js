@@ -370,6 +370,7 @@ const ROUTE_PERMISSIONS = [
   { method: 'POST', path: '/auth/login', permission: '' },
   { method: 'POST', path: '/auth/refresh', permission: '' },
   { method: 'POST', path: '/leaves/me', permission: 'leave:create' },
+  { method: 'GET', path: '/leaves/me', permission: 'leave:own:read' },
   { method: 'GET', path: '/leaves/me/:id', permission: 'leave:own:read' },
   { method: 'GET', path: '/leaves', permission: 'leave:read' },
   { method: 'GET', path: '/leaves/:id', permission: 'leave:read' },

@@ -57,8 +57,12 @@ kod olarak teslim eder.
 
 - Mock-up statik referanstır: gerçek ekran okuyucu/cihaz sertifikasyonu yapmaz
   (sentetik spec §10 uyarısı geçerli).
-- İzinlerim listesi, `GET /leaves/me` ucunun (PR #505) main'e girmesine bağlı;
-  o zamana kadar dürüst "kullanılamıyor" durumu görünür.
-- `#486`/`#487` issue'ları açık; bu dilim onların kod seamlerini kullanır ama
-  kendi kapsamlarını (ör. tüm bölgelerde durum dikişi, tam rol matrisi)
+- İzinlerim listesi `GET /leaves/me` ucuna (PR #505) bağlıdır; uç main'de.
+  İstemci seam'i de tamamlandı: `ROUTE_PERMISSIONS` `GET /leaves/me` →
+  `leave:own:read` eşlemesini `GET /leaves/:id` kuralından **önce** taşır
+  (aksi hâlde `me` yolu genel kurala düşüp `leave:read` çözüyordu ve öğretmenin
+  kendi listesi istemcide fail-closed reddediliyordu). Regresyon testi:
+  `runtime-leave-set.spec.ts`.
+- `#486`/`#487` issue'ları kapandı; bu dilim onların kod seamlerini kullanır
+  ama kendi kapsamlarını (ör. tüm bölgelerde durum dikişi, tam rol matrisi)
   kapatmaz.
