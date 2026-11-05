@@ -28,28 +28,19 @@ const envContract = [
   { name: 'NODE_ENV',              required: false, kind: 'optional',   scope: 'all' },
 ];
 
-function hexBytes(value) {
-  // value hex string -> byte length
-  if (!value) return 0;
-  const v = String(value).trim();
-  if (v.length % 2 !== 0) return 0; // odd hex = invalid
-  return v.length / 2;
-}
-
-function checkBytes(value, kind) {
+function checkValue(value, spec) {
   if (value === undefined || value === null || String(value).trim().length === 0) {
-    return { present: false, kind, length: 0, meets: false };
+    return { present: false, kind: 'absent', length: 0, meets: false };
   }
   const v = String(value).trim();
-  if (kind === 'exactBytes') {
-    const bytes = hexBytes(v);
-    return { present: true, kind, length: bytes, meets: bytes === 32 };
+  const bytes = Buffer.byteLength(v, 'utf8');
+  if (spec.exactBytes !== undefined) {
+    return { present: true, kind: 'exactBytes', length: bytes, meets: bytes === spec.exactBytes };
   }
-  if (kind === 'minBytes') {
-    const bytes = v.length; // char count as proxy; for JWT secrets we treat char≥32 as sufficient
-    return { present: true, kind, length: bytes, meets: bytes >= 32 };
+  if (spec.minBytes !== undefined) {
+    return { present: true, kind: 'minBytes', length: bytes, meets: bytes >= spec.minBytes };
   }
-  return { present: true, kind, length: v.length, meets: true };
+  return { present: true, kind: 'present', length: bytes, meets: true };
 }
 
 // Build result
@@ -63,7 +54,7 @@ const result = {
 // Check each variable against the .env or process.env
 for (const spec of envContract) {
   const val = process.env[spec.name];
-  const check = checkBytes(val, spec.minBytes !== undefined ? 'minBytes' : (spec.exactBytes !== undefined ? 'exactBytes' : 'present'));
+  const check = checkValue(val, spec);
 
   result.variables[spec.name] = {
     present: check.present,

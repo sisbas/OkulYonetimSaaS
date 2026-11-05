@@ -1,7 +1,0 @@
-const fs = require('fs');
-let content = fs.readFileSync('docs/production-observation-prerequisite-332.md', 'utf8');
-const marker = '## Observation remains UNPROVEN';
-const insertAfter = '## Required Production Environment Variables (value-free contract)\n\nThis gate requires the following environment variables to be present in the **production** Vercel scope for `/api/v1` to bootstrap successfully. Values are never logged or committed; only variable **names, presence, and length-class** are specified.\n\n| Variable | Kind | Min Length | Deferred This Round? |\n|---|---|---|---|\n| `JWT_ACCESS_SECRET` | bootstrap | ≥32 chars | no |\n| `JWT_REFRESH_SECRET` | bootstrap | ≥32 chars | no |\n| `AUDIT_HMAC_KEY` | bootstrap | ≥32 chars | no |\n| `AUDIT_HMAC_KEY_ID` | bootstrap | ≥1 char | no |\n| `KVKK_PSEUDONYM_KEY` | lazy | ≥32 chars | ✅ yes |\n| `KVKK_CONTACT_KEY` | lazy | exactly 32 bytes | ✅ yes |\n| `KVKK_CONTACT_KEY_ID` | lazy | ≥1 char | ❌ no (optional) |\n| `DATABASE_URL` | bootstrap | n/a | no |\n| `NODE_ENV` | optional | n/a | no |\n\n⚠️ **Residual fail-closed gaps**: `KVKK_PSEUDONYM_KEY` and `KVKK_CONTACT_KEY` are deferred this round per decision. Parent-contact and pseudonym generation flows will fail-closed in production if these are absent, but application bootstrap does not require them. See `artifacts/332/production-env-contract-receipt.md` for the full value-free contract.\n\n';
-content = content.replace(marker, marker + insertAfter);
-fs.writeFileSync('docs/production-observation-prerequisite-332.md', content);
-console.log('Docs updated');

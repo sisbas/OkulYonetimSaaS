@@ -1,35 +1,37 @@
 # Production Auth Environment Contract for #332
 
-## Summary
-Resolves issue #332: production `/api/v1` fails with `500 FUNCTION_INVOCATION_FAILED` due to missing production auth secrets.
+## Amaç
+Resolves issue #332 by documenting and validating the production environment contract that prevents `/api/v1` from booting with missing authentication and audit secrets.
+
+## Kapsam
+Adds a value-free production environment contract, a secret-safe environment diagnostic, an opt-in production authentication smoke test, workflow wiring, and the supporting documentation.
+
+## Kapsam dışı
+Provisioning production secrets, changing Vercel settings, deploying production, and completing a real synthetic-teacher observation remain post-merge operational steps.
 
 ## Changes
-
-### New scripts
+- Adds the value-free contract and secret-safe diagnostics.
 - `scripts/production-env-contract.cjs` — value-free env contract schema
 - `scripts/check-production-env.cjs` — secret-free presence/length validation
 - `scripts/production-auth-smoke.cjs` — auth smoke test (reachability or full teacher login)
+- `KVKK_PSEUDONYM_KEY` and `KVKK_CONTACT_KEY` remain explicitly deferred; their fail-closed runtime behavior is documented.
 
-### Modified files
-- `.env.example` — added `KVKK_CONTACT_KEY` / `_ID`
-- `.github/workflows/wp07f-production-observation.yml` — added auth smoke step + receipt artifact
-- `docs/production-observation-prerequisite-332.md` — env contract table + residual gaps
-- `package.json` — added `check:production-env` / `smoke:production-auth` scripts
-- `scripts/diagnose-vercel-deployment.cjs` — added KVKK contact key inventory
+## Acceptance criteria
+- [x] Production contract lists bootstrap, lazy, and optional variables without secret values.
+- [x] Environment diagnostics measure each variable against its configured minimum or exact byte contract.
+- [x] Auth smoke requires credentials unless the explicit reachability-only opt-out is enabled.
+- [x] Reachability-only mode accepts only documented HTTP 400 or 401 application errors.
+- [x] Authenticated smoke uses the always-available `/api/v1/context` endpoint.
+- [x] Receipts contain verdicts and scrubbed metadata without credentials or tokens.
 
-### This round's scope: JWT + audit secrets only
-- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `AUDIT_HMAC_KEY`, `AUDIT_HMAC_KEY_ID=key-1`
-- `KVKK_PSEUDONYM_KEY` / `KVKK_CONTACT_KEY` deferred (residual fail-closed gaps documented)
+## Test çıktısı
+Local validation passed: `node --check scripts/production-auth-smoke.cjs`, `node --check scripts/check-production-env.cjs`, and `node --check scripts/production-env-contract.cjs`. Existing CI run 41309940586 provides the governance and repository test execution reference; the new commit will trigger a fresh run.
 
-### Residual gates (open issues)
-- `KVKK_PSEUDONYM_KEY` / `KVKK_CONTACT_KEY` deferred → parent-contact/pseudonym flows fail-closed in production
-- Production env vars + redeploy to be performed after merge (authorized separate step)
+## KVKK/audit etkisi
+No secret values, credentials, JWTs, email addresses, or contact payloads are written to logs or artifacts. KVKK pseudonym and parent-contact keys remain deferred and their lazy runtime paths continue to fail closed; audit key identifiers are validated without exposing key material.
 
-## Next steps (post-merge)
-1. Add prod env vars to Vercel
-2. Git-source production deploy + observation
-3. Auth smoke with real synthetic teacher
-4. Set `VERCEL_API_TOKEN` + run `WP-07F Production Observation`
-5. Record evidence + close #332
+## Rollback
+If the new contract or smoke behavior causes an operational regression, revert the commit that introduced these scripts and workflow changes, then restore the previous production-observation workflow. No database migration or irreversible data change is included, so a Git revert is sufficient.
 
-**Residential**: no secret values in repo, logs, artifacts. Fail-closed behavior preserved.
+## CI run referansı
+GitHub Actions run 41309940586: https://github.com/sisbas/OkulYonetimSaaS/actions/runs/41309940586. The post-fix push will produce the authoritative current-head check runs.
