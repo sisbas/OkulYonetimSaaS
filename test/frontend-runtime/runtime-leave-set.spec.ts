@@ -1,6 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { runtime } from './runtime-harness';
+
 /**
  * #491 — İzinler seti (liste, İzinlerim, yeni talep, etki/karar).
  *
@@ -81,6 +83,31 @@ describe('#491 İzinler seti', () => {
       expect(decisions).toContain("canRequest('GET', `/leaves/me/:id`)");
       expect(decisions).toContain("target.dataset.action === 'own-leave-open'");
       expect(decisions).toContain('state.activeLeaveId = target.dataset.leaveId;');
+    });
+
+    it('resolves the own-history list to leave:own:read, not the operations leave:read key', () => {
+      // #491 regresyonu: tabloda `GET /leaves/me` yokken istek `GET /leaves/:id`
+      // kuralına düşüp `leave:read` çözüyordu ve öğretmenin kendi listesi
+      // istemcide fail-closed reddediliyordu.
+      const table = app.slice(
+        app.indexOf('const ROUTE_PERMISSIONS = ['),
+        app.indexOf('];', app.indexOf('const ROUTE_PERMISSIONS = [')),
+      );
+      const ownListRule = table.indexOf("{ method: 'GET', path: '/leaves/me', permission: 'leave:own:read' }");
+      const genericRule = table.indexOf("{ method: 'GET', path: '/leaves/:id', permission: 'leave:read' }");
+      expect(ownListRule).toBeGreaterThan(-1);
+      expect(genericRule).toBeGreaterThan(-1);
+      // Sıra önemli: genel `:id` kuralı önce gelirse `me` yolunu yutar.
+      expect(ownListRule).toBeLessThan(genericRule);
+
+      const teacher = runtime('state, permissionForRoute, canRequest', ['leave:own:read', 'leave:create']);
+      expect(teacher.probe.permissionForRoute('GET', '/leaves/me')).toBe('leave:own:read');
+      expect(teacher.probe.permissionForRoute('GET', '/leaves/me?decisionStatus=draft')).toBe('leave:own:read');
+      expect(teacher.probe.canRequest('GET', '/leaves/me')).toBe(true);
+
+      const operations = runtime('state, permissionForRoute, canRequest', ['leave:read']);
+      // Sunucu da `leave:own:read` ister: operasyon anahtarı bu ucu açmaz.
+      expect(operations.probe.canRequest('GET', '/leaves/me')).toBe(false);
     });
   });
 
