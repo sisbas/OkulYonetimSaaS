@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Bugün — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Operasyon · Bugün</p>
+        <h1>Bugünkü iş akışı</h1>
+        <p class="topbar-subtitle">
+          Bugün ekranı kalıcı olarak iş-öncelikli çalışır: önce yapılacak iş (izin kuyruğu), sonra
+          bugünün yoklama oturumları. Ekran bir pano değil, sırayla tamamlanan bir akıştır.
+        </p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanimlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yonetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+
+    <main id="design-main" tabindex="-1" data-state="ready">
+      <!-- 0) Günün özeti: üç ölçüm, sıfır değerli panel yok -->
+      <section class="panel" aria-labelledby="summary-heading" data-view="summary">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Günün özeti</p>
+            <h2 id="summary-heading">Bugün ne yapılmalı</h2>
+          </div>
+          <button type="button" class="button-primary" data-requires-permission="daily_operations:read">Bugünü yenile</button>
+        </div>
+        <div class="cards">
+          <article class="card">
+            <h3>Açık iş</h3>
+            <p class="card-meta"><span data-metric="open-work">4 ders karşılık bekliyor</span></p>
+            <p class="hint">Karşılığı atanmamış dersler, gün başlamadan kapatılmalı.</p>
+          </article>
+          <article class="card">
+            <h3>Karar bekleyen izin</h3>
+            <p class="card-meta"><span data-metric="pending-leave">2 izin talebi beklemede</span></p>
+            <p class="hint">Karar vermek karşılık atamak değildir; ikisi ayrı durumdur.</p>
+          </article>
+          <article class="card">
+            <h3>Bugünün oturumları</h3>
+            <p class="card-meta"><span data-metric="sessions-open">3 oturum açık, 2 oturum tamamlandı</span></p>
+            <p class="hint">Tamamlanan oturum kilitlenir; geri açmak ayrı bir yetkidir.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- 1) Kuyruk: izin projeksiyonundan gelen açık iş (K-47) -->
+      <section class="panel" aria-labelledby="queue-heading" data-view="queue">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Kuyruk</p>
+            <h2 id="queue-heading">Bugünün iş listesi</h2>
+          </div>
+        </div>
+        <div class="cards">
+          <article class="card">
+            <h3>Matematik · 9-A <span class="tag" data-tone="warning">Karşılık bekliyor</span></h3>
+            <p class="card-meta">
+              <span>Saat: 09.40 - 10.20</span>
+              <span>Karşılık: Henüz karşılanmadı</span>
+              <span>Görevlendirme: Henüz atanmadı</span>
+            </p>
+            <div class="quick-actions">
+              <button type="button" class="button-primary" data-requires-permission="daily_operations:update">Adayları gör</button>
+              <button type="button" data-action="open-attendance">Yoklamayı aç</button>
+            </div>
+          </article>
+          <article class="card">
+            <h3>Türkçe · 10-B <span class="tag" data-tone="danger">Etki hazır değil</span></h3>
+            <p class="card-meta">
+              <span>Saat: 10.30 - 11.10</span>
+              <span>Karşılık: Etki analizi bekleniyor</span>
+            </p>
+            <p class="hint">Etki hazır olmadan aday listesi gösterilmez; boş liste "aday yok" demek değildir.</p>
+          </article>
+          <article class="card">
+            <h3>Fen Bilimleri · 11-C <span class="tag" data-tone="success">Karşılandı</span></h3>
+            <p class="card-meta">
+              <span>Saat: 11.20 - 12.00</span>
+              <span>Görevlendirme: Atandı</span>
+            </p>
+            <div class="quick-actions">
+              <button type="button" data-requires-permission="daily_operations:update">Görevlendirmeyi geri al</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- 2) İkincil liste: bugünün yoklama oturumları (K-48) + yoklama-yerinde (K-50) -->
+      <section class="panel" aria-labelledby="sessions-heading" data-view="sessions">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">İkincil</p>
+            <h2 id="sessions-heading">Bugünün yoklama oturumları</h2>
+          </div>
+        </div>
+        <div class="cards">
+          <article class="card" data-attendance-state="open">
+            <h3>Matematik · 9-A <span class="tag" data-tone="warning">Açık</span></h3>
+            <p class="card-meta"><span>Saat: 09.40 - 10.20</span><span>İşaretlenen: 12 / 24</span></p>
+            <p class="hint">İşaretlenmemiş öğrenci devamsız sayılmaz; oturum tamamlanınca kilitlenir.</p>
+            <div class="quick-actions">
+              <button type="button" class="button-primary" data-action="open-attendance">Yoklamayı sürdür</button>
+            </div>
+          </article>
+          <article class="card" data-attendance-state="completed">
+            <h3>Türkçe · 10-B <span class="tag" data-tone="success">Tamamlandı</span></h3>
+            <p class="card-meta"><span>Saat: 08.50 - 09.30</span><span>İşaretlenen: 24 / 24</span></p>
+            <p class="hint">Tamamlanan oturum kilitlidir; düzeltme ayrı yetkiyle ve gerekçesiyle yapılır.</p>
+            <div class="quick-actions">
+              <button type="button" data-requires-permission="attendance:update">Düzeltme talebi</button>
+            </div>
+          </article>
+          <article class="card" data-attendance-state="locked">
+            <h3>Fen Bilimleri · 11-C <span class="tag" data-tone="neutral">Kilitli</span></h3>
+            <p class="card-meta"><span>Saat: 11.20 - 12.00</span><span>İşaretlenen: 22 / 22</span></p>
+            <p class="hint">Kilitli oturumda işaretleme yoktur; yalnız düzeltme yolu vardır.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- 3) Rol varyantları: aynı ekran, farklı yetki kesiti -->
+      <section class="panel" aria-labelledby="roles-heading" data-view="roles">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Rol varyantları</p>
+            <h2 id="roles-heading">Aynı ekran, dört kesit</h2>
+          </div>
+        </div>
+        <div class="cards">
+          <article class="card" data-view="role-admin">
+            <h3>Yönetici <span class="tag" data-tone="neutral">tam yetki</span></h3>
+            <p class="card-meta"><span>Kuyruk: görünür</span><span>Karar: açık</span><span>Yoklama: açık</span></p>
+            <p class="hint">Tüm kuyruk ve oturumlar; karar ve görevlendirme kontrolleri açık.</p>
+          </article>
+          <article class="card" data-view="role-ops">
+            <h3>Operasyon <span class="tag" data-tone="neutral">karar odaklı</span></h3>
+            <p class="card-meta"><span>Kuyruk: görünür</span><span>Karar: açık</span><span>Yoklama: açık</span></p>
+            <p class="hint">Görevlendirme ve izin kararı bu kesitte; tanım yönetimi yoktur.</p>
+          </article>
+          <article class="card" data-view="role-teacher">
+            <h3>Öğretmen <span class="tag" data-tone="neutral">yalnız kendi dersleri</span></h3>
+            <p class="card-meta"><span>Kuyruk: kendi dersleri</span><span>Karar: kapalı</span><span>Yoklama: kendi oturumu</span></p>
+            <p class="hint">Karar ve görevlendirme kontrolleri gösterilmez; bu bir kullanılabilirlik tercihidir, yetki kararı sunucudadır.</p>
+          </article>
+          <article class="card" data-view="role-viewer">
+            <h3>Akademik salt-okunur <span class="tag" data-tone="neutral">okuma</span></h3>
+            <p class="card-meta"><span>Kuyruk: görünür</span><span>Karar: kapalı</span><span>Yoklama: kapalı</span></p>
+            <p class="hint">Hiçbir mutasyon kontrolü yoktur; yalnız okuma ve dışa aktarma yolu.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- 4) Durum kesitleri: tek kanonik yol (K-40/K-41) -->
+      <section class="panel" aria-labelledby="states-heading" data-view="states">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Durum kesitleri</p>
+            <h2 id="states-heading">Aynı bölge, beş durum</h2>
+          </div>
+        </div>
+        <div class="cards">
+          <article class="card" data-state="same_scope_empty">
+            <h3>Bugün için açık iş yok</h3>
+            <p class="hint">Bu kapsamda açık iş bulunmuyor. Şube veya tarih değiştirip yeniden deneyin.</p>
+          </article>
+          <article class="card" data-state="blocked">
+            <h3>Kuyruk engelli</h3>
+            <p class="hint">Program yayınlanmadan bugünün işi üretilemez. Önce yayın adımı tamamlanmalı.</p>
+          </article>
+          <article class="card" data-state="offline_or_unavailable">
+            <h3>Bağlantı kurulamadı</h3>
+            <p class="hint">Sunucuya ulaşılamıyor. Veri tazelenmedi; ekrandaki değerler son bilinen durumdur.</p>
+          </article>
+          <article class="card" data-state="forbidden_non_enumerating">
+            <h3>Bu bölümü görme yetkiniz yok</h3>
+            <p class="hint">Erişim sınırı. Kaynağın varlığı hakkında bilgi verilmez.</p>
+          </article>
+          <article class="card" data-state="stale_version">
+            <h3>Kayıt sizdeyken değişti</h3>
+            <p class="hint">Güncel sürümü yükleyip işlemi yeniden deneyin; eski sürümle yazma yapılmaz.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>

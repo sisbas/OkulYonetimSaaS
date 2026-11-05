@@ -221,7 +221,7 @@ describe('envanter ve kapsam kaydı (#479)', () => {
     expect(html).toContain('#508');
     expect(html).toContain('#510');
     expect(html).toContain('#489');
-    expect(PAGES).not.toContain('bugun.html');
+    expect(PAGES).toContain('bugun.html');
     expect(PAGES).not.toContain('leave.html');
     expect(PAGES).not.toContain('yoklama-session.html');
   });
@@ -238,5 +238,52 @@ describe('stratejik hedefler mock-up\'ı (#483/#500)', () => {
   it('deploy flag\'i kapalı durumu belgelenir', () => {
     const html = readPage('strategic-goals.html');
     expect(/STRATEGIC_GOALS_ENABLED|404/.test(html)).toBe(true);
+  });
+});
+
+describe('Bugün ekranı mock-up\'ı (#489 hazırlığı)', () => {
+  it('kuyruk ve günün özeti: açık iş, karar bekleyen izin, oturum durumu', () => {
+    const html = readPage('bugun.html');
+    shellChecks(html);
+    expect(html).toContain('data-metric="open-work"');
+    expect(html).toContain('data-metric="pending-leave"');
+    expect(html).toContain('data-metric="sessions-open"');
+    expect(/kuyruk/i.test(html)).toBe(true);
+    // Karar ile karşılık ayrı durumlardır; sıfır değerli panel yok.
+    expect(/Henüz karşılanmadı/.test(html)).toBe(true);
+    expect(/Henüz atanmadı/.test(html)).toBe(true);
+  });
+
+  it('kuyruk kartı: etki hazır değilken aday listesi yerine dürüst durum gösterir', () => {
+    const html = readPage('bugun.html');
+    expect(/Etki hazır değil/.test(html)).toBe(true);
+    expect(/Etki hazır olmadan aday listesi gösterilmez/.test(html)).toBe(true);
+  });
+
+  it('ikincil liste: bugünün yoklama oturumları ve tamamlama = kilitleme', () => {
+    const html = readPage('bugun.html');
+    for (const state of ['open', 'completed', 'locked']) {
+      expect(html).toContain(`data-attendance-state="${state}"`);
+    }
+    expect(/tamamlan\w* oturum kilitlenir|Tamamlanan oturum kilitlidir/i.test(html)).toBe(true);
+    expect(/[iİ]şaretlenmemiş öğrenci devamsız sayılmaz/i.test(html)).toBe(true);
+  });
+
+  it('dört rol kesiti: yönetici, operasyon, öğretmen (kendi dersleri), akademik salt-okunur', () => {
+    const html = readPage('bugun.html');
+    for (const view of ['role-admin', 'role-ops', 'role-teacher', 'role-viewer']) {
+      expect(html).toContain(`data-view="${view}"`);
+    }
+    expect(/yalnız kendi dersleri/i.test(html)).toBe(true);
+    expect(/salt-okunur/i.test(html)).toBe(true);
+    // Gizleme kullanılabilirlik tercihidir; zorlama sunucudadır.
+    expect(/yetki kararı sunucudadır/i.test(html)).toBe(true);
+  });
+
+  it('durum matrisi: empty, blocked, offline, forbidden, stale tek kanonik yolda', () => {
+    const html = readPage('bugun.html');
+    for (const state of ['same_scope_empty', 'blocked', 'offline_or_unavailable', 'forbidden_non_enumerating', 'stale_version']) {
+      expect(html).toContain(`data-state="${state}"`);
+    }
   });
 });
