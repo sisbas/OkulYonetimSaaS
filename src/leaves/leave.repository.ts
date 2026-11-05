@@ -108,6 +108,47 @@ export class LeaveRepository {
     return this.repository.findOne({ where: { id, tenantId: ctx.tenantId, teacherId, branchId } });
   }
 
+  /**
+   * Öğretmenin kendi izin geçmişi (#263 AC-1).
+   *
+   * Kapsam SUNUCUDA çözülen `teacherId` ile kilitlidir: istemciden gelen bir
+   * `teacherId` filtresi asla kabul edilmez, aksi hâlde bir öğretmen başka bir
+   * öğretmenin geçmişini okuyabilirdi (BOLA). `branchId` yalnız kendi
+   * atamalarından biri olabilir; eşleşmezse boş liste döner (bilgi sızdırmaz).
+   */
+  async listOwn(
+    ctx: RequestContext,
+    filter: Readonly<{ teacherId: string; branchId?: string; decisionStatus?: LeaveDecisionStatus; from?: string; to?: string }>,
+  ): Promise<LeaveRequest[]> {
+    assertTenantScope(ctx, 'leave_requests');
+    const qb = this.repository
+      .createQueryBuilder('leave')
+      .where('leave.tenant_id = :tenantId', { tenantId: ctx.tenantId })
+      .andWhere('leave.teacher_id = :teacherId', { teacherId: filter.teacherId });
+
+    if (filter.branchId) qb.andWhere('leave.branch_id = :branchId', { branchId: filter.branchId });
+    if (filter.decisionStatus) {
+      qb.andWhere('leave.decision_status = :decisionStatus', { decisionStatus: filter.decisionStatus });
+    }
+    if (filter.from) qb.andWhere('leave.ends_at >= :from', { from: filter.from });
+    if (filter.to) qb.andWhere('leave.starts_at <= :to', { to: filter.to });
+
+    return qb.orderBy('leave.starts_at', 'DESC').addOrderBy('leave.created_at', 'DESC').getMany();
+  }
+
+  /**
+   * Tenant saat dilimi (#263 AC-3). İzin penceresi kuralları bu dilimde
+   * değerlendirilir; çözülemezse çağıran fail-closed davranır.
+   */
+  async loadTenantTimeZone(ctx: RequestContext): Promise<string | null> {
+    assertTenantScope(ctx, 'leave_requests');
+    const rows: Array<{ timezone: string | null }> = await this.repository.query(
+      'SELECT timezone FROM tenants WHERE id = $1 LIMIT 1',
+      [ctx.tenantId],
+    );
+    return rows[0]?.timezone ?? null;
+  }
+
   async decide(ctx: RequestContext, id: string, values: LeaveDecisionValues): Promise<LeaveDecisionOutcome | null> {
     assertTenantScope(ctx, 'leave_requests');
     return this.dataSource.transaction(async (manager) => {
@@ -157,6 +198,17 @@ export class LeaveRepository {
     });
   }
 
+  /**
+   * Aynı öğretmen için eşzamanlı iki izin talebinin çakışmasını engeller
+   * (#263 AC-3 "overlap" + concurrency).
+   *
+   * Kontrol SELECT-then-INSERT olduğu için iki paralel transaction aynı boş
+   * aralığı görüp ikisi de yazabilirdi (TOCTOU = çift rezervasyon). Kontrolden
+   * ÖNCE tenant+öğretmen anahtarlı transaction-scoped advisory lock alınır;
+   * böylece aynı öğretmen için ikinci transaction birincinin commit'ini bekler
+   * ve çakışmayı gerçek veri üzerinde görür. Lock, transaction bitince kendiliğinden
+   * bırakılır (rollback dâhil).
+   */
   private async assertNoOverlappingLeaveRequest(
     manager: EntityManager,
     tenantId: string,
@@ -165,6 +217,10 @@ export class LeaveRepository {
     startsAt: Date,
     endsAt: Date,
   ): Promise<void> {
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [
+      tenantId,
+      `${branchId}:${teacherId}`,
+    ]);
     const rows = await manager.query(
       `SELECT 1
        FROM leave_requests

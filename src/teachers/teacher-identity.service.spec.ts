@@ -85,6 +85,51 @@ describe('TeacherIdentityService', () => {
     expect(audit.emitAuthorizationDenied).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ resource: 'teacher', reasonCode: 'teacher_identity_unresolved' }));
   });
 
+  it('resolves own-history identity for a teacher with two active branches (no unique branch needed)', async () => {
+    const repo = {
+      findActiveTeacherForUser: jest.fn(async () => ({ teacherId: 'teacher-1' })),
+      listActiveBranchMemberships: jest.fn(async () => [
+        { teacherBranchId: 'membership-1', branchId: 'branch-1' },
+        { teacherBranchId: 'membership-2', branchId: 'branch-2' },
+      ]),
+    };
+
+    // #263 review P2: kendi geçmişini okumak şube seçimi gerektirmez.
+    const result = await new TeacherIdentityService(repo as any, audit as any).resolveForOwnHistory(ctx());
+
+    expect(result.teacherId).toBe('teacher-1');
+    expect(result.branchIds).toEqual(['branch-1', 'branch-2']);
+    expect(audit.emitAuthorizationDenied).not.toHaveBeenCalled();
+  });
+
+  it('still denies own-history when the teacher has no active branch membership', async () => {
+    const repo = {
+      findActiveTeacherForUser: jest.fn(async () => ({ teacherId: 'teacher-1' })),
+      listActiveBranchMemberships: jest.fn(async () => []),
+    };
+
+    await expect(new TeacherIdentityService(repo as any, audit as any).resolveForOwnHistory(ctx()))
+      .rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('passes a requested branch filter through so a foreign branch is denied', async () => {
+    const repo = {
+      findActiveTeacherForUser: jest.fn(async () => ({ teacherId: 'teacher-1' })),
+      listActiveBranchMemberships: jest.fn(async () => []),
+    };
+
+    await expect(
+      new TeacherIdentityService(repo as any, audit as any).resolveForOwnHistory(ctx(), {
+        branchId: '40000000-0000-4000-8000-000000000099',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repo.listActiveBranchMemberships).toHaveBeenCalledWith(
+      expect.anything(),
+      'teacher-1',
+      expect.objectContaining({ branchId: '40000000-0000-4000-8000-000000000099' }),
+    );
+  });
+
   it('does not choose a default branch when TeacherBranch membership is ambiguous', async () => {
     const repo = {
       findActiveTeacherForUser: jest.fn(async () => ({ teacherId: 'teacher-1' })),

@@ -1,5 +1,5 @@
 import { RequestContext } from '../common/context/request-context';
-import { LeaveCoverageStatus, LeaveDecisionStatus } from './leave-request.entity';
+import { LeaveCoverageStatus, LeaveDecisionStatus, LeaveDurationType, LeaveReasonCode } from './leave-request.entity';
 import {
   LeaveStaleVersionException,
   LeaveTerminalStateException,
@@ -218,4 +218,94 @@ describe('LeaveRepository', () => {
     });
   });
 });
+
+describe('LeaveRepository create/listOwn (#263 AC-1 / AC-3)', () => {
+  const branchId = '30000000-0000-4000-8000-000000000001';
+  const teacherId = '20000000-0000-4000-8000-000000000001';
+
+  function createSetup(overlapRows: unknown[] = []) {
+    const manager = {
+      query: jest.fn(async (sql: string) => {
+        if (sql.includes('FROM branches')) return [{ '?column?': 1 }];
+        if (sql.includes('FROM leave_requests')) return overlapRows;
+        return [];
+      }),
+      create: jest.fn((_entity: unknown, value: unknown) => value),
+      save: jest.fn(async (_entity: unknown, value: unknown) => ({
+        ...(value as Record<string, unknown>),
+        id: '90000000-0000-4000-8000-000000000001',
+      })),
+    };
+    const dataSource = { transaction: jest.fn(async (run: any) => run(manager)) };
+    const audit = { write: jest.fn(async () => undefined) };
+    const leaves = new LeaveRepository({} as any, dataSource as any, audit as any, {} as any);
+    return { leaves, manager, audit };
+  }
+
+  const values = {
+    tenantId: ctx.tenantId!,
+    branchId,
+    teacherId,
+    requesterUserId: '10000000-0000-4000-8000-000000000001',
+    durationType: LeaveDurationType.HOURLY,
+    reasonCode: LeaveReasonCode.ADMINISTRATIVE,
+    coverageStatus: LeaveCoverageStatus.NOT_REQUIRED,
+    startsAt: new Date('2026-09-14T07:00:00.000Z'),
+    endsAt: new Date('2026-09-14T08:00:00.000Z'),
+  };
+
+  it('serializes the overlap check with a transaction-scoped advisory lock', async () => {
+    const { leaves, manager } = createSetup();
+
+    await leaves.create(ctx, values);
+
+    const sql = manager.query.mock.calls.map((call) => String(call[0]));
+    const lockIndex = sql.findIndex((statement) => statement.includes('pg_advisory_xact_lock'));
+    const overlapIndex = sql.findIndex((statement) => statement.includes('FROM leave_requests'));
+    expect(lockIndex).toBeGreaterThan(-1);
+    expect(overlapIndex).toBeGreaterThan(-1);
+    // TOCTOU: kilit, çakışma kontrolünden ÖNCE alınmalı.
+    expect(lockIndex).toBeLessThan(overlapIndex);
+  });
+
+  it('rejects an overlapping request inside the same transaction', async () => {
+    const { leaves, audit } = createSetup([{ '?column?': 1 }]);
+
+    await expect(leaves.create(ctx, values)).rejects.toThrow(/overlaps an existing request/);
+    expect(audit.write).not.toHaveBeenCalled();
+  });
+
+  it('scopes the own history to tenant and server-resolved teacher', async () => {
+    const qb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn(async () => []),
+    };
+    const repository = { createQueryBuilder: jest.fn(() => qb) };
+    const leaves = new LeaveRepository(repository as any, {} as any, {} as any, {} as any);
+
+    await leaves.listOwn(ctx, { teacherId, decisionStatus: LeaveDecisionStatus.PENDING });
+
+    expect(qb.where).toHaveBeenCalledWith('leave.tenant_id = :tenantId', { tenantId: ctx.tenantId });
+    expect(qb.andWhere).toHaveBeenCalledWith('leave.teacher_id = :teacherId', { teacherId });
+    expect(qb.andWhere).toHaveBeenCalledWith('leave.decision_status = :decisionStatus', {
+      decisionStatus: LeaveDecisionStatus.PENDING,
+    });
+    expect(qb.orderBy).toHaveBeenCalledWith('leave.starts_at', 'DESC');
+  });
+
+  it('reads the tenant time zone scoped by tenant', async () => {
+    const repository = { query: jest.fn(async () => [{ timezone: 'Europe/Istanbul' }]) };
+    const leaves = new LeaveRepository(repository as any, {} as any, {} as any, {} as any);
+
+    await expect(leaves.loadTenantTimeZone(ctx)).resolves.toBe('Europe/Istanbul');
+    expect(repository.query).toHaveBeenCalledWith(
+      'SELECT timezone FROM tenants WHERE id = $1 LIMIT 1',
+      [ctx.tenantId],
+    );
+  });
+});
+
 

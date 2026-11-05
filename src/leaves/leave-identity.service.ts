@@ -58,4 +58,25 @@ export class LeaveIdentityService {
       branchId: resolved.branchId,
     };
   }
+
+  /**
+   * Own-scope SALT-OKUMA (izin geçmişi) için kimlik (#263 review P2).
+   *
+   * Tek şube seçimi gerektirmez: iki şubede çalışan öğretmen de kendi geçmişini
+   * görebilir. Kapsam hâlâ sunucuda çözülen `teacherId` ile kilitlidir.
+   */
+  async resolveOwnHistoryScope(
+    ctx: RequestContext,
+    input: ResolveLeaveTeacherIdentityInput = {},
+  ): Promise<{ actorUserId: string; teacherId: string; branchIds: readonly string[] }> {
+    const resolved = await this.teacherIdentity.resolveForOwnHistory(
+      contextWithBusinessDate(ctx, input),
+      { branchId: input.branchId },
+    );
+    return {
+      actorUserId: resolved.userId,
+      teacherId: resolved.teacherId,
+      branchIds: resolved.branchIds,
+    };
+  }
 }
