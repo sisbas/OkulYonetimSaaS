@@ -10,6 +10,8 @@ const state = {
   branchLabel: '',
   date: '',
   activeLeaveId: '',
+  leaveStatusFilter: '',
+  myLeaveStatusFilter: '',
   activeScheduleEventId: '',
   activeLeaveEtag: '',
   activeAssignmentId: '',
@@ -209,6 +211,7 @@ const HTTP_STATUS_UI_STATE = {
 
 const RATE_LIMIT_COOLDOWN_MS = 5000;
 const statusLabels = {
+  draft: 'Taslak',
   pending: 'Beklemede',
   approved: 'Onaylandı',
   rejected: 'Reddedildi',
@@ -239,6 +242,7 @@ const statusLabels = {
   unknown: 'Durum bekleniyor',
 };
 const statusTones = {
+  draft: 'neutral',
   approved: 'success',
   assigned: 'success',
   resolved: 'success',
@@ -916,6 +920,49 @@ function activateTab(name) {
   setActiveTab(name);
 }
 
+/**
+ * #491 — İzin penceresi ön doğrulaması (istemci tarafı).
+ *
+ * Sunucu sözleşmesinin (src/leaves/leave-window.ts) kullanıcıya görünen kısmı:
+ * geçersiz aralık API'ye hiç gitmeden, anlaşılır Türkçe bir gerekçeyle durur.
+ * Yetki sınırı DEĞİLDİR — asıl doğrulama sunucudadır; burada amaç boşuna 400
+ * üretmemek ve hatayı talebe yazmadan önce göstermektir.
+ */
+function validateLeaveWindowInput(durationType, startsAtValue, endsAtValue) {
+  const start = new Date(startsAtValue);
+  const end = new Date(endsAtValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return { ok: false, message: 'Başlangıç ve bitiş zamanı geçerli bir tarih olmalı.' };
+  }
+  if (start.getTime() >= end.getTime()) {
+    return { ok: false, message: 'Bitiş zamanı başlangıçtan sonra olmalı.' };
+  }
+  const hours = (end.getTime() - start.getTime()) / (60 * 60 * 1000);
+  const dayNumber = (value) =>
+    Math.floor(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / 86400000);
+  const daySpan = dayNumber(end) - dayNumber(start);
+
+  if (durationType === 'hourly') {
+    if (hours > 24 || daySpan > 1) {
+      return { ok: false, message: 'Saatlik izin en fazla 24 saat olabilir ve iki güne yayılamaz.' };
+    }
+    return { ok: true };
+  }
+  if (durationType === 'full_day') {
+    if (daySpan !== 0) {
+      return { ok: false, message: 'Tam gün izni tek bir takvim günü içinde kalmalı (ör. 08:00-18:00).' };
+    }
+    return { ok: true };
+  }
+  if (durationType === 'multi_day') {
+    if (daySpan < 2) {
+      return { ok: false, message: 'Çok gün izni en az iki takvim gününe yayılmalı.' };
+    }
+    return { ok: true };
+  }
+  return { ok: false, message: 'İzin türü seçilmedi.' };
+}
+
 async function createLeave(event) {
   event.preventDefault();
   if (!requireSession()) return;
@@ -932,6 +979,16 @@ async function createLeave(event) {
     endsAt: toIso8601($('#leave-ends-at').value),
   };
   const target = $('#teacher-output');
+  const precheck = validateLeaveWindowInput(
+    body.durationType,
+    $('#leave-starts-at').value,
+    $('#leave-ends-at').value,
+  );
+  if (!precheck.ok) {
+    renderRegionState(target, 'validation_error', precheck.message);
+    updateWorkflowProgress('leave', 'İzin talebi tamamlanamadı');
+    return;
+  }
   target.innerHTML = loading('İzin talebi oluşturuluyor');
   try {
     const { body: leave, etag } = await apiRequest('/leaves/me', { method: 'POST', body });
@@ -1199,11 +1256,28 @@ function captureLeaveVersion(body, etag) {
   state.activeLeaveEtag = pick(body, ['leaveEtag', 'etag'], etag || state.activeLeaveEtag);
 }
 
+/**
+ * #491 — durum rozet dili. Tek kaynak: `statusLabels` + `statusTones`.
+ * Ham değer görünür metne yazılmaz; yalnız `data-status` özniteliğinde kalır
+ * (tanılama için) ve haritada olmayan değer nötr "Durum bilinmiyor" olur.
+ */
+function statusBadge(value) {
+  const key = termKey(value);
+  return `<span class="tag" data-tone="${escapeHtml(statusTone(key))}" data-status="${escapeHtml(key)}">${escapeHtml(displayStatus(key))}</span>`;
+}
+
 function renderLeaveCard(leave, title) {
+  const decision = pick(leave, ['decisionStatus'], 'unknown');
+  const coverage = pick(leave, ['coverageStatus'], 'unknown');
+  const assignment = pick(leave, ['assignmentStatus'], '');
   return `<article class="card">
-    <h3>${escapeHtml(title)}</h3>
-    <p>Durum: ${escapeHtml(displayStatus(pick(leave, ['status'], 'unknown')))}</p>
-    <p>Karar: ${escapeHtml(displayStatus(pick(leave, ['decisionStatus'], 'unknown')))} · Ders karşılığı: ${escapeHtml(displayStatus(pick(leave, ['coverageStatus'], 'unknown')))}</p>
+    <h3>${escapeHtml(title)} ${statusBadge(decision)}</h3>
+    <p>Karar: ${escapeHtml(displayStatus(decision))} · Ders karşılığı: ${escapeHtml(displayStatus(coverage))}</p>
+    ${
+      assignment
+        ? `<p>Görevlendirme: ${escapeHtml(displayStatus(assignment))}</p>`
+        : ''
+    }
     <p>Güncellik: ${state.activeLeaveEtag ? 'Güncel kayıt alındı' : 'Güncel kayıt bekleniyor'}</p>
   </article>`;
 }

@@ -195,6 +195,31 @@ main { display: grid; gap: 1rem; }
 .tag[data-tone="warning"] { background: #fff7ed; color: #7c2d12; }
 .tag[data-tone="danger"] { background: #fee2e2; color: #7f1d1d; }
 .tag[data-tone="neutral"] { background: #f1f5f9; color: #334155; }
+/* #491 — durum filtresi kesitleri (İzinler / İzinlerim). Segmented control:
+   seçili kesit aria-pressed=true ile işaretlenir, renk tek başına anlam taşımaz. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.4rem;
+}
+.chip {
+  background: #f8fafc;
+  border: 1px solid #d9e0ee;
+  border-radius: 999px;
+  color: #243b75;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.3rem 0.85rem;
+}
+.chip[aria-pressed="true"] {
+  background: #e8eefc;
+  border-color: #3568d4;
+  font-weight: 600;
+}
+.chip:hover { border-color: #3568d4; }
+.chip:focus-visible { outline: 3px solid #3568d4; outline-offset: 2px; }
+
 .decision-panel {
   display: grid;
   gap: 1rem;
