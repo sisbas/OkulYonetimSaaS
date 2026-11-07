@@ -36,6 +36,7 @@
             <li><a href="shell.html">shell.html — tasarım kabuğu</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: shell</span></li>
             <li><a href="login.html">login.html — giriş</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: auth_required</span></li>
             <li><a href="403.html">403.html — erişim sınırı</a> <span class="role-tag">yetkisiz aktör</span> <span class="state-tag">durum: forbidden_non_enumerating</span></li>
+            <li><a href="bugun.html">bugun.html — Bugün: kuyruk, ikincil oturumlar, rol varyantları</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: ready</span></li>
             <li><a href="program.html">program.html — haftalık ders çizelgesi</a> <span class="role-tag">tüm roller</span> <span class="state-tag">durum: empty</span></li>
             <li><a href="program-builder.html">program-builder.html — manuel ders ekleme</a> <span class="role-tag">Yönetici/Operasyon</span> <span class="state-tag">durum: empty</span></li>
             <li><a href="program-conflicts.html">program-conflicts.html — çakışma çözüm</a> <span class="role-tag">Yönetici</span> <span class="state-tag">durum: conflict</span></li>
@@ -63,7 +64,7 @@
             <ul>
               <li>İzin seti tek dosyada toplanmıştır (#508): eski <code>leave.html</code>, <code>my-leaves.html</code>, <code>leave-new.html</code>, <code>leave-detail.html</code> ayrı dosya olarak tutulmaz; dördü de <code>izinler.html</code> içinde kesit olarak yaşar.</li>
               <li>Yoklama seti tek dosyada toplanmıştır (#510): eski <code>yoklama-session.html</code> (işaretleyici) ve <code>yoklama-absences.html</code> (sonuçlar) ayrı dosya olarak tutulmaz; <code>yoklama.html</code> içinde kesit olarak yaşar.</li>
-              <li>Bugün ekranı mock-up'ı bu sette yoktur; #489 açık olduğu için tasarım referansı ayrı dilimde üretilecektir.</li>
+              <li>Bugün ekranı tasarım referansı <code>bugun.html</code>'dir (kuyruk + ikincil yoklama oturumları + dört rol kesiti + durum matrisi). Runtime dilimi #489, stratejik hedefler dilimi #483 olarak açıktır.</li>
               <li>Stratejik hedefler yüzeyi deploy flag'ine bağlıdır (ADR 0003 D2/D3): flag kapalıyken sekme görünmez, <code>/strategic-goals</code> 404 döner.</li>
             </ul>
           </section>
