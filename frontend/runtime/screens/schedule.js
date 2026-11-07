@@ -65,6 +65,7 @@ async function createSchedule(event) {
     state.scheduleRevision = Number(pick(body, ['revision', 'versionNo', 'revisionNo'], 1)) || 1;
     state.scheduleEvents = [];
     renderScheduleStatus();
+    renderConflictResolution([]);
     announce('Çizelge oluşturuldu; olay satırları ekleyip taslağı kaydedin.', 'success');
   } catch (error) {
     renderError(target, error);
@@ -143,6 +144,7 @@ async function saveScheduleDraft() {
     state.scheduleRevision += 1;
     announce('Taslak kaydedildi.', 'success');
     renderScheduleStatus();
+    renderConflictResolution([]);
   } catch (error) {
     renderError(target, error);
   }
@@ -171,8 +173,10 @@ async function validateSchedule() {
       ${reasons.length ? `<ul class="impact-list">${reasons.map((r) => `<li data-schedule-reason="${escapeHtml(pick(r, ['code'], ''))}">${escapeHtml(displayTerm(scheduleReasonLabels, pick(r, ['code'], ''), 'Doğrulanamayan bir bulgu'))}</li>`).join('')}</ul>` : ''}
     </article>`;
     announce(canPublish ? 'Doğrulama geçti; yayınlanabilir.' : 'Doğrulama engelleri var.', canPublish ? 'success' : 'warning');
+    renderConflictResolution(reasons);
   } catch (error) {
     renderError(target, error);
+    renderConflictResolution([]);
   }
 }
 
@@ -215,6 +219,112 @@ async function unpublishSchedule() {
   }
 }
 
+function distinctValues(events, field) {
+  const seen = new Set();
+  const out = [];
+  for (const ev of events || []) {
+    const v = String(ev && ev[field] ? ev[field] : '').trim();
+    if (v && !seen.has(v)) { seen.add(v); out.push(v); }
+  }
+  return out;
+}
+
+function populateProgramFilters() {
+  const events = state.scheduleEvents || [];
+  const branchSel = $('#branch-filter');
+  const teacherSel = $('#teacher-filter');
+  const roomSel = $('#room-filter');
+  if (branchSel) {
+    const prev = branchSel.value;
+    branchSel.innerHTML = '<option value="">Tüm sınıflar</option>' + distinctValues(events, 'studentGroupId').map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    if (prev) branchSel.value = prev;
+  }
+  if (teacherSel) {
+    const prev = teacherSel.value;
+    teacherSel.innerHTML = '<option value="">Tüm öğretmenler</option>' + distinctValues(events, 'teacherId').map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    if (prev) teacherSel.value = prev;
+  }
+  if (roomSel) {
+    const prev = roomSel.value;
+    roomSel.innerHTML = '<option value="">Tüm derslikler</option>' + distinctValues(events, 'roomId').map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    if (prev) roomSel.value = prev;
+  }
+}
+
+function currentProgramFilters() {
+  return {
+    classCode: String($('#branch-filter')?.value || '').trim(),
+    teacherId: String($('#teacher-filter')?.value || '').trim(),
+    roomCode: String($('#room-filter')?.value || '').trim(),
+  };
+}
+
+function filterEvents(events) {
+  const f = currentProgramFilters();
+  return (events || []).filter((ev) => {
+    if (f.classCode && String(ev.studentGroupId || '').trim() !== f.classCode) return false;
+    if (f.teacherId && String(ev.teacherId || '').trim() !== f.teacherId) return false;
+    if (f.roomCode && String(ev.roomId || '').trim() !== f.roomCode) return false;
+    return true;
+  });
+}
+
+function renderLessonCards() {
+  const target = $('#lesson-cards');
+  if (!target) return;
+  const filtered = filterEvents(state.scheduleEvents || []);
+  if (!filtered.length) {
+    empty(target, 'schedule');
+    target.dataset.state = target.dataset.state || 'same_scope_empty';
+    return;
+  }
+  target.innerHTML = filtered.map((ev, i) => `<article class="card" data-lesson-card="${i}">
+    <h3>${escapeHtml(pick(ev, ['courseId'], 'Ders'))}</h3>
+    <p class="card-meta">
+      <span>${escapeHtml(pick(ev, ['dayOfWeek'], ''))}. gün ${escapeHtml(pick(ev, ['startTime'], ''))}-${escapeHtml(pick(ev, ['endTime'], ''))}</span>
+      <span>Öğretmen: ${escapeHtml(ev.teacherId || '-')}</span>
+      <span>Sınıf: ${escapeHtml(ev.studentGroupId || '-')}</span>
+      <span>Derslik: ${escapeHtml(ev.roomId || '-')}</span>
+    </p>
+  </article>`).join('');
+}
+
+function renderConflictResolution(reasons) {
+  const target = $('#schedule-conflicts');
+  if (!target) return;
+  const list = Array.isArray(reasons) ? reasons : [];
+  if (!list.length) {
+    target.innerHTML = '';
+    target.dataset.state = '';
+    return;
+  }
+  target.innerHTML = `<article class="card">
+    <h3>Çakışma çözümü (otomatik çözücü devre dışı)</h3>
+    <p class="hint">Çakışmalar elle çözülür: etkilenen dersi düzenleyip aday öğretmen/derslik/saat seçin.</p>
+    <ul class="impact-list">
+      ${list.map((r) => {
+        const code = pick(r, ['code'], '');
+        const label = displayTerm(scheduleReasonLabels, code, 'Çözülmesi gereken bir bulgu');
+        const idx = pick(r, ['index', 'eventIndex', 'lessonIndex'], '');
+        const editHint = idx !== '' && idx !== null && idx !== undefined ? ` (ders ${Number(idx) + 1})` : '';
+        return `<li data-schedule-reason="${escapeHtml(code)}">
+          <span>${escapeHtml(label)}${escapeHtml(editHint)}</span>
+          <button type="button" data-action="schedule-conflict-edit" data-conflict-index="${escapeHtml(idx)}">Düzenle</button>
+        </li>`;
+      }).join('')}
+    </ul>
+  </article>`;
+  target.dataset.state = 'error_retryable';
+}
+
+// wrap renderScheduleStatus to also populate filters + lesson cards
+const _originalRenderScheduleStatus = renderScheduleStatus;
+renderScheduleStatus = function() {
+  _originalRenderScheduleStatus();
+  try { populateProgramFilters(); } catch (e) { /* noop */ }
+  try { renderLessonCards(); } catch (e) { /* noop */ }
+};
+
 document.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
@@ -223,6 +333,17 @@ document.addEventListener('click', (event) => {
     state.scheduleEvents.splice(Number(target.dataset.scheduleIndex), 1);
     renderScheduleStatus();
   }
+  if (target.dataset.action === 'schedule-conflict-edit') {
+    const idx = Number(target.dataset.conflictIndex);
+    const row = document.querySelector(`[data-schedule-row="${idx}"]`);
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+});
+
+// filter wiring
+['branch-filter', 'teacher-filter', 'room-filter'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', () => { renderLessonCards(); });
 });
 
 $('#schedule-create-form').addEventListener('submit', createSchedule);
