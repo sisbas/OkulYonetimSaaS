@@ -275,18 +275,25 @@ function renderLessonCards() {
   const filtered = filterEvents(state.scheduleEvents || []);
   if (!filtered.length) {
     empty(target, 'schedule');
-    target.dataset.state = target.dataset.state || 'same_scope_empty';
     return;
   }
-  target.innerHTML = filtered.map((ev, i) => `<article class="card" data-lesson-card="${i}">
-    <h3>${escapeHtml(pick(ev, ['courseId'], 'Ders'))}</h3>
+  const dayNames = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+  target.innerHTML = filtered.map((ev, i) => {
+    const dayNumber = Number(pick(ev, ['dayOfWeek'], 0));
+    const dayLabel = dayNames[(Number.isFinite(dayNumber) ? dayNumber : 0) % 7] || 'Gün';
+    const refCount = [ev.teacherId, ev.studentGroupId, ev.roomId].filter(Boolean).length;
+    const refNote = refCount ? `${refCount} referans atandı` : 'Referans atanmamış';
+    return `<article class="card" data-lesson-card="${i}">
+    <h3>${escapeHtml(dayLabel)} ${escapeHtml(pick(ev, ['startTime'], ''))}-${escapeHtml(pick(ev, ['endTime'], ''))}</h3>
     <p class="card-meta">
-      <span>${escapeHtml(pick(ev, ['dayOfWeek'], ''))}. gün ${escapeHtml(pick(ev, ['startTime'], ''))}-${escapeHtml(pick(ev, ['endTime'], ''))}</span>
-      <span>Öğretmen: ${escapeHtml(ev.teacherId || '-')}</span>
-      <span>Sınıf: ${escapeHtml(ev.studentGroupId || '-')}</span>
-      <span>Derslik: ${escapeHtml(ev.roomId || '-')}</span>
+      <span>${escapeHtml(refNote)}</span>
+      <span data-lesson-teacher="${escapeHtml(ev.teacherId || '')}"></span>
+      <span data-lesson-group="${escapeHtml(ev.studentGroupId || '')}"></span>
+      <span data-lesson-room="${escapeHtml(ev.roomId || '')}"></span>
     </p>
-  </article>`).join('');
+    <p class="hint">Kayıt ayrıntısı program düzenleyicidedir.</p>
+  </article>`;
+  }).join('');
 }
 
 function renderConflictResolution(reasons) {
@@ -295,7 +302,6 @@ function renderConflictResolution(reasons) {
   const list = Array.isArray(reasons) ? reasons : [];
   if (!list.length) {
     target.innerHTML = '';
-    target.dataset.state = '';
     return;
   }
   target.innerHTML = `<article class="card">
@@ -305,16 +311,18 @@ function renderConflictResolution(reasons) {
       ${list.map((r) => {
         const code = pick(r, ['code'], '');
         const label = displayTerm(scheduleReasonLabels, code, 'Çözülmesi gereken bir bulgu');
-        const idx = pick(r, ['index', 'eventIndex', 'lessonIndex'], '');
-        const editHint = idx !== '' && idx !== null && idx !== undefined ? ` (ders ${Number(idx) + 1})` : '';
+        const rawIndex = pick(r, ['index', 'eventIndex', 'lessonIndex'], '');
+        const idx = Number(rawIndex);
+        const editHint = Number.isInteger(idx) && idx >= 0 ? ` (ders ${idx + 1})` : '';
         return `<li data-schedule-reason="${escapeHtml(code)}">
           <span>${escapeHtml(label)}${escapeHtml(editHint)}</span>
-          <button type="button" data-action="schedule-conflict-edit" data-conflict-index="${escapeHtml(idx)}">Düzenle</button>
+          ${Number.isInteger(idx) && idx >= 0
+            ? `<button type="button" data-action="schedule-conflict-edit" data-conflict-index="${idx}">Düzenle</button>`
+            : ''}
         </li>`;
       }).join('')}
     </ul>
   </article>`;
-  target.dataset.state = 'error_retryable';
 }
 
 // wrap renderScheduleStatus to also populate filters + lesson cards
