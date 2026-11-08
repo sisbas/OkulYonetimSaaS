@@ -617,7 +617,7 @@ function clearBranchWork() {
   state.scheduleRevision = 0;
   state.scheduleEvents = [];
   state.activeAttendanceSessionId = '';
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail']) {
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail', '#bugun-queue-output', '#bugun-sessions-output']) {
     $(id).innerHTML = '';
   }
 }
@@ -846,6 +846,7 @@ async function updateContext(event) {
   }
   applyCatalog(selection.body);
   await loadQueue();
+  await loadTodayDashboard();
 }
 
 // #445: sekme görünürlüğü sunucunun izin anahtarlarından türetilir. Rol
@@ -1223,6 +1224,7 @@ async function createAssignment(teacherId) {
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
+    await loadTodayDashboard();
   } catch (error) {
     renderError(target, error);
   }
@@ -1245,6 +1247,7 @@ async function clearAssignment() {
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
+    await loadTodayDashboard();
   } catch (error) {
     renderError(target, error);
   }
