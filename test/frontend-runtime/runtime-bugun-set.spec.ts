@@ -48,13 +48,13 @@ describe('#489 Bugün ekranı kod portu (mock-up bugun → runtime)', () => {
       expect(html).toContain('id="bugun-panel"');
       expect(html).toContain('id="bugun-stats"');
       expect(html).toContain('id="bugun-open-work-value"');
-      expect(html).toContain('id="bugun-pending-leave-value"');
+      expect(html).toContain('id="bugun-awaiting-leave-value"');
       expect(html).toContain('id="bugun-sessions-open-value"');
       expect(html).toContain('id="bugun-queue-output"');
       expect(html).toContain('id="bugun-sessions-output"');
       expect(html).toContain('id="bugun-roles-output"');
       expect(html).toContain('id="bugun-refresh"');
-      for (const metric of ['open-work', 'pending-leave', 'sessions-open']) {
+      for (const metric of ['open-work', 'awaiting-leave', 'sessions-open']) {
         expect(html).toContain(`data-metric="${metric}"`);
       }
       expect(html).toContain('id="attendance-event-id"');
@@ -88,7 +88,7 @@ describe('#489 Bugün ekranı kod portu (mock-up bugun → runtime)', () => {
     it('durum kesitleri renderRegionState üzerinden gelir (blocked/offline/empty)', () => {
       expect(bugun).toContain('renderRegionState');
       expect(bugun).toContain("forbidden_non_enumerating");
-      expect(bugun).toContain("'Bugün iş kuyruğu için yetkiniz bulunmuyor.'");
+      expect(bugun).toContain("'Bugünün iş listesi için yetkiniz bulunmuyor.'");
       expect(bugun).toContain("'Günlük işler için şube seçin.'");
     });
   });
@@ -97,21 +97,22 @@ describe('#489 Bugün ekranı kod portu (mock-up bugun → runtime)', () => {
     it('açık iş sayarını kapsam ve coverage durumuyla hesaplar', async () => {
       const ui = signedIn();
       ui.fetch.mockResolvedValueOnce(todayResponse([
-        { courseLabel: 'Matematik', studentGroupLabel: '9-A', timeRange: '09.40 - 10.20', coverageStatus: 'unresolved', state: 'open', leaveRequestId: 'leave-1', scheduleEventId: 'event-1' },
-        { courseLabel: 'Fen Bilimleri', studentGroupLabel: '11-C', timeRange: '11.20 - 12.00', coverageStatus: 'covered', state: 'covered', leaveRequestId: 'leave-2', scheduleEventId: 'event-2' },
+        { courseLabel: 'Matematik', studentGroupLabel: '9-A', startsAt: '2026-11-08T09:40:00.000Z', endsAt: '2026-11-08T10:20:00.000Z', coverageStatus: 'unresolved', state: 'open', leaveRequestId: 'leave-1', scheduleEventId: 'event-1' },
+        { courseLabel: 'Fen Bilimleri', studentGroupLabel: '11-C', startsAt: '2026-11-08T11:20:00.000Z', endsAt: '2026-11-08T12:00:00.000Z', coverageStatus: 'covered', state: 'covered', leaveRequestId: 'leave-2', scheduleEventId: 'event-2' },
       ]));
       ui.fetch.mockResolvedValueOnce(leavesResponse([{ id: 'l1', status: 'pending' }]));
       ui.fetch.mockResolvedValueOnce(sessionsResponse([{ id: 's1', status: 'draft', sessionDate: '2026-10-01T08:50:00.000Z', rosterSnapshot: [] }]));
       await ui.probe.loadTodayDashboard();
 
       expect(ui.element('#bugun-open-work-value').textContent).toBe('1');
-      expect(ui.element('#bugun-pending-leave-value').textContent).toBe('1');
+      expect(ui.element('#bugun-awaiting-leave-value').textContent).toBe('1');
       expect(ui.element('#bugun-sessions-open-value').textContent).toBe('1');
       expect(ui.element('#bugun-queue-output').innerHTML).toContain('queue-card');
       expect(ui.element('#bugun-queue-output').innerHTML).toContain('Karşılık bekliyor');
       expect(ui.element('#bugun-queue-output').innerHTML).toContain('Henüz atanmadı');
+      expect(ui.element('#bugun-queue-output').innerHTML).toContain('09:40 - 10:20');
       expect(ui.element('#bugun-sessions-output').innerHTML).toContain('data-attendance-state="open"');
-      expect(ui.element('#bugun-roles-output').innerHTML).toContain('Kuyruk');
+      expect(ui.element('#bugun-roles-output').innerHTML).toContain('Günlük işler');
     });
   });
 
@@ -157,7 +158,7 @@ describe('#489 Bugün ekranı kod portu (mock-up bugun → runtime)', () => {
   describe('mock-up kabuğu', () => {
     it('mockup bugun.html ile port kontratı uyumlu kalır', () => {
       expect(mockup).toContain('data-metric="open-work"');
-      expect(mockup).toContain('data-metric="pending-leave"');
+      expect(mockup).toContain('data-metric="awaiting-leave"');
       expect(mockup).toContain('data-metric="sessions-open"');
       expect(mockup).toContain('data-attendance-state="open"');
       expect(mockup).toContain('data-attendance-state="completed"');

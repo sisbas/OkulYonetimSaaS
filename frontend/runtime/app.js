@@ -1433,7 +1433,10 @@ document.addEventListener('click', (event) => {
   if (target.classList.contains('tab')) activateTab(target.dataset.tab);
   if (target.dataset.action === 'focus-teacher') activateTab('teacher');
   if (target.dataset.action === 'focus-ops') activateTab('ops');
-  if (target.dataset.action === 'impact') loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
+  if (target.dataset.action === 'impact') {
+    if (target.dataset.source === 'bugun') activateTab('ops');
+    loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
+  }
   if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();

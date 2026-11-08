@@ -20,10 +20,29 @@ function bugunToDay(value) {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+function bugunClock(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const timePart = text.includes('T') ? text.split('T')[1] : text;
+  const parts = timePart.split(':');
+  const hh = String(parts[0] || '0').padStart(2, '0');
+  const mm = String(parts[1] || '0').padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function bugunTimeRange(item) {
+  const startAt = pick(item, ['startsAt'], '');
+  const endAt = pick(item, ['endsAt'], '');
+  const start = bugunClock(startAt);
+  const end = bugunClock(endAt);
+  if (!start && !end) return 'Saat bekleniyor';
+  return `${start} - ${end}`;
+}
+
 function bugunQueueInfo(item) {
-  const coverageStatus = pick(item, ['coverageStatus'], 'unresolved');
+  const coverageStatus = pick(item, ['coverageStatus'], '');
   const assigned = Boolean(String(pick(item, ['substituteAssignmentId'], '') || pick(item, ['assignmentStatus'], '') || '').trim());
-  const unresolved = coverageStatus === 'unresolved' || coverageStatus === 'open';
+  const unresolved = !coverageStatus || coverageStatus === 'unresolved' || coverageStatus === 'open';
   const covered = coverageStatus === 'covered';
   const partiallyCovered = coverageStatus === 'partially_covered';
   const notRequired = coverageStatus === 'not_required';
@@ -49,7 +68,7 @@ function renderBugunQueueItem(item) {
   const eventId = pick(item, ['scheduleEventId', 'eventId'], '');
   const actions = [];
   if (info.unresolved && leaveId && canRequest('GET', `/daily-operations/leaves/${encodeURIComponent(leaveId)}/impact`)) {
-    actions.push(`<button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}" data-course-label="${escapeHtml(label)}">Adayları gör</button>`);
+    actions.push(`<button type="button" data-source="bugun" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}" data-course-label="${escapeHtml(label)}">Adayları gör</button>`);
   }
   if (info.unresolved && eventId) {
     actions.push(`<button type="button" data-action="bugun-open-attendance" data-event-id="${escapeHtml(eventId)}">Yoklamayı aç</button>`);
@@ -62,8 +81,8 @@ function renderBugunQueueItem(item) {
   return `<article class="card queue-card">
     <h3>${escapeHtml(label)} <span class="tag" data-tone="${escapeHtml(info.tone)}">${escapeHtml(info.tag)}</span></h3>
     <p class="card-meta">
-      <span>Saat: ${escapeHtml(pick(item, ['timeRange', 'time'], 'Saat bekleniyor'))}</span>
-      <span>Karşılık: ${escapeHtml(displayStatus(pick(item, ['coverageStatus'], 'unresolved')))}</span>
+      <span>Saat: ${escapeHtml(bugunTimeRange(item))}</span>
+      <span>Karşılık: ${escapeHtml(info.tag)}</span>
       <span>Görevlendirme: ${info.assigned ? 'Atandı' : 'Henüz atanmadı'}</span>
     </p>
     ${hint ? `<p class="hint">${escapeHtml(hint)}</p>` : ''}
@@ -106,8 +125,8 @@ function setBugunOpenWorkValue(value, permitted) {
 }
 
 function setBugunPendingLeaveValue(value, permitted) {
-  $('#bugun-pending-leave-value').textContent = String(value ?? '');
-  $('#bugun-pending-leave-hint').textContent = permitted
+  $('#bugun-awaiting-leave-value').textContent = String(value ?? '');
+  $('#bugun-awaiting-leave-hint').textContent = permitted
     ? 'Karar vermek karşılık atamak değildir; ikisi ayrı durumdur.'
     : 'Bu ölçüm yetkiniz kapsamında değil.';
 }
@@ -140,6 +159,7 @@ async function loadTodaySessions() {
 }
 
 async function loadTodayDashboard() {
+  if (document.querySelector('#bugun-panel')?.classList.contains('hidden')) return;
   if (!requireSession()) return;
   const queueTarget = $('#bugun-queue-output');
   const queuePermitted = canRequest('GET', '/daily-operations/today');
@@ -155,8 +175,8 @@ async function loadTodayDashboard() {
       const items = asArray(body, ['items', 'lessons', 'queue']);
       let openWorkCount = 0;
       for (const item of items) {
-        const coverageStatus = pick(item, ['coverageStatus'], 'unresolved');
-        if (coverageStatus === 'unresolved' || coverageStatus === 'partially_covered') openWorkCount += 1;
+        const coverageStatus = pick(item, ['coverageStatus'], '');
+        if (coverageStatus === 'unresolved' || coverageStatus === 'partially_covered' || !coverageStatus) openWorkCount += 1;
       }
       setBugunOpenWorkValue(openWorkCount, true);
       if (items.length) {
@@ -168,7 +188,7 @@ async function loadTodayDashboard() {
       renderError(queueTarget, error);
     }
   } else {
-    renderRegionState(queueTarget, 'forbidden_non_enumerating', 'Bugün iş kuyruğu için yetkiniz bulunmuyor.');
+    renderRegionState(queueTarget, 'forbidden_non_enumerating', 'Bugünün iş listesi için yetkiniz bulunmuyor.');
     setBugunOpenWorkValue('', false);
   }
 
@@ -198,7 +218,7 @@ async function loadTodayDashboard() {
 function renderBugunKesit() {
   const target = $('#bugun-roles-output');
   const rows = [
-    { key: 'queue', title: 'Kuyruk', permitted: canRequest('GET', '/daily-operations/today'), hint: 'Bugün iş (izin kuyruğu) görünürlüğü aktör yetkisiyle belirlenir.' },
+    { key: 'queue', title: 'Günlük işler', permitted: canRequest('GET', '/daily-operations/today'), hint: 'Bugünün iş listesi görünürlüğü aktör yetkisiyle belirlenir.' },
     { key: 'decision', title: 'Karar', permitted: canRequest('GET', '/leaves'), hint: 'İzin kararı görünürlüğü aktör yetkisiyle belirlenir.' },
     { key: 'attendance', title: 'Yoklama', permitted: canRequest('GET', '/attendance/sessions'), hint: 'Yoklama okuma görünürlüğü aktör yetkisiyle belirlenir.' },
   ];
@@ -231,6 +251,7 @@ document.addEventListener('click', (event) => {
   if (target.dataset.action === 'bugun-unassign') {
     state.activeLeaveId = String(target.dataset.leaveId || state.activeLeaveId);
     state.activeScheduleEventId = String(target.dataset.eventId || state.activeScheduleEventId);
+    await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     clearAssignment();
   }
 });
