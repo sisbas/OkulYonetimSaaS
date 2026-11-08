@@ -230,7 +230,7 @@ function renderBugunKesit() {
     .join('');
 }
 
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
   const target = event.target.closest('button');
   if (!target) return;
   if (target.dataset.action === 'bugun-open-attendance') {
