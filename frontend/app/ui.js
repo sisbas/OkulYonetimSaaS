@@ -160,20 +160,38 @@ export function mount({ mode, store = null }) {
     );
   }
   function loginView() {
-    // HERO: A paper school-day composition welcomes the team back to its shared plan.
+    // #488 — Giriş görünümü: mock-up panel diline uyarlanır (frontend/design/login.html).
+    // Fail-closed: giriş sonucu başarı iddiası yok; doğrulama post-login'da, rol seçimi yok.
     return `<div class="login-page">
       <header class="login-header"><a class="login-brand" href="/"><img src="/app/mark.svg" alt=""><span>okul<span>yönetim</span></span></a><a class="login-home" href="/">Ana sayfaya dön <span aria-hidden="true">↗</span></a></header>
       <main class="login-main" id="main" tabindex="-1">
-        <section class="login-story" aria-labelledby="login-story-title"><p class="login-kicker">AYNI PLAN. AYNI SAYFA. BİRLİKTE.</p><h1 id="login-story-title">Yeni bir gün.<br />Yeni bir <em>başlangıç.</em></h1><p class="login-description">Okulun günlük ritmini birlikte yönetin.<br />Planlarınız, ekibiniz ve sıradaki adımınız aynı yerde.</p>
-          <div class="login-paper" aria-hidden="true"><div class="login-paper-top"><span>Günün küçük hatırlatması</span><span>↗</span></div><p>İyi bir okul günü,<br /><em>iyi bir planla başlar.</em></p><div class="login-paper-bottom"><span class="login-dot"></span> Eğitime alan açın.</div></div><span class="login-spark" aria-hidden="true">✳</span>
+        <section class="panel login-panel" aria-labelledby="login-heading">
+          <div class="login-form-inner">
+            <p class="eyebrow">Giriş</p>
+            <h1 id="login-heading">Oturum açın</h1>
+            <p class="login-subtitle">Kurum ve şube yetkiniz oturum açıldıktan sonra sistem tarafından doğrulanır.</p>
+            <h2 id="login-title" class="login-form-title">Giriş formu</h2>
+            <p class="hint">Kimlik bilgilerinizle oturum açın. Hatalı denemelerde sistem size bildirim verir; giriş sonucu ayrı bir onay ekranında gösterilir.</p>
+            ${notice ? `<div class="login-feedback" role="alert">${esc(notice)}</div>` : ""}
+            <form id="login-form" aria-busy="${loginBusy}">
+              <label class="login-field" for="login-email">E-posta adresi
+                <input id="login-email" name="email" type="email" autocomplete="username" required />
+              </label>
+              <label class="login-field" for="login-password">Şifre
+                <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+              </label>
+              <label class="login-field" for="login-tenant">Kurum
+                <input id="login-tenant" name="tenantId" inputmode="latin" aria-describedby="tenant-help" />
+              </label>
+              <p id="tenant-help" class="hint">Yetkileriniz ve kurum erişiminiz oturum açınca doğrulanır.</p>
+              <button type="submit" class="login-submit" ${loginBusy ? "disabled" : ""}>${loginBusy ? "Doğrulanıyor…" : "Oturum aç"}</button>
+            </form>
+            <p class="login-help">Giriş yapmakta sorun mu yaşıyorsunuz?<br /><strong>Hesap ve erişim desteği için kurum yöneticinize başvurun.</strong></p>
+            <div class="login-preview"><span>Önce bir göz atmak ister misiniz?</span><a href="/ux/today">Örnek verilerle keşfedin <span aria-hidden="true">↗</span></a></div>
+          </div>
         </section>
-        <section class="login-form-section" aria-labelledby="login-title"><div class="login-form-inner"><p class="login-kicker"><span class="login-dot"></span> KURUMUNUZA GİRİŞ</p><h2 id="login-title">Tekrar hoş geldiniz.</h2><p class="login-form-description">Kurumunuzun verdiği hesap bilgileriyle devam edin.</p>
-          ${notice ? `<div class="login-feedback" role="alert">${esc(notice)}</div>` : ""}
-          <form id="login-form" aria-busy="${loginBusy}"><label class="login-field" for="login-email">E-posta adresi<input id="login-email" name="email" type="email" required autocomplete="username" placeholder="adiniz@okulunuz.com" autocapitalize="none" spellcheck="false" ${loginBusy ? "readonly" : ""}></label><label class="login-field" for="login-password">Şifre<input id="login-password" name="password" type="password" required autocomplete="current-password" placeholder="Şifrenizi girin" ${loginBusy ? "readonly" : ""}></label><button class="login-submit" type="submit" ${loginBusy ? "disabled" : ""}><span>${loginBusy ? "Doğrulanıyor…" : "Oturum aç"}</span><span aria-hidden="true">${loginBusy ? "…" : "↗"}</span></button></form>
-          <p class="login-help">Giriş yapmakta sorun mu yaşıyorsunuz?<br /><strong>Hesap ve erişim desteği için kurum yöneticinize başvurun.</strong></p>
-          <div class="login-preview"><span>Önce bir göz atmak ister misiniz?</span><a href="/ux/today">Örnek verilerle keşfedin <span aria-hidden="true">↗</span></a></div>
-        </div></section>
-      </main><footer class="login-footer"><span>© Okul Yönetim</span><span>Daha az karmaşa. Daha çok eğitim.</span></footer>
+      </main>
+      <footer class="login-footer"><span>© Okul Yönetim</span><span>Daha az karmaşa. Daha çok eğitim.</span></footer>
     </div>`;
   }
   function metrics() {
@@ -880,14 +898,16 @@ export function mount({ mode, store = null }) {
     );
   }
   function forbidden() {
+    // #488 — Erişim sınırı yüzeyi: mock-up 403 görünümü (frontend/design/403.html) dili.
+    // Fail-closed tutarlılık (K-44): liste yok, kapsam listelenmez, farklı şube/tarih deneyin.
     return (
-      heading("Erişim sınırı", "") +
+      heading("Bu işlem için yetkiniz yok", "") +
       panel(
-        "Bu ekran görüntülenemiyor",
+        "Yetkisiz erişim",
         empty(
-          "Bu ekran için yetkiniz bulunmuyor",
-          "Yetkili olduğunuz ekranlardan devam edin.",
-          link("today", "Bugüne dön", "btn"),
+          "Bu işlemi gerçekleştirmek için yetkiniz yok",
+          "Kapsamınız dışında kalan kayıtlar listelenmez. Yetki kapsamınızı kontrol edin veya farklı bir şube veya tarih deneyin.",
+          link("login", "Giriş Sayfasına dön", "btn"),
         ),
       )
     );
@@ -1264,7 +1284,8 @@ export function mount({ mode, store = null }) {
       loginBusy = true;
       const data = new FormData(f),
         email = data.get("email"),
-        password = data.get("password");
+        password = data.get("password"),
+        tenantId = String(data.get("tenantId") || "").trim();
       f.querySelector("button").disabled = true;
       f.setAttribute("aria-busy", "true");
       f.querySelector("button").textContent = "Doğrulanıyor…";
@@ -1275,7 +1296,7 @@ export function mount({ mode, store = null }) {
             "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify(tenantId ? { email, password, tenantId } : { email, password }),
         });
         let body;
         try {
