@@ -1415,8 +1415,8 @@ const EMPTY_COPY = {
     message: 'Bu kapsamda onay kaydı yok.',
   },
   notifications: {
-    title: 'Bildirim yok',
-    message: 'Bu kapsamda bildirim yok.',
+    title: 'Taslak kalır (gönderim yok)',
+    message: 'Kuyrukta bekleyen bildirim yok. İletişim uygunluğu kontrolü onay adımında yapılır; engeli uygunlukta onay izinli değildir.',
   },
   attendance: {
     title: 'Yoklama oturumu yok',
