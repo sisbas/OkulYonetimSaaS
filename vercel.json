@@ -4,6 +4,13 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist/runtime",
+  "redirects": [
+    {
+      "source": "/ux/:path*",
+      "destination": "/runtime",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/",
@@ -24,10 +31,6 @@
     {
       "source": "/app/:asset((?:ui|start)\\.js|(?:style|login|dashboard|students)\\.css|mark\\.svg)",
       "destination": "/app/:asset"
-    },
-    {
-      "source": "/ux/:path*",
-      "destination": "/runtime"
     },
     {
       "source": "/app/:path*",
