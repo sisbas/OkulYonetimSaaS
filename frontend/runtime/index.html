@@ -90,6 +90,18 @@
           <strong>Yoklama</strong>
           <small>Oturum ve kayıt</small>
         </button>
+        <button class="tab" role="tab" data-tab="tanimlar" aria-controls="definitions-panel" aria-selected="false">
+          <strong>Tanımlar</strong>
+          <small>Kaynak listeleri</small>
+        </button>
+        <button class="tab" role="tab" data-tab="raporlar" aria-controls="reports-panel" aria-selected="false">
+          <strong>Raporlar</strong>
+          <small>Açık iş ve yük</small>
+        </button>
+        <button class="tab" role="tab" data-tab="yonetim" aria-controls="users-roles-panel" aria-selected="false">
+          <strong>Yönetim</strong>
+          <small>Erişim matrisi</small>
+        </button>
       </nav>
 
       <main id="runtime-main" tabindex="-1">
@@ -498,6 +510,80 @@
           <p class="hint">İşaretlenmemiş öğrenci devamsız sayılmaz; sonuç yalnız açıkça "Gelmedi" işaretlenen kayıtlardan oluşur.</p>
           <div id="attendance-absences" class="cards" role="region" aria-label="Devamsızlık sonuçları"></div>
         </section>
+
+        <section id="definitions-panel" class="panel runtime-panel hidden" data-panel="tanimlar">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Tanımlar</p>
+              <h2>Kaynak listeleri</h2>
+            </div>
+          </div>
+          <div class="panel-intro" aria-labelledby="definitions-heading">
+            <strong id="definitions-heading">Kaynak tanımları</strong>
+            <p class="hint">Öğretmen, grup, öğrenci; ders, derslik, saat dilimi. Liste, arama ve detay kalibrasyonu Faz 2'de canlı veriyle bağlanır; bu yüzey dürüst boş durum gösterir.</p>
+          </div>
+          <form id="definition-form" class="filter-grid" aria-label="Tanım arama">
+            <label>
+              Kaynak türü
+              <select id="definition-type" name="type" aria-describedby="definition-type-help">
+                <option value="">Tüm kaynaklar</option>
+                <option value="teachers">Öğretmen</option>
+                <option value="groups">Grup</option>
+                <option value="students">Öğrenci</option>
+                <option value="courses">Ders</option>
+                <option value="rooms">Derslik</option>
+                <option value="time-slots">Saat dilimi</option>
+              </select>
+            </label>
+            <p id="definition-type-help" class="hint wide">Canlı liste henüz yayınlanmadı; seçimler sahte satır üretmez.</p>
+            <label>
+              Arama
+              <input id="definition-search" name="q" placeholder="İsimle ara" aria-describedby="definition-search-help" />
+            </label>
+            <p id="definition-search-help" class="hint wide">Aramayı yürütmek için canlı listeye ihtiyaç vardır.</p>
+          </form>
+          <div id="definition-list" class="cards" role="region" aria-label="Tanım listesi">
+            <section class="empty-state" aria-labelledby="empty-definitions-heading">
+              <h3 id="empty-definitions-heading">Kayıt yok</h3>
+              <p class="hint">Bir kaynak türü seçin veya arama yapın.</p>
+            </section>
+          </div>
+        </section>
+
+        <section id="reports-panel" class="panel runtime-panel hidden" data-panel="raporlar">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Raporlar</p>
+              <h2>Açık iş ve yük özeti</h2>
+            </div>
+          </div>
+          <div class="panel-intro" aria-labelledby="reports-heading">
+            <strong id="reports-heading">Rapor özeti</strong>
+            <p class="hint">Saf özet: fiziksel kapanış/teslimat iddiası yok. Rapor yükü Faz 2 kapsamında karantinada.</p>
+          </div>
+          <div id="report-cards" class="cards" role="region" aria-label="Rapor kartları">
+            <section class="empty-state" aria-labelledby="empty-reports-heading">
+              <h3 id="empty-reports-heading">Gösterilecek rapor yok</h3>
+              <p class="hint">Rapor yükü Faz 2 kapsamında; bu yolun fiziksel kapanış/teslimat iddiası taşımadığı açık kalır.</p>
+            </section>
+          </div>
+        </section>
+
+        <section id="users-roles-panel" class="panel runtime-panel hidden" data-panel="yonetim">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Yönetim</p>
+              <h2>Kullanıcılar ve roller</h2>
+            </div>
+          </div>
+          <div class="panel-intro" aria-labelledby="users-heading">
+            <strong id="users-heading">Erişim matrisi</strong>
+            <p class="hint">Satır: kullanıcı; sütun: izin anahtarı (makine-okur). Yetki kararı sunucuda kalır; istemci yalnız görünürlüğü daraltır.</p>
+          </div>
+          <div id="users-roles-matrix" class="matrix" role="region" aria-label="Erişim matrisi">
+            <p class="hint" id="users-roles-empty-heading">Kullanıcı ve rol matrisi henüz canlı yayınlanmadı.</p>
+          </div>
+        </section>
       </main>
       <footer class="shell-footer">
         <p>Okul i&#351; ak&#305;&#351;&#305; &mdash; KVKK uyumlu &#231;al&#305;&#351;&#305;r ortam</p>
@@ -510,5 +596,8 @@
     <script src="/runtime/screens/schedule.js" defer></script>
     <script src="/runtime/screens/attendance.js" defer></script>
     <script src="/runtime/screens/bugun.js" defer></script>
+    <script src="/runtime/screens/definitions.js" defer></script>
+    <script src="/runtime/screens/reports.js" defer></script>
+    <script src="/runtime/screens/users-roles.js" defer></script>
   </body>
 </html>
