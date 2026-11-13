@@ -867,6 +867,9 @@ const TAB_CAPABILITIES = {
   program: 'schedule:draft:create',
   attendance: 'attendance:own:read',
   notifications: 'notification:draft:read',
+  tanimlar: 'daily_operations:read',
+  raporlar: 'leave:read',
+  yonetim: 'daily_operations:update',
 };
 
 // Screen modüllerin sekme aktivasyon hook'u: notifications.js

@@ -3,13 +3,14 @@ import * as path from 'node:path';
 import * as vm from 'node:vm';
 
 const RUNTIME_ROOT = path.join(process.cwd(), 'frontend/runtime');
-const SCREEN_MODULES = ['decisions', 'consents', 'notifications', 'schedule', 'attendance', 'bugun'];
+const SCREEN_MODULES = ['decisions', 'consents', 'notifications', 'schedule', 'attendance', 'bugun', 'definitions', 'reports', 'users-roles'];
 
 // Core first, then the screen modules in the order index.html loads them, so a
 // probe can drive any screen the way the browser does.
 const source = [
   fs.readFileSync(path.join(RUNTIME_ROOT, 'app.js'), 'utf8'),
   ...SCREEN_MODULES.map((name) => fs.readFileSync(path.join(RUNTIME_ROOT, 'screens', `${name}.js`), 'utf8')),
+
 ].join('\n');
 
 export interface MockElement {
@@ -85,7 +86,7 @@ export function runtime(
   const elements = new Map<string, MockElement>();
 
   // Pre-register tab elements
-  const tabNames = ['bugun', 'teacher', 'ops', 'notifications', 'program', 'attendance'];
+  const tabNames = ['bugun', 'teacher', 'ops', 'notifications', 'program', 'attendance', 'tanimlar', 'raporlar', 'yonetim'];
   for (const name of tabNames) {
     const tab = makeElement({ dataset: { tab: name } });
     tab.setAttribute('aria-selected', name === 'bugun' ? 'true' : 'false');
@@ -93,7 +94,7 @@ export function runtime(
   }
 
   // Pre-register panel elements — bugun visible by default, rest hidden
-  const panelNames = ['bugun', 'teacher', 'ops', 'notifications', 'program', 'attendance'];
+  const panelNames = ['bugun', 'teacher', 'ops', 'notifications', 'program', 'attendance', 'tanimlar', 'raporlar', 'yonetim'];
   for (const name of panelNames) {
     const panel = makeElement({ dataset: { panel: name }, hidden: name !== 'bugun' });
     elements.set(`#${name}-panel`, panel);

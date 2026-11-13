@@ -17,7 +17,7 @@ describe('#442 runtime screen modules prefactor', () => {
   const root = process.cwd();
   const runtimeDir = path.join(root, 'frontend', 'runtime');
   const screensDir = path.join(runtimeDir, 'screens');
-  const screenAssets = ['decisions.js', 'consents.js', 'notifications.js', 'schedule.js', 'attendance.js'];
+  const screenAssets = ['decisions.js', 'consents.js', 'notifications.js', 'schedule.js', 'attendance.js', 'bugun.js', 'definitions.js', 'reports.js', 'users-roles.js'];
 
   const html = fs.readFileSync(path.join(runtimeDir, 'index.html'), 'utf8');
 
