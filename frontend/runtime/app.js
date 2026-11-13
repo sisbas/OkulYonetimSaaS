@@ -617,7 +617,7 @@ function clearBranchWork() {
   state.scheduleRevision = 0;
   state.scheduleEvents = [];
   state.activeAttendanceSessionId = '';
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail']) {
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail', '#bugun-queue-output', '#bugun-sessions-output']) {
     $(id).innerHTML = '';
   }
 }
@@ -846,6 +846,7 @@ async function updateContext(event) {
   }
   applyCatalog(selection.body);
   await loadQueue();
+  await loadTodayDashboard();
 }
 
 // #445: sekme görünürlüğü sunucunun izin anahtarlarından türetilir. Rol
@@ -1223,6 +1224,7 @@ async function createAssignment(teacherId) {
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
+    await loadTodayDashboard();
   } catch (error) {
     renderError(target, error);
   }
@@ -1245,6 +1247,7 @@ async function clearAssignment() {
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
+    await loadTodayDashboard();
   } catch (error) {
     renderError(target, error);
   }
@@ -1430,7 +1433,10 @@ document.addEventListener('click', (event) => {
   if (target.classList.contains('tab')) activateTab(target.dataset.tab);
   if (target.dataset.action === 'focus-teacher') activateTab('teacher');
   if (target.dataset.action === 'focus-ops') activateTab('ops');
-  if (target.dataset.action === 'impact') loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
+  if (target.dataset.action === 'impact') {
+    if (target.dataset.source === 'bugun') activateTab('ops');
+    loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
+  }
   if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();
