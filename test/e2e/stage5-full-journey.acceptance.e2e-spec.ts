@@ -1797,6 +1797,13 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'keyboard: Enter submits login form (no mouse)');
 
     await mobileSession.waitForText('#summary-scope', /./, 20_000);
+    // Axe taraması öncesinde tüm transition/animasyonları sustur; taramanan
+    // DOM, geçiş halindeki ara renklerle ölçülemez (deterministik kanıt).
+    await mobileSession.page.evaluate(() => {
+      const style = document.createElement('style');
+      style.textContent = '*{transition:none!important;animation:none!important}';
+      document.head.appendChild(style);
+    });
     // Tarama, gerçek liste içeriği oturmuşken yapılır: boş/geçiş halindeki
     // bir DOM üzerinde axe çalıştırmak deterministik kanıt üretmez.
     await ensureBranch(mobileSession, fixture.branchCode);
