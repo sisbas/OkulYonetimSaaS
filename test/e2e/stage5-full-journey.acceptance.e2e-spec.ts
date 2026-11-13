@@ -1797,9 +1797,27 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'keyboard: Enter submits login form (no mouse)');
 
     await mobileSession.waitForText('#summary-scope', /./, 20_000);
+    // Axe taraması öncesinde tüm transition/animasyonları sustur; taramanan
+    // DOM, geçiş halindeki ara renklerle ölçülemez (deterministik kanıt).
+    await mobileSession.page.evaluate(() => {
+      const style = document.createElement('style');
+      style.textContent = '*{transition:none!important;animation:none!important}';
+      document.head.appendChild(style);
+    });
     // Tarama, gerçek liste içeriği oturmuşken yapılır: boş/geçiş halindeki
     // bir DOM üzerinde axe çalıştırmak deterministik kanıt üretmez.
     await ensureBranch(mobileSession, fixture.branchCode);
+    await mobileSession.clickElement('.tab[data-tab="bugun"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe bugun desktop', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="program"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe program desktop', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="ops"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe ops desktop', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="attendance"]').catch(() => undefined);
+    // Content must load before scan — empty container cannot reveal violations.
+    await mobileSession.clickElement('#refresh-attendance').catch(() => undefined);
+    await waitForCountAtLeast(mobileSession, '#attendance-sessions article.card', 1, 30_000);
+    assertNoBlockingAxeViolations('axe attendance desktop', await mobileSession.axeScan());
     await mobileSession.clickElement('.tab[data-tab="notifications"]').catch(() => undefined);
     await waitForCountAtLeast(mobileSession, '#notifications-list article.card', 3, 30_000);
     assertNoBlockingAxeViolations('axe authenticated desktop', await mobileSession.axeScan());
@@ -1807,6 +1825,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await snap(mobileSession, '08-a11y-keyboard-desktop');
 
     await mobileSession.setViewport(390, 844);
+    await mobileSession.clickElement('.tab[data-tab="bugun"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe bugun mobile', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="notifications"]').catch(() => undefined);
     assertNoBlockingAxeViolations('axe authenticated mobile', await mobileSession.axeScan());
     expect(await mobileSession.hasHorizontalOverflow()).toBe(false);
     await snap(mobileSession, '09-mobile-viewport');

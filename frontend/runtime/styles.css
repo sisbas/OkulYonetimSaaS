@@ -152,6 +152,7 @@ input, textarea {
 }
 .tab small { color: inherit; opacity: 0.78; }
 .tab[aria-selected="true"] { background: #244f99; color: #fff; }
+.tab[aria-selected="true"] small { color: inherit; opacity: 1; }
 main { display: grid; gap: 1rem; }
 .hidden { display: none !important; }
 .section-head {
