@@ -156,7 +156,7 @@ export function mount({ mode, store = null }) {
         "Dersleri, bekleyen kararları ve günün operasyonunu tek yerden takip edin.",
         `<a class="btn" href="/runtime">Mevcut operasyon ekranı</a>`,
       ) +
-      `<div class="connection">${panel(token ? "Oturum doğrulandı · kurum bağlamı bekleniyor" : "Gününüze buradan başlayın", empty(token ? "Kurum bağlantısı tamamlanmalı" : "Kurumunuzla güvenle çalışın", token ? "Hesap doğrulandı. Yetkili şube ve ekran bilgileri henüz bu arayüze aktarılmıyor. Bu bilgiler gelmeden kurum verileri gösterilemez." : "Kurum kayıtlarını görüntülemek için oturum açın. Yeni arayüzü örnek kayıtlarla incelemek için tasarım alanını kullanabilirsiniz.", `${token ? "" : link("login", "Oturum aç", "btn primary")}<a class="btn ${token ? "primary" : ""}" href="/ux/today">Arayüzü incele</a>`))}<div class="panel panel-pad"><h2>Bağlantı durumu</h2><div class="step"><b>01</b><div><strong>Kimlik doğrulama</strong><p>Mevcut güvenli oturum servisi kullanılır.</p></div></div><div class="step"><b>02</b><div><strong>Kurum, şube ve yetkili ekranlar</strong><p>Bağlantı geliştirmesi bekleniyor. Kullanıcıdan teknik kimlik istenmez.</p></div></div><div class="step"><b>03</b><div><strong>Yoklama ve veli bilgilendirme</strong><p>Üretim bağlantısı hazır değil. Tasarım alanındaki kayıtlar örnektir.</p></div></div></div></div>`
+      `<div class="connection">${panel(token ? "Oturum doğrulandı · kurum bağlamı bekleniyor" : "Gününüze buradan başlayın", empty(token ? "Kurum bağlantısı tamamlanmalı" : "Kurumunuzla güvenle çalışın", token ? "Hesap doğrulandı. Yetkili şube ve ekran bilgileri henüz bu arayüze aktarılmıyor. Bu bilgiler gelmeden kurum verileri gösterilemez." : "Kurum kayıtlarını görüntülemek için oturum açın. Yeni arayüzü örnek kayıtlarla incelemek için tasarım alanını kullanabilirsiniz.", `${token ? "" : link("login", "Oturum aç", "btn primary")}<a class="btn ${token ? "primary" : ""}" href="/runtime">Arayüzü incele</a>`))}<div class="panel panel-pad"><h2>Bağlantı durumu</h2><div class="step"><b>01</b><div><strong>Kimlik doğrulama</strong><p>Mevcut güvenli oturum servisi kullanılır.</p></div></div><div class="step"><b>02</b><div><strong>Kurum, şube ve yetkili ekranlar</strong><p>Bağlantı geliştirmesi bekleniyor. Kullanıcıdan teknik kimlik istenmez.</p></div></div><div class="step"><b>03</b><div><strong>Yoklama ve veli bilgilendirme</strong><p>Üretim bağlantısı hazır değil. Tasarım alanındaki kayıtlar örnektir.</p></div></div></div></div>`
     );
   }
   function loginView() {
@@ -187,7 +187,7 @@ export function mount({ mode, store = null }) {
               <button type="submit" class="login-submit" ${loginBusy ? "disabled" : ""}>${loginBusy ? "Doğrulanıyor…" : "Oturum aç"}</button>
             </form>
             <p class="login-help">Giriş yapmakta sorun mu yaşıyorsunuz?<br /><strong>Hesap ve erişim desteği için kurum yöneticinize başvurun.</strong></p>
-            <div class="login-preview"><span>Önce bir göz atmak ister misiniz?</span><a href="/ux/today">Örnek verilerle keşfedin <span aria-hidden="true">↗</span></a></div>
+            <div class="login-preview"><span>Önce bir göz atmak ister misiniz?</span><a href="/runtime">Canlı uygulamaya göz atın <span aria-hidden="true">↗</span></a></div>
           </div>
         </section>
       </main>
@@ -894,7 +894,7 @@ export function mount({ mode, store = null }) {
         )
         .join(
           "",
-        )}</div>${panel("Kapsam ve bağımlılıklar", `<div class="panel-pad"><p>Program → İzin → Etki → Görevlendirme → Yoklama → Bildirim taslağı → Onay incelemesi.</p><p>Onaylı oturum/şube bağlamı, insan tarafından okunabilir ders referansları, izin onayı, yoklama ve bildirim API bağlantıları bekleniyor.</p><p>Ödeme, muhasebe, CRM, sınav modülü, veli/öğrenci uygulaması ve Faz 2–3 bu teslimatta yok.</p><p>Manrope/Inter font aileleri tanımlı; yerel font yoksa sistem fontları kullanılır. Klavye ve altı ekran genişliği doğrulama kapsamındadır.</p><a href="/ux/spec.md">Ekran envanteri, durum matrisi ve kabul raporu</a></div>`)}`
+        )}</div>${panel("Kapsam ve bağımlılıklar", `<div class="panel-pad"><p>Program → İzin → Etki → Görevlendirme → Yoklama → Bildirim taslağı → Onay incelemesi.</p><p>Onaylı oturum/şube bağlamı, insan tarafından okunabilir ders referansları, izin onayı, yoklama ve bildirim API bağlantıları bekleniyor.</p><p>Ödeme, muhasebe, CRM, sınav modülü, veli/öğrenci uygulaması ve Faz 2–3 bu teslimatta yok.</p><p>Manrope/Inter font aileleri tanımlı; yerel font yoksa sistem fontları kullanılır. Klavye ve altı ekran genişliği doğrulama kapsamındadır.</p><a href="/runtime">Canlı uygulamaya geç</div>`)}`
     );
   }
   function forbidden() {
