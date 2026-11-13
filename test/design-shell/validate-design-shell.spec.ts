@@ -246,7 +246,7 @@ describe('Bugün ekranı mock-up\'ı (#489 hazırlığı)', () => {
     const html = readPage('bugun.html');
     shellChecks(html);
     expect(html).toContain('data-metric="open-work"');
-    expect(html).toContain('data-metric="pending-leave"');
+    expect(html).toContain('data-metric="awaiting-leave"');
     expect(html).toContain('data-metric="sessions-open"');
     expect(/kuyruk/i.test(html)).toBe(true);
     // Karar ile karşılık ayrı durumlardır; sıfır değerli panel yok.
