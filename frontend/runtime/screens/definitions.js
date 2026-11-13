@@ -41,3 +41,14 @@ document.addEventListener('input', (event) => {
   if (!(target instanceof HTMLElement)) return;
   if (target.id === 'definition-search') renderDefinitions();
 });
+
+// Dürüst boş durum: canlı liste Faz 2 kararıdır. Form submit'i tarayıcı varsayılanı
+// olarak query params ile sayfayı yeniden yükler; oturum token'ı uçar. Hiçbir query
+// param gönderilmez — submit sessizce önlenir.
+document.addEventListener('submit', (event) => {
+  const form = event.target;
+  if (form && form.id === 'definition-form') {
+    event.preventDefault();
+    renderDefinitions();
+  }
+});
