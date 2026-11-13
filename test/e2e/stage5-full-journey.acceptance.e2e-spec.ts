@@ -1213,6 +1213,13 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(leave.coverageStatus).toBe('covered');
     recordEvidence(currentScenario, 'assign → DB state=assigned, coverage covered, substitute=seed teacher');
 
+    // [UI-code] 10 — Journey E2E yeni UI'ya migre edilir: atama Bugün panelinde de görünür.
+    await sessionA!.clickElement('.tab[data-tab="bugun"]');
+    await sessionA!.clickElement('#bugun-refresh');
+    await sessionA!.waitForText('#bugun-queue-output', /Atandı|Karşılandı/, 20_000);
+    recordEvidence(currentScenario, 'Bugün ekranı (yeni UI): atama sonrası projeksiyon "Atandı" / "Karşılandı" gösterir');
+    await sessionA!.clickElement('.tab[data-tab="ops"]');
+
     await waitForClearEnabled(sessionA!);
     await sessionA!.clickElement('#candidate-output button[data-action="clear"]');
     await waitForAssignment('cleared');
@@ -1225,6 +1232,13 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     leave = await readLeave(leaveId);
     expect(leave.coverageStatus).toBe('unresolved');
     recordEvidence(currentScenario, 'clear → DB state=cleared, coverage unresolved (günlük iş tekrar açık)');
+
+    // [UI-code] 10 — Journey E2E yeni UI Bugün paneli: temizlenen atama geri döner.
+    await sessionA!.clickElement('.tab[data-tab="bugun"]');
+    await sessionA!.clickElement('#bugun-refresh');
+    await sessionA!.waitForText('#bugun-queue-output', /Henüz atanmadı|Karşılık bekliyor/, 20_000);
+    recordEvidence(currentScenario, 'Bugün ekranı (yeni UI): temizlenen atama sonrası satır "Henüz atanmadı" gösterir');
+    await sessionA!.clickElement('.tab[data-tab="ops"]');
     await snap(sessionA!, '02-leave-assign-clear');
     recordScenario(SCENARIO_NAMES[1], 'PASS');
   });
