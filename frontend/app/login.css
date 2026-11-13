@@ -25,7 +25,7 @@
 .login-home { color: var(--login-muted); font-size: 12px; }
 .login-home > span { margin-left: 16px; color: var(--login-blue); }
 .login-main { width: min(1120px, calc(100% - 112px)); margin: auto; padding: 70px 0; display: flex; justify-content: center; }
-.login-panel { width: min(460px, 100%); margin-bottom: 0; background: var(--color-bg-surface); border: 1px solid var(--color-border-whisper); border-radius: var(--radius-comfortable); box-shadow: var(--shadow-card); overflow: hidden; }
+.login-panel { width: min(460px, 100%); margin-bottom: 0; background: #fffef9; border: 1px solid var(--color-border-whisper); border-radius: var(--radius-comfortable); box-shadow: var(--shadow-card); overflow: hidden; }
 .login-form-inner { padding: var(--space-10); display: grid; gap: var(--space-5); }
 .login-panel h1 { font-family: Georgia, serif; font-size: clamp(32px, 4vw, 44px); line-height: 1.15; letter-spacing: -0.5px; font-weight: 400; color: var(--login-ink); margin: 0 0 14px; }
 .login-subtitle { color: var(--login-muted); font-size: 13px; line-height: 1.8; margin: 0; }

@@ -907,7 +907,7 @@ export function mount({ mode, store = null }) {
         empty(
           "Bu işlemi gerçekleştirmek için yetkiniz yok",
           "Kapsamınız dışında kalan kayıtlar listelenmez. Yetki kapsamınızı kontrol edin veya farklı bir şube veya tarih deneyin.",
-          link("login", "Giriş Sayfasına dön", "btn"),
+          '<a class="btn" href="/login">Giriş Sayfasına dön</a>',
         ),
       )
     );
