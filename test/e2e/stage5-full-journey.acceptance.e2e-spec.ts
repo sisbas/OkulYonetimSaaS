@@ -1814,6 +1814,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await mobileSession.clickElement('.tab[data-tab="ops"]').catch(() => undefined);
     assertNoBlockingAxeViolations('axe ops desktop', await mobileSession.axeScan());
     await mobileSession.clickElement('.tab[data-tab="attendance"]').catch(() => undefined);
+    // Content must load before scan — empty container cannot reveal violations.
+    await mobileSession.clickElement('#refresh-attendance').catch(() => undefined);
+    await waitForCountAtLeast(mobileSession, '#attendance-sessions article.card', 1, 30_000);
     assertNoBlockingAxeViolations('axe attendance desktop', await mobileSession.axeScan());
     await mobileSession.clickElement('.tab[data-tab="notifications"]').catch(() => undefined);
     await waitForCountAtLeast(mobileSession, '#notifications-list article.card', 3, 30_000);
