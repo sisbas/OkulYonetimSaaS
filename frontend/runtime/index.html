@@ -425,7 +425,28 @@
             <p class="hint wide">Çizelge oluşturulunca oturumdaki şube seçimiyle karşılaştırılır.</p>
             <button type="submit">Çizelge oluştur</button>
           </form>
+          <form id="program-filter-form" class="filter-grid" aria-label="Program kapsam filtreleri">
+            <label>
+              Sınıf
+              <select id="branch-filter" name="classCode">
+                <option value="">Tüm sınıflar</option>
+              </select>
+            </label>
+            <label>
+              Öğretmen
+              <select id="teacher-filter" name="teacherId">
+                <option value="">Tüm öğretmenler</option>
+              </select>
+            </label>
+            <label>
+              Derslik
+              <select id="room-filter" name="roomCode">
+                <option value="">Tüm derslikler</option>
+              </select>
+            </label>
+          </form>
           <div id="schedule-status" class="state-box" role="region" aria-label="Program durumu ve olay listesi"></div>
+          <div id="lesson-cards" class="cards" role="region" aria-label="Ders kartları"></div>
           <form id="schedule-event-form" class="stack" data-requires-permission="schedule:draft:update">
             <div id="schedule-events" class="cards" role="region" aria-label="Program olayları"></div>
             <button id="add-schedule-event" type="button">Olay satırı ekle</button>
@@ -436,6 +457,8 @@
               <button id="unpublish-schedule" type="button" data-requires-permission="schedule:publish">Yayından kaldır</button>
             </div>
           </form>
+          <section id="schedule-conflicts" class="state-box" role="region" aria-label="Çakışma çözümü" aria-live="polite"></section>
+          <p class="hint" id="schedule-conflict-note">Otomatik çözücü devre dışı: çakışmalar elle çözülür (ders detayı + aday seçimi).</p>
         </section>
 
         <section id="attendance-panel" class="panel runtime-panel hidden" data-panel="attendance">
