@@ -617,8 +617,16 @@ function clearBranchWork() {
   state.scheduleRevision = 0;
   state.scheduleEvents = [];
   state.activeAttendanceSessionId = '';
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail']) {
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail', '#lesson-cards', '#schedule-conflicts']) {
     $(id).innerHTML = '';
+  }
+  // Program kapsam filtreleri: şube değişince eski şubelerin seçenekleri ve
+  // seçimleri kalmaz; varsayılan boş etikete döner.
+  for (const [id, label] of [['#branch-filter', 'Tüm sınıflar'], ['#teacher-filter', 'Tüm öğretmenler'], ['#room-filter', 'Tüm derslikler']]) {
+    const sel = $(id);
+    if (!sel) continue;
+    sel.innerHTML = `<option value="">${label}</option>`;
+    sel.value = '';
   }
 }
 

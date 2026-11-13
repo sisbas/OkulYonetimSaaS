@@ -229,6 +229,30 @@ function distinctValues(events, field) {
   return out;
 }
 
+function eventDayLabel(ev) {
+  const dayNumber = Number(pick(ev, ['dayOfWeek'], 3));
+  const n = Number.isFinite(dayNumber) ? ((Math.trunc(dayNumber) % 7) + 7) % 7 : 3;
+  return ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'][n];
+}
+
+function eventSlotLabel(ev) {
+  return `${eventDayLabel(ev)} ${pick(ev, ['startTime'], '')}-${pick(ev, ['endTime'], '')}`;
+}
+
+function summarizeDistinctSlots(events, field, value) {
+  const slots = [];
+  for (const ev of events || []) {
+    if (String(ev && ev[field] ? ev[field] : '').trim() !== value) continue;
+    const label = eventSlotLabel(ev);
+    if (slots.includes(label)) continue;
+    slots.push(label);
+    if (slots.length >= 2) break;
+  }
+  if (!slots.length) return 'Ders';
+  const rest = (events || []).filter((ev) => String(ev && ev[field] ? ev[field] : '').trim() === value).length - slots.length;
+  return `${slots.join(' · ')}${rest > 0 ? ` (+${rest} ders)` : ''}`;
+}
+
 function populateProgramFilters() {
   const events = state.scheduleEvents || [];
   const branchSel = $('#branch-filter');
@@ -236,17 +260,17 @@ function populateProgramFilters() {
   const roomSel = $('#room-filter');
   if (branchSel) {
     const prev = branchSel.value;
-    branchSel.innerHTML = '<option value="">Tüm sınıflar</option>' + distinctValues(events, 'studentGroupId').map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    branchSel.innerHTML = '<option value="">Tüm sınıflar</option>' + distinctValues(events, 'studentGroupId').map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(summarizeDistinctSlots(events, 'studentGroupId', v))}</option>`).join('');
     if (prev) branchSel.value = prev;
   }
   if (teacherSel) {
     const prev = teacherSel.value;
-    teacherSel.innerHTML = '<option value="">Tüm öğretmenler</option>' + distinctValues(events, 'teacherId').map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    teacherSel.innerHTML = '<option value="">Tüm öğretmenler</option>' + distinctValues(events, 'teacherId').map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(summarizeDistinctSlots(events, 'teacherId', v))}</option>`).join('');
     if (prev) teacherSel.value = prev;
   }
   if (roomSel) {
     const prev = roomSel.value;
-    roomSel.innerHTML = '<option value="">Tüm derslikler</option>' + distinctValues(events, 'roomId').map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    roomSel.innerHTML = '<option value="">Tüm derslikler</option>' + distinctValues(events, 'roomId').map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(summarizeDistinctSlots(events, 'roomId', v))}</option>`).join('');
     if (prev) roomSel.value = prev;
   }
 }
@@ -277,10 +301,8 @@ function renderLessonCards() {
     empty(target, 'schedule');
     return;
   }
-  const dayNames = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
   target.innerHTML = filtered.map((ev, i) => {
-    const dayNumber = Number(pick(ev, ['dayOfWeek'], 0));
-    const dayLabel = dayNames[(Number.isFinite(dayNumber) ? dayNumber : 0) % 7] || 'Gün';
+    const dayLabel = eventDayLabel(ev);
     const refCount = [ev.teacherId, ev.studentGroupId, ev.roomId].filter(Boolean).length;
     const refNote = refCount ? `${refCount} referans atandı` : 'Referans atanmamış';
     return `<article class="card" data-lesson-card="${i}">
@@ -311,12 +333,13 @@ function renderConflictResolution(reasons) {
       ${list.map((r) => {
         const code = pick(r, ['code'], '');
         const label = displayTerm(scheduleReasonLabels, code, 'Çözülmesi gereken bir bulgu');
-        const rawIndex = pick(r, ['index', 'eventIndex', 'lessonIndex'], '');
-        const idx = Number(rawIndex);
-        const editHint = Number.isInteger(idx) && idx >= 0 ? ` (ders ${idx + 1})` : '';
+        const eventId = pick(r, ['eventId'], '');
+        const idx = eventId
+          ? state.scheduleEvents.findIndex((ev) => String(ev && ev.eventId ? ev.eventId : '') === String(eventId))
+          : -1;
         return `<li data-schedule-reason="${escapeHtml(code)}">
-          <span>${escapeHtml(label)}${escapeHtml(editHint)}</span>
-          ${Number.isInteger(idx) && idx >= 0
+          <span>${escapeHtml(label)}</span>
+          ${idx >= 0
             ? `<button type="button" data-action="schedule-conflict-edit" data-conflict-index="${idx}">Düzenle</button>`
             : ''}
         </li>`;
