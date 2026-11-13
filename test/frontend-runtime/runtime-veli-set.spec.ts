@@ -25,9 +25,10 @@ describe('#493 Veli Bilgilendirme seti (mock-up → runtime)', () => {
   it('taslak kuyruğu uygunluk rozetiyle render edilir', () => {
     expect(notifications).toContain('notificationEligibility');
     expect(notifications).toContain('data-eligibility="');
-    expect(notifications).toContain("'izinli'");
+    expect(notifications).toContain('izinli');
     expect(notifications).toContain("'maskeli'");
     expect(notifications).toContain("'engeli'");
+    expect(notifications).toContain('gönderimde doğrulanır');
   });
 
   it('mesaj inceleme maskeli iletişim + uygunluk kontrolü taşır', () => {
@@ -49,7 +50,7 @@ describe('#493 Veli Bilgilendirme seti (mock-up → runtime)', () => {
 
   it('kuyruk devamlı boşken dürüst boş durum taşır', () => {
     expect(app).toContain("Taslak kalır (gönderim yok)");
-    expect(app).toContain('Kuyrukta bekleyen bildirim yok');
+    expect(app).toContain('Bu kapsamda bildirim yok');
   });
 
   it('yeni panel alanları korunur', () => {

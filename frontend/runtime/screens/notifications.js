@@ -94,9 +94,10 @@ function notificationHeadings(row) {
 
 function notificationEligibility(row) {
   const status = String(pick(row, ['status'], '')).toLowerCase();
+  // Sunucu gönderim anında yeniden doğrular; kayıtlı durum güncel izin değildir.
   if (status === 'blocked_consent') return { label: 'engeli', tone: 'danger' };
   if (status === 'pending' || status === 'approved' || status === 'dispatched') {
-    return { label: 'izinli', tone: 'success' };
+    return { label: 'izinli (gönderimde doğrulanır)', tone: 'success' };
   }
   return { label: 'maskeli', tone: 'neutral' };
 }
@@ -113,7 +114,7 @@ function renderNotificationCard(row) {
       <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
     </p>
     <span class="tag" data-tone="${escapeHtml(statusTone(status))}">${escapeHtml(displayStatus(status))}</span>
-    <span class="tag" data-eligibility="${escapeHtml(eligibility.label)}" data-tone="${escapeHtml(eligibility.tone)}">Uygunluk: ${escapeHtml(eligibility.label)}</span>
+    <span class="tag" data-eligibility="${escapeHtml(eligibility.label)}" data-tone="${escapeHtml(eligibility.tone)}" title="Onay kayıtlıdır; sunucu gönderim anında yeniden doğrular.">Uygunluk: ${escapeHtml(eligibility.label)}</span>
     <button type="button" data-action="notification-detail" data-notification-id="${escapeHtml(pick(row, ['id']))}">Detayı ve eylemleri aç</button>
   </article>`;
 }
@@ -192,7 +193,7 @@ function renderNotificationDetail(body, uiState = '') {
       <span>Onay sürümü: ${escapeHtml(pick(row, ['consentVersion'], '-'))}</span>
       <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
     </p>
-    <p>İletişim: maskeli gösterilir; gerçek adres görünmez. Uygunluk: <span class="tag" data-eligibility="${escapeHtml(eligibility.label)}" data-tone="${escapeHtml(eligibility.tone)}">${escapeHtml(eligibility.label)}</span></p>
+    <p>İletişim: maskeli gösterilir; gerçek adres görünmez. Uygunluk: <span class="tag" data-eligibility="${escapeHtml(eligibility.label)}" data-tone="${escapeHtml(eligibility.tone)}" title="Onay kayıtlıdır; sunucu gönderim anında yeniden doğrular.">${escapeHtml(eligibility.label)}</span></p>
     ${reasonLabel ? `<p>Gerekçe: ${escapeHtml(reasonLabel)}</p>` : ''}
     ${canonicalStateBlock(uiState)}
     <div class="quick-actions">${actionButtons}</div>
