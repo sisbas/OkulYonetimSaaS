@@ -1800,6 +1800,14 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     // Tarama, gerçek liste içeriği oturmuşken yapılır: boş/geçiş halindeki
     // bir DOM üzerinde axe çalıştırmak deterministik kanıt üretmez.
     await ensureBranch(mobileSession, fixture.branchCode);
+    await mobileSession.clickElement('.tab[data-tab="bugun"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe bugun desktop', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="program"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe program desktop', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="ops"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe ops desktop', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="attendance"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe attendance desktop', await mobileSession.axeScan());
     await mobileSession.clickElement('.tab[data-tab="notifications"]').catch(() => undefined);
     await waitForCountAtLeast(mobileSession, '#notifications-list article.card', 3, 30_000);
     assertNoBlockingAxeViolations('axe authenticated desktop', await mobileSession.axeScan());
@@ -1807,6 +1815,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await snap(mobileSession, '08-a11y-keyboard-desktop');
 
     await mobileSession.setViewport(390, 844);
+    await mobileSession.clickElement('.tab[data-tab="bugun"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe bugun mobile', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="notifications"]').catch(() => undefined);
     assertNoBlockingAxeViolations('axe authenticated mobile', await mobileSession.axeScan());
     expect(await mobileSession.hasHorizontalOverflow()).toBe(false);
     await snap(mobileSession, '09-mobile-viewport');
