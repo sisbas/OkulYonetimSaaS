@@ -177,16 +177,64 @@
               <p class="eyebrow">Bugün</p>
               <h2>Bugün size ne lazım?</h2>
             </div>
+            <button id="bugun-refresh" type="button">Bugünü yenile</button>
           </div>
-          <div class="panel-intro">
-            <strong>Görev merkezi</strong>
-            <p class="hint">Rolünüze uygun görevler burada listelenir. Şube ve tarih seçtikten sonra günlük işler otomatik yüklenir.</p>
-            <ul class="checklist">
-              <li>Şube ve tarih seçerek günlük işleri getirin.</li>
-              <li>Bekleyen izin taleplerinizi inceleyin.</li>
-              <li>Ders programınızı kontrol edin.</li>
-            </ul>
-          </div>
+
+          <section class="bugun-summary" aria-labelledby="bugun-summary-heading">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Günün özeti</p>
+                <h3 id="bugun-summary-heading">Bugün ne yapılmalı</h3>
+              </div>
+            </div>
+            <div class="cards" id="bugun-stats" aria-label="Bugün özeti">
+              <article class="card" data-metric="open-work">
+                <h3>Açık iş</h3>
+                <p class="card-meta"><span id="bugun-open-work-value">0</span></p>
+                <p class="hint" id="bugun-open-work-hint">Karşılığı atanmamış dersler, gün başlamadan kapatılmalı.</p>
+              </article>
+              <article class="card" data-metric="awaiting-leave">
+                <h3>Karar bekleyen izin</h3>
+                <p class="card-meta"><span id="bugun-awaiting-leave-value">0</span></p>
+                <p class="hint" id="bugun-awaiting-leave-hint">Karar vermek karşılık atamak değildir; ikisi ayrı durumdur.</p>
+              </article>
+              <article class="card" data-metric="sessions-open">
+                <h3>Bugünün oturumları</h3>
+                <p class="card-meta"><span id="bugun-sessions-open-value">0</span></p>
+                <p class="hint" id="bugun-sessions-open-hint">Tamamlanan oturum kilitlenir; geri açmak ayrı bir yetkidir.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="bugun-queue" aria-labelledby="bugun-queue-heading">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Günlük işler</p>
+                <h3 id="bugun-queue-heading">Bugünün iş listesi</h3>
+              </div>
+            </div>
+            <div id="bugun-queue-output" class="cards" role="region" aria-label="Bugünün iş listesi"></div>
+          </section>
+
+          <section class="bugun-sessions" aria-labelledby="bugun-sessions-heading">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">İkincil</p>
+                <h3 id="bugun-sessions-heading">Bugünün yoklama oturumları</h3>
+              </div>
+            </div>
+            <div id="bugun-sessions-output" class="cards" role="region" aria-label="Bugünün yoklama oturumları"></div>
+          </section>
+
+          <section class="bugun-roles" aria-labelledby="bugun-roles-heading">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Rol kesitleri</p>
+                <h3 id="bugun-roles-heading">Aynı ekran, farklı yetki kesiti</h3>
+              </div>
+            </div>
+            <div id="bugun-roles-output" class="cards" role="region" aria-label="Aktörün bugün ekranı kesiti"></div>
+          </section>
         </section>
 
         <section id="teacher-panel" class="panel runtime-panel hidden" data-panel="teacher">
@@ -461,5 +509,6 @@
     <script src="/runtime/screens/notifications.js" defer></script>
     <script src="/runtime/screens/schedule.js" defer></script>
     <script src="/runtime/screens/attendance.js" defer></script>
+    <script src="/runtime/screens/bugun.js" defer></script>
   </body>
 </html>
