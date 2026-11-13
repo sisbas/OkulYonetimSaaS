@@ -67,7 +67,7 @@ describe('#488 login + 403 mock-up port (static view contract)', () => {
   });
 
   it('403 renderer yalnız mevcut forbidden path uzerinden calisir (tek yollar sözcesi)', () => {
-    expect(ui).toContain('path() === "403"');
+    expect(ui).toContain('p === "403"');
     expect(ui).toContain('body = forbidden();');
   });
 
