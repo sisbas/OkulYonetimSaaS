@@ -26,16 +26,12 @@
       "destination": "/app/:asset"
     },
     {
-      "source": "/ux/:asset((?:store|start)\\.js|spec\\.md)",
-      "destination": "/ux/:asset"
+      "source": "/ux/:path*",
+      "destination": "/runtime"
     },
     {
       "source": "/app/:path*",
       "destination": "/app/index.html"
-    },
-    {
-      "source": "/ux/:path*",
-      "destination": "/ux/index.html"
     },
     {
       "source": "/login",
@@ -153,31 +149,6 @@
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "no-referrer"
-        },
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "X-Robots-Tag",
-          "value": "noindex, nofollow"
-        },
-        {
-          "key": "Permissions-Policy",
-          "value": "camera=(), microphone=(), geolocation=()"
-        }
-      ]
-    },
-    {
-      "source": "/ux/(.*)",
-      "headers": [
-        {
-          "key": "Content-Security-Policy",
-          "value": "default-src 'self'; connect-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
         },
         {
           "key": "Referrer-Policy",
