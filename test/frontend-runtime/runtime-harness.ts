@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import * as vm from 'node:vm';
 
 const RUNTIME_ROOT = path.join(process.cwd(), 'frontend/runtime');
-const SCREEN_MODULES = ['decisions', 'consents', 'notifications', 'schedule', 'attendance', 'bugun', 'definitions', 'reports', 'users-roles'];
+const SCREEN_MODULES = ['decisions', 'consents', 'notifications', 'schedule', 'attendance', 'bugun', 'definitions', 'reports', 'users-roles', 'strategic-goals'];
 
 // Core first, then the screen modules in the order index.html loads them, so a
 // probe can drive any screen the way the browser does.
@@ -183,20 +183,26 @@ export const ALL_PERMISSION_KEYS = [
   'parent_notification:approve', 'parent_notification:send',
   'schedule:draft:create', 'schedule:draft:update', 'schedule:own:read',
   'schedule:publish', 'schedule:read',
+  'strategic_goal:manage', 'strategic_goal:read',
   'user:read',
 ];
 
 // Öğretmen (sunucu seeds): dar anahtar seti, üst küme değil.
+// #483: sunucu seed'inde öğretmen stratejik hedefleri OKUR (stratejik_goal:read).
 export const TEACHER_PERMISSION_KEYS = [
   'attendance:own:read', 'attendance:own:submit', 'attendance:record:update',
   'daily_operations:own:read', 'dashboard:teacher_own_summary:read',
-  'leave:create', 'leave:own:read', 'schedule:own:read', 'user:read',
+  'leave:create', 'leave:own:read', 'schedule:own:read',
+  'strategic_goal:read', 'user:read',
 ];
 
 // Operasyon yöneticisi: öğretmen anahtarlarını kapsayan üst küme (ops ⊇
 // teacher) → teacher sekmesi de görünür (kullanılabilirlik yakınsaması).
+// #483 istisnası: sunucu seed'inde operations_manager `strategic_goal:read`
+// ALMAZ (ROLE_PERMISSION_SEED listesi stratejik hedef anahtarlarını içermiyor);
+// kota sunucuyla birebir tutulur.
 export const OPS_PERMISSION_KEYS = [
-  ...TEACHER_PERMISSION_KEYS,
+  ...TEACHER_PERMISSION_KEYS.filter((key) => key !== 'strategic_goal:read'),
   'attendance:generate', 'attendance:lock', 'attendance:update',
   'consent:read', 'consent:revoke',
   'daily_operations:read', 'daily_operations:update',
@@ -208,9 +214,12 @@ export const OPS_PERMISSION_KEYS = [
 
 // Kurum (tenant) yöneticisi: operasyon üst kümesi + kullanıcı/tenant yönetimi
 // (sunucu seeds tenant_admin'in kapsayıcı üst kümesi).
+// #483: tenant_admin tüm izin kodlarını alır → stratejik hedefleri hem yazar
+// hem okur.
 export const TENANT_ADMIN_PERMISSION_KEYS = [
   ...OPS_PERMISSION_KEYS,
   'attendance:report:read',
+  'strategic_goal:read', 'strategic_goal:manage',
   'user:create', 'user:update', 'user:read',
 ];
 

@@ -20,6 +20,7 @@ const state = {
   candidateCount: 0,
   activeLessonLabel: '',
   permissions: [],
+  capabilities: [],
   pendingRoute: '',
   pendingBranch: '',
   pendingDraft: null,
@@ -126,6 +127,11 @@ const UI_STATES = {
     message: 'Sunucu beklenmeyen bir yanıt verdi.',
     hint: 'İşlemi tekrarlamadan önce listeyi yenileyin.',
   },
+  duplicate_metric_year: {
+    title: 'Hedef zaten tanımlı',
+    message: 'Bu metrik bu akademik yıl için zaten tanımlı.',
+    hint: 'Farklı bir metrik seçin veya yılı değiştirin.',
+  },
 };
 
 const SERVER_REASON_UI = {
@@ -194,6 +200,11 @@ const SERVER_REASON_UI = {
   NOT_DISPATCHABLE: {
     state: 'locked_state',
     message: 'Bu durumda gönderim eylemi uygulanamaz; kayıt durumunu yenileyin.',
+  },
+  // #483: stratejik hedef aynı metrik + aynı yıl için ikinci kez tanımlanamaz.
+  duplicate_metric_year: {
+    state: 'duplicate_metric_year',
+    message: 'Bu metrik bu akademik yıl için zaten tanımlı.',
   },
 };
 
@@ -403,6 +414,12 @@ const ROUTE_PERMISSIONS = [
   { method: 'POST', path: '/attendance/sessions/:id/records', permission: 'attendance:record:update' },
   { method: 'POST', path: '/attendance/sessions/:id/lock', permission: 'attendance:lock' },
   { method: 'POST', path: '/attendance/sessions/:id/records/:studentId/correction', permission: 'attendance:update' },
+  // #483: stratejik hedefler — okuma `strategic_goal:read`, yazma `strategic_goal:manage`.
+  { method: 'GET', path: '/strategic-goals', permission: 'strategic_goal:read' },
+  { method: 'GET', path: '/strategic-goals/:id', permission: 'strategic_goal:read' },
+  { method: 'POST', path: '/strategic-goals', permission: 'strategic_goal:manage' },
+  { method: 'PATCH', path: '/strategic-goals/:id', permission: 'strategic_goal:manage' },
+  { method: 'DELETE', path: '/strategic-goals/:id', permission: 'strategic_goal:manage' },
 ];
 
 /** Oturum/katalog uçları iş izni gerektirmez; tabloya girmenin tersi. */
@@ -513,7 +530,10 @@ function flattenMessage(value) {
 }
 
 function serverAuthoredCode(body) {
-  const explicit = pick(body, ['reasonCode', 'code']);
+  // #483: stratejik hedefler sunucusu gerekçeyi `reason` alanında yollar;
+  // diğer yüzeyler `reasonCode`/`code` kullanır. Üçü de sunucunun kendi
+  // kodu olduğu için istemci kodu üretmez (K-29/K-30).
+  const explicit = pick(body, ['reasonCode', 'code', 'reason']);
   if (explicit) return String(explicit);
   const message = flattenMessage(body).toUpperCase();
   return Object.keys(SERVER_REASON_UI).find((code) => message.includes(code.toUpperCase())) || '';
@@ -638,6 +658,9 @@ function applyCatalog(catalog) {
   // Kapasite anahtarları (#445): sekme görünürlüğü sunucunun yetki anahtarlarından
   // türetilir; rol etiketi arayüz kararında kullanılmaz.
   state.permissions = [...new Set(asArray(catalog, ['permissions']))];
+  // #483: deploy yeteneği (`strategic_goals`) izin anahtarı DEĞİLDİR; yalnız
+  // bu deploy'da hangi ürün yüzeyinin bulunduğunu söyler (ADR 0003 D3).
+  state.capabilities = [...new Set(asArray(catalog, ['capabilities']))];
   state.branches = asArray(catalog, ['branches']);
   const selector = $('#branch-id');
   selector.innerHTML = '<option value="">Şube seçin</option>' + state.branches.map((branch) =>
@@ -869,26 +892,41 @@ const TAB_CAPABILITIES = {
   notifications: 'notification:draft:read',
   tanimlar: 'daily_operations:read',
   raporlar: 'leave:read',
-  yonetim: 'daily_operations:update',
+  // #483: Yönetim sekmesi iki bölge barındırır; kullanıcı/rol matrisi yönetim
+  // yetkisi ister, stratejik hedefler ayrı bir okuma anahtarıyla açılır.
+  yonetim: ['daily_operations:update', 'strategic_goal:read'],
 };
 
 // Screen modüllerin sekme aktivasyon hook'u: notifications.js
 // registerTabActivationHook ile kaydolur; tek yönlü bağımlılık preserved.
 const tabActivationHooks = {};
 
+// #483: bir sekmeye birden fazla ekran modülü kaydolabilir (Yönetim sekmesi:
+// kullanıcı/rol matrisi + stratejik hedefler). Kayıtlar birikir; son çağıran
+// diğerini ezmez.
 function registerTabActivationHook(name, activation) {
-  tabActivationHooks[name] = activation;
+  if (!tabActivationHooks[name]) tabActivationHooks[name] = [];
+  tabActivationHooks[name].push(activation);
 }
 
 function hasCapability(key) {
   return Boolean(key) && state.permissions.includes(key);
 }
 
+/** Bir sekmenin izin anahtarı listesi olabilir: bölgelerden biri yeterlidir. */
+function capabilityKeyList(value) {
+  return Array.isArray(value) ? value : [value];
+}
+
+function hasAnyCapability(value) {
+  return capabilityKeyList(value).some((key) => hasCapability(key));
+}
+
 function navSectionsFor(capabilities) {
   const granted = new Set(capabilities);
   const sections = ['bugun'];
-  for (const [tab, key] of Object.entries(TAB_CAPABILITIES)) {
-    if (granted.has(key)) sections.push(tab);
+  for (const [tab, value] of Object.entries(TAB_CAPABILITIES)) {
+    if (capabilityKeyList(value).some((key) => granted.has(key))) sections.push(tab);
   }
   return sections;
 }
@@ -906,6 +944,10 @@ function renderNavigation() {
   document.querySelectorAll('[data-requires-permission]').forEach((el) => {
     el.classList.toggle('hidden', !hasCapability(el.dataset.requiresPermission));
   });
+  // Deploy yeteneği kapısı (#483): yüzey bu deploy'da yoksa bölge gizlenir.
+  document.querySelectorAll('[data-requires-capability]').forEach((el) => {
+    el.classList.toggle('hidden', !state.capabilities.includes(el.dataset.requiresCapability));
+  });
   const current = document.querySelector('.tab[aria-selected="true"]');
   if (current && !allowed.has(current.dataset.tab)) {
     activateTab('bugun');
@@ -921,12 +963,14 @@ function setActiveTab(name) {
   // Tab-activation hook tablosu core'a aittir; screen modüller register'a
   // kaydolur (yön: ekran → core). Delegation'ın vm harness'ta çalışmasına
   // gerek yoktur — tablo boşsa davranış core-only kalır.
-  const activationHook = tabActivationHooks[name];
-  if (state.accessToken && activationHook) activationHook();
+  const activationHooks = tabActivationHooks[name] || [];
+  if (state.accessToken) {
+    for (const activationHook of activationHooks) activationHook();
+  }
 }
 
 function activateTab(name) {
-  if (name !== 'bugun' && state.permissions.length && !hasCapability(TAB_CAPABILITIES[name])) {
+  if (name !== 'bugun' && state.permissions.length && !hasAnyCapability(TAB_CAPABILITIES[name])) {
     announce('Bu işlem için yetkiniz yok. Güvenli şekilde Bugün ekranına dönebilirsiniz.', 'warning');
     const bugunTab = document.querySelector('.tab[data-tab="bugun"]');
     if (bugunTab && !bugunTab.classList.contains('hidden')) {
@@ -1429,6 +1473,10 @@ const EMPTY_COPY = {
   schedule: {
     title: 'Çizelge yok',
     message: 'Henüz çizelge oluşturulmadı.',
+  },
+  strategicGoals: {
+    title: 'Hedef yok',
+    message: 'Bu akademik yıl için henüz hedef tanımlanmamış.',
   },
 };
 
