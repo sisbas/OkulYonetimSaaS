@@ -571,18 +571,51 @@
         </section>
 
         <section id="users-roles-panel" class="panel runtime-panel hidden" data-panel="yonetim">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Yönetim</p>
-              <h2>Kullanıcılar ve roller</h2>
+          <!-- #483: Yönetim bölümü iki bölgeden oluşur. Kullanıcı/rol matrisi
+               yönetim yetkisi ister; stratejik hedefler ise ayrı bir izin
+               anahtarıyla açılır (öğretmen salt-okunur görür). -->
+          <div id="users-roles-section" class="panel-section" data-requires-permission="daily_operations:update">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Yönetim</p>
+                <h2>Kullanıcılar ve roller</h2>
+              </div>
+            </div>
+            <div class="panel-intro" aria-labelledby="users-heading">
+              <strong id="users-heading">Erişim matrisi</strong>
+              <p class="hint">Satır: kullanıcı; sütun: izin anahtarı (makine-okur). Yetki kararı sunucuda kalır; istemci yalnız görünürlüğü daraltır.</p>
+            </div>
+            <div id="users-roles-matrix" class="matrix" role="region" aria-label="Erişim matrisi">
+              <p class="hint" id="users-roles-empty-heading">Kullanıcı ve rol matrisi henüz canlı yayınlanmadı.</p>
             </div>
           </div>
-          <div class="panel-intro" aria-labelledby="users-heading">
-            <strong id="users-heading">Erişim matrisi</strong>
-            <p class="hint">Satır: kullanıcı; sütun: izin anahtarı (makine-okur). Yetki kararı sunucuda kalır; istemci yalnız görünürlüğü daraltır.</p>
-          </div>
-          <div id="users-roles-matrix" class="matrix" role="region" aria-label="Erişim matrisi">
-            <p class="hint" id="users-roles-empty-heading">Kullanıcı ve rol matrisi henüz canlı yayınlanmadı.</p>
+
+          <div
+            id="strategic-goals-section"
+            class="panel-section"
+            data-requires-permission="strategic_goal:read"
+            data-requires-capability="strategic_goals"
+          >
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Yönetim · Stratejik hedefler</p>
+                <h2 id="strategic-goals-heading">Stratejik hedefler ve gerçekleşme</h2>
+              </div>
+            </div>
+            <div class="panel-intro" aria-labelledby="strategic-goals-intro">
+              <strong id="strategic-goals-intro">Hedefler</strong>
+              <p class="hint">Akademik yıl bazında metrik hedeflerini tanımlayın, gerçekleşmeyi girin ve oranı takip edin. Okul yöneticileri yazar; öğretmenler salt-okunur görüntüler.</p>
+            </div>
+            <form id="strategic-goals-scope" class="filter-grid" aria-label="Hedef kapsamı" novalidate>
+              <label>
+                Akademik yıl
+                <select id="strategic-goals-year" name="academicYear" required></select>
+                <span class="hint">Dönem istemcide tarihten türetilir; seçilen yıl sunucuya gider.</span>
+              </label>
+            </form>
+            <div id="strategic-goals-controls" class="stack"></div>
+            <p id="strategic-goal-form-status" class="hint" role="status"></p>
+            <div id="strategic-goals-table" class="matrix" role="region" aria-labelledby="strategic-goals-heading"></div>
           </div>
         </section>
       </main>
@@ -600,5 +633,6 @@
     <script src="/runtime/screens/definitions.js" defer></script>
     <script src="/runtime/screens/reports.js" defer></script>
     <script src="/runtime/screens/users-roles.js" defer></script>
+    <script src="/runtime/screens/strategic-goals.js" defer></script>
   </body>
 </html>

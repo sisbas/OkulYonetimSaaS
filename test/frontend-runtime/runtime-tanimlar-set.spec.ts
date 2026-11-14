@@ -65,12 +65,16 @@ describe('#494 Tanımlar/Raporlar/Yönetim seti (mock-up → runtime)', () => {
   it('yeni panel yetkinlik anahtarları app.js TAB_CAPABILITIES içinde taşınır', () => {
     expect(app).toContain("tanimlar: 'daily_operations:read'");
     expect(app).toContain("raporlar: 'leave:read'");
-    expect(app).toContain("yonetim: 'daily_operations:update'");
+    // #483: Yönetim sekmesi artık iki anahtarın BİRİYLE açılır — kullanıcı/rol
+    // matrisi `daily_operations:update`, stratejik hedefler `strategic_goal:read`
+    // ister. Tek anahtar pini bu davranış değişikliğini gizlerdi.
+    expect(app).toContain("yonetim: ['daily_operations:update', 'strategic_goal:read']");
   });
 
   it('yeni screen modülleri deferred klasik script ile yüklenir', () => {
     expect(html).toContain('<script src="/runtime/screens/definitions.js" defer></script>');
     expect(html).toContain('<script src="/runtime/screens/reports.js" defer></script>');
     expect(html).toContain('<script src="/runtime/screens/users-roles.js" defer></script>');
+    expect(html).toContain('<script src="/runtime/screens/strategic-goals.js" defer></script>');
   });
 });
