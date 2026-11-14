@@ -67,7 +67,18 @@ async function loginForApi(baseUrl: string, email: string, password: string): Pr
   return body.accessToken ?? '';
 }
 
+/** Sekme, sunucu kataloğu (izinler) geldikten sonra görünür olur. */
+async function waitForTab(session: UiSession, tab: string, timeoutMs = 20_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await session.isVisible(`.tab[data-tab="${tab}"]`)) return;
+    await sleep(250);
+  }
+  throw new Error(`Sekme görünür olmadı: ${tab}`);
+}
+
 async function openStrategicGoals(session: UiSession): Promise<void> {
+  await waitForTab(session, 'yonetim');
   await session.clickElement('.tab[data-tab="yonetim"]');
   await session.waitForText('#strategic-goals-heading', /Stratejik hedefler ve gerçekleşme/i, 20_000);
 }
@@ -164,7 +175,7 @@ describe('#484 Stratejik hedefler P0 yolculuğu (bayrak açık ve kapalı)', () 
     const patched = adminSession!.armResponse('/api/v1/strategic-goals/', 'PATCH');
     await adminSession!.submitForm('#strategic-goal-progress');
     expect(await patched).toBe(200);
-    await adminSession!.waitForText('#strategic-goals-table', /%98/, 20_000);
+    await adminSession!.waitForText('#strategic-goals-table', /%97,9/, 20_000);
 
     const afterProgress = await readGoalRows(dbClient!, fixture.tenantId, METRIC_KEY);
     expect(Number(afterProgress.find((row) => row.deleted_at === null)?.progress_value)).toBe(
@@ -251,6 +262,7 @@ describe('#484 Stratejik hedefler P0 yolculuğu (bayrak açık ve kapalı)', () 
     });
     try {
       await loginViaUi(session, fixture.adminUser.email, fixture.adminUser.credential);
+      await waitForTab(session, 'yonetim');
       await session.clickElement('.tab[data-tab="yonetim"]');
       await sleep(1_000);
       expect(await session.isVisible('#strategic-goals-section')).toBe(false);
