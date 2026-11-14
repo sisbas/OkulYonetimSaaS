@@ -329,5 +329,45 @@ describe('#483 Stratejik hedefler seti (mock-up → runtime)', () => {
       expect(writes).toHaveLength(0);
       expect(ui.element('#strategic-goal-form-status').textContent).toContain('yetkiniz yok');
     });
+
+    it('bir akış açılınca diğeri kapanır: hedefler birbirine karışmaz', async () => {
+      const ui = signedIn(ADMIN_PERMISSIONS);
+      ui.fetch.mockResolvedValue(response(GOALS));
+      await ui.probe.renderStrategicGoals();
+
+      ui.probe.openStrategicGoalDelete('goal-1');
+      expect(ui.element('#strategic-goal-delete').classList.contains('hidden')).toBe(false);
+
+      ui.probe.openStrategicGoalProgress('goal-2');
+      // Silme onayı kapandı: onaylanacak bir silme hedefi kalmadı.
+      expect(ui.element('#strategic-goal-delete').classList.contains('hidden')).toBe(true);
+
+      ui.fetch.mockResolvedValueOnce(response(GOALS[0]));
+      ui.fetch.mockResolvedValueOnce(response(GOALS));
+      ui.element('#strategic-goal-progress-value').value = '93';
+      await ui.probe.submitStrategicGoalProgress();
+
+      const patch = ui.fetch.mock.calls.find((call) => call[1]?.method === 'PATCH');
+      expect(String(patch?.[0])).toContain('/strategic-goals/goal-2');
+      expect(ui.fetch.mock.calls.some((call) => call[1]?.method === 'DELETE')).toBe(false);
+    });
+
+    it('boş sayısal girdi 0 olarak yazılmaz', async () => {
+      const ui = signedIn(ADMIN_PERMISSIONS);
+      ui.fetch.mockResolvedValue(response(GOALS));
+      await ui.probe.renderStrategicGoals();
+
+      ui.probe.openStrategicGoalProgress('goal-1');
+      ui.element('#strategic-goal-progress-value').value = '';
+      await ui.probe.submitStrategicGoalProgress();
+      expect(ui.fetch.mock.calls.some((call) => call[1]?.method === 'PATCH')).toBe(false);
+      expect(ui.element('#strategic-goal-form-status').textContent).toContain('Gerçekleşme girilmedi');
+
+      ui.element('#strategic-goal-key').value = 'devam_orani';
+      ui.element('#strategic-goal-target').value = '';
+      await ui.probe.submitStrategicGoal();
+      expect(ui.fetch.mock.calls.some((call) => call[1]?.method === 'POST')).toBe(false);
+      expect(ui.element('#strategic-goal-form-status').textContent).toContain('Hedef değer girilmedi');
+    });
   });
 });

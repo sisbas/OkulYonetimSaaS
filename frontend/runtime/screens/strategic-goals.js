@@ -53,7 +53,10 @@ const STRATEGIC_GOALS_CONTROLS_HTML = `
   <div id="strategic-goal-delete" class="matrix hidden" role="alert"></div>
 `;
 
-let strategicGoalId = '';
+// #483: gerçekleşme ve silme akışları AYRI hedef tutar; ikisi aynı anda
+// açık kalırsa biri diğerinin hedefini yanlışlıkla değiştirebilirdi.
+let strategicProgressGoalId = '';
+let strategicDeleteGoalId = '';
 
 /** Akademik yıl Eylül'de başlar: Eylül-Aralık → bu yıl, Ocak-Ağustos → önceki yıl. */
 function strategicGoalsPeriod(now = new Date()) {
@@ -240,8 +243,10 @@ function closeStrategicGoalCreate() {
 }
 
 function openStrategicGoalProgress(goalId) {
-  strategicGoalId = String(goalId || '');
-  if (!strategicGoalId) return;
+  // Silme onayı açıksa kapatılır: iki akış aynı hedefi paylaşmaz.
+  closeStrategicGoalDelete();
+  strategicProgressGoalId = String(goalId || '');
+  if (!strategicProgressGoalId) return;
   const input = document.querySelector('#strategic-goal-progress-value');
   if (input) input.value = '';
   strategicGoalsToggleForm('#strategic-goal-progress', true);
@@ -250,12 +255,14 @@ function openStrategicGoalProgress(goalId) {
 
 function closeStrategicGoalProgress() {
   strategicGoalsToggleForm('#strategic-goal-progress', false);
-  strategicGoalId = '';
+  strategicProgressGoalId = '';
 }
 
 function openStrategicGoalDelete(goalId) {
-  strategicGoalId = String(goalId || '');
-  if (!strategicGoalId) return;
+  // Gerçekleşme formu açıksa kapatılır: iki akış aynı hedefi paylaşmaz.
+  closeStrategicGoalProgress();
+  strategicDeleteGoalId = String(goalId || '');
+  if (!strategicDeleteGoalId) return;
   const region = document.querySelector('#strategic-goal-delete');
   if (!region) return;
   region.innerHTML = `<p><strong>Hedefi silmek istediğinizden emin misiniz?</strong></p>
@@ -273,7 +280,7 @@ function closeStrategicGoalDelete() {
     region.classList.add('hidden');
     region.innerHTML = '';
   }
-  strategicGoalId = '';
+  strategicDeleteGoalId = '';
 }
 
 async function submitStrategicGoal() {
@@ -287,11 +294,17 @@ async function submitStrategicGoal() {
   const targetInput = document.querySelector('#strategic-goal-target');
   const metricKey = String(keyInput?.value || '').trim();
   const metricLabel = String(labelInput?.value || '').trim();
-  const targetValue = Number(targetInput?.value);
+  const rawTarget = String(targetInput?.value ?? '').trim();
   if (!metricKey) {
     strategicGoalsFormStatus('Metrik anahtarı zorunludur.', 'warning');
     return;
   }
+  // Boş sayısal girdi 0'a dönüşmesin: ölçüm olmayan bir hedef 0 olarak yazılmaz.
+  if (rawTarget === '') {
+    strategicGoalsFormStatus('Hedef değer girilmedi.', 'warning');
+    return;
+  }
+  const targetValue = Number(rawTarget);
   if (!Number.isFinite(targetValue)) {
     strategicGoalsFormStatus('Hedef değer bir sayı olmalı.', 'warning');
     return;
@@ -319,18 +332,24 @@ async function submitStrategicGoal() {
 
 async function submitStrategicGoalProgress() {
   if (!requireSession()) return;
-  if (!strategicGoalsCanManage() || !strategicGoalId) {
+  if (!strategicGoalsCanManage() || !strategicProgressGoalId) {
     strategicGoalsFormStatus('Bu işlem için yetkiniz yok.', 'warning');
     return;
   }
   const input = document.querySelector('#strategic-goal-progress-value');
-  const progressValue = Number(input?.value);
+  const rawProgress = String(input?.value ?? '').trim();
+  // Boş gerçekleşme 0 olarak yazılmaz: ölçüm girilmemişse kayıt değişmez.
+  if (rawProgress === '') {
+    strategicGoalsFormStatus('Gerçekleşme girilmedi.', 'warning');
+    return;
+  }
+  const progressValue = Number(rawProgress);
   if (!Number.isFinite(progressValue)) {
     strategicGoalsFormStatus('Gerçekleşme bir sayı olmalı.', 'warning');
     return;
   }
   try {
-    await apiRequest(`/strategic-goals/${encodeURIComponent(strategicGoalId)}`, {
+    await apiRequest(`/strategic-goals/${encodeURIComponent(strategicProgressGoalId)}`, {
       method: 'PATCH',
       body: { progressValue },
     });
@@ -344,12 +363,12 @@ async function submitStrategicGoalProgress() {
 
 async function deleteStrategicGoal() {
   if (!requireSession()) return;
-  if (!strategicGoalsCanManage() || !strategicGoalId) {
+  if (!strategicGoalsCanManage() || !strategicDeleteGoalId) {
     strategicGoalsFormStatus('Bu işlem için yetkiniz yok.', 'warning');
     return;
   }
   try {
-    await apiRequest(`/strategic-goals/${encodeURIComponent(strategicGoalId)}`, { method: 'DELETE' });
+    await apiRequest(`/strategic-goals/${encodeURIComponent(strategicDeleteGoalId)}`, { method: 'DELETE' });
     strategicGoalsFormStatus('Hedef silindi.', 'success');
     closeStrategicGoalDelete();
     await loadStrategicGoals();
