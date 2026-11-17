@@ -675,10 +675,13 @@ function clearBranchWork() {
   }
   const programmePicker = document.getElementById('schedule-programme-picker');
   if (programmePicker) programmePicker.classList.add('hidden');
-  for (const id of ['#schedule-editor', '#schedule-create-form', '#schedule-daystrip', '#schedule-gate']) {
+  for (const id of ['#schedule-editor', '#schedule-daystrip', '#schedule-gate']) {
     const el = document.getElementById(id.slice(1));
     if (el) el.classList.add('hidden');
   }
+  // Oluşturma formu `renderProgramme()` tarafından, güncel program durumuna
+  // göre yönetilir (görünür + kapalı). Burada gizlenirse, sekme açılışındaki
+  // fetch tamamlanana kadar form görünmez ve submit click'i yarışa düşer.
   const createForm = document.getElementById('schedule-create-form');
   if (createForm && typeof createForm.reset === 'function') createForm.reset();
   // Program kapsam filtreleri: şube değişince eski şubelerin seçenekleri ve
