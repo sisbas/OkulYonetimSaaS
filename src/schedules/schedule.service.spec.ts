@@ -35,7 +35,7 @@ function makeService() {
     create: (e: Partial<Schedule>) => ({ ...e }) as Schedule,
     save: async (e: Schedule) => e,
     findOne: async () => null,
-    increment: async () => undefined,
+    increment: async () => ({ affected: 1 }),
     update: async () => undefined,
   };
   const versionRepo: any = {
@@ -69,6 +69,14 @@ function makeService() {
       entity === ScheduleVersion
         ? versionRepo.update(criteria, update)
         : scheduleRepo.update(criteria, update),
+    increment: async () => ({ affected: 1 }),
+    getRepository: (entity: unknown) =>
+      entity === ScheduleVersion ? versionRepo : eventRepo,
+  };
+  // #447: saveDraft schedule satırının pessimistic_write kilidiyle TEK bir
+  // transaction içinde koşar — scheduleRepo.manager.transaction gerekli.
+  scheduleRepo.manager = {
+    transaction: async (cb: (m: unknown) => Promise<unknown>) => cb(em),
   };
   versionRepo.manager = {
     transaction: async (cb: (m: unknown) => Promise<unknown>) => cb(em),
@@ -119,6 +127,7 @@ describe('ScheduleService (P1B-05 wiring)', () => {
         branchId: 'b1',
         scheduleId: 'missing',
         events: [makeEvent()],
+        expectedRevision: 1,
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
@@ -126,13 +135,14 @@ describe('ScheduleService (P1B-05 wiring)', () => {
   it('saveDraft rejects immutable published schedule', async () => {
     const { service, scheduleRepo } = makeService();
     scheduleRepo.findOne = async () =>
-      ({ id: 's1', tenantId: 't1', status: 'published' } as Schedule);
+      ({ id: 's1', tenantId: 't1', status: 'published', revision: 1 } as Schedule);
     await expect(
       service.saveDraft({
         tenantId: 't1',
         branchId: 'b1',
         scheduleId: 's1',
         events: [makeEvent()],
+        expectedRevision: 1,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
@@ -140,7 +150,7 @@ describe('ScheduleService (P1B-05 wiring)', () => {
   it('saveDraft creates a draft version and stores events', async () => {
     const { service, scheduleRepo, versionRepo, eventRepo } = makeService();
     scheduleRepo.findOne = async () =>
-      ({ id: 's1', tenantId: 't1', status: 'draft' } as Schedule);
+      ({ id: 's1', tenantId: 't1', status: 'draft', revision: 1 } as Schedule);
     let savedVersion: ScheduleVersion | null = null;
     versionRepo.save = async (e: ScheduleVersion) => {
       savedVersion = e;
@@ -162,6 +172,7 @@ describe('ScheduleService (P1B-05 wiring)', () => {
       branchId: 'b1',
       scheduleId: 's1',
       events,
+      expectedRevision: 1,
     });
     expect(result.id).toBe('v1');
     expect(deletedFilter.scheduleId).toBe('s1');
@@ -170,7 +181,9 @@ describe('ScheduleService (P1B-05 wiring)', () => {
   });
 
   it('validateDraft returns valid for non-overlapping events', async () => {
-    const { service } = makeService();
+    const { service, scheduleRepo } = makeService();
+    scheduleRepo.findOne = async () =>
+      ({ id: 's1', tenantId: 't1', status: 'draft', revision: 1 } as Schedule);
     const events = [
       makeEvent(),
       makeEvent({ eventId: 'e2', teacherId: 'teacher-2', startTime: '10:00', endTime: '11:00' }),
@@ -181,7 +194,9 @@ describe('ScheduleService (P1B-05 wiring)', () => {
   });
 
   it('validateDraft returns invalid with suggestions on teacher overlap', async () => {
-    const { service } = makeService();
+    const { service, scheduleRepo } = makeService();
+    scheduleRepo.findOne = async () =>
+      ({ id: 's1', tenantId: 't1', status: 'draft', revision: 1 } as Schedule);
     const events = [
       makeEvent(),
       makeEvent({ eventId: 'e2', startTime: '09:30', endTime: '10:30' }),

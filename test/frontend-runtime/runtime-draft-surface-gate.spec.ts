@@ -2,44 +2,69 @@ import {
   runtime,
   TEACHER_PERMISSION_KEYS,
   VIEWER_PERMISSION_KEYS,
+  OPS_PERMISSION_KEYS,
+  TENANT_ADMIN_PERMISSION_KEYS,
 } from './runtime-harness';
 
 /**
- * #448 — yönetim draft-read anahtarı henüz #449 (GET /schedules/drafts ve
- * GET /schedules/:id/draft) ile yola girmedi; ancak teacher/viewer'in bu yüzeyi
- * KEŞFEDEMEYECEĞİ sözleşme gereği kalıcıdır: kullanıcısı olmayan route zaten
- * istemci tablosunda yoktur (fail-closed) ve teacher/viewer izin anahtarı listesi
- * hiçbir koşulla draft-read anahtarı içermez (permission-seed.spec.ts pinler).
+ * #447/#448 — program yüzeyinin keşif kısıtlaması.
  *
- * Bu pin #449 ile birlikte genişler: ops/admin için 200, teacher/viewer için
- * non-discovering davranış devam eder.
+ * Yönetim draft-read anahtarı (#448) onaylandı ve `/schedules/drafts` ile
+ * `/schedules/:scheduleId` #447 ile yayın servisi olarak açıldı. Sözleşme
+ * gereği teacher/viewer bu yüzeyi KEŞFEDEMEZ: istemci tablosunda
+ * `schedule:draft:read` anahtarı taşımaları gerekir ve sunucu bunu
+ * teacher/viewer'e vermez. Söz konusu pin burada kalıcıdır; #450 (program
+ * arayüzü) bu yüzeyi ancak admin/ops için açabilir.
  */
-describe('#448 draft surface non-discovery (teacher/viewer)', () => {
+describe('#447/#448 draft surface gating (management-only)', () => {
   const PROBE = 'state, canRequest, ROUTE_PERMISSIONS';
 
-  it('teacher persona cannot call the draft surface (fail-closed)', () => {
-    const ui = runtime(PROBE, TEACHER_PERMISSION_KEYS);
+  const client = (keys: readonly string[]) => {
+    const ui = runtime(PROBE, keys as string[]);
     ui.probe.state.accessToken = 'token';
     ui.probe.state.branchId = 'ANKARA';
+    return ui;
+  };
 
+  it('teacher persona cannot request draft and published-list without the management keys', () => {
+    const ui = client(TEACHER_PERMISSION_KEYS);
     expect(ui.probe.canRequest('GET', '/schedules/drafts')).toBe(false);
-    expect(ui.probe.canRequest('GET', '/schedules/:id')).toBe(false);
-    expect(ui.probe.canRequest('GET', '/schedules')).toBe(false);
+    expect(ui.probe.canRequest('GET', '/schedules/:scheduleId')).toBe(false);
+    // Öğretmen own-read sahibi: published kendi kapsamını görebilir,
+    // taslağı asla keşfedemez.
+    expect(ui.probe.canRequest('GET', '/schedules/published')).toBe(true);
   });
 
-  it('viewer persona cannot call the draft surface (fail-closed)', () => {
-    const ui = runtime(PROBE, VIEWER_PERMISSION_KEYS);
-    ui.probe.state.accessToken = 'token';
-    ui.probe.state.branchId = 'ANKARA';
-
+  it('viewer persona cannot request any schedule surface (no keys at all)', () => {
+    const ui = client(VIEWER_PERMISSION_KEYS);
     expect(ui.probe.canRequest('GET', '/schedules/drafts')).toBe(false);
-    expect(ui.probe.canRequest('GET', '/schedules/:id')).toBe(false);
+    expect(ui.probe.canRequest('GET', '/schedules/:scheduleId')).toBe(false);
+    expect(ui.probe.canRequest('GET', '/schedules/published')).toBe(false);
   });
 
-  it('route table carries no draft affordance until #449 ships it', () => {
-    const ui = runtime(PROBE, TEACHER_PERMISSION_KEYS);
-    const keys = JSON.stringify(ui.probe.ROUTE_PERMISSIONS);
+  it('operations manager and tenant admin can request the management surface', () => {
+    for (const keys of [OPS_PERMISSION_KEYS, TENANT_ADMIN_PERMISSION_KEYS]) {
+      const ui = client(keys);
+      expect(ui.probe.canRequest('GET', '/schedules/drafts')).toBe(true);
+      expect(ui.probe.canRequest('GET', '/schedules/:scheduleId')).toBe(true);
+      expect(ui.probe.canRequest('GET', '/schedules/published')).toBe(true);
+    }
+  });
 
-    expect(keys).not.toContain('/schedules/drafts');
+  it('route table carries the surface, gated by the #448 management key', () => {
+    const admin = client(TENANT_ADMIN_PERMISSION_KEYS);
+    const entries = JSON.stringify(admin.probe.ROUTE_PERMISSIONS);
+
+    expect(entries).toContain('/schedules/drafts');
+    expect(entries).toContain('/schedules/published');
+    expect(entries).toContain('/schedules/:scheduleId');
+    // Draft yüzeyi yalnızca yönetim anahtarıyla açılır.
+    expect(entries).toContain('"permission":"schedule:draft:read"');
+  });
+
+  it('teacher entry keeps own-scope read but no management key', () => {
+    const teacher = client(TEACHER_PERMISSION_KEYS);
+    expect(teacher.probe.canRequest('GET', '/schedules/published')).toBe(true);
+    expect(teacher.probe.canRequest('GET', '/schedules/drafts')).toBe(false);
   });
 });

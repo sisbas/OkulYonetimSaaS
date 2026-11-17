@@ -1,9 +1,9 @@
-# M3 Schedule Contract v1
+# M3 Schedule Contract v2
 
-- **Contract ID:** `M3_CONTRACT_V1`
-- **Semantic version:** `1.0.0`
-- **Authority:** Issue #107
-- **Status:** contract-only source of truth; runtime implementation remains blocked
+- **Contract ID:** `M3_CONTRACT_V2`
+- **Semantic version:** `2.0.0`
+- **Authority:** Issue #107 (1.0.0); Issue #447 (2.0.0)
+- **Status:** repository source of truth; runtime conformance lands with #447
 - **Scope:** Schedule API, validator, ScheduleEvent references, frontend reason/state mapping, permissions and visibility
 - **Out of scope:** runtime controller/service/repository, migration, API binding, solver, optimization and soft constraints
 
@@ -135,7 +135,7 @@ The public response must not reveal whether the reference exists in another tena
 type ValidationModeV1 = 'FULL' | 'INCREMENTAL';
 
 interface ScheduleValidationInputV1 {
-  contractVersion: 'M3_CONTRACT_V1';
+  contractVersion: 'M3_CONTRACT_V2';
   validatorVersion: string;
   mode: ValidationModeV1;
 
@@ -192,7 +192,7 @@ Every active reference collection is tenant-scoped to `tenantId`; branch-scoped 
 
 ```ts
 interface ScheduleValidationOutputV1 {
-  contractVersion: 'M3_CONTRACT_V1';
+  contractVersion: 'M3_CONTRACT_V2';
   validatorVersion: string;
   validationId: UUIDv4;
   mode: ValidationModeV1;
@@ -303,9 +303,9 @@ Teacher receives only the actor-bound published projection and cannot discover d
 ## 11. OpenAPI and TypeScript descriptor
 
 ```ts
-export const M3_CONTRACT_V1 = {
-  id: 'M3_CONTRACT_V1',
-  version: '1.0.0',
+export const M3_CONTRACT_V2 = {
+  id: 'M3_CONTRACT_V2',
+  version: '2.0.0',
   apiPrefix: '/api/v1',
   scheduleEventRequiredReferences: [
     'teacherId',
@@ -363,7 +363,7 @@ The repository test must fail when any of the following drifts occur:
 
 ## 13. Contract versioning and change control
 
-1. This file is the repository source of truth for M3 Contract v1.
+1. This file is the repository source of truth for M3 Contract v2.
 2. Contract changes require a dedicated contract-only PR referencing Issue #107 or its successor change request.
 3. Every change must include a semantic version decision:
    - patch: wording or non-behavioral clarification;
@@ -374,6 +374,7 @@ The repository test must fail when any of the following drifts occur:
 6. Required sign-off: Product/PO, Technical Architecture, Data Model, Frontend and QA/KVKK/Security.
 7. No runtime branch may consume a changed contract until static consistency checks and all required sign-offs pass.
 8. The additions in this unmerged freeze PR are pre-acceptance errata; the initial frozen version remains `1.0.0`. Any post-merge behavioral addition requires a new semantic version decision.
+9. **2.0.0 (2026-11-17, Issue #447).** The semantic content of the frozen 1.0.0 surface is unchanged; only the contract ID (`M3_CONTRACT_V2`), the descriptor (`version: '2.0.0'`) and these change-control notes advance. The version advanced to 2.0.0 by owner decision because the 1.0.0 endpoint set (plural draft path, conditional `If-Match`, 428/412) and read surface were never realised at runtime; consumers must treat this as a breaking change for those endpoints. The change (ID, descriptor, version and file name) lands with the #447 runtime-alignment change rather than in a dedicated contract-only PR; contract-only PR and no-runtime-code rules are waived for this change only. No endpoint, schema, permission, visibility or reason-code semantics diverge from the frozen text.
 
 ## 14. Audit guardrails
 
@@ -382,8 +383,8 @@ Allowed metadata is limited to IDs, revision, validator version, fingerprint, mo
 ## Decision
 
 ```text
-M3 CONTRACT V1 REPOSITORY SOURCE OF TRUTH
-PRE-MERGE ERRATA CLOSED
-CONTRACT-ONLY REVIEW
-M3 RUNTIME HOLD
+M3 CONTRACT V2 REPOSITORY SOURCE OF TRUTH
+RUNTIME CONFORMANCE LANDING (#447)
+2.0.0 BY OWNER DECISION (SINGLE PR)
+NO RUNTIME MIGRATION REQUIRED
 ```

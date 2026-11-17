@@ -34,7 +34,7 @@ const authorizedUser: RequestUser = {
   userId: randomUUID(),
   tenantId: randomUUID(),
   roleIds: ['tenant-admin'],
-  permissions: ['schedule:draft:create', 'schedule:draft:update', 'schedule:read', 'schedule:publish'],
+  permissions: ['schedule:draft:read', 'schedule:draft:create', 'schedule:draft:update', 'schedule:read', 'schedule:publish'],
   sessionId: randomUUID(),
   authorizationVersion: 1,
 };
@@ -166,15 +166,15 @@ describe('Schedules controller HTTP-layer RBAC + tenant isolation (P1B-05 slice 
     authorizedToken = await makeToken(authorizedUser);
   });
 
-  it('rejects unauthenticated POST /api/v1/schedules with 401 (no token)', async () => {
-    const body = assertNestJson(await requestJson('/api/v1/schedules', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }), 401);
+  it('rejects unauthenticated POST /api/v1/schedules/drafts with 401 (no token)', async () => {
+    const body = assertNestJson(await requestJson('/api/v1/schedules/drafts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }), 401);
     expect(body.message).toBe('Unauthorized');
     expect(body.statusCode).toBe(401);
   });
 
   it('rejects a malformed bearer token with 401', async () => {
     const body = assertNestJson(
-      await requestJson('/api/v1/schedules', {
+      await requestJson('/api/v1/schedules/drafts', {
         method: 'POST',
         headers: { authorization: 'Bearer not-a-valid-jwt', 'content-type': 'application/json' },
         body: JSON.stringify({ branchId: randomUUID(), effectiveFrom: '2026-09-01' }),
@@ -188,7 +188,7 @@ describe('Schedules controller HTTP-layer RBAC + tenant isolation (P1B-05 slice 
     expect(authorizedToken).toBeDefined();
     // Stub DataSource nedeniyle service çağrısı 500/400 döndürebilir; ama 401/403
     // DEĞİL — yani auth + permission guard'ı geçti ve controller'a ulaştı.
-    const result = await requestJson('/api/v1/schedules', {
+    const result = await requestJson('/api/v1/schedules/drafts', {
       method: 'POST',
       headers: { authorization: `Bearer ${authorizedToken as string}`, 'content-type': 'application/json' },
       body: JSON.stringify({ branchId: routingBranch, effectiveFrom: '2026-09-01' }),

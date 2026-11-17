@@ -50,7 +50,7 @@ export type SchedulePermissionDependencyDescriptor = {
   appliesTo: readonly string[];
   catalogKey: null;
   hardCodedPermissionKey: false;
-  runtimeEnforcement: 'not_implemented';
+  runtimeEnforcement: 'implemented' | 'not_implemented';
 };
 
 export const SCHEDULE_PERMISSION_DEPENDENCIES: readonly SchedulePermissionDependencyDescriptor[] = [
@@ -59,28 +59,28 @@ export const SCHEDULE_PERMISSION_DEPENDENCIES: readonly SchedulePermissionDepend
     appliesTo: ['weekly grid', 'published schedule view'],
     catalogKey: null,
     hardCodedPermissionKey: false,
-    runtimeEnforcement: 'not_implemented',
+    runtimeEnforcement: 'implemented',
   },
   {
     capability: 'read own published schedule',
     appliesTo: ['teacher own-read weekly grid', 'today schedule panel'],
     catalogKey: null,
     hardCodedPermissionKey: false,
-    runtimeEnforcement: 'not_implemented',
+    runtimeEnforcement: 'implemented',
   },
   {
     capability: 'create schedule draft',
     appliesTo: ['draft list', 'create draft action placeholder'],
     catalogKey: null,
     hardCodedPermissionKey: false,
-    runtimeEnforcement: 'not_implemented',
+    runtimeEnforcement: 'implemented',
   },
   {
     capability: 'update draft events',
     appliesTo: ['event editor modal', 'event delete placeholder'],
     catalogKey: null,
     hardCodedPermissionKey: false,
-    runtimeEnforcement: 'not_implemented',
+    runtimeEnforcement: 'implemented',
   },
   {
     capability: 'update event assignments',
@@ -94,7 +94,7 @@ export const SCHEDULE_PERMISSION_DEPENDENCIES: readonly SchedulePermissionDepend
     appliesTo: ['validation action placeholder', 'validation result'],
     catalogKey: null,
     hardCodedPermissionKey: false,
-    runtimeEnforcement: 'not_implemented',
+    runtimeEnforcement: 'implemented',
   },
   {
     capability: 'read schedule hard conflicts',
@@ -108,7 +108,7 @@ export const SCHEDULE_PERMISSION_DEPENDENCIES: readonly SchedulePermissionDepend
     appliesTo: ['publish confirmation', 'published read-only transition'],
     catalogKey: null,
     hardCodedPermissionKey: false,
-    runtimeEnforcement: 'not_implemented',
+    runtimeEnforcement: 'implemented',
   },
 ] as const;
 
@@ -122,9 +122,9 @@ export type ScheduleApiContractEndpointDescriptor = {
   expectedResponseHeaders: readonly string[];
   successStatus: 200 | 201 | 204;
   mutation: boolean;
-  bindingStatus: 'blocked';
-  runtimeHandlerRegistered: false;
-  runtimeEndpointAssumption: false;
+  bindingStatus: 'blocked' | 'bound';
+  runtimeHandlerRegistered: boolean;
+  runtimeEndpointAssumption: boolean;
 };
 
 export const SCHEDULE_M3_API_DEPENDENCY_DESCRIPTORS: readonly ScheduleApiContractEndpointDescriptor[] = [
@@ -138,9 +138,37 @@ export const SCHEDULE_M3_API_DEPENDENCY_DESCRIPTORS: readonly ScheduleApiContrac
     expectedResponseHeaders: ['ETag'],
     successStatus: 201,
     mutation: true,
-    bindingStatus: 'blocked',
-    runtimeHandlerRegistered: false,
-    runtimeEndpointAssumption: false,
+    bindingStatus: 'bound',
+    runtimeHandlerRegistered: true,
+    runtimeEndpointAssumption: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/schedules/drafts',
+    purpose: 'list management-scoped draft and unpublished schedules with counts',
+    capabilityDependency: 'read own published schedule',
+    catalogKey: null,
+    requiredRequestHeaders: [],
+    expectedResponseHeaders: ['ETag'],
+    successStatus: 200,
+    mutation: false,
+    bindingStatus: 'bound',
+    runtimeHandlerRegistered: true,
+    runtimeEndpointAssumption: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/schedules/:scheduleId',
+    purpose: 'read a draft (management) or published (branch/own) projection, distinguished in-band',
+    capabilityDependency: 'read own published schedule',
+    catalogKey: null,
+    requiredRequestHeaders: [],
+    expectedResponseHeaders: ['ETag'],
+    successStatus: 200,
+    mutation: false,
+    bindingStatus: 'bound',
+    runtimeHandlerRegistered: true,
+    runtimeEndpointAssumption: true,
   },
   {
     method: 'POST',
@@ -194,6 +222,9 @@ export const SCHEDULE_M3_API_DEPENDENCY_DESCRIPTORS: readonly ScheduleApiContrac
     expectedResponseHeaders: ['ETag'],
     successStatus: 200,
     mutation: true,
+    // #447 leaves the conflicts/validate path for #452/#453; the legacy
+    // /schedules/:scheduleId/validate handler is implemented and guarded, but
+    // it is not the canonical contract path yet.
     bindingStatus: 'blocked',
     runtimeHandlerRegistered: false,
     runtimeEndpointAssumption: false,
@@ -208,9 +239,9 @@ export const SCHEDULE_M3_API_DEPENDENCY_DESCRIPTORS: readonly ScheduleApiContrac
     expectedResponseHeaders: ['ETag'],
     successStatus: 200,
     mutation: true,
-    bindingStatus: 'blocked',
-    runtimeHandlerRegistered: false,
-    runtimeEndpointAssumption: false,
+    bindingStatus: 'bound',
+    runtimeHandlerRegistered: true,
+    runtimeEndpointAssumption: true,
   },
   {
     method: 'POST',
@@ -222,9 +253,9 @@ export const SCHEDULE_M3_API_DEPENDENCY_DESCRIPTORS: readonly ScheduleApiContrac
     expectedResponseHeaders: ['ETag'],
     successStatus: 200,
     mutation: true,
-    bindingStatus: 'blocked',
-    runtimeHandlerRegistered: false,
-    runtimeEndpointAssumption: false,
+    bindingStatus: 'bound',
+    runtimeHandlerRegistered: true,
+    runtimeEndpointAssumption: true,
   },
   {
     method: 'GET',
@@ -236,9 +267,9 @@ export const SCHEDULE_M3_API_DEPENDENCY_DESCRIPTORS: readonly ScheduleApiContrac
     expectedResponseHeaders: ['ETag'],
     successStatus: 200,
     mutation: false,
-    bindingStatus: 'blocked',
-    runtimeHandlerRegistered: false,
-    runtimeEndpointAssumption: false,
+    bindingStatus: 'bound',
+    runtimeHandlerRegistered: true,
+    runtimeEndpointAssumption: true,
   },
 ] as const;
 
@@ -265,7 +296,7 @@ export const SCHEDULE_VERSION_CONTRACT_DESCRIPTOR = {
   staleVersionCode: 'SCHEDULE_VERSION_MISMATCH',
   automaticRetryEnabled: false,
   localMutationMergeEnabled: false,
-  bindingStatus: 'blocked',
+  bindingStatus: 'bound',
 } as const;
 
 export const OPERATIONS_API_DEPENDENCIES: readonly OperationsApiDependency[] = [

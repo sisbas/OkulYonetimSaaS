@@ -2,7 +2,7 @@ import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SecurityAuditService } from '../audit/security-audit.service';
 import { AuthorizationContextError } from '../context/authorization-context';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { PERMISSIONS_ANY_KEY, PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { PermissionGuard } from './permission.guard';
 
 class ProbeController {}
@@ -23,6 +23,7 @@ type GuardHarness = {
 
 function harness(options: {
   permissions?: string[] | undefined;
+  permissionsAny?: string[] | undefined;
   contextScoped?: boolean;
   authority?: { roles: string[]; permissions: string[] } | Error;
 }): GuardHarness {
@@ -51,9 +52,11 @@ function harness(options: {
     },
   });
   const reflector = {
-    getAllAndOverride: jest.fn((key: string) =>
-      key === PERMISSIONS_KEY ? options.permissions : options.contextScoped === true,
-    ),
+    getAllAndOverride: jest.fn((key: string) => {
+      if (key === PERMISSIONS_KEY) return options.permissions;
+      if (key === PERMISSIONS_ANY_KEY) return options.permissionsAny;
+      return options.contextScoped === true;
+    }),
   } as unknown as Reflector;
   const guard = new PermissionGuard(
     reflector,
@@ -287,5 +290,72 @@ describe('PermissionGuard', () => {
       ),
     )).resolves.toBe(true);
     expect(resolve).not.toHaveBeenCalled();
+  });
+});
+
+describe('#447 @PermissionsAny (OR semantiði)', () => {
+  const request = (permissions: string[]) => ({
+    user: authenticatedUser(permissions),
+    header: jest.fn((name: string) => (name === 'x-request-id' ? 'req-test' : undefined)),
+  });
+
+  it('allows when one of the any-of keys is held (teacher: schedule:own:read)', async () => {
+    const { guard } = harness({
+      permissionsAny: ['schedule:read', 'schedule:own:read'],
+      authority: { roles: ['teacher'], permissions: ['schedule:own:read'] },
+    });
+    await expect(Promise.resolve(guard.canActivate(executionContext(request([]))))).resolves.toBe(true);
+  });
+
+  it('allows when the other any-of key is held (parent: schedule:read)', async () => {
+    const { guard } = harness({
+      permissionsAny: ['schedule:read', 'schedule:own:read'],
+      authority: { roles: ['parent'], permissions: ['schedule:read'] },
+    });
+    await expect(Promise.resolve(guard.canActivate(executionContext(request([]))))).resolves.toBe(true);
+  });
+
+  it('denies when none of the any-of keys are held and reports the declared set', async () => {
+    const { guard, audit } = harness({
+      permissionsAny: ['schedule:read', 'schedule:own:read'],
+      authority: { roles: ['viewer'], permissions: ['user:read'] },
+    });
+    await expect(Promise.resolve(guard.canActivate(executionContext(request([]))))).resolves.toBe(false);
+    expect(audit.emitAuthorizationDenied).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant_a' }),
+      { requiredPermission: ['schedule:read', 'schedule:own:read'], resource: 'schedule', reasonCode: 'missing_permission' },
+    );
+  });
+
+  it('requires all @Permissions keys AND at least one @PermissionsAny key', async () => {
+    const harnessAny = (perms: string[]) => harness({
+      permissions: ['schedule:validate'],
+      permissionsAny: ['schedule:conflict:read', 'schedule:own:read'],
+      authority: { roles: ['tenant_admin'], permissions: perms },
+    });
+
+    const enough = harnessAny(['schedule:validate', 'schedule:conflict:read']);
+    await expect(Promise.resolve(enough.guard.canActivate(executionContext(request([]))))).resolves.toBe(true);
+
+    const missingAll = harnessAny(['schedule:own:read']);
+    await expect(Promise.resolve(missingAll.guard.canActivate(executionContext(request([]))))).resolves.toBe(false);
+
+    const missingAny = harnessAny(['schedule:validate']);
+    await expect(Promise.resolve(missingAny.guard.canActivate(executionContext(request([]))))).resolves.toBe(false);
+  });
+
+  it('treats a route declared only with @PermissionsAny as a protected route', async () => {
+    const { guard, audit } = harness({
+      permissions: undefined,
+      permissionsAny: ['schedule:draft:read'],
+      authority: { roles: ['tenant_admin'], permissions: ['schedule:draft:read'] },
+    });
+    await expect(Promise.resolve(guard.canActivate(executionContext(request([]))))).resolves.toBe(true);
+    expect(audit.emitAuthorizationDenied).not.toHaveBeenCalled();
+  });
+
+  it('default-denies a route declared with an empty @PermissionsAny()', async () => {
+    const { guard } = harness({ permissions: undefined, permissionsAny: [], contextScoped: false });
+    await expect(Promise.resolve(guard.canActivate(executionContext(request(['user:read']))))).resolves.toBe(false);
   });
 });

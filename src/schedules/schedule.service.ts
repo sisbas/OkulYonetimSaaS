@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { ScheduleVersionMismatchException } from './schedule-revision';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, EntityManager } from 'typeorm';
 import { Schedule } from './schedule.entity';
@@ -33,6 +34,11 @@ export type SaveDraftInput = {
   scheduleId: string;
   events: ScheduleEventDraft[];
   references?: ScheduleReferenceSet;
+  /**
+   * Kaynağa bağlı koşullu revizyon (If-Match'ten). Persisted revizyonla
+   * uyuşmuyorsa 412 SCHEDULE_VERSION_MISMATCH fırlatılır.
+   */
+  expectedRevision: number;
 };
 
 export type SolveScheduleInput = {
@@ -90,74 +96,99 @@ export class ScheduleService {
   /**
    * Draft'ı kaydeder: mevcut draft versiyonu (yoksa yeni) güncellenir,
    * event'ler yeniden yazılır. Optimistic concurrency revision üzerinden.
+   *
+   * Tüm boyut yazımı (versiyon satırı + event'ler + revision bump) TEK bir
+   * transaction içinde, schedule satırının pessimistic_write kilidiyle yapılır;
+   * böylece aynı revision ile başlayan iki eşzamanlı save'den kaybeden 412
+   * alır VE hiçbir kalıcı değişiklik bırakmaz (revizyon claim'i son yazma
+   * adımıdır ve kilitle korunur).
    */
   async saveDraft(input: SaveDraftInput): Promise<ScheduleVersion> {
-    const schedule = await this.getSchedule(input.tenantId, input.scheduleId);
-    if (schedule.status === ScheduleStatus.PUBLISHED) {
-      throw new ConflictException('Published schedule is immutable');
-    }
-
-    let version = await this.versionRepo.findOne({
-      where: {
-        tenantId: input.tenantId,
-        scheduleId: input.scheduleId,
-        status: ScheduleVersionStatus.DRAFT,
-      },
-    });
-
-    if (!version) {
-      const nextVersionNo = (await this.nextVersionNo(input.scheduleId)) + 1;
-      version = this.versionRepo.create({
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        scheduleId: input.scheduleId,
-        versionNo: nextVersionNo,
-        status: ScheduleVersionStatus.DRAFT,
-        // Snapshot bir OBJECT olmalı (migration chk_schedule_versions_snapshot_object).
-        snapshot: { events: input.events },
+    return this.scheduleRepo.manager.transaction(async (em) => {
+      const schedule = await em.findOne(Schedule, {
+        where: { tenantId: input.tenantId, id: input.scheduleId },
+        lock: { mode: 'pessimistic_write' },
       });
-    } else {
-      version.snapshot = { events: input.events };
-    }
+      if (!schedule) throw new NotFoundException('Schedule not found');
+      if (schedule.status === ScheduleStatus.PUBLISHED) {
+        throw new ConflictException('Published schedule is immutable');
+      }
+      // Kaynağa bağlı koşullu revizyon: persisted revizyon otoritedir.
+      if (Number(schedule.revision) !== Number(input.expectedRevision)) {
+        throw new ScheduleVersionMismatchException();
+      }
 
-    const saved = await this.versionRepo.save(version);
+      const versionRepo = em.getRepository(ScheduleVersion);
+      const eventRepo = em.getRepository(ScheduleEvent);
 
-    // Event'leri yeniden yaz (idempotent draft edit).
-    await this.eventRepo.delete({
-      tenantId: input.tenantId,
-      scheduleId: input.scheduleId,
-      versionId: saved.id,
-    });
-    if (input.events.length > 0) {
-      const events = input.events.map((e) =>
-        this.eventRepo.create({
+      let version = await versionRepo.findOne({
+        where: {
+          tenantId: input.tenantId,
+          scheduleId: input.scheduleId,
+          status: ScheduleVersionStatus.DRAFT,
+        },
+      });
+
+      if (!version) {
+        const nextVersionNo = (await this.nextVersionNo(input.scheduleId)) + 1;
+        version = versionRepo.create({
           tenantId: input.tenantId,
           branchId: input.branchId,
           scheduleId: input.scheduleId,
-          versionId: saved.id,
-          teacherId: e.teacherId!,
-          teacherBranchId: e.teacherBranchId!,
-          studentGroupId: e.studentGroupId!,
-          courseId: e.courseId!,
-          roomId: e.roomId!,
-          timeSlotId: e.timeSlotId!,
-          dayOfWeek: e.dayOfWeek,
-          startTime: e.startTime,
-          endTime: e.endTime,
-          timeSlotSnapshot: { label: e.timeSlotLabel ?? null },
-        }),
+          versionNo: nextVersionNo,
+          status: ScheduleVersionStatus.DRAFT,
+          // Snapshot bir OBJECT olmalı (migration chk_schedule_versions_snapshot_object).
+          snapshot: { events: input.events },
+        });
+      } else {
+        version.snapshot = { events: input.events };
+      }
+
+      const saved = await versionRepo.save(version);
+
+      // Event'leri yeniden yaz (idempotent draft edit).
+      await eventRepo.delete({
+        tenantId: input.tenantId,
+        scheduleId: input.scheduleId,
+        versionId: saved.id,
+      });
+      if (input.events.length > 0) {
+        const events = input.events.map((e) =>
+          eventRepo.create({
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            scheduleId: input.scheduleId,
+            versionId: saved.id,
+            teacherId: e.teacherId!,
+            teacherBranchId: e.teacherBranchId!,
+            studentGroupId: e.studentGroupId!,
+            courseId: e.courseId!,
+            roomId: e.roomId!,
+            timeSlotId: e.timeSlotId!,
+            dayOfWeek: e.dayOfWeek,
+            startTime: e.startTime,
+            endTime: e.endTime,
+            timeSlotSnapshot: { label: e.timeSlotLabel ?? null },
+          }),
+        );
+        await eventRepo.save(events);
+      }
+
+      // Revision bump: persisted revizyon hâlâ uyuşuyorsa (aksi hâlde 412 ve
+      // tüm transaction geri alınır). Koşul atomic ile revision claim'idir;
+      // pessimistic_write kilidinin içinde ikinci savunma hattıdır.
+      const bumped = await em.increment(
+        Schedule,
+        { tenantId: input.tenantId, id: input.scheduleId, revision: input.expectedRevision },
+        'revision',
+        1,
       );
-      await this.eventRepo.save(events);
-    }
+      if (bumped.affected !== 1) {
+        throw new ScheduleVersionMismatchException();
+      }
 
-    // Revision bump (optimistic concurrency signal).
-    await this.scheduleRepo.increment(
-      { tenantId: input.tenantId, id: input.scheduleId },
-      'revision',
-      1,
-    );
-
-    return saved;
+      return saved;
+    });
   }
 
   /**
@@ -174,6 +205,10 @@ export class ScheduleService {
     revision: number,
     references?: ScheduleReferenceSet,
   ): Promise<ScheduleValidationEvidence> {
+    const persisted = await this.getSchedule(tenantId, scheduleId);
+    if (Number(persisted.revision) !== Number(revision)) {
+      throw new ScheduleVersionMismatchException();
+    }
     const effectiveReferences =
       references ?? (await this.loadActiveReferences(tenantId, branchId, events));
     const input: ScheduleValidationInput = {
@@ -218,10 +253,8 @@ export class ScheduleService {
       throw new ConflictException('Schedule already published');
     }
     // Optimistic concurrency: persisted revision otoritesi.
-    if (schedule.revision !== callerRevision) {
-      throw new ConflictException(
-        `Schedule revision mismatch: persisted=${schedule.revision}, caller=${callerRevision}`,
-      );
+    if (Number(schedule.revision) !== Number(callerRevision)) {
+      throw new ScheduleVersionMismatchException();
     }
 
     const draft = await this.versionRepo.findOne({
@@ -484,10 +517,8 @@ export class ScheduleService {
     if (schedule.status !== ScheduleStatus.PUBLISHED) {
       throw new ConflictException('Only a published schedule can be unpublished');
     }
-    if (schedule.revision !== callerRevision) {
-      throw new ConflictException(
-        `Schedule revision mismatch: persisted=${schedule.revision}, caller=${callerRevision}`,
-      );
+    if (Number(schedule.revision) !== Number(callerRevision)) {
+      throw new ScheduleVersionMismatchException();
     }
     const published = await this.versionRepo.findOne({
       where: { tenantId, scheduleId, status: ScheduleVersionStatus.PUBLISHED },

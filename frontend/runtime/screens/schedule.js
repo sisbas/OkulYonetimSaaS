@@ -47,6 +47,21 @@ function renderScheduleEventRow(event, index) {
   </article>`;
 }
 
+function rememberScheduleEtag(etag, fallbackRevision) {
+  if (etag) {
+    state.scheduleEtag = String(etag);
+  } else if (state.scheduleId && fallbackRevision != null) {
+    state.scheduleEtag = `"schedule:${String(state.scheduleId || '')}:v${Number(fallbackRevision)}"`;
+  }
+  const match = /:v(\d+)"$/.exec(String(state.scheduleEtag || ''));
+  state.scheduleRevision = match ? Number(match[1]) : state.scheduleRevision;
+  return state.scheduleEtag;
+}
+
+function scheduleIfMatch() {
+  return state.scheduleEtag;
+}
+
 async function createSchedule(event) {
   event.preventDefault();
   if (!requireSession()) return;
@@ -57,12 +72,14 @@ async function createSchedule(event) {
   if (!branchId || !effectiveFrom) return announce('Çizelge için şube ve geçerlilik başlangıcı gerekli.', 'warning');
   target.innerHTML = loading('Çizelge oluşturuluyor');
   try {
-    const { body } = await apiRequest('/schedules', {
+    const { body, etag } = await apiRequest('/schedules/drafts', {
       method: 'POST',
       body: { branchId, effectiveFrom, effectiveTo },
     });
     state.scheduleId = pick(body, ['scheduleId', 'id'], '');
+    state.scheduleEtag = undefined;
     state.scheduleRevision = Number(pick(body, ['revision', 'versionNo', 'revisionNo'], 1)) || 1;
+    rememberScheduleEtag(etag, state.scheduleRevision);
     state.scheduleEvents = [];
     renderScheduleStatus();
     renderConflictResolution([]);
@@ -137,11 +154,12 @@ async function saveScheduleDraft() {
   const target = $('#schedule-status');
   target.innerHTML = loading('Taslak kaydediliyor');
   try {
-    await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/draft`, {
+    const { etag } = await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/draft`, {
       method: 'POST',
+      headers: { 'If-Match': scheduleIfMatch() },
       body: { branchId, events },
     });
-    state.scheduleRevision += 1;
+    rememberScheduleEtag(etag, (state.scheduleRevision || 1) + 1);
     announce('Taslak kaydedildi.', 'success');
     renderScheduleStatus();
     renderConflictResolution([]);
@@ -159,10 +177,12 @@ async function validateSchedule() {
   const target = $('#schedule-status');
   target.innerHTML = loading('Doğrulama sunucuda çalışıyor');
   try {
-    const { body } = await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/validate`, {
+    const { body, etag } = await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/validate`, {
       method: 'POST',
-      body: { branchId, events, revision: state.scheduleRevision },
+      headers: { 'If-Match': scheduleIfMatch() },
+      body: { branchId, events },
     });
+    rememberScheduleEtag(etag, state.scheduleRevision);
     const evidence = body && body.evidence ? body.evidence : body;
     const status = String(pick(evidence, ['status'], 'invalid')).toLowerCase();
     const canPublish = Boolean(pick(evidence, ['canPublish'], false));
@@ -189,11 +209,12 @@ async function publishSchedule() {
   const target = $('#schedule-status');
   target.innerHTML = loading('Çizelge yayınlanıyor');
   try {
-    const { body } = await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/publish`, {
+    const { etag } = await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/publish`, {
       method: 'POST',
-      body: { branchId, events, revision: state.scheduleRevision, requestId: state.requestId || `${Date.now()}` },
+      headers: { 'If-Match': scheduleIfMatch() },
+      body: { branchId, events },
     });
-    void body;
+    rememberScheduleEtag(etag, state.scheduleRevision);
     announce('Çizelge yayınlandı.', 'success');
     renderScheduleStatus();
   } catch (error) {
@@ -208,10 +229,12 @@ async function unpublishSchedule() {
   const target = $('#schedule-status');
   target.innerHTML = loading('Yayından kaldırılıyor');
   try {
-    await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/unpublish`, {
+    const { etag } = await apiRequest(`/schedules/${encodeURIComponent(state.scheduleId)}/unpublish`, {
       method: 'POST',
-      body: { branchId, revision: state.scheduleRevision, requestId: state.requestId || `${Date.now()}` },
+      headers: { 'If-Match': scheduleIfMatch() },
+      body: { branchId },
     });
+    rememberScheduleEtag(etag, state.scheduleRevision);
     announce('Çizelge yayından kaldırıldı.', 'success');
     renderScheduleStatus();
   } catch (error) {

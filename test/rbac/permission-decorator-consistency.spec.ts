@@ -18,7 +18,7 @@ describe('permission decorator consistency', () => {
   it('keeps route permission keys within the seeded permission keys', () => {
     const used = sourceFiles(join(process.cwd(), 'src')).flatMap((file) => {
       const source = readFileSync(file, 'utf8');
-      return [...source.matchAll(/@(Permissions|RequirePermission)\(([^)]*)\)/g)].flatMap((match) =>
+      return [...source.matchAll(/@(Permissions|PermissionsAny|RequirePermission)\(([^)]*)\)/g)].flatMap((match) =>
         [...match[2].matchAll(/['"]([^'"]+)['"]/g)].map((permission) => ({
           permission: permission[1],
           file: relative(process.cwd(), file),

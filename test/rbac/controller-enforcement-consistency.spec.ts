@@ -7,7 +7,7 @@ import { SecurityAuditService } from '../../src/common/audit/security-audit.serv
 import { AuthorizationContextError } from '../../src/common/context/authorization-context';
 import { CONTEXT_SCOPE_KEY } from '../../src/common/context/context-scope.decorator';
 import { PUBLIC_ROUTE_KEYS } from '../../src/common/context/public-route';
-import { PERMISSIONS_KEY } from '../../src/common/decorators/permissions.decorator';
+import { PERMISSIONS_ANY_KEY, PERMISSIONS_KEY } from '../../src/common/decorators/permissions.decorator';
 import { PermissionGuard } from '../../src/common/guards/permission.guard';
 
 /**
@@ -56,7 +56,7 @@ export const ROUTE_DECORATOR =
   /@(Get|Post|Put|Patch|Delete|All|Options|Head|Sse|Search)\s*\(([^)]*)\)/g;
 const ROUTE_DECORATOR_LINE =
   /^\s*@(Get|Post|Put|Patch|Delete|All|Options|Head|Sse|Search)\s*\(/;
-const PERMISSIONS_DECORATOR = /@Permissions\s*\(([^)]*)\)/g;
+const PERMISSIONS_DECORATOR = /@(?:Permissions|PermissionsAny)\s*\(([^)]*)\)/g;
 const CONTEXT_SCOPE_DECORATOR = /@ContextScoped\s*\(/;
 const DECORATOR_LINE = /^\s*@/;
 
@@ -392,6 +392,7 @@ describe('default-deny runtime contract (PermissionGuard)', () => {
 
   const harness = (options: {
     permissions?: string[];
+    permissionsAny?: string[];
     contextScoped?: boolean;
     authority?: { roles: string[]; permissions: string[] } | Error;
   }): Harness => {
@@ -408,9 +409,11 @@ describe('default-deny runtime contract (PermissionGuard)', () => {
       });
     const resolveSelection = jest.fn();
     const reflector = {
-      getAllAndOverride: jest.fn((key: string) =>
-        key === PERMISSIONS_KEY ? options.permissions : options.contextScoped === true,
-      ),
+      getAllAndOverride: jest.fn((key: string) => {
+        if (key === PERMISSIONS_KEY) return options.permissions;
+        if (key === PERMISSIONS_ANY_KEY) return options.permissionsAny;
+        return options.contextScoped === true;
+      }),
     } as unknown as Reflector;
     return {
       guard: new PermissionGuard(
