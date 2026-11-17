@@ -216,6 +216,10 @@ function renderScheduleStatus() {
   const target = $('#schedule-status');
   const read = state.scheduleRead;
   if (!read || !read.scheduleId) {
+    delete target.dataset.scheduleId;
+    delete target.dataset.scheduleRevision;
+    delete target.dataset.gridState;
+    delete target.dataset.projection;
     empty(target, 'schedule');
     return;
   }
@@ -224,10 +228,12 @@ function renderScheduleStatus() {
     || read.status === 'published';
   const gridState = read.gridState
     || (published ? 'weekly_grid_ready_published' : 'weekly_grid_ready_draft');
-  target.dataset.gridState = String(gridState);
-  target.dataset.projection = String(read.projection ?? '');
   const eventCount = Number(read.eventCount ?? readEventsAsDraft().length) || 0;
   const revision = Number(read.revision) || 1;
+  target.dataset.gridState = String(gridState);
+  target.dataset.projection = String(read.projection ?? '');
+  target.dataset.scheduleId = String(read.scheduleId);
+  target.dataset.scheduleRevision = String(revision);
   const publishedAt = read.version?.publishedAt ? ` · Yayınlandı: ${programmeIsoDay(read.version.publishedAt)}` : '';
   const suffix = published ? ' · Salt okunur' : '';
   target.innerHTML = `<article class="card" data-schedule-id="${escapeHtml(String(read.scheduleId))}" data-schedule-revision="${escapeHtml(String(revision))}" data-grid-state="${escapeHtml(String(gridState))}" data-projection="${escapeHtml(String(read.projection ?? ''))}">
@@ -511,16 +517,19 @@ async function loadScheduleDetail(scheduleId) {
   return read;
 }
 
-// Kaydedilmemiş satırlar yenilemede kaybolur; üründen önce sorulur.
-function confirmRefreshProgramme() {
+// Kaydedilmemiş satırlar her liste/detay yenilemesinde kaybolur; sekme
+// geçişi ve seçici değişimi de dahil her yeniden yükleme yolu aynı soruyu
+// sorar.
+function confirmDiscardRows(message) {
   if (state.scheduleRows.length && typeof confirm === 'function') {
-    if (!confirm('Kaydedilmemiş dersler kaybolur. Yine de yenilensin mi?')) return Promise.resolve();
+    return confirm(message);
   }
-  return loadProgramme();
+  return true;
 }
 
 async function loadProgramme() {
   if (!requireSession()) return;
+  if (!confirmDiscardRows('Kaydedilmemiş dersler kaybolur. Yine de yenilensin mi?')) return;
   const canManagement = hasCapability('schedule:draft:read');
   const canPublished = hasAnyCapability(['schedule:read', 'schedule:own:read']);
   if (!canManagement && !canPublished) {
@@ -533,8 +542,8 @@ async function loadProgramme() {
     const { candidates, failures } = await loadProgrammeList();
     if (candidates.length === 0 && failures.length > 0) {
       resetProgrammeState();
-      renderError(target, failures[0]);
       renderProgramme();
+      renderError(target, failures[0]);
       return;
     }
     state.scheduleList = candidates;
@@ -547,8 +556,8 @@ async function loadProgramme() {
     await loadScheduleDetail(selectedId);
   } catch (error) {
     resetProgrammeState();
-    renderError(target, error);
     renderProgramme();
+    renderError(target, error);
   }
 }
 
@@ -873,12 +882,18 @@ document.addEventListener('click', (event) => {
 });
 
 $('#schedule-create-form').addEventListener('submit', createSchedule);
-$('#refresh-schedule-status').addEventListener('click', confirmRefreshProgramme);
+$('#refresh-schedule-status').addEventListener('click', loadProgramme);
 $('#add-schedule-event').addEventListener('click', addScheduleEvent);
 $('#save-schedule-draft').addEventListener('click', saveScheduleDraft);
 $('#schedule-programme-select').addEventListener('change', (event) => {
-  const selected = String(event?.target?.value ?? '');
-  if (selected) loadScheduleDetail(selected).catch((error) => renderError($('#schedule-status'), error));
+  const targetElement = event?.target;
+  const selected = String(targetElement?.value ?? '');
+  if (!selected) return;
+  if (!confirmDiscardRows('Kaydedilmemiş dersler kaybolur. Yine de yükleme yapılsın mı?')) {
+    if (targetElement) targetElement.value = state.scheduleId;
+    return;
+  }
+  loadScheduleDetail(selected).catch((error) => renderError($('#schedule-status'), error));
 });
 $('#schedule-events').addEventListener('input', handleScheduleRowInput);
 $('#schedule-events').addEventListener('change', handleScheduleRowInput);
