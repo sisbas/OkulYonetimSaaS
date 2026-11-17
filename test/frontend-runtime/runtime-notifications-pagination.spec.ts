@@ -7,7 +7,7 @@ import { runtime, response, ALL_PERMISSION_KEYS } from './runtime-harness';
  * çekilir; liste ekranı ilk sayfayı gösterse de toplu onay verisi TÜMÜNÜ içerir.
  */
 
-const PROBE = 'state, loadNotifications';
+const PROBE = 'state, loadNotifications, bulkApproveSession';
 
 function signedIn() {
   const ui = runtime(PROBE, ALL_PERMISSION_KEYS);
@@ -68,5 +68,48 @@ describe('#464 notifications list pagination', () => {
 
     expect(ui.fetch).toHaveBeenCalledTimes(1);
     expect(ui.element('#bulk-approve-output').innerHTML).toContain('data-action="bulk-approve-session"');
+  });
+
+  it('processes oversized sessions in bounded batches instead of relying on silent server truncation', async () => {
+    const ui = signedIn();
+    const sessionId = 'ccccccc3-3333-4333-8333-333333333333';
+    ui.fetch.mockImplementation(async (url: unknown, init?: { body?: string }) => {
+      const u = String(url);
+      if (u.includes('/notifications/drafts/session/')) {
+        const body = init?.body ? JSON.parse(init.body) as { expectedVersions?: unknown[] } : {};
+        expect((body.expectedVersions ?? []).length).toBeLessThanOrEqual(200);
+        return response({ status: 'approved' });
+      }
+      const match = /offset=(\d+)/.exec(u);
+      const offset = Number(match?.[1] ?? 0);
+      const notifications = Array.from({ length: Math.min(20, 250 - offset) }, (_, i) =>
+        notification(`draft-${offset + i}`, sessionId, offset + i + 1),
+      ).slice(0, Math.max(0, 250 - offset));
+      return response({ notifications });
+    });
+
+    await ui.probe.loadNotifications();
+
+    const approveCalls: Array<{ body: string | undefined }> = [];
+    ui.fetch.mock.calls.forEach(([url, init]) => {
+      if (String(url).includes('/notifications/drafts/session/')) {
+        approveCalls.push({ body: (init as { body?: string } | undefined)?.body });
+      }
+    });
+    expect(approveCalls).toHaveLength(0); // tıklamadan önce approve çağrısı yok
+
+    // 250 taslağın toplu onayı: 200 + 50 batch'lerine parçalanmalı, hiçbir batch >200 olmamalı.
+    const versionsCsv = encodeURIComponent(
+      JSON.stringify(
+        Array.from({ length: 250 }, (_, i) => ({ id: `draft-${i}`, version: 1 })),
+      ),
+    );
+    await ui.probe.bulkApproveSession(sessionId, versionsCsv);
+
+    const batchSizes = ui.fetch.mock.calls
+      .map(([url, init]) => ({ url: String(url), body: (init as { body?: string } | undefined)?.body }))
+      .filter((call) => call.url.includes('/notifications/drafts/session/'))
+      .map((call) => (JSON.parse(String(call.body)) as { expectedVersions: unknown[] }).expectedVersions.length);
+    expect(batchSizes).toEqual([200, 50]);
   });
 });

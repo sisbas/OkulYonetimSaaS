@@ -38,18 +38,32 @@ async function bulkApproveSession(sessionId, versionsCsv) {
     return announce('Toplu onay için sürüm bilgisi çözülemedi.', 'warning');
   }
   const target = $('#bulk-approve-output');
-  target.innerHTML = loading('Toplu onay sunucuda uygulanıyor');
-  try {
-    await apiRequest(`/notifications/drafts/session/${encodeURIComponent(sessionId)}/approve`, {
-      method: 'POST',
-      body: { expectedVersions },
-      versioned: true,
-    });
-    announce('Oturum taslakları toplu onaylandı.', 'success');
-    await loadNotifications();
-  } catch (error) {
-    renderError(target, error);
+  const total = expectedVersions.length;
+  // Sunucu bulk-approve ucu bekleyen taslakları 200'erli partilerde işler
+  // (transitionDraftsForSession üst sınırı). O sessizce kırpılmasın diye
+  // burada da 200'erlik partilerle ilerleyip her partiyi raporluyoruz.
+  const BATCH = 200;
+  let done = 0;
+  for (let offset = 0; offset < expectedVersions.length; offset += BATCH) {
+    const batch = expectedVersions.slice(offset, offset + BATCH);
+    target.innerHTML = loading(`Toplu onay: ${Math.min(offset + BATCH, total)}/${total} taslak işleniyor`);
+    try {
+      // eslint-disable-next-line no-await-in-loop -- partiler sessiz kırpılmamak için sırayla işlenir
+      await apiRequest(`/notifications/drafts/session/${encodeURIComponent(sessionId)}/approve`, {
+        method: 'POST',
+        body: { expectedVersions: batch },
+        versioned: true,
+      });
+      done += batch.length;
+    } catch (error) {
+      renderError(target, error);
+      announce(`${done}/${total} taslak onaylandı; kalanı tamamlanmadı — listeyi yenileyip tekrar deneyin.`, 'warning');
+      await loadNotifications();
+      return;
+    }
   }
+  announce(`${done} taslak toplu onaylandı.`, 'success');
+  await loadNotifications();
 }
 
 async function fetchAllNotifications() {
