@@ -428,29 +428,27 @@
           <div id="bulk-approve-output" class="cards" role="region" aria-label="Oturum düzeyinde toplu onay eylemleri"></div>
         </section>
 
-        <section id="program-panel" class="panel runtime-panel hidden" data-panel="program">
+        <section id="program-panel" class="panel runtime-panel hidden" data-panel="program" aria-labelledby="program-heading">
           <div class="section-head">
             <div>
               <p class="eyebrow">Ders çizelgesi</p>
-              <h2>Program yönetimi</h2>
+              <h2 id="program-heading">Haftalık program</h2>
             </div>
-            <button id="refresh-schedule-status" type="button">Durumu yenile</button>
+            <button id="refresh-schedule-status" type="button">Yenile</button>
           </div>
-          <div class="panel-intro">
-            <strong>Sunucu otoriter yayın akışı</strong>
-            <ol class="checklist">
-              <li>Dönem aralığıyla çizelge oluşturun.</li>
-              <li>Ders olaylarını ekleyin ve taslağı kaydedin.</li>
-              <li>Doğrulayın; çakışmasız olanı yayınlayın.</li>
-            </ol>
-          </div>
-          <form id="schedule-create-form" class="grid-form" data-requires-permission="schedule:draft:create">
-            <label>Şube kodu <input id="schedule-branch" name="branchCode" autocomplete="off" /></label>
+          <p id="program-scope" class="hint"></p>
+          <label id="schedule-programme-picker" class="programme-picker hidden">
+            Program
+            <select id="schedule-programme-select"></select>
+          </label>
+          <form id="schedule-create-form" class="grid-form hidden" novalidate>
+            <p class="hint wide">Yayınlanmış program salt okunur. Yeni dönem için taslak oluşturun; dönemler çakışmamalıdır.</p>
             <label>Geçerlilik başlangıcı <input id="schedule-effective-from" type="date" required /></label>
-            <label>Geçerlilik sonu <input id="schedule-effective-to" type="date" /></label>
-            <p class="hint wide">Çizelge oluşturulunca oturumdaki şube seçimiyle karşılaştırılır.</p>
-            <button type="submit">Çizelge oluştur</button>
+            <label>Geçerlilik sonu <input id="schedule-effective-to" type="date" required /></label>
+            <button type="submit">Yeni taslak oluştur</button>
           </form>
+          <div id="schedule-status" class="state-box" role="region" aria-label="Program durumu" aria-live="polite"></div>
+          <nav id="schedule-daystrip" class="day-strip hidden" aria-label="Haftanın günleri"></nav>
           <form id="program-filter-form" class="filter-grid" aria-label="Program kapsam filtreleri">
             <label>
               Sınıf
@@ -471,20 +469,18 @@
               </select>
             </label>
           </form>
-          <div id="schedule-status" class="state-box" role="region" aria-label="Program durumu ve olay listesi"></div>
-          <div id="lesson-cards" class="cards" role="region" aria-label="Ders kartları"></div>
-          <form id="schedule-event-form" class="stack" data-requires-permission="schedule:draft:update">
-            <div id="schedule-events" class="cards" role="region" aria-label="Program olayları"></div>
-            <button id="add-schedule-event" type="button">Olay satırı ekle</button>
+          <div id="schedule-agenda" class="agenda" role="region" aria-label="Seçili günün dersleri" aria-live="polite"></div>
+          <p id="schedule-gate" class="gate-line hidden" role="status" aria-live="polite" data-gate-state="none"></p>
+          <div id="schedule-actions" class="quick-actions" role="group" aria-label="Program eylemleri"></div>
+          <div id="schedule-editor" class="stack hidden" aria-label="Kaydedilmemiş dersler">
+            <div id="schedule-events" class="cards" role="region" aria-label="Kaydedilmemiş dersler"></div>
+            <button id="add-schedule-event" type="button">Ders ekle</button>
             <div class="quick-actions" role="group">
               <button id="save-schedule-draft" type="button">Taslağı kaydet</button>
-              <button id="validate-schedule" type="button" data-requires-permission="schedule:read">Doğrula</button>
-              <button id="publish-schedule" type="button" data-requires-permission="schedule:publish">Yayınla</button>
-              <button id="unpublish-schedule" type="button" data-requires-permission="schedule:publish">Yayından kaldır</button>
             </div>
-          </form>
-          <section id="schedule-conflicts" class="state-box" role="region" aria-label="Çakışma çözümü" aria-live="polite"></section>
-          <p class="hint" id="schedule-conflict-note">Otomatik çözücü devre dışı: çakışmalar elle çözülür (ders detayı + aday seçimi).</p>
+          </div>
+          <section id="schedule-conflicts" class="state-box" role="region" aria-label="Doğrulama bulguları" aria-live="polite"></section>
+          <p class="hint" id="schedule-conflict-note">Otomatik çözücü devre dışı: çakışmalar elle çözülür.</p>
         </section>
 
         <section id="attendance-panel" class="panel runtime-panel hidden" data-panel="attendance">

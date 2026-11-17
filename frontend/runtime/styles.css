@@ -468,6 +468,79 @@ main { display: grid; gap: 1rem; }
 }
 .day-candidates { display: grid; gap: 0.7rem; }
 
+/* #450 — Haftalık program: gün şeridi + dikey gün ajandası. */
+.programme-scope { font-weight: 700; color: #334155; }
+.programme-picker {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 34rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.92rem;
+  color: #334155;
+}
+.programme-picker select {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 0.45rem 0.6rem;
+}
+.day-strip {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.7rem;
+  scrollbar-width: thin;
+}
+.day-chip {
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  min-width: 4.6rem;
+  min-height: 44px;
+  text-align: center;
+}
+.day-chip small { color: #64748b; font-weight: 600; }
+.agenda {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 0.7rem;
+}
+.agenda-item {
+  align-items: start;
+  background: #fff;
+  border: 1px solid #d9e0ee;
+  border-left: 4px solid #3568d4;
+  border-radius: 12px;
+  display: grid;
+  gap: 0.35rem 0.75rem;
+  grid-template-columns: 6.2rem minmax(0, 1fr);
+  padding: 0.6rem 0.75rem;
+}
+.agenda-item[data-grid-state-key="published"] { border-left-color: #166534; }
+.agenda-time { color: #172033; font-weight: 800; margin: 0; font-variant-numeric: tabular-nums; }
+.agenda-title { margin: 0; font-size: 1rem; }
+.agenda-refs { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.agenda-refs .tag { font-size: 0.75rem; padding: 0.15rem 0.45rem; }
+.agenda-empty { background: #f8fafc; border: 1px dashed #94a3b8; border-radius: 12px; padding: 0.8rem 1rem; }
+.gate-line {
+  background: #f8fafc;
+  border-left: 6px solid #cbd5e1;
+  border-radius: 10px;
+  margin: 0 0 0.6rem;
+  padding: 0.55rem 0.8rem;
+}
+.gate-line[data-gate-state="ready"] { background: #eaf7ef; border-left-color: #166534; color: #14532d; font-weight: 700; }
+.gate-line[data-gate-state="closed_empty"],
+.gate-line[data-gate-state="closed_stale"],
+.gate-line[data-gate-state="closed_conflicts"] { border-left-color: #d97706; }
+.gate-line[data-gate-state="closed_dirty"] { border-left-color: #d97706; font-weight: 700; }
+.row-actions { display: flex; gap: 0.4rem; }
+.row-invalid { border-color: #ef4444 !important; }
+.describedby-note { color: #64748b; font-size: 0.78rem; margin: 0; }
+
 @media (min-width: 960px) {
   .day-split { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
 }

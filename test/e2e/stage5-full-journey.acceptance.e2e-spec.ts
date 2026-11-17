@@ -1006,25 +1006,23 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await ensureBranch(sessionA!, fixture.branchCode);
 
     await sessionA!.clickElement('.tab[data-tab="program"]');
-    await sessionA!.typeInto('#schedule-branch', fixture.branchCode);
     await fillField(sessionA!, '#schedule-effective-from', isoDay(-30));
+    await fillField(sessionA!, '#schedule-effective-to', isoDay(30));
     await sessionA!.submitForm('#schedule-create-form');
     try {
-      await sessionA!.waitForText('#schedule-status h3', /Çizelge hazır/, 20_000);
+      await sessionA!.waitForText('#schedule-status h3', /Taslak program/, 20_000);
     } catch (error) {
       const detail = [
         `scope=${await textOf(sessionA!, '#summary-scope')}`,
         `status=${(await textOf(sessionA!, '#schedule-status')).slice(0, 600)}`,
         `message=${(await textOf(sessionA!, '#message-region')).slice(0, 400)}`,
-        `branchField=${await textOf(sessionA!, '#schedule-branch')}`,
         networkTail('opsA', /\/(schedules|context\/branch)(\/|$)/),
       ].join('\n');
       recordEvidence(currentScenario, detail);
-      throw new Error(`schedule create did not render 'Çizelge hazır'.\n${detail}`);
+      throw new Error(`schedule create did not render 'Taslak program'.\n${detail}`);
     }
     await sessionA!.waitForText('#schedule-status', /Revizyon: 1/, 10_000);
-    scheduleId = (await sessionA!.text('#schedule-status'))
-      .match(/Kimlik: ([0-9a-f-]{36})/)?.[1] ?? '';
+    scheduleId = (await sessionA!.attribute('#schedule-status', 'data-schedule-id')) ?? '';
     if (!scheduleId) throw new Error('schedule id not rendered in #schedule-status');
 
     let created = await readScheduleRow();
@@ -1042,10 +1040,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await fillField(sessionA!, row('0', 'courseId'), fixture.courseId);
     await fillField(sessionA!, row('0', 'roomId'), fixture.roomId);
     await fillField(sessionA!, row('0', 'timeSlotId'), fixture.timeSlotId);
-    await fillField(sessionA!, row('0', 'dayOfWeek'), '1');
+    await sessionA!.selectValue(row('0', 'dayOfWeek'), '1');
     await fillField(sessionA!, row('0', 'startTime'), '10:00');
     await fillField(sessionA!, row('0', 'endTime'), '11:00');
-    await sessionA!.clickElement('button[data-action="schedule-row-update"]');
 
     await sessionA!.clickElement('#save-schedule-draft');
     try {
@@ -1058,11 +1055,11 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
         ['net', () => networkTail('opsA', /\/schedules\//)],
       ]);
     }
-    recordEvidence(currentScenario, 'draft: revision 1 → 2 (state.scheduleRevision sunucu yanıtı + draft +1)');
+    recordEvidence(currentScenario, 'draft: revision 1 → 2 (If-Match sunucu token, istemci aritmetiği yok, read-after-write)');
 
     await sessionA!.clickElement('#validate-schedule');
     try {
-      await sessionA!.waitForText('#schedule-status', /Yayınlanabilir: Evet/, 20_000);
+      await sessionA!.waitForText('#schedule-gate', /yayınlanabilir/i, 20_000);
       await sessionA!.waitForText('#message-region', /Doğrulama geçti/, 10_000);
     } catch (error) {
       await rethrowWithDiag(error, currentScenario, [
@@ -1074,8 +1071,13 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
 
     await sessionA!.clickElement('#publish-schedule');
     try {
-      await sessionA!.waitForText('#schedule-status', /Çizelge hazır/, 20_000);
+      await sessionA!.waitForText('#schedule-status h3', /Yayınlanmış program/, 20_000);
       await sessionA!.waitForText('#message-region', /Çizelge yayınlandı/, 10_000);
+      const gridState = await sessionA!.attribute('#schedule-status', 'data-grid-state');
+      expect(gridState).toBe('weekly_grid_ready_published');
+      expect(await sessionA!.isVisible('#save-schedule-draft')).toBe(false);
+      expect(await sessionA!.isVisible('#add-schedule-event')).toBe(false);
+      expect(await sessionA!.isVisible('#new-schedule-draft')).toBe(true);
     } catch (error) {
       await rethrowWithDiag(error, currentScenario, [
         ['status', () => textOf(sessionA!, '#schedule-status')],
@@ -1111,6 +1113,24 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await submitContextDate(sessionB!, leaveMonday);
     await ensureBranch(sessionB!, fixture.branchCode);
     await waitForNetworkIdle(sessionB!);
+    // Öğretmen, yayınlanmış programı salt-okur görür: gün şeridi + ajanda, hiçbir mutasyon kontrolü yok.
+    await sessionB!.clickElement('.tab[data-tab="program"]');
+    try {
+      await sessionB!.waitForText('#schedule-status h3', /Yayınlanmış program/, 20_000);
+      await waitForCountAtLeast(sessionB!, '#schedule-agenda .agenda-item', 1, 20_000);
+      expect(await sessionB!.isVisible('#save-schedule-draft')).toBe(false);
+      expect(await sessionB!.isVisible('#add-schedule-event')).toBe(false);
+      const teacherGrid = await sessionB!.attribute('#schedule-status', 'data-grid-state');
+      expect(teacherGrid).toBe('weekly_grid_ready_published');
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['status', () => textOf(sessionB!, '#schedule-status')],
+        ['message', () => textOf(sessionB!, '#message-region')],
+        ['net', () => networkTail('teacher', /\/schedules\//)],
+      ]);
+    }
+    recordEvidence(currentScenario, 'teacher: yayınlanmış program own projection salt-okur (mutasyon kontrolü yok)');
+    await snap(sessionB!, '02-teacher-published-programme-readonly');
     await sessionB!.clickElement('.tab[data-tab="teacher"]');
     await sessionB!.selectValue('#leave-duration-type', 'full_day');
     await sessionB!.selectValue('#leave-reason-code', 'health');

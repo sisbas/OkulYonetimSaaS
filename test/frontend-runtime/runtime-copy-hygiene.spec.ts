@@ -236,20 +236,52 @@ describe('#446 copy hygiene', () => {
       const ui = signedIn();
       ui.probe.state.scheduleId = 'sch-1';
       ui.probe.state.scheduleRevision = 1;
+      ui.probe.state.scheduleEtag = '"schedule:sch-1:v1"';
+      ui.probe.state.scheduleRead = {
+        scheduleId: 'sch-1',
+        status: 'draft',
+        projection: 'management_draft',
+        gridState: 'weekly_grid_ready_draft',
+        readOnly: false,
+        revision: 1,
+        effectiveFrom: '2026-01-01',
+        effectiveTo: '2026-06-30',
+        eventCount: 1,
+        events: [
+          {
+            eventId: 'ev-1',
+            teacherId: 't-1',
+            teacherBranchId: 'tb-1',
+            studentGroupId: 'sg-1',
+            courseId: 'c-1',
+            roomId: 'r-1',
+            timeSlotId: 'ts-1',
+            dayOfWeek: 1,
+            startTime: '09:00',
+            endTime: '09:40',
+            timeSlotLabel: null,
+          },
+        ],
+      };
+      ui.probe.state.scheduleEvents = ui.probe.state.scheduleRead.events;
       ui.fetch.mockResolvedValueOnce(
         response({
           status: 'invalid',
+          mode: 'FULL',
+          evidenceStatus: 'authoritative',
           canPublish: false,
           hardConflictCount: 3,
+          scheduleRevision: 1,
           reasons: CANONICAL_CODES.map((code) => ({ code })),
         }),
       );
       await ui.probe.validateSchedule({ preventDefault: () => {} });
-      const html = ui.element('#schedule-status').innerHTML;
-      const text = renderedText(html);
+      const findings = ui.element('#schedule-conflicts').innerHTML;
+      const statusHtml = ui.element('#schedule-status').innerHTML;
+      const text = renderedText(`${findings} ${statusHtml}`);
       for (const code of CANONICAL_CODES) {
         expect(text).not.toContain(code);
-        expect(html).toContain(`data-schedule-reason="${code}"`);
+        expect(findings).toContain(`data-schedule-reason="${code}"`);
       }
       expect(text).toContain('Öğretmenin aynı saatte başka dersi var');
       expect(text).toContain('Programda ders yok');

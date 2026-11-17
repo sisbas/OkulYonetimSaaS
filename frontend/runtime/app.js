@@ -31,6 +31,13 @@ const state = {
   scheduleId: '',
   scheduleRevision: 0,
   scheduleEvents: [],
+  scheduleRead: null,
+  scheduleEtag: '',
+  scheduleEvidence: null,
+  scheduleDirty: false,
+  scheduleDay: 1,
+  scheduleRows: [],
+  scheduleList: [],
   activeLeaveDecision: '',
   impactOpenRows: [],
   pendingSubstitutions: {},
@@ -403,12 +410,11 @@ const ROUTE_PERMISSIONS = [
   { method: 'POST', path: '/daily-operations/leaves/:leaveId/projection/replay', permission: 'daily_operations:update' },
   { method: 'POST', path: '/schedules/drafts', permission: 'schedule:draft:create' },
   { method: 'GET', path: '/schedules/drafts', permission: 'schedule:draft:read' },
-  { method: 'GET', path: '/schedules/published', permission: 'schedule:own:read' },
-  { method: 'GET', path: '/schedules/:scheduleId', permission: 'schedule:draft:read' },
+  { method: 'GET', path: '/schedules/published', permission: ['schedule:read', 'schedule:own:read'] },
+  { method: 'GET', path: '/schedules/:scheduleId', permission: ['schedule:draft:read', 'schedule:read', 'schedule:own:read'] },
   { method: 'POST', path: '/schedules/:scheduleId/draft', permission: 'schedule:draft:update' },
   { method: 'POST', path: '/schedules/:scheduleId/validate', permission: 'schedule:validate' },
   { method: 'POST', path: '/schedules/:scheduleId/publish', permission: 'schedule:publish' },
-  { method: 'POST', path: '/schedules/:scheduleId/unpublish', permission: 'schedule:publish' },
   { method: 'GET', path: '/consents', permission: 'consent:read' },
   { method: 'POST', path: '/consents/revoke', permission: 'consent:revoke' },
   { method: 'GET', path: '/notifications', permission: 'notification:draft:read' },
@@ -444,6 +450,8 @@ function isSessionBound(path) {
  * Yol şablonlarını eşleştirir: ':param' bölümü herhangi bir segmenti tüketir,
  * diğer bölümler birebir eşleşmek zorundadır. Eşleşme yoksa null döner —
  * çağıran fail-closed reddeder; oturum uçları için boş dize (izin gerekmez).
+ * İzin değeri tek bir anahtar veya any-of kümesidir (sunucu @PermissionsAny
+ * ile birebir aynı semantiğe sahiptir).
  */
 function permissionForRoute(method, rawPath) {
   const path = String(rawPath || '').split('?')[0].split('#')[0];
@@ -466,11 +474,11 @@ function permissionForRoute(method, rawPath) {
   return null;
 }
 
-/** Kullanılabilirlik yakınsaması: anahtar yoksa istek istemcide reddedilir. */
+/** Kullanılabilirlik yakınsaması: anahtar(lar)dan hiçbiri yoksa istek istemcide reddedilir. */
 function canRequest(method, path) {
   const required = permissionForRoute(method, path);
   // null = tabloda olmayan rota (fail-closed), '' = oturum ucu (izin yok).
-  return required !== null && (required === '' || state.permissions.includes(required));
+  return required !== null && (required === '' || capabilityKeyList(required).some((key) => state.permissions.includes(key)));
 }
 
 function asArray(payload, keys) {
@@ -649,15 +657,30 @@ function clearBranchWork() {
   state.scheduleId = '';
   state.scheduleRevision = 0;
   state.scheduleEvents = [];
+  state.scheduleRead = null;
+  state.scheduleEtag = '';
+  state.scheduleEvidence = null;
+  state.scheduleDirty = false;
+  state.scheduleDay = 1;
+  state.scheduleRows = [];
+  state.scheduleList = [];
   state.activeAttendanceSessionId = '';
   state.activeDaySessionId = '';
   state.dayLessonCount = 0;
   state.activeLeaveDecision = '';
   state.impactOpenRows = [];
   state.pendingSubstitutions = {};
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail', '#lesson-cards', '#schedule-conflicts', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#bugun-roles-output', '#day-summary', '#day-lessons', '#day-rail']) {
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#schedule-agenda', '#schedule-daystrip', '#schedule-gate', '#schedule-actions', '#attendance-sessions', '#attendance-detail', '#schedule-conflicts', '#schedule-programme-select', '#program-scope', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#bugun-roles-output', '#day-summary', '#day-lessons', '#day-rail']) {
     $(id).innerHTML = '';
   }
+  const programmePicker = document.getElementById('schedule-programme-picker');
+  if (programmePicker) programmePicker.classList.add('hidden');
+  for (const id of ['#schedule-editor', '#schedule-create-form', '#schedule-daystrip', '#schedule-gate']) {
+    const el = document.getElementById(id.slice(1));
+    if (el) el.classList.add('hidden');
+  }
+  const createForm = document.getElementById('schedule-create-form');
+  if (createForm && typeof createForm.reset === 'function') createForm.reset();
   // Program kapsam filtreleri: şube değişince eski şubelerin seçenekleri ve
   // seçimleri kalmaz; varsayılan boş etikete döner.
   for (const [id, label] of [['#branch-filter', 'Tüm sınıflar'], ['#teacher-filter', 'Tüm öğretmenler'], ['#room-filter', 'Tüm derslikler']]) {
@@ -905,7 +928,7 @@ async function updateContext(event) {
 const TAB_CAPABILITIES = {
   teacher: 'leave:own:read',
   ops: 'daily_operations:read',
-  program: 'schedule:draft:create',
+  program: ['schedule:draft:read', 'schedule:read', 'schedule:own:read'],
   attendance: 'attendance:own:read',
   notifications: 'notification:draft:read',
   tanimlar: 'daily_operations:read',
@@ -1589,7 +1612,11 @@ const EMPTY_COPY = {
   },
   schedule: {
     title: 'Çizelge yok',
-    message: 'Henüz çizelge oluşturulmadı.',
+    message: 'Bu şube ve dönem için program yok.',
+  },
+  scheduleDay: {
+    title: 'Bu günde ders yok',
+    message: 'Bu gün için programda kayıtlı ders görünmüyor.',
   },
   strategicGoals: {
     title: 'Hedef yok',
