@@ -968,6 +968,13 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
           this.actorUserId(ctx),
         ],
       );
+      // #461 F4 — onayda atanan her yedek, assign() ile aynı audit olayını üretir.
+      await this.auditLeave(manager, ctx, 'leave.substitution_assigned.v1', leave.id, [
+        'coverageStatus',
+        'substitutionAssignment',
+        'dailyOperationsProjection',
+        'version',
+      ]);
     }
 
     const assignments = this.currentAssignments(events, await this.loadAssignments(manager, leave));
