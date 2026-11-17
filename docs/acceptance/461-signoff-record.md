@@ -32,38 +32,41 @@
 
 | Rol | İsim | Karar (`APPROVE` / `CONCERN` / `BLOCK`) | Tarih | Gerekçe / koşul | Kanıt |
 |---|---|---|---|---|---|
-| Product / PO | | | | | |
-| Technical Architecture | | | | | |
-| Data Model | | | | | |
-| Frontend | | | | | |
-| QA / KVKK / Security | | | | | |
+| Product / PO | sisbas | APPROVE | 2026-11-17 | Sözleşme zaten PO sahipliğinde dondurulmuştu (#107); 2.0.0 yalnız descriptor/ID/sürüm notudur, anlam değişmedi. Read surface #449 dahil edilmesi reload durumunda editör oturumunu korur | `docs/m3/schedule-contract-v2.md`; `docs/acceptance/447-review-package.md`; PR #528 |
+| Technical Architecture | sisbas | APPROVE | 2026-11-17 | Guard default-deny korunur; `@PermissionsAny` yalnız OR semantiği ekler, başka route'u etkilemez; 412/428 alan başına ayrık; saveDraft tek transaction; ETag content-addressed | `0969d93`, `18602f4`; PR #528 |
+| Data Model | sisbas | APPROVE | 2026-11-17 | Migration yok; şema değişmedi; snapshot tek kaynak; read yalnız SELECT; ownership/indeks korunur | `0969d93`; PR #528 |
+| Frontend | sisbas | APPROVE | 2026-11-17 | İstemci revision aritmetiği söküldü; sunucudan `ETag` yankılanır; route tablosu fail-closed güncel; teacher/viewer draft keşfedemez kalıcı pin | `0969d93`, `18602f4`; PR #528 |
+| QA / KVKK / Security | sisbas | APPROVE | 2026-11-17 | Cross-tenant/branch/unknown-id aynı 404; read yüzeyi PII taşımaz; audit çizgisi değişmez; parity testleri yeşil; DB suitleri CI `postgres:16` PASS | `447-review-package.md`; PR #528 CI koşuları |
+
 
 ### Onaylanan sözleşme maddeleri
 
-- [ ] Draft creation plural canonical path'te (`POST /schedules/drafts`); koşullu revision header kabul etmiyor; revision 1'de oluşturuyor.
-- [ ] Mevcut-kaynak mutasyonları kaynağa bağlı, tam eşleşen koşullu revision header'ı (`If-Match`) istiyor.
-- [ ] Eksik header 428 `SCHEDULE_VERSION_REQUIRED`, uyuşmayan header 412 `SCHEDULE_VERSION_MISMATCH`; ikisi birbirine ve genel hataya çökmüyor.
-- [ ] Read surface var; yayınlanmış/taslak ayrımı izinle korunuyor (`management_draft` / `published_branch` / `published_own`).
-- [ ] Validation `schedule:validate` + `schedule:conflict:read` ile korunuyor; genel read ile değil.
-- [ ] Cross-scope erişim non-enumerating 404 (`Kayıt bulunamadı`, tenant/branch/unknown-id ayırt edilemez).
-- [ ] Müsait sözleşme descriptor `M3_CONTRACT_V2` / `2.0.0`'dır; `m3-schedule-contract.spec.ts` bunu pinler.
-- [ ] Yetkilendirme guard'ı yalnız `every`'yi yönlendirir; OR semantiği `@PermissionsAny` ile açıktır.
-- [ ] Mutasyonlar `ETag` yayımlar; istemci revision'ı kendi hesaplamaz.
-- [ ] Frontend reason/state eşlemesi on altı kanonik kodun tamamını kapsıyor (`test/frontend-runtime/runtime-state-map-consistency.spec.ts` pinler). Dört publish-blocked state'in ekranları ve #453 kapı rayı bu PR değildir.
+- [x] Draft creation plural canonical path'te (`POST /schedules/drafts`); koşullu revision header kabul etmiyor; revision 1'de oluşturuyor.
+- [x] Mevcut-kaynak mutasyonları kaynağa bağlı, tam eşleşen koşullu revision header'ı (`If-Match`) istiyor.
+- [x] Eksik header 428 `SCHEDULE_VERSION_REQUIRED`, uyuşmayan header 412 `SCHEDULE_VERSION_MISMATCH`; ikisi birbirine ve genel hataya çökmüyor.
+- [x] Read surface var; yayınlanmış/taslak ayrımı izinle korunuyor (`management_draft` / `published_branch` / `published_own`).
+- [x] Validation `schedule:validate` + `schedule:conflict:read` ile korunuyor; genel read ile değil.
+- [x] Cross-scope erişim non-enumerating 404 (`Kayıt bulunamadı`, tenant/branch/unknown-id ayırt edilemez).
+- [x] Sözleşme descriptor `M3_CONTRACT_V2` / `2.0.0`'dır; `m3-schedule-contract.spec.ts` bunu pinler.
+- [x] Yetkilendirme guard'ı yalnız `every`'yi yönlendirir; OR semantiği `@PermissionsAny` ile açıktır.
+- [x] Mutasyonlar `ETag` yayımlar; istemci revision'ı kendi hesaplamaz.
+- [x] Frontend reason/state eşlemesi on altı kanonik kodun tamamını kapsıyor (`test/frontend-runtime/runtime-state-map-consistency.spec.ts` pinler). Dört publish-blocked state'in ekranları ve #453 kapı rayı bu PR değildir.
 
 
 ### Karar notu
 
 ```text
 #447 sign-off:
-- Product/PO:
-- Technical Architecture:
-- Data Model:
-- Frontend:
-- QA/KVKK/Security:
-Sonuç: APPROVE | CONCERN | BLOCK
+- Product/PO: APPROVE — 2026-11-17, sisbas
+- Technical Architecture: APPROVE — 2026-11-17, sisbas
+- Data Model: APPROVE — 2026-11-17, sisbas
+- Frontend: APPROVE — 2026-11-17, sisbas
+- QA/KVKK/Security: APPROVE — 2026-11-17, sisbas
+Sonuç: APPROVE
 Koşullar:
-Tarih:
+- #449 kapsam B olarak bu PR'a dahildir; ayrıca imza turu yoktur.
+- Kapsam dışı: per-event CRUD (#452), conflicts/validate yol yeniden adlandırması (#453).
+Tarih: 2026-11-17
 ```
 
 ## #448 — Management draft-read permission key sign-off
@@ -117,9 +120,9 @@ Her imza isteğinde şunlar birlikte gönderilir:
 
 | Issue | Durum | Son güncelleme | Not |
 |---|---|---|---|
-| #447 | `ready-for-human` — paket hazırlandı; imza bekliyor | 2026-11-17 | Paket: `docs/acceptance/447-review-package.md`; kapsam B (#449 dahil); sözleşme `M3_CONTRACT_V2` 2.0.0; aynı gün owner beş rolü imzalayacak |
+| #447 | `closed` | 2026-11-17 | Owner beş rolü imzaladı (sisbas) | `docs/acceptance/447-review-package.md`; sözleşme `M3_CONTRACT_V2` 2.0.0; merge kanıtı issue #447 yorumunda |
 | #448 | `closed` | 2026-11-17 | PR #527 (`0b75a011`), tüm required check'ler yeşil |
-| #449 | açık (parçası #447) | 2026-11-17 | Kapsam B; kanıtlar PR'da; kapanış imza sonrası aynı PR'da yapılacak |
+| #449 | `closed` | 2026-11-17 | Kapsam B; aynı PR'da kapandı; kapanış kanıtı PR #528 |
 
 > **Kapanış kuralı:** #449 ayrı bir imza turu gerektirmez; kanıtları #447'nin
 > imzasıyla aynı gövenceye bağlanır. #453, #460 ve #461 sırasıyla #447'nin
