@@ -32,6 +32,7 @@ import {
   parseScheduleIfMatch,
   scheduleEtag,
 } from './schedule-revision';
+import { listEtag, scheduleDetailEtag } from './schedule-read.view';
 
 function getRequestContext(request: RequestWithContext): RequestContext {
   if (!request.user && !request.context?.user) {
@@ -61,12 +62,6 @@ function isoQuery(value: string | undefined): string | null | undefined {
   if (value === undefined) return undefined;
   if (value === '' || !DATE_PATTERN.test(value)) return null; // geçersiz → 400
   return value;
-}
-
-/** Liste uçları için opak ETag (max revizyonu sayfanın sürümünü ifade eder). */
-function listEtag(count: number, revisions: readonly number[]): string {
-  const max = revisions.reduce((acc, value) => Math.max(acc, value), 0);
-  return `"schedule:list:${count}:v${max}"`;
 }
 
 // Tenant isolation: tenantId + actorId are resolved from the verified JWT /
@@ -205,7 +200,7 @@ export class ScheduleController {
     const ctx = getRequestContext(request);
     const branchId = branchOf(ctx);
     const items = await this.reads.listManagementDrafts({ tenantId: ctx.tenantId!, branchId });
-    response.setHeader('ETag', listEtag(items.length, items.map((item) => item.revision)));
+    response.setHeader('ETag', listEtag(items));
     return items;
   }
 
@@ -231,7 +226,7 @@ export class ScheduleController {
       from,
       to,
     });
-    response.setHeader('ETag', listEtag(items.length, items.map((item) => item.revision)));
+    response.setHeader('ETag', listEtag(items));
     return items;
   }
 
@@ -250,7 +245,7 @@ export class ScheduleController {
       scheduleId,
       ctx,
     });
-    response.setHeader('ETag', scheduleEtag(scheduleId, schedule.revision));
+    response.setHeader('ETag', scheduleDetailEtag(schedule));
     return schedule;
   }
 }

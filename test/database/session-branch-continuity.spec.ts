@@ -118,7 +118,8 @@ postgres('session-bound branch continuity and PostgreSQL migration rollback', ()
 
   function request(permission = 'user:read', headerCode?: string, params = {}, controller: { name: string } = class Probe {}) {
     const reflector = new Reflector();
-    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: unknown) => key === PERMISSIONS_KEY ? [permission] : false);
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: unknown) =>
+      key === PERMISSIONS_KEY ? [permission] : undefined);
     const guard = new PermissionGuard(reflector,
       { emitAuthorizationDenied: jest.fn() } as unknown as SecurityAuditService, undefined, scope);
     const req = { user: actor, query: { branchId: 'IZMIR' }, body: {}, params,

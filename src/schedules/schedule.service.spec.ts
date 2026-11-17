@@ -69,6 +69,14 @@ function makeService() {
       entity === ScheduleVersion
         ? versionRepo.update(criteria, update)
         : scheduleRepo.update(criteria, update),
+    increment: async () => ({ affected: 1 }),
+    getRepository: (entity: unknown) =>
+      entity === ScheduleVersion ? versionRepo : eventRepo,
+  };
+  // #447: saveDraft schedule satırının pessimistic_write kilidiyle TEK bir
+  // transaction içinde koşar — scheduleRepo.manager.transaction gerekli.
+  scheduleRepo.manager = {
+    transaction: async (cb: (m: unknown) => Promise<unknown>) => cb(em),
   };
   versionRepo.manager = {
     transaction: async (cb: (m: unknown) => Promise<unknown>) => cb(em),

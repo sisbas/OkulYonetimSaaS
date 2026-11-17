@@ -397,7 +397,7 @@ describe('#447 Schedule runtime alignment (HTTP-level)', () => {
       expect(body[0].projection).toBe('management_draft');
       expect(body[0].gridState).toBe('weekly_grid_ready_draft');
       expect(body[0].readOnly).toBe(false);
-      expect(result.etag).toMatch(/^"schedule:list:1:v1"$/);
+      expect(result.etag).toMatch(/^"schedule:[0-9a-f]{24}"$/);
     });
 
     it('drafts and published are not swallowed by the :scheduleId route (200, not 400)', async () => {
@@ -422,7 +422,7 @@ describe('#447 Schedule runtime alignment (HTTP-level)', () => {
       const detail = await requestJson(`/api/v1/schedules/${scheduleId}`, { headers: { authorization: `Bearer ${token}` } });
       expect(detail.status).toBe(200);
       expect(JSON.parse(detail.body).projection).toBe('published_own');
-      expect(detail.etag).toBe(`"schedule:${scheduleId}:v1"`);
+      expect(detail.etag).toMatch(/^"schedule:[0-9a-f]{24}"$/);
 
       const drafts = await requestJson('/api/v1/schedules/drafts', { headers: { authorization: `Bearer ${token}` } });
       expect(drafts.status).toBe(403);

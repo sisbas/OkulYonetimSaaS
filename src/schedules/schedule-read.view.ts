@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   M3_SCHEDULE_CONTRACT_ID,
   M3_SCHEDULE_CONTRACT_VERSION,
@@ -246,4 +248,21 @@ export function pickPublishedVersion(
   versions: readonly ScheduleVersion[],
 ): ScheduleVersion | null {
   return versions.find((v) => v.status === ScheduleVersionStatus.PUBLISHED) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// ETag — içerik-adresli (her kayıt/alan değişince değişir)
+// ---------------------------------------------------------------------------
+
+const etagOf = (payload: unknown): string =>
+  `"schedule:${createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 24)}"`;
+
+/** Tek bir okumanın (events dahil) içerik eşlemesidir; durum geçişlerinde değişir. */
+export function scheduleDetailEtag(read: ScheduleReadV1): string {
+  return etagOf(read);
+}
+
+/** Listenin tüm kayıtlarını kapsar; herhangi bir alan değişince değişir. */
+export function listEtag(items: readonly ScheduleReadSummaryV1[]): string {
+  return etagOf(items);
 }

@@ -133,18 +133,6 @@ describeWithPostgres('#447/#449 Schedule read surface PostgreSQL integration', (
       );
     }
     await dataSource.query(
-      `INSERT INTO teachers (id, tenant_id, user_id, first_name, last_name, status, deleted_at)
-       VALUES ($1, $2, $3, 'Own', 'Teacher', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE SET user_id = $3, status='active', deleted_at=NULL`,
-      [TEACHER_OWN, TENANT_A, OWN_USER],
-    );
-    await dataSource.query(
-      `INSERT INTO teachers (id, tenant_id, user_id, first_name, last_name, status, deleted_at)
-       VALUES ($1, $2, $3, 'Other', 'Teacher', 'active', NULL)
-       ON CONFLICT (id) DO UPDATE SET user_id = $3, status='active', deleted_at=NULL`,
-      [TEACHER_OTHER, TENANT_A, OTHER_USER],
-    );
-    await dataSource.query(
       `INSERT INTO users (id, email, credential_hash, full_name, status)
        VALUES ($1, $2, 'hash', 'Own User', 'active')
        ON CONFLICT (id) DO UPDATE SET status='active', deleted_at=NULL`,
@@ -167,6 +155,18 @@ describeWithPostgres('#447/#449 Schedule read surface PostgreSQL integration', (
         [TENANT_A, userId],
       );
     }
+    await dataSource.query(
+      `INSERT INTO teachers (id, tenant_id, user_id, first_name, last_name, status, deleted_at)
+       VALUES ($1, $2, $3, 'Own', 'Teacher', 'active', NULL)
+       ON CONFLICT (id) DO UPDATE SET user_id = $3, status='active', deleted_at=NULL`,
+      [TEACHER_OWN, TENANT_A, OWN_USER],
+    );
+    await dataSource.query(
+      `INSERT INTO teachers (id, tenant_id, user_id, first_name, last_name, status, deleted_at)
+       VALUES ($1, $2, $3, 'Other', 'Teacher', 'active', NULL)
+       ON CONFLICT (id) DO UPDATE SET user_id = $3, status='active', deleted_at=NULL`,
+      [TEACHER_OTHER, TENANT_A, OTHER_USER],
+    );
     await dataSource.query(
       `INSERT INTO teacher_branches (id, tenant_id, teacher_id, branch_id, status, effective_from, deleted_at)
        VALUES ($1, $2, $3, $4, 'active', '2026-01-01', NULL)

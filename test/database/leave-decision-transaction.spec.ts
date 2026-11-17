@@ -150,6 +150,7 @@ describeWithPostgres('R1 leave decision transaction on PostgreSQL (#263)', () =>
       branchId: BRANCH,
       scheduleId: schedule.id,
       events: [draft],
+      expectedRevision: 1,
     });
     const persisted = await dataSource.query('SELECT revision FROM schedules WHERE id = $1', [schedule.id]);
     await scheduleService.publish(
