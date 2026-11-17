@@ -158,22 +158,25 @@ type DaySubstituteRow = {
 /** Only known eligibility rejections may be omitted from candidate results. */
 export class SubstituteIneligibleError extends Error {}
 
-function assignmentKey(input: { scheduleEventId: string; scheduleVersionId: string }): string {
-  return `${input.scheduleVersionId}:${input.scheduleEventId}`;
-}
-
 /**
- * #461 F4 occurrence kimliği: haftalık tekrar eden bir ders birden fazla
- * occurrence'a genişler ve hepsi AYNI `schedule_event_id`'yi taşır; bu yüzden
- * açık ders ve yedek ataması `(version, event, occurrence)` üçlüsüyle
- * eşleşir. `NULL` occurrence_date event-düzeyi satırlar içindir.
+ * #461 F4 uyumluluk kuralı: `occurrence_date IS NULL` kalan miras (olay-düzeyi)
+ * yedek ataması, o olayın TÜM occurrence'larını kapsar. Backfill migration
+ * (1910000000000) tek tarihe kesinleyen olay-düzeyi satırları occurrence'a
+ * yükseltir; birden fazla tarihe bağlı gerçekten olay-düzeyi satırlar NULL
+ * kalır ve burada olay bazında kapsama olarak okunur. Böylece projeksiyon
+ * tekrarı (replay) NULL-dateli aktif atamaların kapsama bilgisini kaybetmez.
  */
-function occurrenceKey(input: {
-  scheduleEventId: string;
-  scheduleVersionId: string;
-  occurrenceDate?: string | null;
-}): string {
-  return `${input.scheduleVersionId}:${input.scheduleEventId}@${input.occurrenceDate ?? 'null'}`;
+function assignmentCoversEvent(
+  assignment: { scheduleVersionId: string; scheduleEventId: string; occurrenceDate: string | null },
+  event: { scheduleVersionId: string; scheduleEventId: string; occurrenceDate: string },
+): boolean {
+  if (
+    assignment.scheduleVersionId !== event.scheduleVersionId ||
+    assignment.scheduleEventId !== event.scheduleEventId
+  ) {
+    return false;
+  }
+  return assignment.occurrenceDate == null || assignment.occurrenceDate === event.occurrenceDate;
 }
 
 @Injectable()
@@ -872,10 +875,9 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       events,
       await this.loadAssignments(manager, leave),
     );
-    const coveredOccurrences = new Set(
-      existingAssignments.map((assignment) => occurrenceKey(assignment)),
+    const openEvents = events.filter(
+      (event) => !existingAssignments.some((assignment) => assignmentCoversEvent(assignment, event)),
     );
-    const openEvents = events.filter((event) => !coveredOccurrences.has(occurrenceKey(event)));
 
     /**
      * #461 F4 sözleşmesi: her substitution girişi BİR açık occurrence'ı
@@ -1080,13 +1082,12 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     candidates: LeaveApprovalCandidates,
     zeroImpactReason: LeaveZeroImpactCode | null,
   ): LeaveApprovalImpact {
-    const byOccurrence = new Map(assignments.map((item) => [occurrenceKey(item), item]));
     const lessons: LeaveApprovalImpactLesson[] = events.map((event) => {
       const courseLabel = event.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
       const groupLabel = event.groupLabel ?? NO_GROUP_LABEL_FALLBACK;
       const timeLabel = formatTimeLabel(event.startTime, event.endTime);
       const occurrenceLabel = formatOccurrenceLabel(event.occurrenceDate);
-      const assignment = byOccurrence.get(occurrenceKey(event)) ?? null;
+      const assignment = assignments.find((item) => assignmentCoversEvent(item, event)) ?? null;
       return {
         lessonLabel: composeLessonLabel({ courseLabel, groupLabel, timeLabel, occurrenceLabel }),
         courseLabel,
@@ -1532,13 +1533,13 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
   }
 
   private currentAssignments(events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): AssignmentRow[] {
-    const current = new Set(events.map((event) => occurrenceKey(event)));
-    return assignments.filter((assignment) => current.has(occurrenceKey(assignment)));
+    return assignments.filter((assignment) =>
+      events.some((event) => assignmentCoversEvent(assignment, event)),
+    );
   }
 
   private resolvedLessonCount(events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): number {
-    const byOccurrence = new Map(assignments.map((item) => [occurrenceKey(item), item]));
-    return events.filter((event) => byOccurrence.has(occurrenceKey(event))).length;
+    return events.filter((event) => assignments.some((assignment) => assignmentCoversEvent(assignment, event))).length;
   }
 
   private coverageFor(events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): LeaveCoverageStatus {
@@ -1546,11 +1547,10 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
   }
 
   private async project(manager: EntityManager, leave: LeaveRow, events: ImpactedScheduleEventRow[], assignments: AssignmentRow[]): Promise<void> {
-    const byOccurrence = new Map(assignments.map((item) => [occurrenceKey(item), item]));
     const coverage = this.coverageFor(events, assignments);
     const activeProjectionKeys: string[] = [];
     for (const event of events) {
-      const assignment = byOccurrence.get(occurrenceKey(event)) ?? null;
+      const assignment = assignments.find((item) => assignmentCoversEvent(item, event)) ?? null;
       const key = projectionKey({
         leaveRequestId: leave.id,
         scheduleVersionId: event.scheduleVersionId,
@@ -1596,9 +1596,8 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
   }
 
   private toImpact(leave: LeaveRow, events: ImpactedScheduleEventRow[], assignments: AssignmentRow[], teacherLabel: string): LeaveImpactResponse {
-    const byOccurrence = new Map(assignments.map((item) => [occurrenceKey(item), item]));
     const responseEvents: LeaveImpactEvent[] = events.map((event) => {
-      const assignment = byOccurrence.get(occurrenceKey(event)) ?? null;
+      const assignment = assignments.find((item) => assignmentCoversEvent(item, event)) ?? null;
       const courseLabel = event.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
       const groupLabel = event.groupLabel ?? NO_GROUP_LABEL_FALLBACK;
       const timeLabel = formatTimeLabel(event.startTime, event.endTime);

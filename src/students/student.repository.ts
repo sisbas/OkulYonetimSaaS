@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 
 import { RequestContext } from '../common/context/request-context';
 import { assertTenantScope } from '../common/tenant/assert-tenant-scope';
@@ -54,7 +54,37 @@ export class StudentRepository {
     private readonly groups: Repository<StudentGroup>,
     @InjectRepository(StudentGroupMember)
     private readonly members: Repository<StudentGroupMember>,
+    private readonly dataSource: DataSource,
   ) {}
+
+  /**
+   * #461 F1 (#509 review P1): öğretmen bu gruba DERS VERİYOR mu?
+   *
+   * Bağ, yalnız `published` schedule versiyonundaki `schedule_events`
+   * satırlarıyla kurulur (yoklama oturumu ancak yayınlanan dersten doğar);
+   * taslak program öğretmen erişimi yaratmaz. Kiracı filtresi her zaman taşınır.
+   */
+  async teacherTeachesGroup(
+    ctx: RequestContext,
+    teacherId: string,
+    groupId: string,
+  ): Promise<boolean> {
+    assertTenantScope(ctx, 'schedule_events');
+    const rows = await this.dataSource.query(
+      `SELECT 1
+         FROM schedule_events e
+         JOIN schedule_versions v
+           ON v.tenant_id = e.tenant_id
+          AND v.id = e.version_id
+          AND v.status = 'published'
+        WHERE e.tenant_id = $1
+          AND e.teacher_id = $2
+          AND e.student_group_id = $3
+        LIMIT 1`,
+      [ctx.tenantId, teacherId, groupId],
+    );
+    return rows.length > 0;
+  }
 
   async list(
     ctx: RequestContext,

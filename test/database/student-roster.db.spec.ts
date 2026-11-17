@@ -147,6 +147,7 @@ describeWithPostgres('student roster PostgreSQL (#461 F1)', () => {
       dataSource.getRepository(Student),
       dataSource.getRepository(StudentGroup),
       dataSource.getRepository(StudentGroupMember),
+      dataSource,
     );
   });
 

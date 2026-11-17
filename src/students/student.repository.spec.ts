@@ -46,6 +46,7 @@ function repositoryWith(options: {
     } as any,
     { createQueryBuilder: jest.fn(() => groupsQb) } as any,
     { createQueryBuilder: jest.fn(() => membersQb) } as any,
+    { query: jest.fn(async () => []) } as any,
   );
   return { repository, studentsQb, groupsQb, membersQb };
 }
@@ -269,5 +270,27 @@ describe('StudentRepository tenant/branch roster scope', () => {
     expect(studentsQb.andWhere).toHaveBeenCalledWith(
       'branch.deleted_at IS NULL',
     );
+  });
+
+  it('treats "teacher teaches group" as published schedule events only, tenant-scoped', async () => {
+    const query = jest.fn(async (_sql: string, _params?: unknown[]) => [{ '?column?': 1 }]);
+    const repository = new StudentRepository(
+      { createQueryBuilder: jest.fn(() => queryBuilder()) } as any,
+      { createQueryBuilder: jest.fn(() => queryBuilder()) } as any,
+      { createQueryBuilder: jest.fn(() => queryBuilder()) } as any,
+      { query } as any,
+    );
+
+    await expect(
+      repository.teacherTeachesGroup(ctx, 'teacher-1', 'group-a'),
+    ).resolves.toBe(true);
+
+    expect(query).toHaveBeenCalledTimes(1);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain("v.status = 'published'");
+    expect(sql).toContain('e.tenant_id = $1');
+    expect(sql).toContain('e.teacher_id = $2');
+    expect(sql).toContain('e.student_group_id = $3');
+    expect(params).toEqual(['tenant-a', 'teacher-1', 'group-a']);
   });
 });

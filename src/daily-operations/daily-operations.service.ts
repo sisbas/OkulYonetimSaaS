@@ -107,7 +107,7 @@ export class DailyOperationsService {
     } catch (error) {
       const code = (error as Error).message;
       if (code === 'BRANCH_NOT_VISIBLE') throw new NotFoundException('Daily Operations queue not found');
-      if (code === 'LEAVE_NOT_APPROVED' || code === 'NO_PUBLISHED_SCHEDULE_EVENT') {
+      if (code === 'LEAVE_NOT_FOUND' || code === 'LEAVE_NOT_APPROVED' || code === 'NO_PUBLISHED_SCHEDULE_EVENT') {
         throw new NotFoundException('Leave impact not found');
       }
       if (code === 'LEAVE_VERSION_MISMATCH') throw new PreconditionFailedException('Leave version mismatch');

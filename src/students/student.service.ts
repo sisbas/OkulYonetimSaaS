@@ -1,11 +1,14 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 
 import { RequestContext } from '../common/context/request-context';
 import { assertTenantScope } from '../common/tenant/assert-tenant-scope';
+import { hasAttendanceOversight } from '../attendance/attendance-access';
+import { TeacherRepository } from '../teachers/teacher.repository';
 import { ListRosterQueryDto } from './dto/list-roster-query.dto';
 import { ListStudentsQueryDto } from './dto/list-students-query.dto';
 import {
@@ -27,7 +30,10 @@ import { StudentRepository } from './student.repository';
  */
 @Injectable()
 export class StudentService {
-  constructor(private readonly students: StudentRepository) {}
+  constructor(
+    private readonly students: StudentRepository,
+    private readonly teachers: TeacherRepository,
+  ) {}
 
   async list(
     ctx: RequestContext,
@@ -66,6 +72,7 @@ export class StudentService {
     assertTenantScope(ctx, 'student_group_members');
     const branchId = query.branchId ?? ctx.branchId;
     const group = await this.findGroupOrThrow(ctx, groupId, branchId);
+    await this.assertRosterAccess(ctx, group);
     const result = await this.students.roster(ctx, group, {
       page: query.page,
       limit: query.limit,
@@ -75,6 +82,34 @@ export class StudentService {
       data: result.data.map((student) => this.toSummary(student)),
       meta: result.meta,
     };
+  }
+
+  /**
+   * #461 F1 (#509 review P1): `student:group_students:read` izni yetki
+   * (permission) verir; BOLA sorusu NESNE seviyesidir — öğretmen yalnız
+   * SAHİP OLDUĞU grubun roster'ını görebilir.
+   *
+   * Gözetim rolleri (`operations_manager`, `tenant_admin` — attendance ile aynı
+   * küme) kiracı genelinde okur. Diğer her aktör için `users.id -> teachers.id`
+   * eşi çözümlenir ve öğretmenin o GRUBA yayınlanmış programda ders veren
+   * temsilcisi olup olmadığı sunucuda denetlenir. Aksi hâlde 403; grup varlığı
+   * sızdırılmaz.
+   */
+  private async assertRosterAccess(
+    ctx: RequestContext,
+    group: StudentGroup,
+  ): Promise<void> {
+    if (hasAttendanceOversight({ roleIds: ctx.user?.roleIds ?? [] })) {
+      return;
+    }
+    const teacher = await this.teachers.findActiveTeacherForUser(ctx);
+    if (!teacher) {
+      throw new ForbiddenException('Bu grubun listesine erişim izniniz yok');
+    }
+    const teaches = await this.students.teacherTeachesGroup(ctx, teacher.teacherId, group.id);
+    if (!teaches) {
+      throw new ForbiddenException('Bu grubun listesine erişim izniniz yok');
+    }
   }
 
   private resolveBranchId(

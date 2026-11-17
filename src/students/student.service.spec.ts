@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 
 import { RequestContext } from '../common/context/request-context';
+import { TeacherRepository } from '../teachers/teacher.repository';
 import { StudentGroup } from './student-group.entity';
 import { Student } from './student.entity';
 import { StudentRepository } from './student.repository';
@@ -43,8 +45,22 @@ const group = (overrides: Partial<StudentGroup> = {}): StudentGroup =>
     ...overrides,
   }) as StudentGroup;
 
-function serviceWith(repository: Partial<StudentRepository>): StudentService {
-  return new StudentService(repository as StudentRepository);
+const defaultTeachers = (): Partial<TeacherRepository> => ({
+  findActiveTeacherForUser: jest.fn(async () => ({ teacherId: 'teacher-1' } as never)),
+});
+
+const defaultAccess = () => ({
+  teacherTeachesGroup: jest.fn(async () => true),
+});
+
+function serviceWith(
+  repository: Partial<StudentRepository>,
+  teachers: Partial<TeacherRepository> = defaultTeachers(),
+): StudentService {
+  return new StudentService(
+    { ...defaultAccess(), ...repository } as StudentRepository,
+    teachers as TeacherRepository,
+  );
 }
 
 describe('StudentService read-only roster surface', () => {
@@ -182,5 +198,79 @@ describe('StudentService read-only roster surface', () => {
     await expect(service.roster(ctx, 'group-other', {})).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  it('enforces own-group access: a teacher who does not teach the group gets 403', async () => {
+    const teacherTeachesGroup = jest.fn(async () => false);
+    const service = serviceWith(
+      {
+        branchExistsInTenant: jest.fn(async () => true),
+        findGroupById: jest.fn(async () => group()),
+        teacherTeachesGroup,
+        roster: jest.fn(async () => ({
+          data: [student()],
+          meta: { page: 1, limit: 50, total: 1, totalPages: 1 },
+        })),
+      },
+      defaultTeachers(),
+    );
+
+    await expect(service.roster(ctx, 'group-a', {})).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(teacherTeachesGroup).toHaveBeenCalledWith(ctx, 'teacher-1', 'group-a');
+  });
+
+  it('denies the roster when the teacher identity cannot be resolved', async () => {
+    const service = serviceWith(
+      {
+        branchExistsInTenant: jest.fn(async () => true),
+        findGroupById: jest.fn(async () => group()),
+        roster: jest.fn(async () => ({
+          data: [],
+          meta: { page: 1, limit: 50, total: 0, totalPages: 0 },
+        })),
+      },
+      { findActiveTeacherForUser: jest.fn(async () => null) },
+    );
+
+    await expect(service.roster(ctx, 'group-a', {})).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('lets an operations_manager oversight role read any group roster without a teacher identity', async () => {
+    const teachers = {
+      findActiveTeacherForUser: jest.fn(async () => {
+        throw new Error('oversight must not resolve teacher identity');
+      }),
+    };
+    const oversightCtx: RequestContext = {
+      requestId: 'req-1',
+      tenantId: 'tenant-a',
+      branchId: 'branch-a',
+      user: {
+        userId: 'user-ops',
+        tenantId: 'tenant-a',
+        roleIds: ['operations_manager'],
+        permissions: ['student:group_students:read'],
+      },
+    } as unknown as RequestContext;
+    const service = serviceWith(
+      {
+        branchExistsInTenant: jest.fn(async () => true),
+        findGroupById: jest.fn(async () => group()),
+        roster: jest.fn(async () => ({
+          data: [student()],
+          meta: { page: 1, limit: 50, total: 1, totalPages: 1 },
+        })),
+      },
+      teachers,
+    );
+
+    const result = await service.roster(oversightCtx, 'group-a', {});
+
+    expect(result.data).toHaveLength(1);
+    expect(teachers.findActiveTeacherForUser).not.toHaveBeenCalled();
   });
 });

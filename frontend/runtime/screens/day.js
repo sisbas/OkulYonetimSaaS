@@ -339,7 +339,7 @@ function renderDayCandidate(candidate) {
   const assignDisabled = !selectable || !dayCoverage.leaveEtag || mutationDisabled();
   const clearDisabled = !dayCoverage.assignmentId || !dayCoverage.leaveEtag || mutationDisabled();
   return `<article class="card candidate">
-    <strong>${escapeHtml(pick(candidate, ['displayName', 'name'], 'Aday öğretmen'))}</strong>
+    <strong>${escapeHtml(pick(candidate, ['teacherLabel', 'displayName', 'name'], 'Aday öğretmen'))}</strong>
     <p class="card-meta">
       <span>${eligible ? 'Bu dersi verebilir' : 'Bu dersi veremez'}</span>
       <span>${available ? 'Bu saat müsait' : 'Bu saat meşgul'}</span>
