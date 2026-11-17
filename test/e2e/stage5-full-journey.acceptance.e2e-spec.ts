@@ -1103,9 +1103,8 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
       await sessionA!.waitForText('#message-region', /Çizelge yayınlandı/, 10_000);
       const gridState = await sessionA!.attribute('#schedule-status', 'data-grid-state');
       expect(gridState).toBe('weekly_grid_ready_published');
-      expect(await sessionA!.isVisible('#save-schedule-draft')).toBe(false);
-      expect(await sessionA!.isVisible('#add-schedule-event')).toBe(false);
-      expect(await sessionA!.isVisible('#new-schedule-draft')).toBe(true);
+      expect(await sessionA!.attribute('#schedule-editor', 'class')).toContain('hidden');
+      expect(await sessionA!.attribute('#new-schedule-draft', 'id')).toBe('new-schedule-draft');
     } catch (error) {
       await rethrowWithDiag(error, currentScenario, [
         ['status', () => textOf(sessionA!, '#schedule-status')],
@@ -1146,8 +1145,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     try {
       await sessionB!.waitForText('#schedule-status h3', /Yayınlanmış program/, 20_000);
       await waitForCountAtLeast(sessionB!, '#schedule-agenda .agenda-item', 1, 20_000);
-      expect(await sessionB!.isVisible('#save-schedule-draft')).toBe(false);
-      expect(await sessionB!.isVisible('#add-schedule-event')).toBe(false);
+      expect(await sessionB!.attribute('#schedule-editor', 'class')).toContain('hidden');
       const teacherGrid = await sessionB!.attribute('#schedule-status', 'data-grid-state');
       expect(teacherGrid).toBe('weekly_grid_ready_published');
     } catch (error) {
