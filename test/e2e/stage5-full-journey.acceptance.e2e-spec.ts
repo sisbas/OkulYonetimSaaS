@@ -1153,7 +1153,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(selectDisabled).toBeNull();
     recordEvidence(currentScenario, 'substitute aday UI: uygun + yedek seçim düğmesi aktif (teacher_branches/teacher_courses seed)');
     await sessionA!.clickElement('#candidate-output button[data-action="select-substitute"]');
-    await sessionA!.waitForText('#approval-substitutions-summary', /Yedek seçimi/, 10_000);
+    await sessionA!.waitForText('#approval-substitutions-summary', /yedek seçildi/, 10_000);
     await sessionA!.clickElement('#approval-substitutions-summary button[data-action="approve-with-substitutions"]');
     await waitForLeaveDecision(leaveId, 'approved');
     await sessionA!.waitForText('#leaves-output', /Onaylandı/, 10_000);
