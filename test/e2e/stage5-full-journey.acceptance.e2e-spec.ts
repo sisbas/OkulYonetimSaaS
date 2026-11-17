@@ -1008,7 +1008,35 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionA!.clickElement('.tab[data-tab="program"]');
     await fillField(sessionA!, '#schedule-effective-from', isoDay(-30));
     await fillField(sessionA!, '#schedule-effective-to', isoDay(30));
-    await sessionA!.submitForm('#schedule-create-form');
+    try {
+      await sessionA!.submitForm('#schedule-create-form');
+    } catch (error) {
+      const btnState = await sessionA!.page
+        .evaluate(() => {
+          const panel = document.querySelector('#program-panel');
+          const form = document.querySelector('#schedule-create-form');
+          const button = document.querySelector('#schedule-create-form button[type="submit"]');
+          const rect = button?.getBoundingClientRect();
+          return {
+            panel: panel ? panel.className : 'missing',
+            formClass: form ? form.className : 'missing',
+            formDisplay: form ? getComputedStyle(form).display : 'missing',
+            hiddenAttrs: [panel?.hasAttribute('hidden'), form?.hasAttribute('hidden')],
+            btnRect: rect ? { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) } : null,
+            scrollY: window.scrollY,
+            scope: document.querySelector('#summary-scope')?.textContent,
+          };
+        })
+        .catch((err) => String(err));
+      const detail = [
+        `scope=${await textOf(sessionA!, '#summary-scope')}`,
+        `status=${(await textOf(sessionA!, '#schedule-status')).slice(0, 600)}`,
+        `message=${(await textOf(sessionA!, '#message-region')).slice(0, 400)}`,
+        `btnState=${JSON.stringify(btnState)}`,
+      ].join('\n');
+      recordEvidence(currentScenario, detail);
+      throw new Error(`schedule create submit failed.\n${detail}`);
+    }
     try {
       await sessionA!.waitForText('#schedule-status h3', /Taslak program/, 20_000);
     } catch (error) {
