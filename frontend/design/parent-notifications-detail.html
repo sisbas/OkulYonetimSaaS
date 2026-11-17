@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Mesaj inceleme — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Veli Bilgilendirme · Mesaj inceleme</p>
+        <h1>İletişim inceleme</h1>
+        <p class="topbar-subtitle">Maskeli iletişim, izin kontrolü; tek onay/iptal noktası. Gerçek gönderim burada gerçekleşmez.</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="pending">
+      <section class="panel notification-detail-panel" aria-labelledby="detail-heading">
+        <div>
+          <h2 id="detail-heading">Mesaj inceleme</h2>
+          <section id="notification-content" class="state-box" role="region" aria-label="Mesaj içeriği">
+            <p class="hint">İletişim maskelenmiş gösterilir; özel veri görünmez.</p>
+          </section>
+          <section id="notification-consent" class="state-box" role="region" aria-label="İzin durumu">
+            <p class="hint">İzin kontrolü: veli bilgilendirme onayı alınmış mı? Engelliyse onay verilmez.</p>
+          </section>
+          <div class="decision-actions">
+            <button type="button" class="button-primary" data-action="approve-notification">Onayla</button>
+            <button type="button" class="button-primary" data-action="reject-notification">İptal et</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>

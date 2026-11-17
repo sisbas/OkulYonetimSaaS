@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>İzinler — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Operasyon · İzinler</p>
+        <h1>İzin talepleri ve kararları</h1>
+        <p class="topbar-subtitle">
+          Öğretmen talebini oluşturur, operasyon etkisini görür ve karar verir. Karar ile ders
+          karşılığı ayrı durumlardır: onay, karşılığın atandığı anlamına gelmez.
+        </p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="false"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="true"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanimlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yonetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+
+    <main id="design-main" tabindex="-1" data-state="ready">
+      <!-- 1) İzin listesi (operasyon): durum rozetleri + filtre kesitleri -->
+      <section class="panel" aria-labelledby="leave-list-heading" data-view="ops">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Karar kuyruğu</p>
+            <h2 id="leave-list-heading">İzin listesi</h2>
+          </div>
+          <button type="button" class="button-primary">Listeyi yenile</button>
+        </div>
+
+        <div class="chip-row" role="group" aria-label="Durum filtresi">
+          <button type="button" class="chip" aria-pressed="true">Tümü</button>
+          <button type="button" class="chip" aria-pressed="false">Taslak</button>
+          <button type="button" class="chip" aria-pressed="false">Beklemede</button>
+          <button type="button" class="chip" aria-pressed="false">Onaylandı</button>
+          <button type="button" class="chip" aria-pressed="false">Reddedildi</button>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <h3>İzin talebi <span class="tag" data-tone="warning">Beklemede</span></h3>
+            <p class="card-meta">
+              <span>Gerekçe: Yıllık izin</span>
+              <span>Süre: Tam gün</span>
+              <span>Karşılık: Henüz karşılanmadı</span>
+              <span>Görevlendirme: Henüz atanmadı</span>
+            </p>
+            <div class="quick-actions">
+              <button type="button" class="button-primary" data-requires-permission="leave:approve">Onayla</button>
+              <button type="button" data-requires-permission="leave:reject">Reddet</button>
+            </div>
+          </article>
+          <article class="card">
+            <h3>İzin talebi <span class="tag" data-tone="success">Onaylandı</span></h3>
+            <p class="card-meta">
+              <span>Gerekçe: İdari izin</span>
+              <span>Süre: Saatlik</span>
+              <span>Karşılık: Karşılandı</span>
+              <span>Görevlendirme: Görevlendirildi</span>
+            </p>
+            <p class="hint">Bu talebin kararı verilmiş; kayıt güncelliği listeyle birlikte tazelenir.</p>
+          </article>
+          <article class="card">
+            <h3>İzin talebi <span class="tag" data-tone="danger">Reddedildi</span></h3>
+            <p class="card-meta">
+              <span>Gerekçe: Sağlık izni (kategori)</span>
+              <span>Süre: Çok günlü</span>
+              <span>Karşılık: Karşılık gerekmiyor</span>
+            </p>
+          </article>
+          <article class="card">
+            <h3>İzin talebi <span class="tag" data-tone="neutral">Taslak</span></h3>
+            <p class="card-meta">
+              <span>Gerekçe: Diğer izin</span>
+              <span>Süre: Saatlik</span>
+              <span>Karşılık: Karşılık gerekmiyor</span>
+            </p>
+            <p class="hint">Taslak talepler karar kuyruğuna düşmez; sahibi gönderdiğinde beklemeye geçer.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- 2) İzinlerim (öğretmen): sahiplik ayrımı -->
+      <section class="panel" aria-labelledby="my-leaves-heading" data-view="teacher">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">İzinlerim</p>
+            <h2 id="my-leaves-heading">Kendi izin geçmişim</h2>
+          </div>
+          <button type="button" data-requires-permission="leave:own:read">Geçmişimi yenile</button>
+        </div>
+        <div class="chip-row" role="group" aria-label="İzinlerim durum filtresi">
+          <button type="button" class="chip" aria-pressed="true">Tümü</button>
+          <button type="button" class="chip" aria-pressed="false">Beklemede</button>
+          <button type="button" class="chip" aria-pressed="false">Onaylandı</button>
+          <button type="button" class="chip" aria-pressed="false">Reddedildi</button>
+        </div>
+        <p class="hint">
+          Yalnızca size ait talepler listelenir; başka bir öğretmenin kaydı bu görünümde yer almaz.
+        </p>
+        <div class="cards">
+          <article class="card">
+            <h3>İzin talebim <span class="tag" data-tone="warning">Beklemede</span></h3>
+            <p class="card-meta">
+              <span>Gerekçe: Sağlık izni (kategori)</span>
+              <span>Süre: Tam gün</span>
+              <span>Dönem: 21.09.2026 08:00 – 21.09.2026 18:00</span>
+            </p>
+            <div class="quick-actions">
+              <button type="button">Talebi aç</button>
+            </div>
+          </article>
+          <article class="card">
+            <h3>İzin talebim <span class="tag" data-tone="success">Onaylandı</span></h3>
+            <p class="card-meta">
+              <span>Gerekçe: Yıllık izin</span>
+              <span>Süre: Çok günlü</span>
+              <span>Dönem: 05.10.2026 – 07.10.2026</span>
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- 3) Yeni talep formu (öğretmen): tarih aralığı + gerekçe kategorisi -->
+      <section class="panel" aria-labelledby="new-leave-heading" data-view="teacher">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Yeni talep</p>
+            <h2 id="new-leave-heading">İzin talebi oluştur</h2>
+          </div>
+        </div>
+        <div class="panel-intro">
+          <strong>Önce aralığı netleştirin</strong>
+          <ul class="checklist">
+            <li>Saatlik izin en fazla 24 saat sürer ve iki güne yayılmaz.</li>
+            <li>Tam gün izni tek takvim günü içinde kalır (ör. 08:00–18:00).</li>
+            <li>Çok gün izni en az iki takvim gününe yayılır.</li>
+            <li>Gerekçe yalnız kategori olarak seçilir; serbest sağlık metni istenmez.</li>
+          </ul>
+        </div>
+        <form id="new-leave" class="grid-form" aria-label="Yeni izin talebi" novalidate>
+          <label>
+            İzin türü
+            <select id="duration-type" name="durationType" required>
+              <option value="hourly">Saatlik</option>
+              <option value="full_day">Tam gün</option>
+              <option value="multi_day">Çok gün</option>
+            </select>
+          </label>
+          <label>
+            Gerekçe kategorisi
+            <select id="reason-code" name="reasonCode" required>
+              <option value="administrative">İdari</option>
+              <option value="health">Sağlık</option>
+              <option value="annual_leave">Yıllık izin</option>
+              <option value="other">Diğer</option>
+            </select>
+            <span class="hint">Sağlık gerekçesinde ayrıntı istenmez; tanı bilgisi toplanmaz.</span>
+          </label>
+          <label>Başlangıç zamanı <input id="starts-at" type="datetime-local" required value="2026-09-21T08:00" /></label>
+          <label>Bitiş zamanı <input id="ends-at" type="datetime-local" required value="2026-09-21T18:00" /></label>
+          <button type="submit" class="button-primary" data-requires-permission="leave:create">İzin talebi oluştur</button>
+        </form>
+        <div class="state-box" data-state="validation_error">
+          <div class="error-state">
+            <strong>Aralık uygun değil</strong>
+            <p>Tam gün izni tek bir takvim günü içinde kalmalı (ör. 08:00–18:00).</p>
+            <small class="recovery-hint">Aralığı düzeltip yeniden gönderin.</small>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- 4) Etki ve karar detayı: planlanan/aktif öğretmen, görevlendirme, onay/ret -->
+      <section class="panel" aria-labelledby="impact-heading" data-view="ops">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Karar desteği</p>
+            <h2 id="impact-heading">Etki ve karar detayı</h2>
+          </div>
+        </div>
+        <div class="summary">
+          <b>Ders karşılığı:</b> Henüz karşılanmadı · 2 ders etkileniyor · 0 ders karşılandı
+        </div>
+        <table id="impact-table" aria-labelledby="impact-heading">
+          <caption>Etkilenen dersler ve görevlendirme durumu</caption>
+          <thead>
+            <tr>
+              <th scope="col">Gün / saat</th>
+              <th scope="col">Ders</th>
+              <th scope="col">Sınıf</th>
+              <th scope="col">Derslik</th>
+              <th scope="col">Planlanan öğretmen</th>
+              <th scope="col">Görevlendirme</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Pazartesi 10:00–11:00</td>
+              <td>Matematik</td>
+              <td>7-A</td>
+              <td>203</td>
+              <td>Elif Yılmaz (izinli)</td>
+              <td><span class="tag" data-tone="warning">Henüz atanmadı</span></td>
+            </tr>
+            <tr>
+              <td>Pazartesi 11:00–12:00</td>
+              <td>Matematik</td>
+              <td>7-B</td>
+              <td>203</td>
+              <td>Elif Yılmaz (izinli)</td>
+              <td><span class="tag" data-tone="success">Görevlendirildi: Murat Demir</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="panel-intro">
+          <strong>Aday öğretmenler</strong>
+          <ul class="checklist">
+            <li>Adaylar yalnız karar desteğidir; atama ayrı bir adımdır.</li>
+            <li>Uygunluk kaynağı hazır değilse liste "aday yok" diye gösterilmez.</li>
+          </ul>
+        </div>
+        <div class="quick-actions">
+          <button type="button" class="button-primary" data-requires-permission="leave:approve">Onayla</button>
+          <button type="button" data-requires-permission="leave:reject">Reddet</button>
+          <button type="button" data-requires-permission="daily_operations:update">Görevlendir</button>
+        </div>
+      </section>
+
+      <!-- 5) Durum matrisi (K-40/K-41): aynı bölge, dürüst durum bloğu -->
+      <section class="panel" aria-labelledby="states-heading">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Durum kesitleri</p>
+            <h2 id="states-heading">Yükleniyor / boş / hata / yetki</h2>
+          </div>
+        </div>
+        <div class="cards">
+          <article class="card" data-state="loading">
+            <h3>Yükleniyor</h3>
+            <p>İzin talepleri getiriliyor…</p>
+          </article>
+          <article class="card" data-state="same_scope_empty">
+            <h3>İzin talebi yok</h3>
+            <p>Bu kapsamda izin talebi yok.</p>
+          </article>
+          <article class="card" data-state="stale_version">
+            <h3>Kayıt değişmiş</h3>
+            <p>Talep siz karar verirken güncellendi. Listeyi yenileyip yeniden deneyin.</p>
+            <small class="recovery-hint">Güncel sürümü alın; karar aynı sürümle verilir.</small>
+          </article>
+          <article class="card" data-state="conflict_blocking">
+            <h3>Çakışma</h3>
+            <p>Bu talep için bekleyen bir işlem var; önce onu tamamlayın.</p>
+          </article>
+          <article class="card" data-state="forbidden_non_enumerating">
+            <h3>Yetki dışı</h3>
+            <p>Bu kayda erişim kapsamınızda değil.</p>
+          </article>
+          <article class="card" data-state="eligibility_not_ready">
+            <h3>Uygunluk hazır değil</h3>
+            <p>Aday öğretmen kaynağı henüz hazır değil; liste kesinleşmedi.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
+

@@ -10,6 +10,8 @@ const state = {
   branchLabel: '',
   date: '',
   activeLeaveId: '',
+  leaveStatusFilter: '',
+  myLeaveStatusFilter: '',
   activeScheduleEventId: '',
   activeLeaveEtag: '',
   activeAssignmentId: '',
@@ -18,6 +20,7 @@ const state = {
   candidateCount: 0,
   activeLessonLabel: '',
   permissions: [],
+  capabilities: [],
   pendingRoute: '',
   pendingBranch: '',
   pendingDraft: null,
@@ -29,6 +32,8 @@ const state = {
   activeAttendanceSessionId: '',
   activeDaySessionId: '',
   dayLessonCount: 0,
+  attendanceSessions: [],
+  attendanceStatusFilter: '',
   rateLimitedUntil: 0,
   lastAction: 'Henüz işlem yapılmadı.',
 };
@@ -124,6 +129,11 @@ const UI_STATES = {
     message: 'Sunucu beklenmeyen bir yanıt verdi.',
     hint: 'İşlemi tekrarlamadan önce listeyi yenileyin.',
   },
+  duplicate_metric_year: {
+    title: 'Hedef zaten tanımlı',
+    message: 'Bu metrik bu akademik yıl için zaten tanımlı.',
+    hint: 'Farklı bir metrik seçin veya yılı değiştirin.',
+  },
 };
 
 const SERVER_REASON_UI = {
@@ -193,6 +203,11 @@ const SERVER_REASON_UI = {
     state: 'locked_state',
     message: 'Bu durumda gönderim eylemi uygulanamaz; kayıt durumunu yenileyin.',
   },
+  // #483: stratejik hedef aynı metrik + aynı yıl için ikinci kez tanımlanamaz.
+  duplicate_metric_year: {
+    state: 'duplicate_metric_year',
+    message: 'Bu metrik bu akademik yıl için zaten tanımlı.',
+  },
 };
 
 const HTTP_STATUS_UI_STATE = {
@@ -211,6 +226,7 @@ const HTTP_STATUS_UI_STATE = {
 
 const RATE_LIMIT_COOLDOWN_MS = 5000;
 const statusLabels = {
+  draft: 'Taslak',
   pending: 'Beklemede',
   approved: 'Onaylandı',
   rejected: 'Reddedildi',
@@ -231,6 +247,7 @@ const statusLabels = {
   uncertain: 'Belirsiz',
   closed: 'Kapatıldı',
   draft: 'Taslak',
+  unmarked: 'İşaretlenmedi',
   published: 'Yayınlandı',
   locked: 'Kilitli',
   present: 'Hazır',
@@ -241,6 +258,7 @@ const statusLabels = {
   unknown: 'Durum bekleniyor',
 };
 const statusTones = {
+  draft: 'neutral',
   approved: 'success',
   assigned: 'success',
   resolved: 'success',
@@ -260,6 +278,7 @@ const statusTones = {
   cancelled: 'neutral',
   closed: 'neutral',
   draft: 'neutral',
+  unmarked: 'neutral',
   published: 'success',
   locked: 'success',
   present: 'success',
@@ -364,6 +383,7 @@ const ROUTE_PERMISSIONS = [
   { method: 'POST', path: '/auth/login', permission: '' },
   { method: 'POST', path: '/auth/refresh', permission: '' },
   { method: 'POST', path: '/leaves/me', permission: 'leave:create' },
+  { method: 'GET', path: '/leaves/me', permission: 'leave:own:read' },
   { method: 'GET', path: '/leaves/me/:id', permission: 'leave:own:read' },
   { method: 'GET', path: '/leaves', permission: 'leave:read' },
   { method: 'GET', path: '/leaves/:id', permission: 'leave:read' },
@@ -399,6 +419,12 @@ const ROUTE_PERMISSIONS = [
   { method: 'POST', path: '/attendance/sessions/:id/records/present', permission: 'attendance:record:update' },
   { method: 'POST', path: '/attendance/sessions/:id/lock', permission: 'attendance:lock' },
   { method: 'POST', path: '/attendance/sessions/:id/records/:studentId/correction', permission: 'attendance:update' },
+  // #483: stratejik hedefler — okuma `strategic_goal:read`, yazma `strategic_goal:manage`.
+  { method: 'GET', path: '/strategic-goals', permission: 'strategic_goal:read' },
+  { method: 'GET', path: '/strategic-goals/:id', permission: 'strategic_goal:read' },
+  { method: 'POST', path: '/strategic-goals', permission: 'strategic_goal:manage' },
+  { method: 'PATCH', path: '/strategic-goals/:id', permission: 'strategic_goal:manage' },
+  { method: 'DELETE', path: '/strategic-goals/:id', permission: 'strategic_goal:manage' },
 ];
 
 /** Oturum/katalog uçları iş izni gerektirmez; tabloya girmenin tersi. */
@@ -509,7 +535,10 @@ function flattenMessage(value) {
 }
 
 function serverAuthoredCode(body) {
-  const explicit = pick(body, ['reasonCode', 'code']);
+  // #483: stratejik hedefler sunucusu gerekçeyi `reason` alanında yollar;
+  // diğer yüzeyler `reasonCode`/`code` kullanır. Üçü de sunucunun kendi
+  // kodu olduğu için istemci kodu üretmez (K-29/K-30).
+  const explicit = pick(body, ['reasonCode', 'code', 'reason']);
   if (explicit) return String(explicit);
   const message = flattenMessage(body).toUpperCase();
   return Object.keys(SERVER_REASON_UI).find((code) => message.includes(code.toUpperCase())) || '';
@@ -615,8 +644,16 @@ function clearBranchWork() {
   state.activeAttendanceSessionId = '';
   state.activeDaySessionId = '';
   state.dayLessonCount = 0;
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail', '#day-summary', '#day-lessons', '#day-rail']) {
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail', '#lesson-cards', '#schedule-conflicts', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#bugun-roles-output', '#day-summary', '#day-lessons', '#day-rail']) {
     $(id).innerHTML = '';
+  }
+  // Program kapsam filtreleri: şube değişince eski şubelerin seçenekleri ve
+  // seçimleri kalmaz; varsayılan boş etikete döner.
+  for (const [id, label] of [['#branch-filter', 'Tüm sınıflar'], ['#teacher-filter', 'Tüm öğretmenler'], ['#room-filter', 'Tüm derslikler']]) {
+    const sel = $(id);
+    if (!sel) continue;
+    sel.innerHTML = `<option value="">${label}</option>`;
+    sel.value = '';
   }
 }
 
@@ -628,6 +665,9 @@ function applyCatalog(catalog) {
   // Kapasite anahtarları (#445): sekme görünürlüğü sunucunun yetki anahtarlarından
   // türetilir; rol etiketi arayüz kararında kullanılmaz.
   state.permissions = [...new Set(asArray(catalog, ['permissions']))];
+  // #483: deploy yeteneği (`strategic_goals`) izin anahtarı DEĞİLDİR; yalnız
+  // bu deploy'da hangi ürün yüzeyinin bulunduğunu söyler (ADR 0003 D3).
+  state.capabilities = [...new Set(asArray(catalog, ['capabilities']))];
   state.branches = asArray(catalog, ['branches']);
   const selector = $('#branch-id');
   selector.innerHTML = '<option value="">Şube seçin</option>' + state.branches.map((branch) =>
@@ -844,6 +884,7 @@ async function updateContext(event) {
   }
   applyCatalog(selection.body);
   await loadQueue();
+  await loadTodayDashboard();
 }
 
 // #445: sekme görünürlüğü sunucunun izin anahtarlarından türetilir. Rol
@@ -856,25 +897,43 @@ const TAB_CAPABILITIES = {
   program: 'schedule:draft:create',
   attendance: 'attendance:own:read',
   notifications: 'notification:draft:read',
+  tanimlar: 'daily_operations:read',
+  raporlar: 'leave:read',
+  // #483: Yönetim sekmesi iki bölge barındırır; kullanıcı/rol matrisi yönetim
+  // yetkisi ister, stratejik hedefler ayrı bir okuma anahtarıyla açılır.
+  yonetim: ['daily_operations:update', 'strategic_goal:read'],
 };
 
 // Screen modüllerin sekme aktivasyon hook'u: notifications.js
 // registerTabActivationHook ile kaydolur; tek yönlü bağımlılık preserved.
 const tabActivationHooks = {};
 
+// #483: bir sekmeye birden fazla ekran modülü kaydolabilir (Yönetim sekmesi:
+// kullanıcı/rol matrisi + stratejik hedefler). Kayıtlar birikir; son çağıran
+// diğerini ezmez.
 function registerTabActivationHook(name, activation) {
-  tabActivationHooks[name] = activation;
+  if (!tabActivationHooks[name]) tabActivationHooks[name] = [];
+  tabActivationHooks[name].push(activation);
 }
 
 function hasCapability(key) {
   return Boolean(key) && state.permissions.includes(key);
 }
 
+/** Bir sekmenin izin anahtarı listesi olabilir: bölgelerden biri yeterlidir. */
+function capabilityKeyList(value) {
+  return Array.isArray(value) ? value : [value];
+}
+
+function hasAnyCapability(value) {
+  return capabilityKeyList(value).some((key) => hasCapability(key));
+}
+
 function navSectionsFor(capabilities) {
   const granted = new Set(capabilities);
   const sections = ['bugun'];
-  for (const [tab, key] of Object.entries(TAB_CAPABILITIES)) {
-    if (granted.has(key)) sections.push(tab);
+  for (const [tab, value] of Object.entries(TAB_CAPABILITIES)) {
+    if (capabilityKeyList(value).some((key) => granted.has(key))) sections.push(tab);
   }
   return sections;
 }
@@ -892,6 +951,10 @@ function renderNavigation() {
   document.querySelectorAll('[data-requires-permission]').forEach((el) => {
     el.classList.toggle('hidden', !hasCapability(el.dataset.requiresPermission));
   });
+  // Deploy yeteneği kapısı (#483): yüzey bu deploy'da yoksa bölge gizlenir.
+  document.querySelectorAll('[data-requires-capability]').forEach((el) => {
+    el.classList.toggle('hidden', !state.capabilities.includes(el.dataset.requiresCapability));
+  });
   const current = document.querySelector('.tab[aria-selected="true"]');
   if (current && !allowed.has(current.dataset.tab)) {
     activateTab('bugun');
@@ -907,12 +970,14 @@ function setActiveTab(name) {
   // Tab-activation hook tablosu core'a aittir; screen modüller register'a
   // kaydolur (yön: ekran → core). Delegation'ın vm harness'ta çalışmasına
   // gerek yoktur — tablo boşsa davranış core-only kalır.
-  const activationHook = tabActivationHooks[name];
-  if (state.accessToken && activationHook) activationHook();
+  const activationHooks = tabActivationHooks[name] || [];
+  if (state.accessToken) {
+    for (const activationHook of activationHooks) activationHook();
+  }
 }
 
 function activateTab(name) {
-  if (name !== 'bugun' && state.permissions.length && !hasCapability(TAB_CAPABILITIES[name])) {
+  if (name !== 'bugun' && state.permissions.length && !hasAnyCapability(TAB_CAPABILITIES[name])) {
     announce('Bu işlem için yetkiniz yok. Güvenli şekilde Bugün ekranına dönebilirsiniz.', 'warning');
     const bugunTab = document.querySelector('.tab[data-tab="bugun"]');
     if (bugunTab && !bugunTab.classList.contains('hidden')) {
@@ -921,6 +986,49 @@ function activateTab(name) {
     return;
   }
   setActiveTab(name);
+}
+
+/**
+ * #491 — İzin penceresi ön doğrulaması (istemci tarafı).
+ *
+ * Sunucu sözleşmesinin (src/leaves/leave-window.ts) kullanıcıya görünen kısmı:
+ * geçersiz aralık API'ye hiç gitmeden, anlaşılır Türkçe bir gerekçeyle durur.
+ * Yetki sınırı DEĞİLDİR — asıl doğrulama sunucudadır; burada amaç boşuna 400
+ * üretmemek ve hatayı talebe yazmadan önce göstermektir.
+ */
+function validateLeaveWindowInput(durationType, startsAtValue, endsAtValue) {
+  const start = new Date(startsAtValue);
+  const end = new Date(endsAtValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return { ok: false, message: 'Başlangıç ve bitiş zamanı geçerli bir tarih olmalı.' };
+  }
+  if (start.getTime() >= end.getTime()) {
+    return { ok: false, message: 'Bitiş zamanı başlangıçtan sonra olmalı.' };
+  }
+  const hours = (end.getTime() - start.getTime()) / (60 * 60 * 1000);
+  const dayNumber = (value) =>
+    Math.floor(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / 86400000);
+  const daySpan = dayNumber(end) - dayNumber(start);
+
+  if (durationType === 'hourly') {
+    if (hours > 24 || daySpan > 1) {
+      return { ok: false, message: 'Saatlik izin en fazla 24 saat olabilir ve iki güne yayılamaz.' };
+    }
+    return { ok: true };
+  }
+  if (durationType === 'full_day') {
+    if (daySpan !== 0) {
+      return { ok: false, message: 'Tam gün izni tek bir takvim günü içinde kalmalı (ör. 08:00-18:00).' };
+    }
+    return { ok: true };
+  }
+  if (durationType === 'multi_day') {
+    if (daySpan < 1) {
+      return { ok: false, message: 'Çok gün izni en az iki takvim gününe yayılmalı.' };
+    }
+    return { ok: true };
+  }
+  return { ok: false, message: 'İzin türü seçilmedi.' };
 }
 
 async function createLeave(event) {
@@ -939,6 +1047,16 @@ async function createLeave(event) {
     endsAt: toIso8601($('#leave-ends-at').value),
   };
   const target = $('#teacher-output');
+  const precheck = validateLeaveWindowInput(
+    body.durationType,
+    $('#leave-starts-at').value,
+    $('#leave-ends-at').value,
+  );
+  if (!precheck.ok) {
+    renderRegionState(target, 'validation_error', precheck.message);
+    updateWorkflowProgress('leave', 'İzin talebi tamamlanamadı');
+    return;
+  }
   target.innerHTML = loading('İzin talebi oluşturuluyor');
   try {
     const { body: leave, etag } = await apiRequest('/leaves/me', { method: 'POST', body });
@@ -1168,6 +1286,7 @@ async function createAssignment(teacherId) {
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
+    await loadTodayDashboard();
   } catch (error) {
     renderError(target, error);
   }
@@ -1190,6 +1309,7 @@ async function clearAssignment() {
     updateWorkflowProgress();
     await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
     await loadQueue();
+    await loadTodayDashboard();
   } catch (error) {
     renderError(target, error);
   }
@@ -1206,11 +1326,28 @@ function captureLeaveVersion(body, etag) {
   state.activeLeaveEtag = pick(body, ['leaveEtag', 'etag'], etag || state.activeLeaveEtag);
 }
 
+/**
+ * #491 — durum rozet dili. Tek kaynak: `statusLabels` + `statusTones`.
+ * Ham değer görünür metne yazılmaz; yalnız `data-status` özniteliğinde kalır
+ * (tanılama için) ve haritada olmayan değer nötr "Durum bilinmiyor" olur.
+ */
+function statusBadge(value) {
+  const key = termKey(value);
+  return `<span class="tag" data-tone="${escapeHtml(statusTone(key))}" data-status="${escapeHtml(key)}">${escapeHtml(displayStatus(key))}</span>`;
+}
+
 function renderLeaveCard(leave, title) {
+  const decision = pick(leave, ['decisionStatus'], 'unknown');
+  const coverage = pick(leave, ['coverageStatus'], 'unknown');
+  const assignment = pick(leave, ['assignmentStatus'], '');
   return `<article class="card">
-    <h3>${escapeHtml(title)}</h3>
-    <p>Durum: ${escapeHtml(displayStatus(pick(leave, ['status'], 'unknown')))}</p>
-    <p>Karar: ${escapeHtml(displayStatus(pick(leave, ['decisionStatus'], 'unknown')))} · Ders karşılığı: ${escapeHtml(displayStatus(pick(leave, ['coverageStatus'], 'unknown')))}</p>
+    <h3>${escapeHtml(title)} ${statusBadge(decision)}</h3>
+    <p>Karar: ${escapeHtml(displayStatus(decision))} · Ders karşılığı: ${escapeHtml(displayStatus(coverage))}</p>
+    ${
+      assignment
+        ? `<p>Görevlendirme: ${escapeHtml(displayStatus(assignment))}</p>`
+        : ''
+    }
     <p>Güncellik: ${state.activeLeaveEtag ? 'Güncel kayıt alındı' : 'Güncel kayıt bekleniyor'}</p>
   </article>`;
 }
@@ -1329,8 +1466,8 @@ const EMPTY_COPY = {
     message: 'Bu kapsamda onay kaydı yok.',
   },
   notifications: {
-    title: 'Bildirim yok',
-    message: 'Bu kapsamda bildirim yok.',
+    title: 'Taslak kalır (gönderim yok)',
+    message: 'Bu kapsamda bildirim yok. Gönderilmediği sürece taslaktır; ileti uygunluğu kontrolü onay adımında yapılır.',
   },
   attendance: {
     title: 'Yoklama oturumu yok',
@@ -1352,6 +1489,10 @@ const EMPTY_COPY = {
     title: 'Çizelge yok',
     message: 'Henüz çizelge oluşturulmadı.',
   },
+  strategicGoals: {
+    title: 'Hedef yok',
+    message: 'Bu akademik yıl için henüz hedef tanımlanmamış.',
+  },
 };
 
 const empty = (target, key) => {
@@ -1366,7 +1507,10 @@ document.addEventListener('click', (event) => {
   if (target.classList.contains('tab')) activateTab(target.dataset.tab);
   if (target.dataset.action === 'focus-teacher') activateTab('teacher');
   if (target.dataset.action === 'focus-ops') activateTab('ops');
-  if (target.dataset.action === 'impact') loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
+  if (target.dataset.action === 'impact') {
+    if (target.dataset.source === 'bugun') activateTab('ops');
+    loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
+  }
   if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();

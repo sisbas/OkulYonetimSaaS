@@ -55,7 +55,7 @@ describe('#444 shared region states', () => {
         ['candidate-output', 'Aday listesi', (ui) => { ui.probe.state.activeLeaveId = 'leave-1'; return ui.probe.loadCandidates('e1', 'Matematik'); }],
         ['leaves-output', 'İzin talebi', (ui) => ui.probe.loadLeaves()],
         ['consents-output', 'Onay kaydı', (ui) => ui.probe.loadConsents()],
-        ['notifications-list', 'Bildirim', (ui) => ui.probe.loadNotifications()],
+        ['notifications-list', 'Taslak kalır', (ui) => ui.probe.loadNotifications()],
         ['attendance-sessions', 'Yoklama oturumu', (ui) => ui.probe.loadAttendanceSessions()],
       ];
       const titles = new Set<string>();

@@ -26,6 +26,9 @@ const SERVER_CONTROLLERS: Array<{ file: string; controllerBases: string[] }> = [
   { file: 'src/notifications/notification-draft.controller.ts', controllerBases: ['notifications/drafts'] },
   { file: 'src/notifications/notification-operations.controller.ts', controllerBases: ['notifications'] },
   { file: 'src/attendance/attendance.controller.ts', controllerBases: ['attendance/sessions'] },
+  // #483: stratejik hedef yüzeyi de seam kapsamında; izin anahtarları
+  // strategic_goal:read (okuma) / strategic_goal:manage (yazma).
+  { file: 'src/strategic-goals/strategic-goal.controller.ts', controllerBases: ['strategic-goals'] },
 ];
 
 const METHOD_DECORATORS: Array<[string, string]> = [

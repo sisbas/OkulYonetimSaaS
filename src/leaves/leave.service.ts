@@ -8,6 +8,12 @@ import {
 import { leaveEtag } from '../daily-operations/leave-impact.types';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
+import { ListOwnLeaveRequestsQueryDto } from './dto/list-own-leave-requests-query.dto';
+import {
+  assertLeaveWindow,
+  localCalendarParts,
+  resolveLeaveTimeZone,
+} from './leave-window';
 import {
   APPROVED_IMPACT_DETAIL,
   REJECTED_IMPACT_DETAIL,
@@ -102,6 +108,15 @@ function parseDateRange(startsAt: string, endsAt: string): { startsAt: Date; end
   return { startsAt: start, endsAt: end };
 }
 
+function historyBusinessDate(value: string | undefined, timeZone: string): string {
+  if (!value) return localCalendarParts(new Date(), timeZone).date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw new BadRequestException('Leave history date filter is invalid');
+  return localCalendarParts(parsed, timeZone).date;
+}
+
 @Injectable()
 export class LeaveService {
   constructor(
@@ -111,9 +126,18 @@ export class LeaveService {
 
   async createOwn(ctx: RequestContext, dto: CreateLeaveRequestDto): Promise<LeaveResponse> {
     const range = parseDateRange(dto.startsAt, dto.endsAt);
+    const timeZone = await this.leaves.loadTenantTimeZone(ctx);
+    // Takvim/süre/sınır doğrulaması DB'ye yazmadan ÖNCE, tenant saat diliminde
+    // yapılır (#263 AC-3). Geçersiz aralık 400 döner; hiçbir satır yazılmaz.
+    assertLeaveWindow({
+      durationType: dto.durationType,
+      startsAt: range.startsAt,
+      endsAt: range.endsAt,
+      timeZone: resolveLeaveTimeZone(timeZone),
+    });
     const identity = await this.identity.resolveTeacherIdentity(ctx, {
       branchId: dto.branchId,
-      businessDate: range.startsAt.toISOString().slice(0, 10),
+      businessDate: localCalendarParts(range.startsAt, resolveLeaveTimeZone(timeZone)).date,
     });
     const saved = await this.leaves.create(ctx, {
       tenantId: ctx.tenantId!,
@@ -145,6 +169,29 @@ export class LeaveService {
     return this.toResponse(leave);
   }
 
+  /**
+   * Öğretmenin kendi izin geçmişi (#263 AC-1).
+   *
+   * Kapsam sunucuda çözülür: `teacherId` istemciden ALINMAZ. `branchId` ve
+   * `decisionStatus` yalnız filtre olarak kullanılır. Çok şubeli öğretmen de
+   * geçmişini görebilir (`resolveOwnHistoryScope` tek şube seçimi istemez).
+   */
+  async listOwn(ctx: RequestContext, query: ListOwnLeaveRequestsQueryDto): Promise<LeaveResponse[]> {
+    const timeZone = resolveLeaveTimeZone(await this.leaves.loadTenantTimeZone(ctx));
+    const identity = await this.identity.resolveOwnHistoryScope(ctx, {
+      branchId: query.branchId,
+      businessDate: historyBusinessDate(query.from, timeZone),
+    });
+    const leaves = await this.leaves.listOwn(ctx, {
+      teacherId: identity.teacherId,
+      branchId: query.branchId,
+      decisionStatus: query.decisionStatus,
+      from: query.from,
+      to: query.to,
+    });
+    return leaves.map((leave) => this.toResponse(leave));
+  }
+
   async decide(
     ctx: RequestContext,
     id: string,
@@ -161,7 +208,7 @@ export class LeaveService {
     const decisionActorUserId = actorUserId(ctx);
     if (decisionActorUserId === current.requesterUserId) throw new LeaveSelfDecisionException();
 
-    const actorTeacher = await this.safeActorTeacherId(ctx);
+    const actorTeacher = await this.identity.resolveDecisionActorTeacherId(ctx);
     if (actorTeacher && actorTeacher === current.teacherId) throw new LeaveSelfDecisionException();
 
     // Onay/ret + etki + açık projeksiyonlar + durable audit + outbox tek
@@ -202,15 +249,6 @@ export class LeaveService {
       decidedAtLabel: instantLabel(leave.decidedAt),
       impact,
     };
-  }
-
-  private async safeActorTeacherId(ctx: RequestContext): Promise<string | null> {
-    try {
-      return await this.identity.resolveDecisionActorTeacherId(ctx);
-    } catch {
-      // Absence is an explicit directory result, never an exception category.
-      throw new LeaveSelfDecisionException();
-    }
   }
 
   private toResponse(leave: LeaveRequest): LeaveResponse {

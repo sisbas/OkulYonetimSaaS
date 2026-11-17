@@ -140,9 +140,14 @@ jobs:
               core.notice("Draft PR: issue reference ready_for_review olayında doğrulanacak.");
               return;
             }
-            const text = `${pr.title || ""}\n${pr.body || ""}`;
-            if (!/\b(fixes|fix|closes|close|resolves|resolve|refs|references)\s+#\d+\b/i.test(text)) {
-              core.setFailed("PR title/body içinde geçerli issue referansı yok. Örnek: Fixes #123 veya Refs #123");
+            const text = `${pr.title || ""}\n${pr.body || ""}`
+              .replace(/<!--[\s\S]*?-->/g, "")
+              .replace(/```[\s\S]*?```/g, "");
+            const hasClosingKeywordRef = /\b(fixes|fix|closes|close|resolves|resolve|refs|references)\s*:?\s+#\d+\b/i.test(text);
+            const hasContextualIssueRef = /\b(for|issue)\s+#\d+\b/i.test(text);
+            const hasIssueUrlRef = /https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/issues\/\d+\b/i.test(text);
+            if (!hasClosingKeywordRef && !hasContextualIssueRef && !hasIssueUrlRef) {
+              core.setFailed("PR title/body içinde geçerli issue referansı yok. Örnek: Fixes #123, Refs #123, for #123 veya GitHub issue URL");
             }
 
   rollback-plan:

@@ -313,15 +313,19 @@ secret: resolveJwtKey('access').secret,
 
   it('dispatches an authenticated /api/v1/leaves/me to the Nest leaves controller with a controlled 400', async () => {
     expect(accessToken).toBeDefined();
+    // #263: `GET /leaves/me` artık ogretmenin kendi izin gecmisi ucudur.
+    // Gecersiz bir filtre degeri ValidationPipe tarafindan 400 ile reddedilir;
+    // bu, istegin Nest leaves controller'ina ulastigini ve platform
+    // NOT_FOUND'a dusmedigini kanitlar (DB'ye dokunmadan).
     const body = assertNestJson(
-      await requestJson('/api/v1/leaves/me', {
+      await requestJson('/api/v1/leaves/me?decisionStatus=not-a-status', {
         headers: { authorization: `Bearer ${accessToken as string}` },
       }),
       400,
     );
 
     expect(body.statusCode).toBe(400);
-    expect(JSON.stringify(body.message)).toContain('uuid is expected');
+    expect(JSON.stringify(body.message)).toContain('decisionStatus');
   });
 
   it('preserves POST method and JSON body through the rewritten routing shape into Nest validation', async () => {

@@ -19,6 +19,7 @@ import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { DecideLeaveRequestDto } from './dto/decide-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
+import { ListOwnLeaveRequestsQueryDto } from './dto/list-own-leave-requests-query.dto';
 import { LeaveDecisionStatus } from './leave-request.entity';
 import { LeaveService } from './leave.service';
 
@@ -38,6 +39,12 @@ export class LeaveController {
   @Permissions('leave:create')
   createOwn(@Req() request: RequestWithContext, @Body() dto: CreateLeaveRequestDto) {
     return this.leaves.createOwn(getRequestContext(request), dto);
+  }
+
+  @Get('me')
+  @Permissions('leave:own:read')
+  listOwn(@Req() request: RequestWithContext, @Query() query: ListOwnLeaveRequestsQueryDto) {
+    return this.leaves.listOwn(getRequestContext(request), query);
   }
 
   @Get('me/:id')

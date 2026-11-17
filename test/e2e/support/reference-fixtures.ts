@@ -36,6 +36,8 @@ export type ReferenceFixture = Readonly<{
   branchId: string;
   branchCode: string;
   opsUser: FixtureUser;
+  /** #483: stratejik hedefleri yazan rol (strategic_goal:manage) tenant_admin'dır. */
+  adminUser: FixtureUser;
   teacherUser: FixtureUser;
   teacherId: string;
   teacherBranchId: string;
@@ -215,6 +217,8 @@ export async function seedReferenceFixtures(
 
   const opsRoleId = await requireRoleId(client, tenantId, 'operations_manager');
   const teacherRoleId = await requireRoleId(client, tenantId, 'teacher');
+  // #483: stratejik hedef yazma yetkisi (strategic_goal:manage) kurum yöneticisindedir.
+  const adminRoleId = await requireRoleId(client, tenantId, 'tenant_admin');
 
   const ns = input.namespace;
   const branchCode = `${ns.toUpperCase()}-BRANCH`;
@@ -251,6 +255,16 @@ export async function seedReferenceFixtures(
     credential: input.credential,
     roleCode: 'teacher',
     roleId: teacherRoleId,
+  });
+
+  const adminUser = await ensureUser(client, {
+    tenantId,
+    email: `admin.${ns}@qa.invalid`,
+    fullName: `${ns} tenant administrator`,
+    employeeCode: `${ns}-admin`,
+    credential: input.credential,
+    roleCode: 'tenant_admin',
+    roleId: adminRoleId,
   });
 
   const teacher = await ensureRow(client, {
@@ -348,6 +362,7 @@ export async function seedReferenceFixtures(
     branchId,
     branchCode,
     opsUser,
+    adminUser,
     teacherUser,
     teacherId,
     teacherBranchId,

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Program — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Program</p>
+        <h1>Haftalık ders çizelgesi</h1>
+        <p class="topbar-subtitle">Sınıf, öğretmen ve derslik üzerinden kapsamlı filtreleyin; görünümde tek bir ders kartı öne çıkar.</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="empty">
+      <section class="panel program-panel" aria-labelledby="program-heading">
+        <div>
+          <h2 id="program-heading">Ders çizelgesi</h2>
+          <form class="filter-grid" aria-label="Program kapsam filtreleri">
+            <label>
+              Sınıf
+              <select id="branch-filter" name="classCode">
+                <option value="">Tüm sınıflar</option>
+              </select>
+            </label>
+            <label>
+              Öğretmen
+              <select id="teacher-filter" name="teacherId">
+                <option value="">Tüm öğretmenler</option>
+              </select>
+            </label>
+            <label>
+              Derslik
+              <select id="room-filter" name="roomCode">
+                <option value="">Tüm derslikler</option>
+              </select>
+            </label>
+          </form>
+          <div id="lesson-cards" class="cards" role="region" aria-label="Ders kartları">
+            <section class="empty-state" aria-labelledby="empty-lessons-heading">
+              <div>
+                <h3 id="empty-lessons-heading">Görüntülenecek ders yok</h3>
+                <p class="hint">Bir kapsam filtresi seçin veya ders programını güncelleyin.</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>

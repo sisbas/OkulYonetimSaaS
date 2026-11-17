@@ -395,6 +395,107 @@ async function upsertTimeSlot(client, tenantId, branchId, dayOfWeek) {
   );
 }
 
+/**
+ * #263 AC-9 — kanıt üretimi kamu API'si üzerinden yapılır.
+ *
+ * Seed aşaması tarayıcı açılmadan çalıştığı için `page` yoktur; bu yüzden
+ * Node'un global `fetch`'i kullanılır. Sadece kimlik doğrulama ve izin
+ * yüzeyleri çağrılır; hiçbir leave/assignment satırı doğrudan SQL ile
+ * yazılmaz.
+ */
+async function apiRequest(token, apiPath, options = {}) {
+  const headers = { Accept: 'application/json', ...(options.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch(`${BASE_URL}/api/v1${apiPath}`, {
+    method: options.method || 'GET',
+    headers,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  });
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = { text };
+  }
+  return {
+    ok: response.ok,
+    status: response.status,
+    body,
+    etag: response.headers.get('etag'),
+  };
+}
+
+async function seedLoginToken(tenantId, email) {
+  const result = await apiRequest('', '/auth/login', {
+    method: 'POST',
+    body: { email, password: safeStrings.password, tenantId },
+  });
+  assertCondition(
+    result.ok && result.body?.accessToken,
+    `seed login failed for a synthetic user; status=${result.status}`,
+  );
+  return result.body.accessToken;
+}
+
+function leaveEtagFor(leaveBody) {
+  assertCondition(leaveBody && leaveBody.id, 'leave create response has no id');
+  const version = Number(leaveBody.version ?? 1);
+  assertCondition(Number.isInteger(version) && version >= 1, 'leave create response has no version');
+  return `"leave:${leaveBody.id}:v${version}"`;
+}
+
+async function createPendingLeaveThroughApi(tenantId, input) {
+  const token = await seedLoginToken(tenantId, input.teacherEmail);
+  const created = await apiRequest(token, '/leaves/me', {
+    method: 'POST',
+    body: {
+      branchId: input.branchId,
+      durationType: 'hourly',
+      reasonCode: 'administrative',
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+    },
+  });
+  assertCondition(
+    created.ok && created.body?.id,
+    `teacher leave create through API failed; status=${created.status}`,
+  );
+  assertCondition(
+    created.body.decisionStatus === 'pending',
+    `teacher leave create must return a pending request; got ${created.body.decisionStatus}`,
+  );
+  return created.body.id;
+}
+
+async function createAndApproveLeaveThroughApi(tenantId, input) {
+  const leaveId = await createPendingLeaveThroughApi(tenantId, input);
+  const teacherToken = await seedLoginToken(tenantId, input.teacherEmail);
+  const read = await apiRequest(teacherToken, `/leaves/me/${leaveId}`);
+  assertCondition(read.ok, `teacher own leave read failed; status=${read.status}`);
+  const ifMatch = leaveEtagFor(read.body);
+
+  const opsToken = await seedLoginToken(tenantId, safeStrings.opsEmail);
+  const approved = await apiRequest(opsToken, `/leaves/${leaveId}/approve`, {
+    method: 'PATCH',
+    headers: { 'If-Match': ifMatch },
+  });
+  assertCondition(
+    approved.ok,
+    `manager approval through API failed; status=${approved.status}`,
+  );
+  assertCondition(
+    approved.body?.decisionStatus === 'approved',
+    `approval did not return an approved decision; got ${approved.body?.decisionStatus}`,
+  );
+  assertCondition(
+    approved.body?.impact?.impactedLessonCount >= 1,
+    'approval must compute schedule impact from the published schedule',
+  );
+  return leaveId;
+}
+
 async function seedSyntheticData() {
   const client = new Client({ connectionString: DATABASE_URL });
   await client.connect();
@@ -451,16 +552,23 @@ async function seedSyntheticData() {
       ON CONFLICT DO NOTHING
     `, [tenantId, substitute.teacherId, course.id, occurrenceDate]);
 
-    const approvedLeave = await query(client, `
-      INSERT INTO leave_requests (tenant_id, branch_id, teacher_id, requester_user_id, duration_type, reason_code, decision_status, coverage_status, starts_at, ends_at, version)
-      VALUES ($1, $2, $3, $4, 'hourly', 'administrative', 'approved', 'unresolved', $5, $6, 1)
-      RETURNING id
-    `, [tenantId, branch.id, teacher.teacherId, teacherUserId, dateAtUtc(target, 7), dateAtUtc(target, 8)]);
-    const otherLeave = await query(client, `
-      INSERT INTO leave_requests (tenant_id, branch_id, teacher_id, requester_user_id, duration_type, reason_code, decision_status, coverage_status, starts_at, ends_at, version)
-      VALUES ($1, $2, $3, $4, 'hourly', 'administrative', 'pending', 'not_required', $5, $6, 1)
-      RETURNING id
-    `, [tenantId, branch.id, otherTeacher.teacherId, otherTeacherUserId, dateAtUtc(target, 9), dateAtUtc(target, 10)]);
+    // #263 AC-9: onaylı izin ve bekleyen izin KAMU API'siyle üretilir.
+    // Doğrudan SQL INSERT ile "approved" satır yazmak kullanıcı yolculuğunu
+    // (talep -> karar -> etki/projeksiyon) atlar ve kanıtı değersizleştirir.
+    // Burada: öğretmen kendi talebini açar, operasyon yöneticisi If-Match ile
+    // onaylar; bekleyen talep yine öğretmen API'siyle oluşturulur.
+    const approvedLeaveId = await createAndApproveLeaveThroughApi(tenantId, {
+      branchId: branch.id,
+      teacherEmail: safeStrings.teacherEmail,
+      startsAt: dateAtUtc(target, 7),
+      endsAt: dateAtUtc(target, 8),
+    });
+    const otherLeaveId = await createPendingLeaveThroughApi(tenantId, {
+      branchId: branch.id,
+      teacherEmail: safeStrings.otherTeacherEmail,
+      startsAt: dateAtUtc(target, 9),
+      endsAt: dateAtUtc(target, 10),
+    });
 
     report.seed = {
       tenantId,
@@ -471,10 +579,11 @@ async function seedSyntheticData() {
       teacherId: teacher.teacherId,
       otherTeacherId: otherTeacher.teacherId,
       substituteTeacherId: substitute.teacherId,
-      approvedLeaveId: approvedLeave.rows[0].id,
-      otherLeaveId: otherLeave.rows[0].id,
+      approvedLeaveId,
+      otherLeaveId,
       scheduleEventId: event.rows[0].id,
     };
+
   } finally {
     await client.end();
   }

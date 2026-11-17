@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Veli Bilgilendirme — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Veli Bilgilendirme</p>
+        <h1>Gönderim kuyruğu</h1>
+        <p class="topbar-subtitle">Taslak bildirimlerin onay akışı; iletişim uygunluğuna göre rozetlendirilir: izinli, maskeli, engeli. Gönderilmediği sürece taslıktır.</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="empty">
+      <section class="panel notification-queue-panel" aria-labelledby="queue-heading">
+        <div>
+          <h2 id="queue-heading">Taslak bildirim kuyruğu</h2>
+          <form class="filter-grid" aria-label="Bildirim durum filtreleri">
+            <label>
+              Durum
+              <select id="notification-status-filter" name="status">
+                <option value="">Tüm durumlar</option>
+                <option value="pending">Beklemede</option>
+                <option value="approved">Onaylandı</option>
+                <option value="blocked_consent">Onay engelli</option>
+                <option value="dispatched">Gönderildi</option>
+              </select>
+            </label>
+          </form>
+          <div id="notification-cards" class="cards" role="region" aria-label="Bildirim kartları">
+            <section class="empty-state" aria-labelledby="empty-notifications-heading">
+              <div>
+                <h3 id="empty-notifications-heading">Gönderilmediği sürece taslak kalır</h3>
+                <p class="hint">Kuyrukta bekleyen bildirim yok. İletişim uygunluğu kontrolü onay adımında yapılır.</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>

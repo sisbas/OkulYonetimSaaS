@@ -182,6 +182,16 @@ Numaralandırma K-39'dan devam eder.
 
 ---
 
+## Faz 1 UI kapanış — /runtime replacement revize (K-59, 2026-11-13)
+
+Eski sentetik `/ux` prototipi (`frontend/ux/`) bu kararla kalıcı olarak kaldırıldı; `/ux/*` istekleri `/runtime`'a 308 kalıcı redirect döner; mock-up uyarlamalı giriş yüzeyi `/app` (login kabuğu korunur; #517) canlıdır. Context notu (revize):
+
+- spec.md §14'teki "Mevcut API ve `/runtime` korunur" ifadesi yürürlükten kaldırılmıştır; Faz 1 UI'ın nihai canlı yüzeyi `/runtime`'dur (okumada çelişki varsa bu satır geçerlidir).
+- `/ux` sentetik alanı için underwriting veya tanıtım iddiası kalmamıştır; tüm giriş noktaları (landing, başlangıç kabuğu) `/runtime`'a bağlanır.
+- `/app` giriş kabuğu korunur; mock-up uyarlamalı giriş yüzeyi canlı; kalıcı demo/UX prototipine referans kalmamıştır.
+
+---
+
 ## Alan dili (domain glossary)
 
 | Terim | Anlam |

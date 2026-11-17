@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Raporlar — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Raporlar</p>
+        <h1>Açık iş ve yük özeti</h1>
+        <p class="topbar-subtitle">Saf özet: fiziksel kapanış/teslimat iddiası yok. Raporlar karantinada (Faz 2).</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="empty">
+      <section class="panel reports-panel" aria-labelledby="reports-heading">
+        <div>
+          <h2 id="reports-heading">Açık iş ve yük özeti</h2>
+          <div id="report-cards" class="cards" role="region" aria-label="Rapor kartları">
+            <section class="empty-state" aria-labelledby="empty-reports-heading">
+              <div>
+                <h3 id="empty-reports-heading">Gösterilecek rapor yok</h3>
+                <p class="hint">Rapor yükü Faz 2 kapsamında; bu yüzde Fiziksel kapanış/teslimat iddiası taşımaz.</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>

@@ -92,9 +92,20 @@ function notificationHeadings(row) {
   };
 }
 
+function notificationEligibility(row) {
+  const status = String(pick(row, ['status'], '')).toLowerCase();
+  // Sunucu gönderim anında yeniden doğrular; kayıtlı durum güncel izin değildir.
+  if (status === 'blocked_consent') return { label: 'engeli', tone: 'danger' };
+  if (status === 'pending' || status === 'approved' || status === 'dispatched') {
+    return { label: 'izinli (gönderimde doğrulanır)', tone: 'success' };
+  }
+  return { label: 'maskeli', tone: 'neutral' };
+}
+
 function renderNotificationCard(row) {
   const status = pick(row, ['status'], 'unknown');
   const { eventLabel, channelLabel } = notificationHeadings(row);
+  const eligibility = notificationEligibility(row);
   return `<article class="card">
     <h3>${escapeHtml(eventLabel)}</h3>
     <p class="card-meta">
@@ -103,6 +114,7 @@ function renderNotificationCard(row) {
       <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
     </p>
     <span class="tag" data-tone="${escapeHtml(statusTone(status))}">${escapeHtml(displayStatus(status))}</span>
+    <span class="tag" data-eligibility="${escapeHtml(eligibility.label)}" data-tone="${escapeHtml(eligibility.tone)}" title="Onay kayıtlıdır; sunucu gönderim anında yeniden doğrular.">Uygunluk: ${escapeHtml(eligibility.label)}</span>
     <button type="button" data-action="notification-detail" data-notification-id="${escapeHtml(pick(row, ['id']))}">Detayı ve eylemleri aç</button>
   </article>`;
 }
@@ -165,6 +177,7 @@ function renderNotificationDetail(body, uiState = '') {
     const path = notificationActionPath(action);
     return path && canRequest('POST', path);
   });
+  const eligibility = notificationEligibility(row);
   const actionButtons = permittedActions.length
     ? permittedActions.map((action) => `<button type="button" data-action="notification-run" data-notification-action="${escapeHtml(action)}" ${mutationDisabled() ? 'disabled' : ''}>${escapeHtml(notificationActionLabel(action))}</button>`).join('')
     : actions.length
@@ -180,6 +193,7 @@ function renderNotificationDetail(body, uiState = '') {
       <span>Onay sürümü: ${escapeHtml(pick(row, ['consentVersion'], '-'))}</span>
       <span>${escapeHtml(formatStamp(pick(row, ['createdAt'], '')))}</span>
     </p>
+    <p>İletişim: maskeli gösterilir; gerçek adres görünmez. Uygunluk: <span class="tag" data-eligibility="${escapeHtml(eligibility.label)}" data-tone="${escapeHtml(eligibility.tone)}" title="Onay kayıtlıdır; sunucu gönderim anında yeniden doğrular.">${escapeHtml(eligibility.label)}</span></p>
     ${reasonLabel ? `<p>Gerekçe: ${escapeHtml(reasonLabel)}</p>` : ''}
     ${canonicalStateBlock(uiState)}
     <div class="quick-actions">${actionButtons}</div>

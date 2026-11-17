@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Çakışma çözüm — Okul Yönetim SaaS</title>
+    <link rel="stylesheet" href="../app/tokens.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#design-main">İçeriğe geç</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Program · Çakışma çözüm</p>
+        <h1>Açık çakışma detayı</h1>
+        <p class="topbar-subtitle">Ders detayı ve aday seçimiyle çakışmayı giderebilirsiniz; otomatik çözümleyici kapalıdır.</p>
+      </div>
+    </header>
+    <nav class="tabs" aria-label="Tasarım akışları">
+      <button class="tab" data-tab="bugun" aria-selected="true"><strong>Bugün</strong></button>
+      <button class="tab" data-tab="program" aria-selected="false"><strong>Program</strong></button>
+      <button class="tab" data-tab="izinler" aria-selected="false"><strong>İzinler</strong></button>
+      <button class="tab" data-tab="yoklama" aria-selected="false"><strong>Yoklama</strong></button>
+      <button class="tab" data-tab="veli-bilgilendirme" aria-selected="false"><strong>Veli Bilgilendirme</strong></button>
+      <button class="tab" data-tab="tanımlar" aria-selected="false"><strong>Tanımlar</strong></button>
+      <button class="tab" data-tab="raporlar" aria-selected="false"><strong>Raporlar</strong></button>
+      <button class="tab" data-tab="yönetim" aria-selected="false"><strong>Yönetim</strong></button>
+    </nav>
+    <main id="design-main" tabindex="-1" data-state="conflict">
+      <section class="panel conflict-panel" aria-labelledby="conflict-heading">
+        <div>
+          <h2 id="conflict-heading">Çakışma çözümü</h2>
+          <p class="hint">Açık çakışmanın çözümü: ders detayı ve aday seçimi ile derse uygun çözüm yolu belirlenir.</p>
+          <section id="conflict-detail" class="state-box" role="region" aria-label="Çakışma detayı">
+            <p>Ders çakışmasını görüntüleyin ve uygun bir aday seçin.</p>
+          </section>
+          <form id="candidate-selection" class="stack grid-form" novalidate>
+            <label>
+              Aday derslik
+              <select id="candidate-room" name="candidateRoomCode" required>
+                <option value="">Derslik seçin</option>
+              </select>
+            </label>
+            <button type="submit" class="button-primary" data-requires-permission="schedule:draft:update">Çözümü onayla</button>
+          </form>
+        </div>
+      </section>
+    </main>
+    <footer class="shell-footer">
+      <p>Okul Yönetim SaaS: KVKK uyumlu çalışma ortamı</p>
+    </footer>
+  </body>
+</html>

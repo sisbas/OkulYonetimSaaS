@@ -1198,6 +1198,13 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionA!.clickElement('button[data-action="candidates"]');
     await sessionA!.waitForText('#candidate-output button[data-action="clear"]', /temizle/i, 20_000);
 
+    // [UI-code] 10 — Journey E2E yeni UI'ya migre edilir: atama Bugün panelinde de görünür.
+    await sessionA!.clickElement('.tab[data-tab="bugun"]');
+    await sessionA!.clickElement('#bugun-refresh');
+    await sessionA!.waitForText('#bugun-queue-output', /Atandı|Karşılandı/, 20_000);
+    recordEvidence(currentScenario, 'Bugün ekranı (yeni UI): atama sonrası projeksiyon "Atandı" / "Karşılandı" gösterir');
+    await sessionA!.clickElement('.tab[data-tab="ops"]');
+
     await waitForClearEnabled(sessionA!);
     await sessionA!.clickElement('#candidate-output button[data-action="clear"]');
     await waitForAssignment('cleared');
@@ -1210,6 +1217,13 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     leave = await readLeave(leaveId);
     expect(leave.coverageStatus).toBe('unresolved');
     recordEvidence(currentScenario, 'clear → DB state=cleared, coverage unresolved (günlük iş tekrar açık)');
+
+    // [UI-code] 10 — Journey E2E yeni UI Bugün paneli: temizlenen atama geri döner.
+    await sessionA!.clickElement('.tab[data-tab="bugun"]');
+    await sessionA!.clickElement('#bugun-refresh');
+    await sessionA!.waitForText('#bugun-queue-output', /Henüz atanmadı|Karşılık bekliyor/, 20_000);
+    recordEvidence(currentScenario, 'Bugün ekranı (yeni UI): temizlenen atama sonrası satır "Henüz atanmadı" gösterir');
+    await sessionA!.clickElement('.tab[data-tab="ops"]');
     await snap(sessionA!, '02-leave-assign-clear');
     recordScenario(SCENARIO_NAMES[1], 'PASS');
   });
@@ -1768,9 +1782,27 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'keyboard: Enter submits login form (no mouse)');
 
     await mobileSession.waitForText('#summary-scope', /./, 20_000);
+    // Axe taraması öncesinde tüm transition/animasyonları sustur; taramanan
+    // DOM, geçiş halindeki ara renklerle ölçülemez (deterministik kanıt).
+    await mobileSession.page.evaluate(() => {
+      const style = document.createElement('style');
+      style.textContent = '*{transition:none!important;animation:none!important}';
+      document.head.appendChild(style);
+    });
     // Tarama, gerçek liste içeriği oturmuşken yapılır: boş/geçiş halindeki
     // bir DOM üzerinde axe çalıştırmak deterministik kanıt üretmez.
     await ensureBranch(mobileSession, fixture.branchCode);
+    await mobileSession.clickElement('.tab[data-tab="bugun"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe bugun desktop', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="program"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe program desktop', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="ops"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe ops desktop', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="attendance"]').catch(() => undefined);
+    // Content must load before scan — empty container cannot reveal violations.
+    await mobileSession.clickElement('#refresh-attendance').catch(() => undefined);
+    await waitForCountAtLeast(mobileSession, '#attendance-sessions article.card', 1, 30_000);
+    assertNoBlockingAxeViolations('axe attendance desktop', await mobileSession.axeScan());
     await mobileSession.clickElement('.tab[data-tab="notifications"]').catch(() => undefined);
     await waitForCountAtLeast(mobileSession, '#notifications-list article.card', 3, 30_000);
     assertNoBlockingAxeViolations('axe authenticated desktop', await mobileSession.axeScan());
@@ -1778,6 +1810,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await snap(mobileSession, '08-a11y-keyboard-desktop');
 
     await mobileSession.setViewport(390, 844);
+    await mobileSession.clickElement('.tab[data-tab="bugun"]').catch(() => undefined);
+    assertNoBlockingAxeViolations('axe bugun mobile', await mobileSession.axeScan());
+    await mobileSession.clickElement('.tab[data-tab="notifications"]').catch(() => undefined);
     assertNoBlockingAxeViolations('axe authenticated mobile', await mobileSession.axeScan());
     expect(await mobileSession.hasHorizontalOverflow()).toBe(false);
     await snap(mobileSession, '09-mobile-viewport');
