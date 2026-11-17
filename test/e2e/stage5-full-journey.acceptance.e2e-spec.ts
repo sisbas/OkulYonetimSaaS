@@ -1031,7 +1031,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(created.status).toBe('draft');
     expect(created.revision).toBe(1);
     expect(created.branchId).toBe(fixture.branchId);
-    recordEvidence(currentScenario, 'POST /schedules: body.branchId=kod → guard UUID yeniden yazması kanıtı (DB branch_id UUID)');
+    recordEvidence(currentScenario, 'POST /schedules/drafts: body.branchId=kod → guard UUID yeniden yazması kanıtı (DB branch_id UUID)');
 
     await sessionA!.clickElement('#add-schedule-event');
     const row = (index: string, field: string): string =>

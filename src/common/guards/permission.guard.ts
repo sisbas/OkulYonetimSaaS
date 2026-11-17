@@ -20,7 +20,7 @@ import {
 } from '../context/deny-response';
 import { isPublicRouteHandler } from '../context/public-route';
 import { RequestBranch, RequestWithContext } from '../context/request-context';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { PERMISSIONS_ANY_KEY, PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
 const BRANCH_ID_HEADER = 'x-branch-id';
 
@@ -91,12 +91,18 @@ export class PermissionGuard implements CanActivate {
       controller,
     ]);
     const requiredPermission = required ?? [];
+    const requiredAny = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_ANY_KEY, [
+      handler,
+      controller,
+    ]);
+    const requiredAnyPermission = requiredAny ?? [];
+    const declaredKeys = [...new Set([...requiredPermission, ...requiredAnyPermission])];
     const contextScoped =
       this.reflector.getAllAndOverride<boolean>(CONTEXT_SCOPE_KEY, [handler, controller]) === true;
 
     const user = request.user;
     if (!user?.userId || !user.tenantId) {
-      return this.deny(request, 'missing_authenticated_context', requiredPermission);
+      return this.deny(request, 'missing_authenticated_context', declaredKeys);
     }
 
     const headerTenantId = request.header?.('x-tenant-id') ?? undefined;
@@ -107,12 +113,12 @@ export class PermissionGuard implements CanActivate {
         userId: user.userId,
         user,
       };
-      return this.deny(request, 'client_authority_rejected', requiredPermission);
+      return this.deny(request, 'client_authority_rejected', declaredKeys);
     }
 
-    if (requiredPermission.length === 0 && !contextScoped) {
+    if (declaredKeys.length === 0 && !contextScoped) {
       // Beyan edilmemiş korumalı route → default-deny.
-      return this.deny(request, 'undeclared_protected_route', requiredPermission);
+      return this.deny(request, 'undeclared_protected_route', declaredKeys);
     }
 
     const branchIdHeader = request.header?.(BRANCH_ID_HEADER) ?? undefined;
@@ -127,16 +133,24 @@ export class PermissionGuard implements CanActivate {
       this.logger.warn(
         JSON.stringify({ event: 'security.context.authority_resolver_absent', requestId: this.baseContext(request).requestId }),
       );
-      return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission);
+      return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission, requiredAnyPermission);
     }
     if (branchIdHeader && !this.branchScope) {
       // Şube kapsamı doğrulanamıyorsa istemci seçimi kabul edilmez (fail-closed).
       // `false` dönmek Nest'in genel 403'ünü üretir; bu, "erişilemez şube" ile
       // "bilinmeyen kaynak" ayrımını sızdırırdı. Sözleşme non-enumerating 404'tür.
-      this.denyAndThrow(request, 'branch_not_authorized', requiredPermission);
+      this.denyAndThrow(request, 'branch_not_authorized', declaredKeys);
     }
     const recoverSelection = controller?.name === 'ContextCatalogController' && handler?.name === 'selectBranch';
-    return this.resolveAndSettle(request, user, branchIdHeader, requiredPermission, recoverSelection, controller?.name);
+    return this.resolveAndSettle(
+      request,
+      user,
+      branchIdHeader,
+      requiredPermission,
+      requiredAnyPermission,
+      recoverSelection,
+      controller?.name,
+    );
   }
 
   /** Yetki çözümleyici ile (önbellekli, token_version uyumlu) karar yolu. */
@@ -145,12 +159,14 @@ export class PermissionGuard implements CanActivate {
     user: NonNullable<RequestWithContext['user']>,
     branchIdHeader: string | undefined,
     requiredPermission: ReadonlyArray<string>,
+    requiredAnyPermission: ReadonlyArray<string>,
     recoverSelection = false,
     controllerName = '',
   ): Promise<boolean> {
+    const declaredKeys = [...new Set([...requiredPermission, ...requiredAnyPermission])];
     try {
       if (user.sessionId) {
-        if (requiredPermission.some(isBranchScopedPermission) && !isBranchScopedController(controllerName)) {
+        if (declaredKeys.some(isBranchScopedPermission) && !isBranchScopedController(controllerName)) {
           throw new AuthorizationContextError('unresolved_authority');
         }
         // Runtime JWT authentication supplies a signed, database-verified session.
@@ -183,7 +199,7 @@ export class PermissionGuard implements CanActivate {
             input.branchId = resolved.branch.branchId;
           }
         }
-        return this.settle(request, user, resolved.authority, resolved.branch, requiredPermission);
+        return this.settle(request, user, resolved.authority, resolved.branch, requiredPermission, requiredAnyPermission);
       }
       const resolvedAuthority: ServerResolvedAuthority = this.authority
         ? await this.authority.resolve({
@@ -204,7 +220,7 @@ export class PermissionGuard implements CanActivate {
               { branchId: branchIdHeader },
             )
           : null;
-      return this.settle(request, user, resolvedAuthority, branch, requiredPermission);
+      return this.settle(request, user, resolvedAuthority, branch, requiredPermission, requiredAnyPermission);
     } catch (error) {
       if (error instanceof AuthorizationContextError) {
         const reasonCode = denyReasonFromContextFailure(error.reasonCode);
@@ -213,16 +229,16 @@ export class PermissionGuard implements CanActivate {
         // yüzden eşlenmiş istisna fırlatılır (audit `deny()` içinde yazılır).
         // 403'e eşlenen redler `false` ile devam eder (durum kodu zaten 403).
         if (decideDeny(reasonCode).status !== 403) {
-          this.denyAndThrow(request, reasonCode, requiredPermission);
+          this.denyAndThrow(request, reasonCode, declaredKeys);
         }
-        return this.deny(request, reasonCode, requiredPermission);
+        return this.deny(request, reasonCode, declaredKeys);
       }
       // Altyapı hatası (ör. çözümleyicinin veri kaynağı geçici olarak erişilemez):
       // istemci beyanı YETKİ ÜRETMEZ. Fail-closed karar aşağıdaki sırayla verilir.
       //  (a) İstek bir şube seçimi taşıyorsa doğrulanamayan seçim oturum yetkisiyle
       //      ASLA baypas edilmez → HER ORTAMDA RED (non-enumerating 404).
       if (branchIdHeader) {
-        this.denyAndThrow(request, 'branch_not_authorized', requiredPermission);
+        this.denyAndThrow(request, 'branch_not_authorized', declaredKeys);
       }
       //  (b) production: her türlü yetki çözümleme hatası RED (fallback yok).
       //  (c) Gürültülü oturum-fallback'i YALNIZ non-production + açık env bayrağı
@@ -237,9 +253,9 @@ export class PermissionGuard implements CanActivate {
             requestId: this.baseContext(request).requestId,
           }),
         );
-        return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission);
+        return this.settle(request, user, this.sessionAuthority(user), null, requiredPermission, requiredAnyPermission);
       }
-      return this.deny(request, 'unresolved_context', requiredPermission);
+      return this.deny(request, 'unresolved_context', declaredKeys);
     }
   }
 
@@ -265,7 +281,9 @@ export class PermissionGuard implements CanActivate {
     authority: ServerResolvedAuthority,
     branch: RequestBranch | null,
     requiredPermission: ReadonlyArray<string>,
+    requiredAnyPermission: ReadonlyArray<string>,
   ): boolean {
+    const declaredKeys = [...new Set([...requiredPermission, ...requiredAnyPermission])];
     try {
       request.context = buildAuthorizedContext({
         requestId: this.baseContext(request).requestId,
@@ -275,17 +293,21 @@ export class PermissionGuard implements CanActivate {
       });
     } catch (error) {
       if (error instanceof AuthorizationContextError) {
-        return this.deny(request, denyReasonFromContextFailure(error.reasonCode), requiredPermission);
+        return this.deny(request, denyReasonFromContextFailure(error.reasonCode), declaredKeys);
       }
       throw error;
     }
 
     // `@ContextScoped()` route'ları yalnızca bağlam gerektirir (iş izni yok).
-    if (requiredPermission.length === 0) return true;
+    if (declaredKeys.length === 0) return true;
 
     const effective = request.context?.permissions ?? [];
-    if (!requiredPermission.every((permission) => effective.includes(permission))) {
-      return this.deny(request, 'missing_permission', requiredPermission);
+    const allHeld = requiredPermission.every((permission) => effective.includes(permission));
+    const anyHeld =
+      requiredAnyPermission.length === 0 ||
+      requiredAnyPermission.some((permission) => effective.includes(permission));
+    if (!allHeld || !anyHeld) {
+      return this.deny(request, 'missing_permission', declaredKeys);
     }
     return true;
   }

@@ -24,7 +24,7 @@ değil, kapatma sırasını kanıtlamaktır.
 | 2. Operasyon'da yerinde yoklama | **FAIL** — Yoklama için ham `scheduleEventId` + `studentIds` gerekiyor; günün tüm dersleri okunamıyor; roster API'si yok. | F1 roster, F2 günün dersleri, F3 sunucu-türetimli oturum, #454 UI. | F1 → F2 → F3 → #454 |
 | 3. İzin kararı + yedek kapısı | **FAIL** — `impact`/`candidates` yalnız onaylı izinde; onay açık dersi engellemiyor. | F4 önizleme + sunucu kapısı, #455 karar rayı. | F4 → #455 |
 | 4. Bildirim onayı + mesaj + consent | **FAIL** — Snapshot'ta mesaj gövdesi yok; consent kapısı UI'da yok. | F5 mesaj gövdesi + consent kontrolü, #456 UI. | F5 → #456 |
-| 5. Programı gün takvimiyle yayınla | **FAIL** — Program ham UUID formu; schedule read endpoint'i yok; publish gate yok. | #447/#448 sign-off → #449 → #450 → #451/#452 → #453. | Program track |
+| 5. Programı gün takvimiyle yayınla | **FAIL** — Program ham UUID formu; schedule read endpoint'i yok; publish gate yok. | #447 sign-off (read surface dahil) → #450 → #451/#452 → #453. | Program track |
 
 ## Bloker zinciri
 
@@ -33,13 +33,13 @@ F1 → F2 → F3 → #454 → #458 ─┐
         └────→ #455 (F4)     ├→ #460 → #461
 F5 ─────→ #456               │
                              │
-#447/#448 → #449 → #450 → #451/#452 → #453 ─┘
+#447 (incl. #449) → #450 → #451/#452 → #453 ─┘
 ```
 
 - **#460** açık; blocker'ları #453, #456, #458.
 - **#453** açık; blocker'ları #451, #452.
 - **#451/#452** açık; #450'ye bağlı.
-- **#450/#449** açık; #447/#448 insan sign-off'larına bağlı.
+- **#450** açık; #447 insan sign-off'una ve merge'üne bağlı (#449'u içerir).
 - **#461** açık; #460'a bağlı.
 
 ## Ortam durumu
@@ -70,8 +70,8 @@ F5 ─────→ #456               │
       yeşil, gerçek PostgreSQL kanıtı CI'da (`test/database/student-roster.db.spec.ts`).
 - [ ] F2–F5 foundation.
 - [ ] #454/#455/#456/#458 UI.
-- [ ] #447/#448 sign-off.
-- [ ] #449–#453 program track.
+- [ ] #447 sign-off (read surface #449 ile birlikte; paket: `447-review-package.md`).
+- [ ] #450—#453 program track (#449, #447 PR'ına yedirildi, 2026-11-17).
 - [ ] #460 journey.
 - [ ] #461 gerçek müdür kapısı.
 
@@ -83,7 +83,7 @@ F5 ─────→ #456               │
 3. Mobil viewport ekran görüntüleri ve yatay taşma kontrolü.
 4. Staging URL + build SHA + sentetik veri seti.
 5. Doldurulmuş checklist + müdür adı/tarihi + gözlemci imzası; #461 yorumu.
-6. #447/#448 imzaları; #453/#460 kapanış kanıtları.
+6. #447 imzaları (read surface dahil; `docs/acceptance/461-signoff-record.md`); #453/#460 kapanış kanıtları.
 
 > **Not:** “PR merge edildi” kapanış kanıtı değildir. Zorunlu check `skipped/queued/cancelled` ise
 > PASS sayılmaz. İnsan kapıları ajan tarafından “yapıldı” işaretlenemez.

@@ -36,7 +36,7 @@ describe('CourseController RBAC contract', () => {
   });
 
   it('denies users without required permission and emits authorization.denied', () => {
-    const reflector = { getAllAndOverride: jest.fn(() => ['course:create']) } as unknown as Reflector;
+    const reflector = { getAllAndOverride: jest.fn((key: string) => (key === PERMISSIONS_KEY ? ['course:create'] : undefined)) } as unknown as Reflector;
     const audit = { emitAuthorizationDenied: jest.fn() } as unknown as jest.Mocked<SecurityAuditService>;
     const guard = new PermissionGuard(reflector, audit);
     const context = {
@@ -58,7 +58,7 @@ describe('CourseController RBAC contract', () => {
   });
 
   it('allows users with the required course permission without denied audit', () => {
-    const reflector = { getAllAndOverride: jest.fn(() => ['course:create']) } as unknown as Reflector;
+    const reflector = { getAllAndOverride: jest.fn((key: string) => (key === PERMISSIONS_KEY ? ['course:create'] : undefined)) } as unknown as Reflector;
     const audit = { emitAuthorizationDenied: jest.fn() } as unknown as jest.Mocked<SecurityAuditService>;
     const guard = new PermissionGuard(reflector, audit);
     const context = {

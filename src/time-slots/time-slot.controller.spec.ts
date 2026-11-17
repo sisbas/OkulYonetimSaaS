@@ -32,7 +32,7 @@ describe('TimeSlotController RBAC contract', () => {
   it.each(['time_slot:create', 'time_slot:update', 'time_slot:delete', 'time_slot:calendar:read'])(
     'denies teacher role for %s',
     (requiredPermission) => {
-      const reflector = { getAllAndOverride: jest.fn(() => [requiredPermission]) } as unknown as Reflector;
+      const reflector = { getAllAndOverride: jest.fn((key: string) => (key === PERMISSIONS_KEY ? [requiredPermission] : undefined)) } as unknown as Reflector;
       const audit = { emitAuthorizationDenied: jest.fn() } as unknown as jest.Mocked<SecurityAuditService>;
       const guard = new PermissionGuard(reflector, audit);
       const context = {

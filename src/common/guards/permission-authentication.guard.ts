@@ -4,7 +4,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Observable } from 'rxjs';
 
 import { isPublicRouteHandler } from '../context/public-route';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { PERMISSIONS_ANY_KEY, PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
 /**
  * Kimlik doğrulama kapısı (APP_GUARD #1) — #339 R4 default-deny.
@@ -37,8 +37,12 @@ export class PermissionAuthenticationGuard extends AuthGuard('jwt') {
         handler,
         controller,
       ]);
-      // Çelişkili beyan (public + @Permissions) fail-closed: doğrulama zorunlu.
-      if (!declaresPermissions?.length) return true;
+      const declaresAnyPermissions = this.reflector.getAllAndOverride<string[]>(
+        PERMISSIONS_ANY_KEY,
+        [handler, controller],
+      );
+      // Çelişkili beyan (public + @Permissions / @PermissionsAny) fail-closed: dogrulama zorunlu.
+      if ((declaresPermissions?.length ?? 0) + (declaresAnyPermissions?.length ?? 0) === 0) return true;
     }
     return super.canActivate(context);
   }

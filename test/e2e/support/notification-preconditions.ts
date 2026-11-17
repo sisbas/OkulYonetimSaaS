@@ -44,6 +44,7 @@ export async function apiCall(
   method: string,
   path: string,
   body?: unknown,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; json: unknown }> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   headers.Authorization = `Bearer ${api.token}`;
@@ -54,7 +55,7 @@ export async function apiCall(
 
   const response = await fetch(`${api.baseUrl}/api/v1${path}`, {
     method,
-    headers,
+    headers: { ...headers, ...extraHeaders },
     body: body === undefined ? undefined : JSON.stringify(body),
     // Ağır yüklü CI çalıştırıcılarında ara ara görülen HTTP katmanı duraksamasını
     // yanlış negatif üretmeden tolere et; kalıcı bağlantı geri dönüşümünü kapat.
@@ -173,28 +174,39 @@ export async function bootstrapPublishedSchedule(
     });
   }
 
-  const created = await apiCall(api, 'POST', '/schedules', {
+  const created = await apiCall(api, 'POST', '/schedules/drafts', {
     branchId: input.branchId,
     effectiveFrom: input.effectiveFrom,
     effectiveTo: input.effectiveTo,
   });
-  const schedule = created.json as { id?: unknown };
+  const schedule = created.json as { id?: unknown; revision?: unknown };
   if (typeof schedule.id !== 'string') {
     throw new Error('Schedule create response did not include an id.');
   }
   const scheduleId = schedule.id;
   const draftEvent = buildBootstrapScheduleEvent(input.event);
 
-  await apiCall(api, 'POST', `/schedules/${scheduleId}/draft`, {
-    branchId: input.branchId,
-    events: [draftEvent],
-  });
-  await apiCall(api, 'POST', `/schedules/${scheduleId}/publish`, {
-    branchId: input.branchId,
-    events: [draftEvent],
-    revision: 2,
-    requestId: `n3-publish-${Date.now()}`,
-  });
+  await apiCall(
+    api,
+    'POST',
+    `/schedules/${scheduleId}/draft`,
+    {
+      branchId: input.branchId,
+      events: [draftEvent],
+    },
+    { 'If-Match': `"schedule:${scheduleId}:v1"` },
+  );
+  await apiCall(
+    api,
+    'POST',
+    `/schedules/${scheduleId}/publish`,
+    {
+      branchId: input.branchId,
+      events: [draftEvent],
+      requestId: `n3-publish-${Date.now()}`,
+    },
+    { 'If-Match': `"schedule:${scheduleId}:v2"` },
+  );
 
   const published = await client.query(
     `

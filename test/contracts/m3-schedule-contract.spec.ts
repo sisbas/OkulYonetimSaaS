@@ -7,7 +7,7 @@ import {
   M3_SCHEDULE_CONTRACT_VERSION,
 } from '../../src/schedules/m3-schedule-contract';
 
-const contractPath = join(process.cwd(), 'docs/m3/schedule-contract-v1.md');
+const contractPath = join(process.cwd(), 'docs/m3/schedule-contract-v2.md');
 const contract = readFileSync(contractPath, 'utf8');
 const reasonCatalog = contract.match(
   /## 5\. Canonical reason-code catalog\s*([\s\S]*?)\n## 6\./,
@@ -40,10 +40,10 @@ const DISTINCT_PUBLISH_STATES = [
   'publish_blocked_period',
 ] as const;
 
-describe('M3 Schedule Contract v1 consistency', () => {
+describe('M3 Schedule Contract v2 consistency', () => {
   it('pins the canonical contract identity and semantic version', () => {
-    expect(contract).toContain('M3_CONTRACT_V1');
-    expect(contract).toContain('1.0.0');
+    expect(contract).toContain('M3_CONTRACT_V2');
+    expect(contract).toContain('2.0.0');
     expect(contract).toContain('Contract versioning and change control');
     expect(contract).toContain('pre-acceptance errata');
   });
@@ -127,10 +127,10 @@ describe('M3 Schedule Contract v1 consistency', () => {
   });
 });
 
-describe('M3 Schedule Contract v1 source of truth', () => {
+describe('M3 Schedule Contract v2 source of truth', () => {
   it('pins the contract identity and all canonical reason codes', () => {
-    expect(M3_SCHEDULE_CONTRACT_ID).toBe('M3_CONTRACT_V1');
-    expect(M3_SCHEDULE_CONTRACT_VERSION).toBe('1.0.0');
+    expect(M3_SCHEDULE_CONTRACT_ID).toBe('M3_CONTRACT_V2');
+    expect(M3_SCHEDULE_CONTRACT_VERSION).toBe('2.0.0');
     expect(CANONICAL_SCHEDULE_REASON_CODES).toEqual(
       expect.arrayContaining([...REQUIRED_REASON_CODES]),
     );

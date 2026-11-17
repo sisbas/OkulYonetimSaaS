@@ -67,7 +67,7 @@ function extractServerRules(): RouteRule[] {
           // handler'ın artık @Permissions gibi dekoratörleri buradadır.
           const segment = (chunk.slice((match.index ?? 0) + match[0].length)
             .split(/\n\s*@(?:Get|Post|Patch|Put|Delete)\(/)[0]) ?? '';
-          const permsMatch = segment.match(/@Permissions\(([^)]*)\)/);
+          const permsMatch = segment.match(/@(?:Permissions|PermissionsAny)\(([^)]*)\)/);
           if (!permsMatch) {
             throw new Error(
               `${entry.file} ${method} /${base}${subPath ? `/${subPath}` : ''}: @Permissions dekoratörü yok — fail-open yasak (#445 seam)`,

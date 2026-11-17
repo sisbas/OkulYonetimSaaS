@@ -7,7 +7,7 @@ export type BranchResourceTable = 'leave_requests' | 'schedule_events' | 'schedu
 const ROUTE_RESOURCES: Readonly<Record<string, ReadonlyArray<readonly [string, BranchResourceTable]>>> = {
   DailyOperationsController: [['leaveId', 'leave_requests'], ['scheduleEventId', 'schedule_events']],
   LeaveController: [['id', 'leave_requests']],
-  ScheduleController: [['id', 'schedules']],
+  ScheduleController: [['id', 'schedules'], ['scheduleId', 'schedules']],
   AttendanceSessionController: [['id', 'attendance_sessions']],
   RoomController: [['id', 'rooms']],
   TimeSlotController: [['id', 'time_slots']],

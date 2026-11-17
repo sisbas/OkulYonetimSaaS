@@ -1,4 +1,5 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
+import { ScheduleVersionMismatchException } from '../../src/schedules/schedule-revision';
 import { DataSource } from 'typeorm';
 
 import { RequestContext } from '../../src/common/context/request-context';
@@ -187,6 +188,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       branchId: BRANCH_A,
       scheduleId: schedule.id,
       events: [makeEvent()],
+      expectedRevision: 1,
     });
     const rows = await dataSource.query(
       `SELECT jsonb_typeof(snapshot) AS t, snapshot->>'events' AS has_events
@@ -223,6 +225,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       branchId: BRANCH_A,
       scheduleId: schedule.id,
       events: [makeEvent()],
+      expectedRevision: 1,
     });
     const persisted = await dataSource.query('SELECT revision FROM schedules WHERE id = $1', [schedule.id]);
     const rev = Number(persisted[0].revision);
@@ -267,10 +270,11 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       branchId: BRANCH_A,
       scheduleId: schedule.id,
       events: [makeEvent()],
+      expectedRevision: 1,
     });
     await expect(
       service.publish(TENANT_A, BRANCH_A, schedule.id, ctxA.user!.userId, 'req-stale', [makeEvent()], 99),
-    ).rejects.toBeInstanceOf(ConflictException);
+    ).rejects.toBeInstanceOf(ScheduleVersionMismatchException);
   });
 
   it('rejects publish when a referenced teacher does not exist (real reference check)', async () => {
@@ -285,6 +289,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       branchId: BRANCH_A,
       scheduleId: schedule.id,
       events: [makeEvent()],
+      expectedRevision: 1,
     });
     const persisted = await dataSource.query('SELECT revision FROM schedules WHERE id = $1', [schedule.id]);
     const rev = Number(persisted[0].revision);
@@ -313,6 +318,7 @@ describeWithPostgres('ScheduleService PostgreSQL integration (P1B-05 slice 2)', 
       branchId: BRANCH_A,
       scheduleId: schedule.id,
       events: [makeEvent()],
+      expectedRevision: 1,
     });
     const persisted = await dataSource.query('SELECT revision FROM schedules WHERE id = $1', [schedule.id]);
     const rev = Number(persisted[0].revision);

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { ScheduleVersionMismatchException } from './schedule-revision';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, EntityManager } from 'typeorm';
 import { Schedule } from './schedule.entity';
@@ -33,6 +34,11 @@ export type SaveDraftInput = {
   scheduleId: string;
   events: ScheduleEventDraft[];
   references?: ScheduleReferenceSet;
+  /**
+   * Kaynağa bağlı koşullu revizyon (If-Match'ten). Persisted revizyonla
+   * uyuşmuyorsa 412 SCHEDULE_VERSION_MISMATCH fırlatılır.
+   */
+  expectedRevision: number;
 };
 
 export type SolveScheduleInput = {
@@ -96,6 +102,10 @@ export class ScheduleService {
     if (schedule.status === ScheduleStatus.PUBLISHED) {
       throw new ConflictException('Published schedule is immutable');
     }
+    // Kaynağa bağlı koşullu revizyon: persisted revizyon otoritedir.
+    if (Number(schedule.revision) !== Number(input.expectedRevision)) {
+      throw new ScheduleVersionMismatchException();
+    }
 
     let version = await this.versionRepo.findOne({
       where: {
@@ -150,12 +160,16 @@ export class ScheduleService {
       await this.eventRepo.save(events);
     }
 
-    // Revision bump (optimistic concurrency signal).
-    await this.scheduleRepo.increment(
-      { tenantId: input.tenantId, id: input.scheduleId },
+    // Revision bump (optimistic concurrency signal); persisted revizyon hâlâ
+    // uyuşuyorsa (aksi hâlde 412). Bu koşul güncellemeyi atomik kılar.
+    const bumped = await this.scheduleRepo.increment(
+      { tenantId: input.tenantId, id: input.scheduleId, revision: input.expectedRevision },
       'revision',
       1,
     );
+    if (bumped.affected !== 1) {
+      throw new ScheduleVersionMismatchException();
+    }
 
     return saved;
   }
@@ -174,6 +188,10 @@ export class ScheduleService {
     revision: number,
     references?: ScheduleReferenceSet,
   ): Promise<ScheduleValidationEvidence> {
+    const persisted = await this.getSchedule(tenantId, scheduleId);
+    if (Number(persisted.revision) !== Number(revision)) {
+      throw new ScheduleVersionMismatchException();
+    }
     const effectiveReferences =
       references ?? (await this.loadActiveReferences(tenantId, branchId, events));
     const input: ScheduleValidationInput = {
@@ -218,10 +236,8 @@ export class ScheduleService {
       throw new ConflictException('Schedule already published');
     }
     // Optimistic concurrency: persisted revision otoritesi.
-    if (schedule.revision !== callerRevision) {
-      throw new ConflictException(
-        `Schedule revision mismatch: persisted=${schedule.revision}, caller=${callerRevision}`,
-      );
+    if (Number(schedule.revision) !== Number(callerRevision)) {
+      throw new ScheduleVersionMismatchException();
     }
 
     const draft = await this.versionRepo.findOne({
@@ -484,10 +500,8 @@ export class ScheduleService {
     if (schedule.status !== ScheduleStatus.PUBLISHED) {
       throw new ConflictException('Only a published schedule can be unpublished');
     }
-    if (schedule.revision !== callerRevision) {
-      throw new ConflictException(
-        `Schedule revision mismatch: persisted=${schedule.revision}, caller=${callerRevision}`,
-      );
+    if (Number(schedule.revision) !== Number(callerRevision)) {
+      throw new ScheduleVersionMismatchException();
     }
     const published = await this.versionRepo.findOne({
       where: { tenantId, scheduleId, status: ScheduleVersionStatus.PUBLISHED },

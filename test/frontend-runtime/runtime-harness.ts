@@ -182,7 +182,8 @@ export const ALL_PERMISSION_KEYS = [
   'notification:draft:approve', 'notification:draft:close', 'notification:draft:read',
   'parent_notification:approve', 'parent_notification:send',
   'schedule:draft:create', 'schedule:draft:update', 'schedule:own:read',
-  'schedule:publish', 'schedule:read',
+  'schedule:draft:read', 'schedule:assignment:update', 'schedule:conflict:read',
+  'schedule:optimize', 'schedule:publish', 'schedule:read', 'schedule:validate',
   'strategic_goal:manage', 'strategic_goal:read',
   'user:read',
 ];
@@ -210,6 +211,7 @@ export const OPS_PERMISSION_KEYS = [
   'notification:draft:approve', 'notification:draft:close',
   'notification:draft:read', 'parent_notification:approve', 'parent_notification:send',
   'schedule:draft:create', 'schedule:draft:update', 'schedule:publish', 'schedule:read',
+  'schedule:draft:read',
 ];
 
 // Kurum (tenant) yöneticisi: operasyon üst kümesi + kullanıcı/tenant yönetimi
@@ -223,6 +225,7 @@ export const TENANT_ADMIN_PERMISSION_KEYS = [
   'user:create', 'user:update', 'user:read',
 ];
 
-// Yalnız-okur persona (story 79): hiçbir akış anahtarı yok; yayınlanmış program
-// tamamen gizli kalır (GET published-schedule ucu henüz mevcut değil).
-export const VIEWER_PERMISSION_KEYS = ['dashboard:read', 'schedule:read', 'user:read'];
+// Yalnız-okur persona (story 79): yayımlanmış program YOK olmalıdır. Viewer
+// katalog anahtarı taşımadığı için hiçbir /schedules ucuna ulaşamaz; rol
+// sunucuda seed'lenmez, istemcide de kapatılır.
+export const VIEWER_PERMISSION_KEYS = ['dashboard:read', 'user:read'];
