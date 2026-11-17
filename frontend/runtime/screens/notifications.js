@@ -52,20 +52,36 @@ async function bulkApproveSession(sessionId, versionsCsv) {
   }
 }
 
+async function fetchAllNotifications() {
+  // #464 — bulk approval must see EVERY approvable draft of a session, not
+  // just the visible page: page until the API returns fewer than pageSize.
+  const pageSize = 20;
+  const filter = $('#notification-status-filter').value;
+  const rows = [];
+  let offset = 0;
+  for (;;) {
+    const query = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
+    if (filter) query.set('status', filter);
+    const { body } = await apiRequest(`/notifications?${query.toString()}`);
+    const page = asArray(body, ['notifications', 'items']);
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+    offset += pageSize;
+  }
+}
+
 async function loadNotifications() {
   if (!requireSession()) return;
   const branchId = getBranchId();
   if (!branchId) return announce('Bildirim listesi için şube seçin.', 'warning');
   const target = $('#notifications-list');
-  const query = new URLSearchParams({ limit: '20', offset: '0' });
-  const filter = $('#notification-status-filter').value;
-  if (filter) query.set('status', filter);
   target.innerHTML = loading('Bildirimler getiriliyor');
   try {
-    const { body } = await apiRequest(`/notifications?${query.toString()}`);
-    const rows = asArray(body, ['notifications', 'items']);
-    if (rows.length) {
-      target.innerHTML = rows.map(renderNotificationCard).join('');
+    const rows = await fetchAllNotifications();
+    // Görüntülenen liste ilk sayfadır; toplu onay ise TÜM satırları görür.
+    const visible = rows.slice(0, 20);
+    if (visible.length) {
+      target.innerHTML = visible.map(renderNotificationCard).join('');
     } else {
       empty(target, 'notifications');
     }
