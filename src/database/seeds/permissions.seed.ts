@@ -12,6 +12,9 @@ export const PERMISSION_SEED = [
   { code: 'schedule:own:read', description: 'schedule:own:read' },
   { code: 'schedule:draft:create', description: 'schedule:draft:create' },
   { code: 'schedule:draft:update', description: 'schedule:draft:update' },
+  // #448: onaylı (sisbas, 2026-11-17) yönetim draft-read anahtarı — sözleşmedeki
+  // management draft-read capability; yayına hazır koşulda etkinleşir (#449).
+  { code: 'schedule:draft:read', description: 'schedule:draft:read' },
   { code: 'schedule:validate', description: 'schedule:validate' },
   { code: 'schedule:optimize', description: 'schedule:optimize' },
   { code: 'schedule:publish', description: 'schedule:publish' },
@@ -192,6 +195,8 @@ export const ROLE_PERMISSION_SEED = {
     'schedule:conflict:read',
     'schedule:draft:create',
     'schedule:draft:update',
+    // #448: yönetim draft-read anahtarı yalnız tenant_admin + operations_manager'da.
+    'schedule:draft:read',
     'schedule:optimize',
     'schedule:own:read',
     'schedule:publish',

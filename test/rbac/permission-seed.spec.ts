@@ -44,9 +44,9 @@ describe('permission seed', () => {
     'strategic_goal:read',
   ];
 
-  it('contains exactly 124 unique permissions', () => {
-    expect(permissionCodes).toHaveLength(124);
-    expect(permissionSet.size).toBe(124);
+  it('contains exactly 125 unique permissions', () => {
+    expect(permissionCodes).toHaveLength(125);
+    expect(permissionSet.size).toBe(125);
   });
 
   it('does not contain audit_log:operations:read (#373 removed)', () => {
@@ -113,4 +113,14 @@ describe('permission seed', () => {
       expect(granted).not.toContain('strategic_goal:read');
     },
   );
+
+  // #448 — management draft-read (yalnız tenant_admin + operations_manager).
+  it('assigns schedule:draft:read to tenant_admin and operations_manager only (#448)', () => {
+    expect(ROLE_PERMISSION_SEED.tenant_admin).toContain('schedule:draft:read');
+    expect(ROLE_PERMISSION_SEED.operations_manager).toContain('schedule:draft:read');
+    expect(ROLE_PERMISSION_SEED.teacher).not.toContain('schedule:draft:read');
+    expect(ROLE_PERMISSION_SEED.student).not.toContain('schedule:draft:read');
+    expect(ROLE_PERMISSION_SEED.parent).not.toContain('schedule:draft:read');
+    expect(ROLE_PERMISSION_SEED.teacher_assistant).not.toContain('schedule:draft:read');
+  });
 });
