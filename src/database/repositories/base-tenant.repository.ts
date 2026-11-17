@@ -83,6 +83,7 @@ export const TENANT_SCOPED_TABLES = [
   'rooms',
   'student_groups',
   'students',
+  'student_group_members',
   'time_slots',
   'teacher_availability',
   'group_course_requirements',

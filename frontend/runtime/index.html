@@ -189,7 +189,20 @@
               <p class="eyebrow">Bugün</p>
               <h2>Bugün size ne lazım?</h2>
             </div>
-            <button id="bugun-refresh" type="button">Bugünü yenile</button>
+            <div class="quick-actions">
+              <button id="bugun-refresh" type="button">Bugünü yenile</button>
+              <button id="load-day" type="button">Günün akışını getir</button>
+            </div>
+          </div>
+
+          <div class="panel-intro">
+            <strong>Operasyon gün kurulu</strong>
+            <p class="hint">Günün dersleri solda sırayla akar; yoklama dersin olduğu yerde alınır. Seçili dersin yoklama listesi ve karşılık ataması sağdaki kararda bekler.</p>
+          </div>
+          <div id="day-summary" role="status" aria-live="polite"></div>
+          <div class="day-split">
+            <div id="day-lessons" class="day-lessons" role="region" aria-label="Günün dersleri"></div>
+            <div id="day-rail" class="day-rail" role="region" aria-label="Ders kararı ve yoklama listesi"></div>
           </div>
 
           <section class="bugun-summary" aria-labelledby="bugun-summary-heading">
@@ -629,6 +642,7 @@
     <script src="/runtime/screens/notifications.js" defer></script>
     <script src="/runtime/screens/schedule.js" defer></script>
     <script src="/runtime/screens/attendance.js" defer></script>
+    <script src="/runtime/screens/day.js" defer></script>
     <script src="/runtime/screens/bugun.js" defer></script>
     <script src="/runtime/screens/definitions.js" defer></script>
     <script src="/runtime/screens/reports.js" defer></script>

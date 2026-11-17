@@ -62,7 +62,7 @@ export const NO_TEACHER_LABEL_FALLBACK = 'Öğretmen bilgisi çözümlenemedi';
 export const NO_BRANCH_LABEL_FALLBACK = 'Şube bilgisi çözümlenemedi';
 export const CANDIDATE_AVAILABLE_LABEL = 'Şu an uygun';
 export const CANDIDATE_DECISION_SUPPORT_DETAIL =
-  'Aday listesi yalnız karar desteğidir; yedek görevlendirme ayrı işlemle yapılır.';
+  'Aday listesi karar desteğidir; seçilen yedek onayla birlikte aynı işlemde görevlendirilir.';
 export const CANDIDATE_GAP_DETAIL =
   'Öğretmen-ders uygunluk kaynağı hazır olmadığı için aday listesi kesinleşmedi.';
 
@@ -106,6 +106,17 @@ export type LeaveApprovalImpactRequest = Readonly<{
 export type LeaveApprovalImpactResult = Readonly<{
   coverageStatus: LeaveCoverageStatus;
   impact: LeaveApprovalImpact;
+}>;
+
+/**
+ * #461 F4 — onayla AYNI transaction'da yazılacak yedek ataması.
+ *
+ * `scheduleEventId` yalnız istek gövdesinde yaşar; karar yanıtı ham kimlik
+ * taşımaz (bkz. `LEAVE_APPROVAL_RAW_IDENTIFIER_FIELD_PATTERN`).
+ */
+export type LeaveApprovalSubstitution = Readonly<{
+  scheduleEventId: string;
+  substituteTeacherId: string;
 }>;
 
 export function coverageLabel(status: LeaveCoverageStatus): string {

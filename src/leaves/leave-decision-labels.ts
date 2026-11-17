@@ -116,7 +116,7 @@ export function decisionSummary(input: {
 export const REJECTED_IMPACT_DETAIL =
   'Ret kararında ders etkisi hesaplanmaz; mevcut projeksiyon ve görevlendirmeler değişmez.';
 
-/** Onayda projeksiyonun yazıldığını ve yedek atamasının ayrı adım olduğunu söyler. */
+/** Onayda projeksiyonun ve seçilen yedeklerin aynı işlemde yazıldığını söyler. */
 export const APPROVED_IMPACT_DETAIL =
   'Etkilenen her ders için açık günlük iş kaydı aynı işlemde oluşturuldu; ' +
-  'yedek öğretmen ataması ayrı işlemle yapılır.';
+  'onayla birlikte seçilen yedekler aynı işlemde görevlendirildi.';

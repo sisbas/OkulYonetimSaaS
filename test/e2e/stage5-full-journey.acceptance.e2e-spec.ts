@@ -1138,80 +1138,43 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionA!.waitForText('#leaves-output', /Beklemede/, 10_000);
     leaveId = (await sessionA!.attribute('#leaves-output button[data-leave-decision="approve"]', 'data-leave-id')) ?? '';
     if (!leaveId) throw new Error('leave id not captured from approve button');
-    await clickRetry(sessionA!, '#leaves-output button[data-leave-decision="approve"]');
-    try {
-      await waitForLeaveDecision(leaveId, 'approved');
-    } catch (error) {
-      await rethrowWithDiag(error, currentScenario, [
-        ['message', () => textOf(sessionA!, '#message-region')],
-        ['output', () => textOf(sessionA!, '#leaves-output')],
-        ['etagAttr', () => sessionA!.attribute('#leaves-output button[data-leave-decision="approve"]', 'data-leave-etag').then((v) => v ?? '(yok)').catch(() => '(yok)')],
-        ['net', () => networkTail('opsA', /\/leaves\//)],
-      ]);
-    }
-    await sessionA!.waitForText('#leaves-output', /Onaylandı/, 10_000);
-    let leave = await readLeave(leaveId);
-    try {
-      expect(leave.decisionStatus).toBe('approved');
-      expect(leave.coverageStatus).toBe('unresolved');
-    } catch (error) {
-      await rethrowWithDiag(error, currentScenario, [
-        ['approve200', async () => (await networkTail('opsA', /\/approve/)) || '(yok)'],
-        ['publishedEvents', async () => {
-          const rows = await readPublishedEventsDiag();
-          return rows.length ? rows.join('\n') : '(yok)';
-        }],
-        ['projectedLessons', async () => {
-          const result = await dbClient!.query(
-            `SELECT count(*)::int AS n FROM daily_operation_lessons WHERE tenant_id = $1::uuid AND leave_request_id = $2::uuid`,
-            [fixture.tenantId, leaveId],
-          );
-          return `count=${result.rows[0].n}`;
-        }],
-        ['leaveRange', async () => {
-          const result = await dbClient!.query(
-            `SELECT starts_at::text AS starts_at, ends_at::text AS ends_at FROM leave_requests WHERE tenant_id = $1::uuid AND id = $2::uuid`,
-            [fixture.tenantId, leaveId],
-          );
-          const row = result.rows[0];
-          return row === undefined ? '(yok)' : `${row.starts_at} → ${row.ends_at}`;
-        }],
-      ]);
-    }
-    recordEvidence(currentScenario, 'ops UI onay → DB approved, coverage unresolved (etki açık)');
-    const approveLines = await networkTail('opsA', /\/approve/);
-    recordEvidence(currentScenario, `approve impact yanıtı: ${approveLines.split('\n').find((line) => line.startsWith('{')) ?? approveLines}`);
-
-    await sessionA!.clickElement('#refresh-queue');
-    await sessionA!.waitForText('#queue-output', new RegExp(leaveMonday), 20_000);
-    await sessionA!.waitForText(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`, /./, 20_000);
-    await sessionA!.clickElement(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`);
+    // #461 F4 — önce etki, sonra karar; yedekler onayla AYNI transaction'da atanır.
+    await sessionA!.clickElement(`#leaves-output button[data-action="leave-impact"][data-leave-id="${leaveId}"]`);
     await sessionA!.waitForText('#impact-output', /ders etkileniyor/, 20_000);
     await sessionA!.waitForText('#impact-output', new RegExp(leaveMonday), 10_000);
-
     await sessionA!.clickElement('button[data-action="candidates"]');
     await sessionA!.waitForText('#candidate-output article.candidate', /(substitute|Seçilebilir aday)/i, 20_000);
     const candidateTags = await sessionA!.queryTexts('#candidate-output article.candidate .tag');
     expect(candidateTags.join(' ')).toContain('Seçilebilir aday');
-    const assignDisabled = await sessionA!.attribute(
-      '#candidate-output button[data-action="assign"]',
+    const selectDisabled = await sessionA!.attribute(
+      '#candidate-output button[data-action="select-substitute"]',
       'disabled',
     ).catch(() => null);
-    expect(assignDisabled).toBeNull();
-    recordEvidence(currentScenario, 'substitute aday UI: uygun + assign aktif (teacher_branches/teacher_courses seed)');
-
-    await sessionA!.clickElement('#candidate-output button[data-action="assign"]');
-    await waitForAssignment('assigned');
-    expect(await textOf(sessionA!, '#message-region')).toMatch(
-      /Görevlendirme kaydedildi|Günlük işler yenilendi/,
-    );
+    expect(selectDisabled).toBeNull();
+    recordEvidence(currentScenario, 'substitute aday UI: uygun + yedek seçim düğmesi aktif (teacher_branches/teacher_courses seed)');
+    await sessionA!.clickElement('#candidate-output button[data-action="select-substitute"]');
+    await sessionA!.waitForText('#approval-substitutions-summary', /yedek seçildi/, 10_000);
+    await sessionA!.clickElement('#approval-substitutions-summary button[data-action="approve-with-substitutions"]');
+    await waitForLeaveDecision(leaveId, 'approved');
+    await sessionA!.waitForText('#leaves-output', /Onaylandı/, 10_000);
+    let leave = await readLeave(leaveId);
+    expect(leave.decisionStatus).toBe('approved');
+    expect(leave.coverageStatus).toBe('covered');
+    recordEvidence(currentScenario, 'ops UI onay (yedekler aynı işlemde) → DB approved, coverage covered');
+    const approveLines = await networkTail('opsA', /\/approve/);
+    recordEvidence(currentScenario, `approve impact yanıtı: ${approveLines.split('\n').find((line) => line.startsWith('{')) ?? approveLines}`);
     let assignment = await readAssignment();
     expect(assignment).not.toBeNull();
     expect(assignment!.substituteTeacherId).toBe(substituteTeacherId);
     expect(assignment!.state).toBe('assigned');
-    leave = await readLeave(leaveId);
-    expect(leave.coverageStatus).toBe('covered');
-    recordEvidence(currentScenario, 'assign → DB state=assigned, coverage covered, substitute=seed teacher');
+    recordEvidence(currentScenario, 'substitutions onayla aynı transaction → DB state=assigned, leave approved, coverage covered');
+
+    await sessionA!.clickElement('#refresh-queue');
+    await sessionA!.waitForText(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`, /./, 20_000);
+    await sessionA!.clickElement(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`);
+    await sessionA!.waitForText('#impact-output', /ders etkileniyor/, 20_000);
+    await sessionA!.clickElement('button[data-action="candidates"]');
+    await sessionA!.waitForText('#candidate-output button[data-action="clear"]', /temizle/i, 20_000);
 
     // [UI-code] 10 — Journey E2E yeni UI'ya migre edilir: atama Bugün panelinde de görünür.
     await sessionA!.clickElement('.tab[data-tab="bugun"]');

@@ -1,5 +1,7 @@
 'use strict';
 
+const LEAVE_DECISIONS = Object.freeze({ pending: 'pending', approved: 'approved' });
+
 const API_ROOT = '/api/v1';
 const state = {
   accessToken: '',
@@ -29,7 +31,12 @@ const state = {
   scheduleId: '',
   scheduleRevision: 0,
   scheduleEvents: [],
+  activeLeaveDecision: '',
+  impactOpenRows: [],
+  pendingSubstitutions: {},
   activeAttendanceSessionId: '',
+  activeDaySessionId: '',
+  dayLessonCount: 0,
   attendanceSessions: [],
   attendanceStatusFilter: '',
   rateLimitedUntil: 0,
@@ -388,6 +395,7 @@ const ROUTE_PERMISSIONS = [
   { method: 'PATCH', path: '/leaves/:id/approve', permission: 'leave:approve' },
   { method: 'PATCH', path: '/leaves/:id/reject', permission: 'leave:reject' },
   { method: 'GET', path: '/daily-operations/today', permission: 'daily_operations:read' },
+  { method: 'GET', path: '/daily-operations/day', permission: 'daily_operations:read' },
   { method: 'GET', path: '/daily-operations/leaves/:leaveId/impact', permission: 'leave:impact:read' },
   { method: 'GET', path: '/daily-operations/leaves/:leaveId/events/:scheduleEventId/candidates', permission: 'leave:impact:read' },
   { method: 'POST', path: '/daily-operations/leaves/:leaveId/events/:scheduleEventId/substitution', permission: 'daily_operations:update' },
@@ -411,7 +419,9 @@ const ROUTE_PERMISSIONS = [
   { method: 'GET', path: '/attendance/sessions', permission: 'attendance:own:read' },
   { method: 'POST', path: '/attendance/sessions', permission: 'attendance:generate' },
   { method: 'GET', path: '/attendance/sessions/:id/records', permission: 'attendance:own:read' },
+  { method: 'GET', path: '/attendance/sessions/:id/roster', permission: 'attendance:own:read' },
   { method: 'POST', path: '/attendance/sessions/:id/records', permission: 'attendance:record:update' },
+  { method: 'POST', path: '/attendance/sessions/:id/records/present', permission: 'attendance:record:update' },
   { method: 'POST', path: '/attendance/sessions/:id/lock', permission: 'attendance:lock' },
   { method: 'POST', path: '/attendance/sessions/:id/records/:studentId/correction', permission: 'attendance:update' },
   // #483: stratejik hedefler — okuma `strategic_goal:read`, yazma `strategic_goal:manage`.
@@ -637,7 +647,12 @@ function clearBranchWork() {
   state.scheduleRevision = 0;
   state.scheduleEvents = [];
   state.activeAttendanceSessionId = '';
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail', '#lesson-cards', '#schedule-conflicts', '#bugun-queue-output', '#bugun-sessions-output']) {
+  state.activeDaySessionId = '';
+  state.dayLessonCount = 0;
+  state.activeLeaveDecision = '';
+  state.impactOpenRows = [];
+  state.pendingSubstitutions = {};
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#attendance-sessions', '#attendance-detail', '#lesson-cards', '#schedule-conflicts', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#bugun-roles-output', '#day-summary', '#day-lessons', '#day-rail']) {
     $(id).innerHTML = '';
   }
   // Program kapsam filtreleri: şube değişince eski şubelerin seçenekleri ve
@@ -1125,7 +1140,7 @@ function renderQueueItem(item) {
     </p>
     <span class="tag" data-tone="${escapeHtml(statusTone(rawState))}">${escapeHtml(stateLabel)}</span>
     ${canRequest('GET', `/daily-operations/leaves/${encodeURIComponent(leaveId)}/impact`)
-      ? `<button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}" data-course-label="${escapeHtml(pick(item, ['courseLabel', 'title'], 'Ders'))}">Bu dersin etkisini incele</button>`
+      ? `<button type="button" data-action="impact" data-leave-id="${escapeHtml(leaveId)}" data-event-id="${escapeHtml(eventId)}" data-course-label="${escapeHtml(pick(item, ['courseLabel', 'title'], 'Ders'))}" data-decision="approved">Bu dersin etkisini incele</button>`
       : '<p class="hint">Ders durumu listeleniyor; etki analizi yetkiniz kapsamında değil.</p>'}
   </article>`;
 }
@@ -1148,10 +1163,12 @@ async function loadImpact(leaveId, eventId, courseLabel = '') {
     const events = asArray(body, ['events', 'affectedLessons', 'lessons', 'items']);
     resetCountsExcept('impactCount');
     state.impactCount = events.length;
+    state.impactOpenRows = events.filter((event) => String(pick(event, ['state'], 'open')) === 'open');
     if (!state.activeScheduleEventId && events[0]) state.activeScheduleEventId = eventIdentity(events[0]);
     updateAssignmentStateFromEvents(events);
     if (events.length) {
       target.innerHTML = renderImpact(body, events);
+      renderSubstitutionsSummary();
     } else {
       empty(target, 'impact');
     }
@@ -1174,6 +1191,78 @@ function updateAssignmentStateFromEvents(events) {
   state.activeLessonLabel = pick(activeEvent, ['courseLabel', 'title'], state.activeLessonLabel);
 }
 
+function renderSubstitutionsSummary() {
+  const el = $('#approval-substitutions-summary');
+  if (!el) return;
+  const open = state.impactOpenRows.length;
+  const picked = substitutionsEntries().length;
+  const complete = picked === open;
+  const entriesNote = picked
+    ? `${picked}/${open} ders için yedek seçildi`
+    : `0/${open} — her açık ders için bir yedek seçin`;
+  el.innerHTML = `<span class="card-meta">${escapeHtml(entriesNote)}</span>
+    <span class="quick-actions">
+      <button type="button" data-action="approve-with-substitutions" ${complete && picked > 0 ? '' : 'disabled'}>Yedeklerle onayla</button>
+      <button type="button" data-action="clear-substitutions" ${picked ? '' : 'disabled'}>Seçimleri temizle</button>
+    </span>`;
+}
+
+/** Seçilen yedekleri sunucunun beklediği occurrence-çapında girdi listesine açar. */
+function substitutionsEntries() {
+  const picked = state.pendingSubstitutions;
+  return state.impactOpenRows
+    .filter((row) => picked[eventIdentity(row)])
+    .map((row) => ({
+      scheduleEventId: eventIdentity(row),
+      substituteTeacherId: picked[eventIdentity(row)],
+    }));
+}
+
+function clearSubstitutions() {
+  state.pendingSubstitutions = {};
+  announce('Yedek seçimleri temizlendi.', 'success');
+  renderSubstitutionsSummary();
+}
+
+function setSubstitution(teacherId) {
+  if (!state.activeScheduleEventId) {
+    return announce('Önce bir dersin adaylarını açın.', 'warning');
+  }
+  state.pendingSubstitutions = { ...state.pendingSubstitutions, [state.activeScheduleEventId]: teacherId };
+  announce('Yedek seçildi; onay «Yedeklerle onayla» ile yapılır.', 'success');
+  renderSubstitutionsSummary();
+}
+
+/** #461 F4 — onay, yedek seçimleriyle AYNI transaction'da yapılır. */
+async function approveWithSubstitutions() {
+  if (!requireSession()) return;
+  if (!state.activeLeaveEtag) {
+    return announce('Güncel izin kaydı alınmadan onaylanamaz.', 'warning');
+  }
+  const target = $('#impact-output');
+  const substitutions = substitutionsEntries();
+  const open = state.impactOpenRows.length;
+  if (substitutions.length !== open) {
+    return announce('Her açık ders için bir yedek seçin.', 'warning');
+  }
+  try {
+    const { body, etag } = await apiRequest(`/leaves/${encodeURIComponent(state.activeLeaveId)}/approve`, {
+      method: 'PATCH',
+      headers: { 'If-Match': state.activeLeaveEtag },
+      body: { substitutions },
+      versioned: true,
+    });
+    captureLeaveVersion(body, etag);
+    state.pendingSubstitutions = {};
+    state.activeLeaveDecision = LEAVE_DECISIONS.approved;
+    announce('İzin onaylandı; yedekler aynı işlemde atandı.', 'success');
+    await loadLeaves();
+    await loadImpact(state.activeLeaveId, state.activeScheduleEventId);
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
 function renderImpact(body, events) {
   const rows = events.map((event) => `<li>
     <strong>${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}</strong>
@@ -1183,7 +1272,11 @@ function renderImpact(body, events) {
       ? `<button type="button" data-action="candidates" data-event-id="${escapeHtml(eventIdentity(event))}" data-course-label="${escapeHtml(pick(event, ['courseLabel'], 'Ders'))}">Adayları getir ve bu dersi planla</button>`
       : ''}
   </li>`).join('');
+  const summary = state.activeLeaveDecision === LEAVE_DECISIONS.pending
+    ? `<div id="approval-substitutions-summary" class="stack" role="status" aria-live="polite"></div>`
+    : '';
   return `<div class="summary"><b>Ders karşılığı:</b> ${escapeHtml(displayStatus(pick(body, ['coverageStatus'], 'unknown')))} · ${events.length} ders etkileniyor</div>
+    ${summary}
     <ul class="impact-list">${rows}</ul>`;
 }
 
@@ -1235,8 +1328,21 @@ function renderCandidate(candidate) {
   // Görevlendirme istikameti tek yetkinlik anahtarına bağlı (#445);
   // yalnız-okur aktörde düğmeler yerine dürüst bir bağlam ipucu çizilir.
   const canSubstitute = canRequest('POST', `/daily-operations/leaves/${encodeURIComponent(state.activeLeaveId)}/events/${encodeURIComponent(state.activeScheduleEventId)}/substitution`);
+  // Karar öncesinde görevlendirme endpoint'i onaylı izin ister; seçim onay anında
+  // substitutions ile birlikte gider.
+  if (state.activeLeaveDecision === LEAVE_DECISIONS.pending) {
+    const picked = state.pendingSubstitutions[state.activeScheduleEventId] === teacherId;
+    return `<article class="card candidate">
+    <h3>${escapeHtml(pick(candidate, ['teacherLabel', 'displayName', 'name'], 'Aday öğretmen'))}</h3>
+    <p>${eligibleText} · ${availableText}</p>
+    <span class="tag" data-tone="${selectable ? 'success' : 'danger'}">${selectable ? 'Seçilebilir aday' : eligible ? 'Şu an seçilemez' : 'Seçilemez aday'}</span>
+    ${picked ? '<span class="tag" data-tone="success">Bu ders için seçildi</span>' : ''}
+    <button type="button" data-action="select-substitute" data-teacher-id="${escapeHtml(teacherId)}" ${!selectable || mutationDisabled() ? 'disabled' : ''}>Bu yedeği seç</button>
+    <p class="hint">Seçilen yedek, «Yedeklerle onayla» dendiğinde izin kararıyla aynı işlemde atanır.</p>
+  </article>`;
+  }
   return `<article class="card candidate">
-    <h3>${escapeHtml(pick(candidate, ['displayName', 'name'], 'Aday öğretmen'))}</h3>
+    <h3>${escapeHtml(pick(candidate, ['teacherLabel', 'displayName', 'name'], 'Aday öğretmen'))}</h3>
     <p>${eligibleText} · ${availableText}</p>
     <span class="tag" data-tone="${selectable ? 'success' : 'danger'}">${selectable ? 'Seçilebilir aday' : eligible ? 'Şu an seçilemez' : 'Seçilemez aday'}</span>
     ${canSubstitute
@@ -1466,6 +1572,14 @@ const EMPTY_COPY = {
     title: 'Yoklama oturumu yok',
     message: 'Bu kapsamda yoklama oturumu yok.',
   },
+  day: {
+    title: 'Gün programı boş',
+    message: 'Bu kapsamda yayınlanmış ders yok. Şube veya tarih değiştirip yeniden deneyin.',
+  },
+  dayRail: {
+    title: 'Yoklama listesi boş',
+    message: 'Bu yoklama oturumunun öğrenci kaydı yok.',
+  },
   impact: {
     title: 'Etki yok',
     message: 'Bu izin için etkilenen ders yok.',
@@ -1494,11 +1608,19 @@ document.addEventListener('click', (event) => {
   if (target.dataset.action === 'focus-ops') activateTab('ops');
   if (target.dataset.action === 'impact') {
     if (target.dataset.source === 'bugun') activateTab('ops');
+    state.activeLeaveDecision = target.dataset.decision || LEAVE_DECISIONS.approved;
     loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
+  }
+  if (target.dataset.action === 'leave-impact') {
+    state.activeLeaveDecision = LEAVE_DECISIONS.pending;
+    loadImpact(target.dataset.leaveId, '', '');
   }
   if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
   if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
   if (target.dataset.action === 'clear') clearAssignment();
+  if (target.dataset.action === 'select-substitute') setSubstitution(target.dataset.teacherId);
+  if (target.dataset.action === 'approve-with-substitutions') approveWithSubstitutions();
+  if (target.dataset.action === 'clear-substitutions') clearSubstitutions();
   if (target.dataset.action === 'logout') logout();
   // Screen-module actions (notifications, leave decisions, consents,
   // schedule, attendance) are delegated in their own modules.

@@ -100,6 +100,16 @@ export const NON_ACCEPTANCE_EXEMPTIONS: ReadonlyArray<{
     mustContain: 'INSERT INTO notification_outbox',
   },
   {
+    file: path.join('test', 'database', 'backfill-leave-substitution-occurrence-date.migration.spec.ts'),
+    reason:
+      'Mocked-runner migration smoke test (#461 F4, migration 1910000000000): the ' +
+      'runner is a jest.fn() double, no SQL is ever executed and no row of any table ' +
+      'is produced. The spec asserts the backfill statement text (single unambiguous ' +
+      'linked lesson date, idempotent IS NULL guard, documented no-op down()). It is ' +
+      'not acceptance evidence and is never bound to the P0 acceptance check.',
+    mustContain: 'UPDATE leave_substitution_assignments',
+  },
+  {
     file: path.join('test', 'database', 'notification-dispatch.db.spec.ts'),
     reason:
       'N2 non-acceptance real-PostgreSQL bounded dispatch regression: it seeds reference ' +

@@ -108,6 +108,23 @@ export class AttendanceSessionController {
   }
 
   /**
+   * #461 F3 — "tüm sınıf var" tek eylem.
+   *
+   * Öğrenci listesi gövdede taşınmaz; sunucu oturumun immutable roster
+   * snapshot'ını kullanır. Kilitli oturum 409 döner.
+   */
+  @Post(':id/records/present')
+  @Permissions('attendance:record:update')
+  @UseGuards(TeacherOwnLessonGuard)
+  async markAllPresent(
+    @Req() req: RequestWithContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const actor = await this.resolveActor(req);
+    return this.sessionService.markAllPresent(actor, id);
+  }
+
+  /**
    * Kontrollü düzeltme (AC-4, #265).
    *
    * Yalnız kilitli oturum + gözetim rolü + kapalı sözlükten gerekçe kodu +
@@ -155,6 +172,22 @@ export class AttendanceSessionController {
       (await this.sessionService.getById(actor.tenantId, id));
     if (!session) throw new ForbiddenException('Session bulunamadı');
     return session;
+  }
+
+  /**
+   * #461/#454 — sunucu-türetimli roster okuma yüzeyi: PII-az etiketler,
+   * tek tek kayıt durumları ve sunucu hesaplı canlı özet. Sahiplik/gözetim
+   * TeacherOwnLessonGuard + servis access kontrolüyle fail-closed korunur.
+   */
+  @Get(':id/roster')
+  @Permissions('attendance:own:read')
+  @UseGuards(TeacherOwnLessonGuard)
+  async getSessionRoster(
+    @Req() req: AttendanceRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const actor = await this.resolveActor(req);
+    return this.sessionService.getSessionRoster(actor, id);
   }
 
   @Get()

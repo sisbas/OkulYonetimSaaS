@@ -56,6 +56,46 @@ export type SnapshotTemplate = Readonly<{
 }>;
 
 /**
+ * #461 F5 — operatörün onaylayacağı mesaj metni.
+ *
+ * Metin, veliye gidecek bildirimin İNSAN OKUNABİLİR gövdesidir; öğrenci/veli
+ * adı, iletişim bilgisi veya ham kimlik taşımaz. Tarih/saat gibi bağlam
+ * alanları PII değildir. `containsPii` alanı sözleşmeyi açıkça kapatır.
+ */
+export type SnapshotMessage = Readonly<{
+  subjectLabel: string;
+  body: string;
+  containsPii: false;
+}>;
+
+export const ABSENCE_MESSAGE_SUBJECT_LABEL = 'Devamsızlık bildirimi';
+
+function formatDateLabel(value: string): string {
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}.${month}.${year}`;
+}
+
+/**
+ * Devamsızlık bildirimi gövdesi — PII'SİZ.
+ *
+ * Öğrenci adı, veli adı, telefon/e-posta YOK; yalnız tarih ve ders saat
+ * aralığı bulunur. Saat bilgisi yoksa (program kaydı çözülemediyse) cümle
+ * saat iddiası kurmadan kurulur.
+ */
+export function buildAbsenceMessageBody(input: Readonly<{
+  sessionDate: string;
+  startTime?: string | null;
+  endTime?: string | null;
+}>): string {
+  const dateLabel = formatDateLabel(input.sessionDate);
+  const start = input.startTime?.slice(0, 5);
+  const end = input.endTime?.slice(0, 5);
+  const when = start && end ? `${dateLabel} tarihinde ${start}–${end} saatleri arasındaki derste` : `${dateLabel} tarihinde`;
+  return `Sayın veli, öğrenciniz ${when} devamsız olarak işaretlenmiştir. Bilgilerinize sunarız.`;
+}
+
+/**
  * Immutable notification snapshot.
  *
  * Bir kez oluşturulduktan sonra değiştirilemez. Tüm alanlar
@@ -70,6 +110,8 @@ export type NotificationSnapshot = Readonly<{
   consent: SnapshotConsent;
   /** Şablon anlık görüntüsü. */
   template: SnapshotTemplate;
+  /** Operatörün onaylayacağı PII'siz mesaj metni. */
+  message: SnapshotMessage;
   /** Snapshot oluşturulma zamanı (ISO 8601). */
   enqueuedAt: string;
 }>;
@@ -93,6 +135,8 @@ export function buildNotificationSnapshot(input: Readonly<{
   consentId: string | null;
   consentVersion: number | null;
   eventType: string;
+  messageBody: string;
+  messageSubjectLabel?: string;
   enqueuedAt?: Date;
 }>): NotificationSnapshot {
   const snapshot: NotificationSnapshot = {
@@ -117,6 +161,11 @@ export function buildNotificationSnapshot(input: Readonly<{
       eventType: input.eventType,
       channel: input.channel,
       templateRef: `${input.eventType}:${input.channel}`,
+    }),
+    message: Object.freeze({
+      subjectLabel: input.messageSubjectLabel ?? ABSENCE_MESSAGE_SUBJECT_LABEL,
+      body: input.messageBody,
+      containsPii: false as const,
     }),
     enqueuedAt: (input.enqueuedAt ?? new Date()).toISOString(),
   };

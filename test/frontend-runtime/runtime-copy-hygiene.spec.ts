@@ -260,7 +260,7 @@ describe('#446 copy hygiene', () => {
     const runtimeDir = path.join(process.cwd(), 'frontend', 'runtime');
     const sources = [
       fs.readFileSync(path.join(runtimeDir, 'app.js'), 'utf8'),
-      ...['decisions', 'consents', 'notifications', 'schedule', 'attendance'].map((name) =>
+      ...['decisions', 'consents', 'notifications', 'schedule', 'attendance', 'day'].map((name) =>
         fs.readFileSync(path.join(runtimeDir, 'screens', `${name}.js`), 'utf8'),
       ),
     ];

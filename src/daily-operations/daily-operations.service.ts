@@ -10,6 +10,11 @@ type TodayQuery = Readonly<{
   date?: string;
 }>;
 
+type DayQuery = Readonly<{
+  branchId?: string;
+  date?: string;
+}>;
+
 function parseQueueDate(date: string | undefined, fallback?: string): string {
   const value = date ?? fallback ?? new Intl.DateTimeFormat('en-CA', {
     timeZone: DEFAULT_TENANT_TIME_ZONE,
@@ -43,6 +48,19 @@ export class DailyOperationsService {
   async today(ctx: RequestContext, query: TodayQuery) {
     const date = parseQueueDate(query.date, ctx.businessDate?.date);
     return this.mapErrors(() => this.repository.today(ctx, { branchId: query.branchId, date }));
+  }
+
+  /**
+   * #461 F2 — günün tam yayınlanmış programı.
+   *
+   * Branch, istemci seçimi varsa o; yoksa sunucunun çözdüğü aktif şube.
+   * İkisi de yoksa istek 400 döner; tenant dışı şube 404 olarak gizlenir.
+   */
+  async day(ctx: RequestContext, query: DayQuery) {
+    const branchId = query.branchId ?? ctx.branchId;
+    if (!branchId) throw new BadRequestException('branchId is required');
+    const date = parseQueueDate(query.date, ctx.businessDate?.date);
+    return this.mapErrors(() => this.repository.day(ctx, { branchId, date }));
   }
 
   async impact(ctx: RequestContext, leaveId: string) {
@@ -89,7 +107,7 @@ export class DailyOperationsService {
     } catch (error) {
       const code = (error as Error).message;
       if (code === 'BRANCH_NOT_VISIBLE') throw new NotFoundException('Daily Operations queue not found');
-      if (code === 'LEAVE_NOT_APPROVED' || code === 'NO_PUBLISHED_SCHEDULE_EVENT') {
+      if (code === 'LEAVE_NOT_FOUND' || code === 'LEAVE_NOT_APPROVED' || code === 'NO_PUBLISHED_SCHEDULE_EVENT') {
         throw new NotFoundException('Leave impact not found');
       }
       if (code === 'LEAVE_VERSION_MISMATCH') throw new PreconditionFailedException('Leave version mismatch');

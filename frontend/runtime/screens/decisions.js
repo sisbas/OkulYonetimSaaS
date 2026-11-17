@@ -32,6 +32,9 @@ function renderLeaveDecisionCard(leave) {
           ${canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/reject`)
             ? `<button type="button" data-action="leave-decision" data-leave-id="${escapeHtml(leaveId)}" data-leave-decision="reject" data-leave-etag="${escapeHtml(etag)}" ${locked ? 'disabled' : ''}>Reddet</button>`
             : ''}
+          ${canRequest('GET', `/daily-operations/leaves/${encodeURIComponent(leaveId)}/impact`)
+            ? `<button type="button" data-action="leave-impact" data-leave-id="${escapeHtml(leaveId)}" data-leave-etag="${escapeHtml(etag)}">Etki ve adaylar</button>`
+            : ''}
           ${!canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/approve`) && !canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/reject`)
             ? '<span class="hint">Bu talebin kararı yetkiniz kapsamında değil; karar yetkili ekranda verilir.</span>'
             : ''}

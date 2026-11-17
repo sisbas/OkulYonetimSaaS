@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DailyOperationsService } from './daily-operations.service';
 import { DailyOperationsRepository } from './daily-operations.repository';
 import { RequestContext } from '../common/context/request-context';
@@ -38,5 +38,57 @@ describe('daily queue calendar input boundary (#263)', () => {
     today.mockRejectedValueOnce(failure);
     await expect(service.today(context, { branchId: 'branch', date: '2026-09-30' }))
       .rejects.toBe(failure);
+  });
+});
+
+describe('daily operations day surface (#461 F2)', () => {
+  const context: RequestContext = {
+    tenantId: 'tenant',
+    branchId: 'server-branch',
+    requestId: 'day-surface',
+  };
+  const day = jest.fn().mockResolvedValue({ lessons: [], stats: {} });
+  const service = new DailyOperationsService({ day } as unknown as DailyOperationsRepository);
+
+  beforeEach(() => day.mockClear());
+
+  it('uses the explicit branch selection when the client sends one', async () => {
+    await service.day(context, { branchId: 'client-branch', date: '2026-11-02' });
+    expect(day).toHaveBeenCalledWith(context, {
+      branchId: 'client-branch',
+      date: '2026-11-02',
+    });
+  });
+
+  it('falls back to the server-resolved active branch when branchId is omitted', async () => {
+    await service.day(context, { date: '2026-11-02' });
+    expect(day).toHaveBeenCalledWith(context, {
+      branchId: 'server-branch',
+      date: '2026-11-02',
+    });
+  });
+
+  it('rejects a request with neither a client branch nor a resolved branch', async () => {
+    await expect(
+      service.day({ tenantId: 'tenant', requestId: 'no-branch' }, { date: '2026-11-02' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(day).not.toHaveBeenCalled();
+  });
+
+  it.each(['2026-02-30', '2026-13-01', 'not-a-date'])(
+    'rejects invalid day calendar input %s before touching storage',
+    async (date) => {
+      await expect(service.day(context, { date })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(day).not.toHaveBeenCalled();
+    },
+  );
+
+  it('maps a branch outside the tenant to a non-enumerating 404', async () => {
+    day.mockRejectedValueOnce(new Error('BRANCH_NOT_VISIBLE'));
+    await expect(
+      service.day(context, { branchId: 'branch-other', date: '2026-11-02' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

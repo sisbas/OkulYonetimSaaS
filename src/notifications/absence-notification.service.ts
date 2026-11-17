@@ -10,7 +10,10 @@ import {
   NotificationOutboxRepository,
   EnqueueOutboxRow,
 } from './notification-outbox.repository';
-import { buildNotificationSnapshot } from './notification-snapshot';
+import {
+  buildAbsenceMessageBody,
+  buildNotificationSnapshot,
+} from './notification-snapshot';
 
 export const ABSENCE_NOTIFICATION_EVENT_TYPE = 'attendance.absent.locked';
 export const DEFAULT_ABSENCE_NOTIFICATION_CHANNEL = 'sms';
@@ -77,13 +80,35 @@ export class AbsenceNotificationService {
     const channel = input.channel ?? DEFAULT_ABSENCE_NOTIFICATION_CHANNEL;
 
     const sessions = (await entityManager.query(
-      `SELECT status FROM attendance_sessions WHERE tenant_id = $1 AND id = $2`,
+      `SELECT session.status,
+              session.session_date::text AS "sessionDate",
+              to_char(event.start_time, 'HH24:MI') AS "startTime",
+              to_char(event.end_time, 'HH24:MI') AS "endTime"
+         FROM attendance_sessions session
+         LEFT JOIN schedule_events event
+           ON event.id = session.schedule_event_id AND event.tenant_id = session.tenant_id
+        WHERE session.tenant_id = $1 AND session.id = $2`,
       [input.tenantId, input.sessionId],
-    )) as Array<{ status: string }>;
+    )) as Array<{
+      status: string;
+      sessionDate: string | null;
+      startTime: string | null;
+      endTime: string | null;
+    }>;
     const sessionStatus = sessions[0]?.status ?? null;
     if (sessionStatus === null) {
       throw new Error('AttendanceSession not found for absence notification');
     }
+    const sessionDate = sessions[0]?.sessionDate;
+    if (!sessionDate) {
+      throw new Error('AttendanceSession date missing for absence notification');
+    }
+    // #461 F5 — operatör onaylayacağı PII'siz mesaj metni snapshot'a yazılır.
+    const messageBody = buildAbsenceMessageBody({
+      sessionDate,
+      startTime: sessions[0]?.startTime ?? null,
+      endTime: sessions[0]?.endTime ?? null,
+    });
 
     const empty: AbsenceNotificationOutcome = {
       sessionStatus,
@@ -161,6 +186,7 @@ export class AbsenceNotificationService {
           consentId: decision.consentId,
           consentVersion: decision.consentVersion,
           eventType: ABSENCE_NOTIFICATION_EVENT_TYPE,
+          messageBody,
         }),
       });
     }

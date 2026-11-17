@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { RequestContext } from '../common/context/request-context';
 import {
   LeaveApprovalImpact,
+  LeaveApprovalSubstitution,
   coverageLabel,
 } from '../daily-operations/leave-approval-impact';
 import { leaveEtag } from '../daily-operations/leave-impact.types';
@@ -77,6 +78,7 @@ export type LeaveDecisionResponse = Readonly<{
 
 type LeaveDecisionInput = Readonly<{
   decision: LeaveDecisionStatus.APPROVED | LeaveDecisionStatus.REJECTED;
+  substitutions?: readonly LeaveApprovalSubstitution[];
 }>;
 
 function actorUserId(ctx: RequestContext): string {
@@ -215,6 +217,7 @@ export class LeaveService {
       decision: dto.decision,
       decidedByUserId: decisionActorUserId,
       expectedVersion,
+      substitutions: dto.substitutions,
     });
     if (!outcome) throw new LeaveNotFoundException();
     return this.toDecisionResponse(outcome);

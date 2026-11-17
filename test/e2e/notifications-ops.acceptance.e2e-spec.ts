@@ -652,30 +652,26 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     expect(await actionButtonCount(sessionA!)).toBe(1);
     recordEvidence(currentScenario, 'r10 (consentless) enqueue-time blocked_consent, onay sürümü yok, receipt yok');
 
-    // blocked_consent satırına UI onay verir; execute da sunucu tarafından reddedilir.
+    // blocked_consent satırında onay, güncel rıza kontrolüne takılır (F5):
+    // sunucu 409 NOTIFICATION_CONSENT_REQUIRED döner; satır Onay engelli kalır
+    // ve provider etkisi sıfırdır (attempts artmaz, receipt yok).
     await runAction(sessionA!, 'approve');
-    await sessionA!.waitForText('#notification-detail h3', /· Onaylandı/, 20_000);
-    recordEvidence(currentScenario, 'UI approve → 200 Onaylandı (blocked_consent geçerli draft durumu)');
-
-    await openCard(sessionA!, 'r10');
-    await sessionA!.waitForText('#notification-detail h3', /· Onaylanıyor/, 1).catch(() => undefined);
-    await sessionA!.waitForText('#notification-detail', /Onay sürümü: -/, 10_000);
+    await sessionA!.waitForText('#notification-detail .error-state', /./, 10_000);
     const before = await readDispatchRow(dbClient!, fixture.tenantId, rows.r10!);
-    await runAction(sessionA!, 'execute');
-    await sessionA!.waitForText('#notification-detail h3', /· Onay engelli/, 20_000);
-    await sessionA!.waitForText('#notification-detail', /Gerekçe: .+/, 10_000);
+    expect(before.dispatchedAt).toBeNull();
     const after = await expectRow('r10', {
       status: 'blocked_consent',
-      attempts: 1,
+      attempts: 0,
       consentVersion: null,
       dispatchedAt: null,
       receipts: [],
     });
+    expect(after.attempts).toBe(0);
+    expect(after.status).toBe('blocked_consent');
     expect(after.dispatchedAt).toBeNull();
-    expect(before.dispatchedAt).toBeNull();
     recordEvidence(
       currentScenario,
-      'execute → 200 blocked_consent, attempts 1, consentVersion null, dispatchedAt null, receipt YOK (sıfır provider effect)',
+      'UI approve → 409 NOTIFICATION_CONSENT_REQUIRED (F5): satır Onay engelli kalır, attempts 0, consentVersion null, dispatchedAt null, receipt YOK (sıfır provider effect)',
     );
     await snap(sessionA!, '02-consentless-blocked-zero-effect');
     recordScenario(SCENARIO_NAMES[1], 'PASS');

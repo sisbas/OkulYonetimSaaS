@@ -17,6 +17,7 @@ import { RequestContext, RequestWithContext } from '../common/context/request-co
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { TenantScopeGuard } from '../common/tenant/tenant-scope.guard';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { DecideLeaveRequestDto } from './dto/decide-leave-request.dto';
 import { ListLeaveRequestsQueryDto } from './dto/list-leave-requests-query.dto';
 import { ListOwnLeaveRequestsQueryDto } from './dto/list-own-leave-requests-query.dto';
 import { LeaveDecisionStatus } from './leave-request.entity';
@@ -70,8 +71,14 @@ export class LeaveController {
     @Req() request: RequestWithContext,
     @Param('id', ParseUUIDPipe) id: string,
     @Headers('if-match') ifMatch: string | undefined,
+    @Body() dto: DecideLeaveRequestDto,
   ) {
-    return this.leaves.decide(getRequestContext(request), id, { decision: LeaveDecisionStatus.APPROVED }, ifMatch);
+    return this.leaves.decide(
+      getRequestContext(request),
+      id,
+      { decision: LeaveDecisionStatus.APPROVED, substitutions: dto?.substitutions },
+      ifMatch,
+    );
   }
 
   @Patch(':id/reject')

@@ -28,7 +28,12 @@ describe('AbsenceNotificationService (#266)', () => {
     return {
       query: jest.fn(async (sql: string) => {
         if (sql.includes('FROM attendance_sessions')) {
-          return [{ status: handlers.sessionStatus }];
+          return [{
+            status: handlers.sessionStatus,
+            sessionDate: '2026-09-14',
+            startTime: '09:00',
+            endTime: '10:00',
+          }];
         }
         if (sql.includes('FROM attendance_records')) {
           return handlers.absent.map((student_id) => ({ student_id }));
@@ -135,6 +140,19 @@ describe('AbsenceNotificationService (#266)', () => {
     const payloads = rows.map((row) => row.payloadMasked as Record<string, unknown>);
     expect(payloads[1].sessionRef).toBe(payloads[0].sessionRef);
     expect(payloads[1].studentRef).not.toBe(payloads[0].studentRef);
+
+    // #461 F5 — onaylanacak mesaj metni snapshot'ta ve PII'siz.
+    const snapshot = rows[0].snapshot as {
+      message: { subjectLabel: string; body: string; containsPii: boolean };
+    };
+    expect(snapshot.message.containsPii).toBe(false);
+    expect(snapshot.message.subjectLabel).toBe('Devamsızlık bildirimi');
+    expect(snapshot.message.body).toContain('14.09.2026');
+    expect(snapshot.message.body).toContain('09:00–10:00');
+    const messageJson = JSON.stringify(snapshot);
+    expect(messageJson).not.toContain(STUDENT_A);
+    expect(messageJson).not.toContain(STUDENT_B);
+    expect(messageJson).not.toContain(SESSION_ID);
   });
 
   it('never logs raw student/session identifiers (KVKK)', async () => {

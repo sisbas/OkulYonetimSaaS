@@ -43,8 +43,8 @@ export class StrategicGoalRepository {
     if (academicYear) qb.andWhere('goal.academic_year = :academicYear', { academicYear });
 
     return qb
-      .orderBy('goal.academic_year', 'DESC')
-      .addOrderBy('goal.metric_key', 'ASC')
+      .orderBy('goal.academicYear', 'DESC')
+      .addOrderBy('goal.metricKey', 'ASC')
       .getMany();
   }
 

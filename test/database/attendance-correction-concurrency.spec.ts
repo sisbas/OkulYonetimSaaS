@@ -83,6 +83,11 @@ describeWithPostgres('attendance correction PostgreSQL concurrency (#265, AC-7)'
           duplicatesSkipped: 0,
         })),
       },
+      // #461 F3 — bu spec açık roster ile çalışır; türetilmiş roster yolu
+      // ayrı suite'te doğrulanır.
+      {
+        listRosterStudentIds: jest.fn(async () => []),
+      } as never,
     );
   });
 

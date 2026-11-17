@@ -20,6 +20,7 @@ import { ScheduleEvent } from '../schedules/schedule-event.entity';
 import { ScheduleVersion } from '../schedules/schedule-version.entity';
 import { TeachersModule } from '../teachers/teachers.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StudentsModule } from '../students/students.module';
 
 @Module({
   imports: [
@@ -32,6 +33,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     TeachersModule,
     // #266: kilitli devamsızlık → outbox portu (notifications uygular).
     NotificationsModule,
+    // #461 F3: sunucu-türetimli roster (student_group_members).
+    StudentsModule,
   ],
   controllers: [AttendanceSessionController],
   providers: [
