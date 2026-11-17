@@ -38,17 +38,49 @@ async function bulkApproveSession(sessionId, versionsCsv) {
     return announce('Toplu onay için sürüm bilgisi çözülemedi.', 'warning');
   }
   const target = $('#bulk-approve-output');
-  target.innerHTML = loading('Toplu onay sunucuda uygulanıyor');
-  try {
-    await apiRequest(`/notifications/drafts/session/${encodeURIComponent(sessionId)}/approve`, {
-      method: 'POST',
-      body: { expectedVersions },
-      versioned: true,
-    });
-    announce('Oturum taslakları toplu onaylandı.', 'success');
-    await loadNotifications();
-  } catch (error) {
-    renderError(target, error);
+  const total = expectedVersions.length;
+  // Sunucu bulk-approve ucu bekleyen taslakları 200'erli partilerde işler
+  // (transitionDraftsForSession üst sınırı). O sessizce kırpılmasın diye
+  // burada da 200'erlik partilerle ilerleyip her partiyi raporluyoruz.
+  const BATCH = 200;
+  let done = 0;
+  for (let offset = 0; offset < expectedVersions.length; offset += BATCH) {
+    const batch = expectedVersions.slice(offset, offset + BATCH);
+    target.innerHTML = loading(`Toplu onay: ${Math.min(offset + BATCH, total)}/${total} taslak işleniyor`);
+    try {
+      // eslint-disable-next-line no-await-in-loop -- partiler sessiz kırpılmamak için sırayla işlenir
+      await apiRequest(`/notifications/drafts/session/${encodeURIComponent(sessionId)}/approve`, {
+        method: 'POST',
+        body: { expectedVersions: batch },
+        versioned: true,
+      });
+      done += batch.length;
+    } catch (error) {
+      renderError(target, error);
+      announce(`${done}/${total} taslak onaylandı; kalanı tamamlanmadı — listeyi yenileyip tekrar deneyin.`, 'warning');
+      await loadNotifications();
+      return;
+    }
+  }
+  announce(`${done} taslak toplu onaylandı.`, 'success');
+  await loadNotifications();
+}
+
+async function fetchAllNotifications() {
+  // #464 — bulk approval must see EVERY approvable draft of a session, not
+  // just the visible page: page until the API returns fewer than pageSize.
+  const pageSize = 20;
+  const filter = $('#notification-status-filter').value;
+  const rows = [];
+  let offset = 0;
+  for (;;) {
+    const query = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
+    if (filter) query.set('status', filter);
+    const { body } = await apiRequest(`/notifications?${query.toString()}`);
+    const page = asArray(body, ['notifications', 'items']);
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+    offset += pageSize;
   }
 }
 
@@ -57,15 +89,13 @@ async function loadNotifications() {
   const branchId = getBranchId();
   if (!branchId) return announce('Bildirim listesi için şube seçin.', 'warning');
   const target = $('#notifications-list');
-  const query = new URLSearchParams({ limit: '20', offset: '0' });
-  const filter = $('#notification-status-filter').value;
-  if (filter) query.set('status', filter);
   target.innerHTML = loading('Bildirimler getiriliyor');
   try {
-    const { body } = await apiRequest(`/notifications?${query.toString()}`);
-    const rows = asArray(body, ['notifications', 'items']);
-    if (rows.length) {
-      target.innerHTML = rows.map(renderNotificationCard).join('');
+    const rows = await fetchAllNotifications();
+    // Görüntülenen liste ilk sayfadır; toplu onay ise TÜM satırları görür.
+    const visible = rows.slice(0, 20);
+    if (visible.length) {
+      target.innerHTML = visible.map(renderNotificationCard).join('');
     } else {
       empty(target, 'notifications');
     }
