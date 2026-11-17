@@ -211,7 +211,7 @@ export const OPS_PERMISSION_KEYS = [
   'notification:draft:approve', 'notification:draft:close',
   'notification:draft:read', 'parent_notification:approve', 'parent_notification:send',
   'schedule:draft:create', 'schedule:draft:update', 'schedule:publish', 'schedule:read',
-  'schedule:draft:read',
+  'schedule:draft:read', 'schedule:validate', 'schedule:conflict:read',
 ];
 
 // Kurum (tenant) yöneticisi: operasyon üst kümesi + kullanıcı/tenant yönetimi

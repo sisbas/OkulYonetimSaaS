@@ -43,6 +43,17 @@ interface RouteRule {
   method: string;
   path: string;
   permissions: string[];
+  /** Sunucu @PermissionsAny ise true (any-of); @Permissions ise false (AND). */
+  anyOf: boolean;
+}
+
+interface ClientRouteRule {
+  method: string;
+  path: string;
+  /** Her zaman any-of kümesi olarak ele alınır (tek anahtar = bir elemanlı küme). */
+  permissions: string[];
+  /** İstemci tablosunda array biçiminde yazıldıysa true (sunucudaki @PermissionsAny ile birebir). */
+  anyOf: boolean;
 }
 
 function extractServerRules(): RouteRule[] {
@@ -67,15 +78,15 @@ function extractServerRules(): RouteRule[] {
           // handler'ın artık @Permissions gibi dekoratörleri buradadır.
           const segment = (chunk.slice((match.index ?? 0) + match[0].length)
             .split(/\n\s*@(?:Get|Post|Patch|Put|Delete)\(/)[0]) ?? '';
-          const permsMatch = segment.match(/@(?:Permissions|PermissionsAny)\(([^)]*)\)/);
+          const permsMatch = segment.match(/@(Permissions|PermissionsAny)\(([^)]*)\)/);
           if (!permsMatch) {
             throw new Error(
               `${entry.file} ${method} /${base}${subPath ? `/${subPath}` : ''}: @Permissions dekoratörü yok — fail-open yasak (#445 seam)`,
             );
           }
-          const permissions = [...permsMatch[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+          const permissions = [...permsMatch[2].matchAll(/'([^']+)'/g)].map((m) => m[1]);
           const path_ = subPath ? `/${base}/${subPath}` : `/${base}`;
-          rules.push({ method, path: path_, permissions });
+          rules.push({ method, path: path_, permissions, anyOf: permsMatch[1] === 'PermissionsAny' });
         }
       }
     });
@@ -83,13 +94,16 @@ function extractServerRules(): RouteRule[] {
   return rules;
 }
 
-function extractClientRules(): Array<{ method: string; path: string; permission: string }> {
+function extractClientRules(): ClientRouteRule[] {
   const app = fs.readFileSync(path.join(root, 'frontend/runtime/app.js'), 'utf8');
-  const rules: Array<{ method: string; path: string; permission: string }> = [];
-  const re = /\{\s*method:\s*'([A-Z]+)',\s*path:\s*'([^']+)',\s*permission:\s*'([^']+)'\s*\}/g;
+  const rules: ClientRouteRule[] = [];
+  // permission tek bir anahtar ('x') ya da any-of kümesi (['x', 'y']) olabilir.
+  const re = /\{\s*method:\s*'([A-Z]+)',\s*path:\s*'([^']+)',\s*permission:\s*(?:'([^']+)'|\[([^\]]+)\])\s*\}/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(app)) !== null) {
-    rules.push({ method: match[1], path: match[2], permission: match[3] });
+    const raw = match[3] ?? match[4];
+    if (!raw) continue;
+    rules.push({ method: match[1], path: match[2], permissions: [...raw.matchAll(/'([^']+)'/g)].map((m) => m[1]), anyOf: match[4] !== undefined });
   }
   return rules;
 }
@@ -103,14 +117,37 @@ describe('runtime route permission seam (#445)', () => {
     expect(serverRules.length).toBeGreaterThan(20);
   });
 
-  it('every client entry exists on the server with the same method, path template and guarding permission', () => {
+  it('every client entry exists on the server with the same method, path template and admitting permission(s)', () => {
     for (const rule of clientRules) {
       const serverRule = serverRules.find((r) => r.method === rule.method && r.path === rule.path);
-      if (!serverRule || !serverRule.permissions.includes(rule.permission)) {
+      if (!serverRule) {
         throw new Error(
-          `Seam kırık: client ${rule.method} ${rule.path} permission='${rule.permission}' — sunucu tarafı: ` +
-            (serverRule ? serverRule.permissions.join(', ') : 'rota bulunamadı'),
+          `Seam kırık: client ${rule.method} ${rule.path} permission='${rule.permissions.join(', ')}' — sunucu tarafında rota bulunamadı`,
         );
+      }
+      for (const key of rule.permissions) {
+        if (!serverRule.permissions.includes(key)) {
+          throw new Error(
+            `Seam kırık: client ${rule.method} ${rule.path} permission='${key}' — sunucu tarafı: ${serverRule.permissions.join(', ')}`,
+          );
+        }
+      }
+    }
+  });
+
+  it('client any-of arrays are backed by server @PermissionsAny and never invent keys', () => {
+    const anyOfRules = clientRules.filter((rule) => rule.anyOf);
+    expect(anyOfRules.length).toBeGreaterThan(0);
+    for (const rule of anyOfRules) {
+      const serverRule = serverRules.find((r) => r.method === rule.method && r.path === rule.path);
+      if (!serverRule) {
+        throw new Error(`Seam kırık: client any-of ${rule.method} ${rule.path} — sunucu tarafında rota bulunamadı`);
+      }
+      expect(serverRule.anyOf).toBe(true);
+      // Any-of yakınsaması: istemcideki her anahtar sunucuda da any-of kümesinde
+      // olmalı; böylece gizlenen kontrol sunucudan daha dar bir yüzey vaat etmez.
+      for (const key of rule.permissions) {
+        expect(serverRule.permissions).toContain(key);
       }
     }
   });

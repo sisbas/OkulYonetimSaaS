@@ -29,9 +29,10 @@ describe('#447/#448 draft surface gating (management-only)', () => {
   it('teacher persona cannot request draft and published-list without the management keys', () => {
     const ui = client(TEACHER_PERMISSION_KEYS);
     expect(ui.probe.canRequest('GET', '/schedules/drafts')).toBe(false);
-    expect(ui.probe.canRequest('GET', '/schedules/:scheduleId')).toBe(false);
-    // Öğretmen own-read sahibi: published kendi kapsamını görebilir,
-    // taslağı asla keşfedemez.
+    // Öğretmen own-read sahibi: `GET /schedules/:id`'ye any-of ile ulaşır;
+    // sunucu own projeksiyonu uygular ve yayınlanmamış/başka kapsam için
+    // keşfedemez (non-enumerating 404). Taslak listesini asla göremez.
+    expect(ui.probe.canRequest('GET', '/schedules/:scheduleId')).toBe(true);
     expect(ui.probe.canRequest('GET', '/schedules/published')).toBe(true);
   });
 

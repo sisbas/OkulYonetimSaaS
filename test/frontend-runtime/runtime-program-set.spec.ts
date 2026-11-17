@@ -2,14 +2,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 /**
- * #490 — Program seti (haftalık program, builder, çakışma çözümü).
+ * #490 → #450 — Program seti (haftalık program, gün şeridi, gün ajandası, çakışma).
  *
- * Dışsal sözleşmeyi pinler: kapsam filtreleri (sınıf/öğretmen/derslik), ders
- * kartı görünümü, çakışma çözüm yüzeyi ve "otomatik çözücü devre dışı"
- * dürüstlüğü. Ham referans kimlikleri (UUID) yalnız data-* tanılama kanalında
- * kalır (K-35); görünür kart metni gün/saat gibi gerçek kullanıcı verisidir.
+ * Dışsal sözleşmeyi pinler: kapsam filtreleri (sınıf/öğretmen/derslik), haftanın
+ * gün şeridi, seçili günün dikey ajandası, çakışma çözüm yüzeyi ve "otomatik
+ * çözücü devre dışı" dürüstlüğü. Ham referans kimlikleri (UUID) yalnız data-*
+ * tanılama kanalında ve form değerlerinde kalır (K-35); görünür metin gün/saat
+ * ve sıra bilgisidir.
  */
-describe('#490 Program seti', () => {
+describe('#450 Haftalık program seti', () => {
   const root = process.cwd();
   const runtimeDir = path.join(root, 'frontend', 'runtime');
   const screensDir = path.join(runtimeDir, 'screens');
@@ -17,6 +18,33 @@ describe('#490 Program seti', () => {
 
   const html = fs.readFileSync(path.join(runtimeDir, 'index.html'), 'utf8');
   const schedule = fs.readFileSync(path.join(screensDir, 'schedule.js'), 'utf8');
+
+  describe('panel iskeleti (#450)', () => {
+    it('ships the weekly programme skeleton: scope, status, day strip, agenda, gate, actions', () => {
+      expect(html).toContain('id="program-panel"');
+      expect(html).toContain('id="program-heading"');
+      expect(html).toContain('id="program-scope"');
+      expect(html).toContain('id="schedule-status"');
+      expect(html).toContain('id="schedule-daystrip"');
+      expect(html).toContain('id="schedule-agenda"');
+      expect(html).toContain('id="schedule-gate"');
+      expect(html).toContain('id="schedule-actions"');
+      expect(html).toContain('id="schedule-editor"');
+      expect(html).toContain('id="schedule-conflicts"');
+    });
+
+    it('offers exactly one mutating path for a published programme: the new-period draft form', () => {
+      // Yayınlanmış program değiştirilemez: düzenleyici ve mutasyon kontrolleri yok.
+      expect(html).not.toContain('id="unpublish-schedule"');
+      expect(html).not.toContain('id="schedule-branch"');
+      expect(html).not.toContain('id="lesson-cards"');
+      expect(html).not.toContain('id="schedule-event-form"');
+      // Yeni taslak formu iki tarih de zorunlu tutar ve create yetkisine bağlıdır.
+      expect(html).toContain('id="schedule-effective-from" type="date" required');
+      expect(html).toContain('id="schedule-effective-to" type="date" required');
+      expect(schedule).toContain("hasCapability('schedule:draft:create')");
+    });
+  });
 
   describe('kapsam filtreleri (sınıf / öğretmen / derslik)', () => {
     it('ships the three scope filters on the program panel', () => {
@@ -38,49 +66,102 @@ describe('#490 Program seti', () => {
       expect(schedule).toContain("distinctValues(events, 'roomId')");
     });
 
-    it('filters the card view and keeps the filtered emptiness on the shared empty path', () => {
-      const cards = schedule.slice(
-        schedule.indexOf('function renderLessonCards()'),
-        schedule.indexOf('function renderConflictResolution('),
+    it('filters the agenda and keeps the filtered emptiness on the shared empty path', () => {
+      const agenda = schedule.slice(
+        schedule.indexOf('function renderAgenda()'),
+        schedule.indexOf('function renderGate()'),
       );
-      expect(cards).toContain("empty(target, 'schedule')");
+      expect(agenda).toContain("empty(target, 'scheduleDay')");
+      expect(agenda).toContain('filteredScheduleEvents()');
     });
   });
 
-  describe('ders kartları (#lesson-cards)', () => {
-    it('renders a live card region', () => {
-      expect(html).toContain('id="lesson-cards"');
-      expect(html).toContain('aria-label="Ders kartları"');
-      expect(schedule).toContain('function renderLessonCards()');
-      expect(schedule).toContain('data-lesson-card="${i}"');
+  describe('gün şeridi (#schedule-daystrip)', () => {
+    it('renders a pressed-button strip for the week, weekends only with events', () => {
+      expect(html).toContain('id="schedule-daystrip"');
+      expect(html).toContain('aria-label="Haftanın günleri"');
+      expect(schedule).toContain('const PROGRAMME_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];');
+      expect(schedule).toContain('const PROGRAMME_WEEKDAYS = [1, 2, 3, 4, 5];');
+      expect(schedule).toContain('function renderDayStrip()');
+      expect(schedule).toContain('data-day="${day}"');
+      expect(schedule).toContain('aria-pressed="${selected');
+      expect(schedule).toContain("data-day=\"${day}\"");
+      for (const day of ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']) {
+        expect(schedule).toContain(`'${day}'`);
+      }
+      // Hafta sonu yalnız o gün ders varsa (ya da seçiliyse) çizilir.
+      expect(schedule).toContain('PROGRAMME_WEEKDAYS.includes(day) || counts[day] > 0 || state.scheduleDay === day');
     });
 
-    it('keeps reference identifiers in diagnostics attributes, never visible copy (K-35)', () => {
-      expect(schedule).toContain("data-lesson-teacher=\"${escapeHtml(ev.teacherId || '')}\"");
-      expect(schedule).toContain("data-lesson-group=\"${escapeHtml(ev.studentGroupId || '')}\"");
-      expect(schedule).toContain("data-lesson-room=\"${escapeHtml(ev.roomId || '')}\"");
-      // Görünür metin gerçek kullanıcı verisidir: gün adı + saat aralığı;
-      // ham UUID öğretmen/sınıf/derslik etiketi kart metnine sızamaz.
-      expect(schedule).toContain("['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi']");
+    it('keeps the selection in state and re-renders only the strip and agenda', () => {
+      expect(schedule).toContain('function selectScheduleDay(day)');
+      expect(schedule).toContain('state.scheduleDay = value;');
+      expect(schedule).toContain('renderDayStrip();');
+      expect(schedule).toContain('renderAgenda();');
+    });
+  });
+
+  describe('gün ajandası (#schedule-agenda)', () => {
+    it('renders the selected day as a vertical agenda in time order', () => {
+      expect(html).toContain('id="schedule-agenda"');
+      expect(html).toContain('aria-label="Seçili günün dersleri"');
+      expect(schedule).toContain('function renderAgenda()');
+      expect(schedule).toContain('.sort(compareByStart)');
+      expect(schedule).toContain('data-schedule-event="${escapeHtml(String(ev?.eventId ?? \'\'))}"');
+      expect(schedule).toContain('class="agenda-item"');
+      expect(schedule).toContain('class="agenda-time"');
+    });
+
+    it('keeps reference identifiers out of visible copy; only diagnostics attributes and input values carry them (K-35)', () => {
+      expect(schedule).toContain("data-schedule-event=\"${escapeHtml(String(ev?.eventId ?? ''))}\"");
+      expect(schedule).toContain('Öğretmen');
+      expect(schedule).toContain('Sınıf');
+      expect(schedule).toContain('Derslik');
+      // Görünür başlık zaman dilimi etiketi ya da sıradır; ham UUID kopyaya sızamaz.
+      expect(schedule).toContain('String(ev?.timeSlotLabel ?? \'\').trim() || `Ders ${index + 1}`');
       expect(schedule).not.toContain('Öğretmen: ${escapeHtml(ev.teacherId');
       expect(schedule).not.toContain('Sınıf: ${escapeHtml(ev.studentGroupId');
       expect(schedule).not.toContain('Derslik: ${escapeHtml(ev.roomId');
     });
 
-    it('keeps the card view read-only; edits continue through the existing editor rows', () => {
-      // Tek mutasyon yüzeyi kalması için (K-59 bağlı): kartlar aksiyon taşımaz.
-      expect(schedule).toMatch(/data-lesson-card="\$\{i\}"[^>]*>([\s\S]*?)<p class="hint">Kayıt ayrıntısı/);
-      expect(schedule).toContain('data-schedule-row="${index}"');
+    it('renders the day empty state through the shared empty path', () => {
+      expect(schedule).toContain("empty(target, 'scheduleDay')");
+      const app = fs.readFileSync(path.join(runtimeDir, 'app.js'), 'utf8');
+      expect(app).toContain('scheduleDay: {');
+    });
+  });
+
+  describe('yayın kapısı ve yayın (read-after-write)', () => {
+    it('declares the gate facts and refuses to publish without current evidence', () => {
+      expect(schedule).toContain('function canPublishNow()');
+      expect(schedule).toContain("evidence.mode !== 'FULL' || evidence.evidenceStatus !== 'authoritative'");
+      expect(schedule).toContain('Number(evidence.scheduleRevision) !== Number(read.revision)');
+      expect(schedule).toContain('if (!evidence.canPublish) return false;');
+      expect(schedule).toContain('if (state.scheduleDirty) return false;');
+    });
+
+    it('uses the revision from the response body for If-Match, never the GET ETag', () => {
+      expect(schedule).toContain('function mutationToken(id, revision)');
+      expect(schedule).toContain('`"schedule:${String(id)}:v${Number(revision) || 1}"`');
+      // GET yanıtının header ETag'i hiçbir mutasyon isteğinde kullanılmaz.
+      expect(schedule).toContain("'If-Match': mutationIfMatch()");
+      expect(schedule).not.toContain('state.scheduleEtag = etag;');
+    });
+
+    it('re-reads the schedule after every mutation (read-after-write)', () => {
+      expect(schedule).toContain('async function loadScheduleDetail(scheduleId)');
+      expect(schedule).toContain('await loadScheduleDetail(state.scheduleId);');
+      expect((schedule.match(/await loadScheduleDetail/g) || []).length).toBeGreaterThanOrEqual(4);
     });
   });
 
   describe('çakışma çözümü (otomatik çözücü devre dışı)', () => {
     it('renders conflicts from the server validation findings, never an auto-solver', () => {
       expect(html).toContain('id="schedule-conflicts"');
-      expect(html).toContain('aria-label="Çakışma çözümü"');
+      expect(html).toContain('aria-label="Doğrulama bulguları"');
       expect(html).toContain('Otomatik çözücü devre dışı');
       expect(schedule).toContain('function renderConflictResolution(reasons)');
-      expect(schedule).toContain('Çakışma çözümü (otomatik çözücü devre dışı)');
+      expect(schedule).toContain('Doğrulama bulguları');
       expect(schedule).toContain('Çakışmalar elle çözülür');
       // Negatif sınırlar: istemcide otomatik çözücü yoktur.
       expect(schedule.toLowerCase()).not.toContain('autoresolve');
@@ -92,12 +173,12 @@ describe('#490 Program seti', () => {
       expect(schedule).toContain("displayTerm(scheduleReasonLabels, code, 'Çözülmesi gereken bir bulgu')");
     });
 
-    it('offers manual resolution by jumping to the conflicting lesson row', () => {
-      expect(schedule).toContain('data-action="schedule-conflict-edit"');
+    it('lets the operator jump to the conflicting agenda item', () => {
+      expect(schedule).toContain('data-action="schedule-conflict-show"');
       expect(schedule).toContain('scrollIntoView(');
     });
 
-    it('clears the conflict surface when the schedule is created or a draft is saved', () => {
+    it('clears the conflict surface when the schedule is loaded or validation is cleared', () => {
       expect((schedule.match(/renderConflictResolution\(\[\]\)/g) || []).length).toBeGreaterThanOrEqual(3);
     });
   });

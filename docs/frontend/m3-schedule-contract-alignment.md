@@ -140,3 +140,37 @@ The main risks are exposing draft existence to Teacher/Viewer, treating affected
 ## Sonraki Adım
 
 Run TypeScript/build and governance checks. Keep the PR in review/HOLD until all checks, both P2 threads and an independent approval pass. Runtime binding remains a separate future PR after the contract and Permission Catalog are approved.
+
+---
+
+## Runtime binding addendum (#450, 2026-11-17)
+
+This document was written before any runtime binding existed. It is retained as
+the skeleton-era record; the following is now in force and supersedes the
+"No Schedule runtime implementation" guardrail above.
+
+- The Program surface is bound: management drafts can be created, saved,
+  validated and published end to end from the UI; published programmes are
+  read-only and a new-period draft is the only forward path.
+- Teacher/Viewer visibility is capability-driven (any-of), not role-name
+  inferred: Teacher (`schedule:own:read`) sees own published events,
+  `schedule:read` sees the published branch programme, management keys see
+  drafts/published branch. Viewer carries no schedule keys and the tab
+  is hidden.
+- The client route table mirrors server `@PermissionsAny` for the read
+  endpoints and carries no unpublish affordance; unpublish remains an
+  API-only operation.
+- Publish requires current full validation evidence (mode FULL, authoritative,
+  canPublish, evidence revision == read revision, no unsaved rows) and renders
+  a written gate reason; it never retries `412`/`428` automatically.
+- The client never invents revision numbers; mutations echo only the
+  server-issued revision in the documented `"schedule:<id>:v<n>"` form, and
+  every mutation is followed by a read of the resource.
+- The four canonical publish-blocked states, the on-screen evidence card,
+  the `/conflicts/validate` path name and the period-conflict response class
+  remain owned by #453; the `SCHEDULE_PUBLISH_GATE_DESCRIPTOR` stays
+  `blocked`/`not_connected` until then.
+- Reference display names (teacher/course/room labels) are still absent from
+  the read DTO; visible copy is day/time/ordinal plus diagnostics `data-*`
+  (K-35).
+

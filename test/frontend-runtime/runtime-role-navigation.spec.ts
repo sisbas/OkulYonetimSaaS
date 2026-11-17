@@ -42,10 +42,10 @@ describe('runtime capability-driven navigation (#445)', () => {
 
   it('navSectionsFor returns capability-derived entry sets per persona', () => {
     const ui = runtime(PROBE);
-    // Öğretmen: teacher + attendance; program/ops/notifications anahtarı yok
+    // Öğretmen: teacher + attendance + program (yayınlanmış kendi programını salt-okur görür);
+    // ops/notifications anahtarı yok
     const teacher = ui.probe.navSectionsFor(TEACHER_PERMISSION_KEYS);
-    expect(teacher).toEqual(expect.arrayContaining(['bugun', 'teacher', 'attendance']));
-    expect(teacher).not.toContain('program');
+    expect(teacher).toEqual(expect.arrayContaining(['bugun', 'teacher', 'attendance', 'program']));
     expect(teacher).not.toContain('ops');
     expect(teacher).not.toContain('notifications');
     // Ops, teacher anahtarlarını da içerdiğinden teacher sekmesi de görünür
@@ -64,7 +64,7 @@ describe('runtime capability-driven navigation (#445)', () => {
     expect(tabs).toContain('bugun');
     expect(tabs).toContain('teacher');
     expect(tabs).toContain('attendance');
-    expect(tabs).not.toContain('program');
+    expect(tabs).toContain('program');
     expect(tabs).not.toContain('ops');
     expect(tabs).not.toContain('notifications');
   });
