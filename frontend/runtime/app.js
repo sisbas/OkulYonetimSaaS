@@ -146,6 +146,77 @@ const UI_STATES = {
     message: 'Bu metrik bu akademik yıl için zaten tanımlı.',
     hint: 'Farklı bir metrik seçin veya yılı değiştirin.',
   },
+  // #451 — sözleşme v2 §9 kanonik program doğrulama durumları.
+  event_conflict_teacher: {
+    title: 'Öğretmen ders çakışması',
+    message: 'Seçilen öğretmenin bu saatte başka dersi var.',
+    hint: 'Zaman dilimini değiştirin veya öğretmeni ayırın.',
+  },
+  event_conflict_group: {
+    title: 'Sınıf ders çakışması',
+    message: 'Seçilen sınıfın bu saatte başka dersi var.',
+    hint: 'Zaman dilimini değiştirin.',
+  },
+  event_conflict_room: {
+    title: 'Derslik çakışması',
+    message: 'Derslik bu saatte başka derse ayrılmış.',
+    hint: 'Dersliği veya zaman dilimini değiştirin.',
+  },
+  reference_timeslot_inactive: {
+    title: 'Zaman dilimi aktif değil',
+    message: 'Seçilen zaman dilimi aktif değil.',
+    hint: 'Aktif bir zaman dilimi seçin.',
+  },
+  reference_teacher_inactive: {
+    title: 'Öğretmen aktif değil',
+    message: 'Seçilen öğretmen aktif değil.',
+    hint: 'Aktif bir öğretmen seçin.',
+  },
+  reference_group_inactive: {
+    title: 'Sınıf aktif değil',
+    message: 'Seçilen sınıf aktif değil.',
+    hint: 'Aktif bir sınıf seçin.',
+  },
+  reference_teacher_branch_missing: {
+    title: 'Şube görevlendirmesi yok',
+    message: 'Öğretmenin bu şube için aktif görevlendirmesi bulunmuyor.',
+    hint: 'Görevlendirmeyi veya şube kapsamını kontrol edin.',
+  },
+  reference_teacher_course_mismatch: {
+    title: 'Ders branş eşleşmesi yok',
+    message: 'Öğretmen seçilen dersi veremiyor.',
+    hint: 'Dersi veya öğretmeni değiştirin.',
+  },
+  reference_not_found: {
+    title: 'Kayıt bulunamadı',
+    message: 'İlgili kayıt bulunamadı.',
+    hint: 'Yenileyip tekrar deneyin; yoksa seçimleri gözden geçirin.',
+  },
+  published_read_only: {
+    title: 'Yayınlanmış program salt okunur',
+    message: 'Yayınlanmış program değiştirilemez.',
+    hint: 'Yeni dönem taslağı oluşturun.',
+  },
+  publish_blocked_empty: {
+    title: 'Program boş',
+    message: 'Boş program yayınlanamaz.',
+    hint: 'En az bir ders ekleyin.',
+  },
+  publish_blocked_stale: {
+    title: 'Doğrulama güncel değil',
+    message: 'Program değişti; doğrulama güncel değil.',
+    hint: 'Doğrulamayı yeniden çalıştırın.',
+  },
+  publish_blocked_conflicts: {
+    title: 'Çatışmalar çözülmemiş',
+    message: 'Zorunlu çatışmalar çözülmeden yayınlanamaz.',
+    hint: 'Bulguları giderip tekrar doğrulayın.',
+  },
+  publish_blocked_period: {
+    title: 'Dönem çakışması',
+    message: 'Bu şube ve tarih aralığında başka bir yayınlanmış program bulunuyor.',
+    hint: 'Geçerlilik aralığını değiştirin.',
+  },
 };
 
 const SERVER_REASON_UI = {
@@ -220,6 +291,25 @@ const SERVER_REASON_UI = {
     state: 'duplicate_metric_year',
     message: 'Bu metrik bu akademik yıl için zaten tanımlı.',
   },
+  // #451 — sözleşme v2 §9 kanonik program doğrulama kodları (hata zarfı yolu).
+  TEACHER_TIME_OVERLAP: { state: 'event_conflict_teacher' },
+  STUDENT_GROUP_TIME_OVERLAP: { state: 'event_conflict_group' },
+  ROOM_TIME_OVERLAP: { state: 'event_conflict_room' },
+  TIMESLOT_INACTIVE: { state: 'reference_timeslot_inactive' },
+  TEACHER_INACTIVE: { state: 'reference_teacher_inactive' },
+  STUDENT_GROUP_INACTIVE: { state: 'reference_group_inactive' },
+  TEACHER_BRANCH_ASSIGNMENT_MISSING: { state: 'reference_teacher_branch_missing' },
+  TEACHER_COURSE_MISMATCH: { state: 'reference_teacher_course_mismatch' },
+  // Güvenlik kodları: kanonda paylaşılan non-enumerating durum (sözleşme §5/§9).
+  TENANT_REFERENCE_MISMATCH: { state: 'reference_not_found' },
+  BRANCH_REFERENCE_MISMATCH: { state: 'reference_not_found' },
+  PUBLISHED_SCHEDULE_IMMUTABLE: { state: 'published_read_only' },
+  SCHEDULE_EMPTY: { state: 'publish_blocked_empty' },
+  SCHEDULE_VALIDATION_STALE: { state: 'publish_blocked_stale' },
+  SCHEDULE_HARD_CONFLICTS_PRESENT: { state: 'publish_blocked_conflicts' },
+  PUBLISHED_SCHEDULE_PERIOD_CONFLICT: { state: 'publish_blocked_period' },
+  SCHEDULE_VERSION_MISMATCH: { state: 'stale_version' },
+  SCHEDULE_VERSION_REQUIRED: { state: 'version_required' },
 };
 
 const HTTP_STATUS_UI_STATE = {
@@ -1561,6 +1651,34 @@ const scheduleReasonLabels = {
   SCHEDULE_VERSION_MISMATCH: 'Kayıt güncellendi',
   SCHEDULE_VERSION_REQUIRED: 'Güncel kayıt bekleniyor',
 };
+
+// #451 — sözleşme v2 §9 kanonik kod → UI durumu (bulgu satırında ve sunucuyu
+// suçlayan hata yüzeyinde hizmet eder). Güvenlik kodları kanonda tek paylaşılan
+// durumu kullanır: ayrı durumlar açılamaz (non-enumerating).
+const scheduleReasonStates = {
+  TEACHER_TIME_OVERLAP: 'event_conflict_teacher',
+  STUDENT_GROUP_TIME_OVERLAP: 'event_conflict_group',
+  ROOM_TIME_OVERLAP: 'event_conflict_room',
+  TIMESLOT_INACTIVE: 'reference_timeslot_inactive',
+  TEACHER_INACTIVE: 'reference_teacher_inactive',
+  STUDENT_GROUP_INACTIVE: 'reference_group_inactive',
+  TEACHER_BRANCH_ASSIGNMENT_MISSING: 'reference_teacher_branch_missing',
+  TEACHER_COURSE_MISMATCH: 'reference_teacher_course_mismatch',
+  TENANT_REFERENCE_MISMATCH: 'reference_not_found',
+  BRANCH_REFERENCE_MISMATCH: 'reference_not_found',
+  PUBLISHED_SCHEDULE_IMMUTABLE: 'published_read_only',
+  SCHEDULE_EMPTY: 'publish_blocked_empty',
+  SCHEDULE_VALIDATION_STALE: 'publish_blocked_stale',
+  SCHEDULE_HARD_CONFLICTS_PRESENT: 'publish_blocked_conflicts',
+  PUBLISHED_SCHEDULE_PERIOD_CONFLICT: 'publish_blocked_period',
+  SCHEDULE_VERSION_MISMATCH: 'stale_version',
+  SCHEDULE_VERSION_REQUIRED: 'version_required',
+};
+
+function scheduleReasonState(code) {
+  const raw = String(code ?? '').trim();
+  return scheduleReasonStates[raw] || 'unknown_server_state';
+}
 
 function displayTerm(labels, value, fallback) {
   const raw = String(value ?? '').trim();

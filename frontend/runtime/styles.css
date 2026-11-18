@@ -537,6 +537,38 @@ main { display: grid; gap: 1rem; }
 .gate-line[data-gate-state="closed_stale"],
 .gate-line[data-gate-state="closed_conflicts"] { border-left-color: #d97706; }
 .gate-line[data-gate-state="closed_dirty"] { border-left-color: #d97706; font-weight: 700; }
+
+/* #451 — Doğrulama özeti ve güne göre gruplu bulgular. */
+.validation-summary-box { border-left: 6px solid #3568d4; }
+.validation-summary-box[data-publishability="yes"] { border-left-color: #166534; }
+.validation-summary-box[data-publishability="no"] { border-left-color: #d97706; }
+.validation-summary-box[data-publishability="not_evidence"] { border-left-color: #7c3aed; }
+.validation-summary { display: grid; gap: 0.35rem; }
+.validation-summary h3 { margin: 0; font-size: 1rem; }
+.validation-summary-editor-feedback { border-left: 4px solid #7c3aed; padding-left: 0.6rem; }
+.editor-feedback-note { background: #f3e8ff; border-radius: 8px; color: #5b21b6; font-size: 0.9rem; margin: 0; padding: 0.45rem 0.6rem; }
+.validation-summary-grid { display: grid; gap: 0.25rem 0.9rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.validation-summary-grid > div { display: contents; }
+.validation-summary-grid dt { color: #475569; font-size: 0.85rem; }
+.validation-summary-grid dd { font-variant-numeric: tabular-nums; margin: 0; }
+.fingerprint { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.8rem; word-break: break-all; }
+.findings-card { display: grid; gap: 0.6rem; }
+.findings-card h3 { margin: 0; }
+.findings-day { border-top: 1px solid #e2e8f0; display: grid; gap: 0.35rem; padding-top: 0.5rem; }
+.findings-day h4 { color: #334155; font-size: 0.92rem; margin: 0; }
+.findings-list { display: grid; gap: 0.45rem; list-style: none; margin: 0; padding: 0; }
+.finding-item { align-items: start; border: 1px solid #d9e0ee; border-radius: 12px; display: grid; gap: 0.35rem; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; padding: 0.6rem 0.75rem; }
+.finding-item[data-state^="event_conflict"] { border-left: 6px solid #d97706; }
+.finding-item[data-state^="publish_blocked"] { border-left: 6px solid #d97706; }
+.finding-item[data-state^="reference_"] { border-left: 6px solid #3568d4; }
+.finding-item[data-state="published_read_only"] { border-left: 6px solid #166534; }
+.finding-item[data-state="stale_version"],
+.finding-item[data-state="version_required"] { border-left: 6px solid #172033; }
+.finding-label { font-weight: 600; }
+.finding-conflict { color: #475569; font-size: 0.9rem; }
+.linklike { background: none; border: none; color: #1d4ed8; cursor: pointer; font: inherit; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+.finding-show { justify-self: end; }
+
 .row-actions { display: flex; gap: 0.4rem; }
 .row-invalid { border-color: #ef4444 !important; }
 .describedby-note { color: #64748b; font-size: 0.78rem; margin: 0; }

@@ -399,6 +399,32 @@ function renderScheduleEditor() {
   saveButton.disabled = unsaved === 0 || mutationDisabled();
 }
 
+// #451 — bir bulgu, ait olduğu güne ve kendi kanonik durumuna ait kalır;
+// başka bir bulguyla birleşmez. Çakışan ders (conflictingEventId) isme
+// bağlanır; ham kimlikler yalnız data-* teşhis kanalında yaşar.
+function findEventById(id) {
+  const wanted = String(id ?? '').trim();
+  if (!wanted) return null;
+  const events = Array.isArray(state.scheduleEvents) ? state.scheduleEvents : [];
+  return events.find((ev) => String(ev?.eventId ?? '') === wanted) ?? null;
+}
+
+function findingDayKey(reason) {
+  const ownEvent = reason?.eventId ? findEventById(reason.eventId) : null;
+  const asDay = (ev) => Number(ev?.dayOfWeek);
+  if (ownEvent && Number.isInteger(asDay(ownEvent))) return asDay(ownEvent);
+  const conflictEvent = reason?.conflictingEventId ? findEventById(reason.conflictingEventId) : null;
+  if (conflictEvent && Number.isInteger(asDay(conflictEvent))) return asDay(conflictEvent);
+  return 'genel';
+}
+
+function conflictLessonMarkup(conflictingEventId) {
+  const conflictEvent = findEventById(conflictingEventId);
+  if (!conflictEvent) return '<span class="finding-conflict">Çakıştığı kayıt bulunamadı.</span>';
+  const when = `${programmeDayLabel(conflictEvent?.dayOfWeek)} ${programmeTime(conflictEvent?.startTime)}–${programmeTime(conflictEvent?.endTime)}`;
+  return `<span class="finding-conflict">Çakıştığı ders: <button type="button" class="linklike" data-action="schedule-conflict-show" data-event-id="${escapeHtml(String(conflictEvent?.eventId ?? ''))}">${escapeHtml(when)}</button></span>`;
+}
+
 function renderConflictResolution(reasons) {
   const target = $('#schedule-conflicts');
   if (!target) return;
@@ -407,21 +433,95 @@ function renderConflictResolution(reasons) {
     target.innerHTML = '';
     return;
   }
-  target.innerHTML = `<article class="card">
+  const groups = new Map();
+  for (const reason of list) {
+    const key = findingDayKey(reason);
+    const bucket = groups.get(key) ?? [];
+    bucket.push(reason);
+    groups.set(key, bucket);
+  }
+  const dayKeys = PROGRAMME_DAY_ORDER.filter((day) => groups.has(day));
+  const orderedKeys = groups.has('genel') ? [...dayKeys, 'genel'] : dayKeys;
+  const renderItems = (items) => `<ul class="findings-list">${items.map((r) => {
+    const code = pick(r, ['code'], '');
+    const label = displayTerm(scheduleReasonLabels, code, 'Çözülmesi gereken bir bulgu');
+    const reasonState = scheduleReasonState(code);
+    const eventId = pick(r, ['eventId'], '');
+    const conflictingEventId = pick(r, ['conflictingEventId'], '');
+    return `<li data-schedule-reason="${escapeHtml(code)}" data-state="${escapeHtml(reasonState)}" class="finding-item">
+      <span class="finding-label">${escapeHtml(label)}</span>
+      ${conflictingEventId ? conflictLessonMarkup(conflictingEventId) : ''}
+      ${eventId ? `<button type="button" class="finding-show" data-action="schedule-conflict-show" data-event-id="${escapeHtml(String(eventId))}">Göster</button>` : ''}
+    </li>`;
+  }).join('')}</ul>`;
+  const renderGroup = (key) => {
+    const items = groups.get(key);
+    const isGenel = key === 'genel';
+    const title = isGenel ? 'Genel' : programmeDayLabel(key);
+    return `<section class="findings-day" data-finding-day="${isGenel ? 'genel' : String(key)}" data-finding-count="${items.length}">
+      <h4>${escapeHtml(title)} · ${escapeHtml(String(items.length))} bulgu</h4>
+      ${renderItems(items)}
+    </section>`;
+  };
+  target.innerHTML = `<article class="card findings-card">
     <h3>Doğrulama bulguları</h3>
     <p class="hint">Çakışmalar elle çözülür: etkilenen dersi kontrol edip düzenleyin.</p>
-    <ul class="impact-list">
-      ${list.map((r) => {
-        const code = pick(r, ['code'], '');
-        const label = displayTerm(scheduleReasonLabels, code, 'Çözülmesi gereken bir bulgu');
-        const eventId = pick(r, ['eventId'], '');
-        return `<li data-schedule-reason="${escapeHtml(code)}">
-          <span>${escapeHtml(label)}</span>
-          ${eventId ? `<button type="button" data-action="schedule-conflict-show" data-event-id="${escapeHtml(String(eventId))}">Göster</button>` : ''}
-        </li>`;
-      }).join('')}
-    </ul>
+    ${orderedKeys.map(renderGroup).join('')}
   </article>`;
+}
+
+// #451 — tam doğrulamanın koşu özeti: mod, kanıt durumu, yayın izni, revizyon,
+// parmak izi ve yayın engelleyici çatışma sayısı. Kısmi doğrulama asla yayın
+// kanıtı gibi çizilmez; editör geri bildirimi olarak etiketlenir.
+function renderValidationSummary(evidence) {
+  const target = $('#schedule-validation-summary');
+  if (!target) return;
+  if (!evidence) {
+    resetValidationSummary();
+    return;
+  }
+  const mode = String(evidence.mode ?? '').trim().toUpperCase() || 'UNKNOWN';
+  const evidenceStatus = String(evidence.evidenceStatus ?? '').trim() || 'unknown';
+  const authoritative = mode === 'FULL' && evidenceStatus === 'authoritative';
+  const canPublish = evidence.canPublish === true;
+  const revisionRaw = Number(evidence.scheduleRevision);
+  const revision = Number.isFinite(revisionRaw) ? String(revisionRaw) : 'bilinmiyor';
+  const conflictRaw = Number(evidence.hardConflictCount);
+  const conflicts = Number.isFinite(conflictRaw) ? String(Math.max(0, conflictRaw)) : 'bilinmiyor';
+  const fingerprint = String(evidence.inputFingerprint ?? '').trim();
+  const publishability = authoritative ? (canPublish ? 'Evet' : 'Hayır') : 'Yayın kanıtı değil';
+  target.hidden = false;
+  target.classList.remove('hidden');
+  target.dataset.mode = mode;
+  target.dataset.evidenceStatus = evidenceStatus;
+  target.dataset.publishability = authoritative ? (canPublish ? 'yes' : 'no') : 'not_evidence';
+  const modeLabel = mode === 'FULL' ? 'Tam doğrulama' : mode === 'INCREMENTAL' ? 'Kısmi doğrulama' : 'Bilinmiyor';
+  const statusLabel = authoritative ? 'Güncel' : 'Editör geri bildirimi';
+  target.innerHTML = `<article class="validation-summary${authoritative ? '' : ' validation-summary-editor-feedback'}">
+    <h3>Doğrulama özeti</h3>
+    ${authoritative
+      ? ''
+      : '<p class="editor-feedback-note" role="note">Kısmi doğrulama çalıştı (editör geri bildirimi); bu sonucun yayın kararı değildir.</p>'}
+    <dl class="validation-summary-grid">
+      <div><dt>Doğrulama:</dt><dd>${escapeHtml(modeLabel)}</dd></div>
+      <div><dt>Kanıt durumu:</dt><dd>${escapeHtml(statusLabel)}</dd></div>
+      <div><dt>Yayın izni:</dt><dd>${escapeHtml(publishability)}</dd></div>
+      <div><dt>Revizyon:</dt><dd>${escapeHtml(revision)}</dd></div>
+      <div><dt>Kanıt parmak izi:</dt><dd class="fingerprint">${fingerprint ? escapeHtml(fingerprint) : 'bilinmiyor'}</dd></div>
+      <div><dt>Yayın engelleyici çatışma:</dt><dd>${escapeHtml(conflicts)}</dd></div>
+    </dl>
+  </article>`;
+}
+
+function resetValidationSummary() {
+  const target = $('#schedule-validation-summary');
+  if (!target) return;
+  target.hidden = true;
+  target.classList.add('hidden');
+  target.innerHTML = '';
+  delete target.dataset.mode;
+  delete target.dataset.evidenceStatus;
+  delete target.dataset.publishability;
 }
 
 function renderProgramme() {
@@ -509,6 +609,7 @@ async function loadScheduleDetail(scheduleId) {
   state.scheduleRows = [];
   state.scheduleEvidence = null;
   state.scheduleDirty = false;
+  resetValidationSummary();
   // GET ETag'i content-addressed'dir; `If-Match` gövdedeki revision'dan kurulur.
   state.scheduleEtag = mutationToken(state.scheduleId, state.scheduleRevision);
   state.scheduleDay = pickDefaultDay(state.scheduleEvents, state.scheduleDay);
@@ -632,6 +733,7 @@ function addScheduleEvent() {
   });
   state.scheduleDirty = true;
   state.scheduleEvidence = null;
+  resetValidationSummary();
   renderScheduleEditor();
   renderGate();
   renderScheduleActions();
@@ -656,6 +758,7 @@ function handleScheduleRowInput(event) {
   if (!Number.isInteger(index) || !state.scheduleRows[index]) return;
   state.scheduleRows[index] = { ...state.scheduleRows[index], [field]: target.value };
   state.scheduleEvidence = null;
+  resetValidationSummary();
   renderGate();
   renderScheduleActions();
 }
@@ -725,15 +828,23 @@ async function validateSchedule(event) {
       body: { branchId: getBranchId(), events: readEventsAsDraft() },
     });
     state.scheduleEvidence = body && body.evidence ? body.evidence : body;
+    const partial = !(state.scheduleEvidence?.mode === 'FULL'
+      && state.scheduleEvidence?.evidenceStatus === 'authoritative');
     const canPublish = canPublishNow();
     renderConflictResolution(asArray(state.scheduleEvidence, ['reasons']));
+    renderValidationSummary(state.scheduleEvidence);
     renderScheduleStatus();
     renderGate();
     renderScheduleActions();
-    announce(canPublish ? 'Doğrulama geçti; yayınlanabilir.' : 'Doğrulama yayın engelleri buldu.', canPublish ? 'success' : 'warning');
+    announce(canPublish
+      ? 'Doğrulama geçti; yayınlanabilir.'
+      : partial
+        ? 'Kısmi doğrulama; yayın için tam doğrulama gerekli.'
+        : 'Doğrulama yayın engelleri buldu.', canPublish ? 'success' : 'warning');
   } catch (error) {
     renderError(target, error);
     renderConflictResolution([]);
+    resetValidationSummary();
   }
 }
 
@@ -770,6 +881,7 @@ async function publishSchedule() {
     if (form && typeof form.reset === 'function') form.reset();
     await loadScheduleDetail(state.scheduleId);
     renderConflictResolution([]);
+    resetValidationSummary();
     announce('Çizelge yayınlandı.', 'success');
   } catch (error) {
     renderError(target, error);
@@ -859,7 +971,16 @@ document.addEventListener('click', (event) => {
     const id = String(button.dataset.eventId ?? '');
     if (id) {
       try {
-        const el = document.querySelector(`[data-schedule-event="${id}"]`);
+        let el = document.querySelector(`[data-schedule-event="${id}"]`);
+        if (!el) {
+          const ev = findEventById(id);
+          if (ev && Number.isInteger(Number(ev?.dayOfWeek))) {
+            state.scheduleDay = Number(ev.dayOfWeek);
+            renderDayStrip();
+            renderAgenda();
+            el = document.querySelector(`[data-schedule-event="${id}"]`);
+          }
+        }
         if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } catch (error) { /* bulgu başka günde olabilir */ }
     }
