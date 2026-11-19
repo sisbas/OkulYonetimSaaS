@@ -1,0 +1,46 @@
+# The Vercel × Neon integration creates one Neon branch per preview:
+# preview/<git-branch>. Branches are otherwise cleaned up only when Vercel
+# deletes the deployment, and retention exceptions can delay that long enough
+# to exhaust the Neon Free-plan 10-branch limit (#503).
+#
+# Delete the preview branch as soon as the PR closes. This is idempotent: if
+# Vercel's cleanup webhook arrives first, the branch is already gone.
+#
+# Required repository configuration:
+#   variable NEON_PROJECT_ID  (Neon Console → Project → Settings → Project ID)
+#   secret   NEON_API_KEY     (Neon Console → Account Settings → API Keys)
+# Without them the job skips with a notice instead of failing a closed PR.
+
+name: Cleanup Neon preview branch
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  delete-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check cleanup configuration
+        id: config
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: |
+          if [ -z "$NEON_API_KEY" ] || [ -z "$NEON_PROJECT_ID" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::NEON_API_KEY / NEON_PROJECT_ID not configured; preview branch cleanup skipped."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Delete preview branch
+        if: steps.config.outputs.configured == 'true'
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: preview/${{ github.head_ref }}
+          api_key: ${{ secrets.NEON_API_KEY }}
