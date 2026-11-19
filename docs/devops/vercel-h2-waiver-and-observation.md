@@ -1,11 +1,15 @@
 # H2 — Vercel Preview: Kayıtlı Waiver + Gözlem Alternatifi (#329)
 
-**Karar tarihi:** 2026-09-27 · **Karar veren:** CTO (insan kapısı H2) · **Durum:** **WAIVER KAYITLI**
+**Karar tarihi:** 2026-09-27 · **Karar veren:** CTO (insan kapısı H2) · **Durum:** **WAIVER RETIRED (2026-11-19, #503)**
 **Refs:** #329, #332 (H1), `docs/phase2/remaining-plan-v2.md` §10/H2 · **Sahiplik:** docs = A6; karar = CTO.
 
 Bu belge, Vercel GitHub App preview hatasının **merge bloklayıcı olmadığını** kayda geçirir ve
 CTO'nun talebi doğrultusunda **değişiklikleri gözlemleme** işini ayrı bir kanala bağlar. Gizleme/susturma
 YASAK: aşağıdaki FAILURE kayıtları olduğu gibi taşınır.
+
+> **Güncel durum (2026-11-19):** #503 kapsamında taze bir preview deployment `READY` ve Vercel check
+> `SUCCESS` döndü; §4.1 iptal koşulu gerçekleşti. Waiver **RETIRED**, ayrıntılar §5'te.
+> §1-§4 aşağıda denetim izi olarak korunmuştur.
 
 ---
 
@@ -116,3 +120,47 @@ ruleset'e göre merge'i **bloklamaz**. Onu zorunlu hâle getirmek ayrı bir gove
 
 **İlişkili:** `artifacts/H1-H2/H2-vercel-waiver.md` · `artifacts/H1-H2/H1-prod-env-and-health.md` ·
 `docs/devops/required-checks.md` · `docs/phase2/progress-v2.md`
+
+---
+
+## 5. Resolution (#503) — 2026-11-19
+
+**Sonuç:** #329'un kalan etkisi giderildi; §4.1 iptal koşulu gerçekleşti. Waiver **RETIRED**.
+
+### 5.1 Kök neden
+
+Neon Free plan **10 branch/proje** sınırı koyuyor. Vercel-Managed Neon integration her preview deployment
+için `preview/<git-branch>` adlı bir branch oluşturuyor; temizlik yalnızca ilgili Vercel deployment'ı
+silindiğinde tetikleniyor. Vercel retention istisnaları (son 20 ready preview, açık PR'ın son preview'ı,
+custom alias) eski branch'lerin uzun süre kalmasına yol açıyor → limit dolunca branch provisioning
+başarısız oluyor → deployment `Resource provisioning failed` ile build öncesinde düşüyor (`output: []`,
+duration 0). #503'teki 27 Ekim 5 Ready / 3 Error ve 29 Ekim 0 Ready / 6 Error deseni bu tükenmeyle uyumlu.
+
+### 5.2 Onarım ve kanıt
+
+- **İnsan (Neon dashboard):** biriken `preview/*` branch'leri temizlendi.
+- **Taze preview redeploy:** `HKPv3FdVv7Lj7RtwqYK8rvWyVb1j` → **READY**; Vercel StatusContext **SUCCESS**.
+  URL: https://vercel.com/sisbas-projects-d3c081cb/okulyonetimsaas/HKPv3FdVv7Lj7RtwqYK8rvWyVb1j
+- **Bağlı PR / head:** #530 · `eb70ff3ccc523e97745bfc1dfc6e129609aab28d` · doğrulama `gh pr checks 530`.
+- **Kanıt sınırı:** temizlik öncesi kesin branch sayısı kaydedilmedi. Nedensel kanıt "cleanup → taze
+  redeploy READY" ve yukarıdaki zaman deseni; "kesin sayı 10/10'du" iddiası yapılmıyor.
+
+### 5.3 Kalıcı önleme
+
+1. `.github/workflows/cleanup-neon-preview-branch.yml` — PR kapanınca `preview/<head_ref>` branch'ini
+   siler (`neondatabase/delete-branch-action@v3`). Gereksinim: repo variable `NEON_PROJECT_ID` ve repo
+   secret `NEON_API_KEY`. İkisi yoksa job **notice** ile atlanır; yanlış yapılandırma sessizce kapanmaz.
+2. Vercel → Project → Settings → Build and Deployment → **Deployment Retention Policy** →
+   *Pre-Production Deployments* en kısa süre. Retention tek başına yeterli değildir (istisnalar temizliği
+   geciktirir); birincil çözüm §5.3.1'dir.
+3. Runbook: Neon Console → Branches sayfasında `preview/*` sayısını izle; limit yaklaşırsa eski branch'leri
+   sil. Production/default branch **asla** silinmez; preview ortamı production `DATABASE_URL`'ine
+   yönlendirilmez.
+
+### 5.4 Waiver'ın sonlandırılması
+
+- §4.1 koşulu gerçekleşti: yeni preview deploy'da Vercel status SUCCESS. Bu belge artık aktif bir waiver
+  bildirimi değil, **karar ve onarım kaydıdır**.
+- Vercel StatusContext hâlâ zorunlu merge check'i **değildir** (bkz. §3.2 ruleset listesi). Bundan sonra
+  kırmızı bir preview "waived hata" değil, **regresyon** olarak ele alınıp RCA → REPAIR yapılmalıdır.
+- §1-§4'teki geçmiş kayıtlar silinmedi; denetim izi olarak korundu.
