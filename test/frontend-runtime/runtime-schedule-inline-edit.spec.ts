@@ -79,7 +79,8 @@ async function loadDraft(ui: ReturnType<typeof runtime>, read = readFor()) {
 
 function lastCallTo(ui: ReturnType<typeof runtime>, fragment: string) {
   const calls = ui.fetch.mock.calls as Array<[string, { method?: string; headers?: Record<string, string>; body?: string }]>;
-  return [...calls].reverse().find(([url]) => String(url).includes(fragment));
+  return [...calls].reverse().find(([url]) => String(url).includes(fragment)
+    && !(fragment === '/draft' && String(url).includes('/drafts')));
 }
 
 function visible(html: string): string {
@@ -149,8 +150,8 @@ describe('#452 gün ajandası yerinde düzenleme yüzeyi', () => {
     expect(ui.probe.state.scheduleEvents).toEqual([]);
     expect(ui.probe.state.scheduleDirty).toBe(true);
     expect(ui.element('#schedule-gate').textContent).toContain('en az bir ders');
-    expect(ui.element('#schedule-editor').innerHTML).toContain('id="save-schedule-draft"');
-    expect(ui.element('#schedule-editor').innerHTML).not.toMatch(/id="save-schedule-draft"[^>]*disabled/);
+    expect(ui.element('#schedule-editor').classList.contains('hidden')).toBe(false);
+    expect(ui.element('#save-schedule-draft').disabled).toBe(false);
 
     ui.fetch.mockResolvedValueOnce(etagResponse({ id: SCHEDULE_ID }, '"schedule:write"'));
     ui.fetch.mockResolvedValueOnce(etagResponse(readFor({ events: [], eventCount: 0, revision: 2 }), '"schedule:readback"'));
@@ -192,7 +193,7 @@ describe('#452 gün ajandası yerinde düzenleme yüzeyi', () => {
       eventCount: 2,
     }), '"schedule:readback"'));
     await ui.probe.saveScheduleDraft();
-    const draftCalls = (ui.fetch.mock.calls as Array<[string]>).filter(([url]) => String(url).includes('/draft'));
+    const draftCalls = (ui.fetch.mock.calls as Array<[string]>).filter(([url]) => String(url).includes('/draft') && !String(url).includes('/drafts'));
     expect(draftCalls.length).toBe(1);
     const save = lastCallTo(ui, '/draft');
     const body = JSON.parse(save?.[1].body ?? '{}');

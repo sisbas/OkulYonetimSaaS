@@ -8,12 +8,17 @@
 // ders ekler, kaydeder, güncel doğrulama kanıtını bekler ve yayınlar.
 // Yayınlanmış program salt okunurdur; tek ileri yol yeni dönem taslağıdır.
 //
-// Revizyon disiplini (#441 story 75, #447): yanıt header'ı `Content-Length`-
-// benzeri bir content-hash ETag taşır; mutasyon `If-Match` başlığı ise HER
-// ZAMAN yanıt gövdesindeki `revision` alanından kurulan belgelenmiş biçimdir
-// (`"schedule:<id>:v<n>"`). İstemci revision aritmetiği YAPMAZ ve GET ETag'ini
-// asla `If-Match` olarak göndermez; her mutasyondan sonra kaynağı yeniden
-// okur (read-after-write).
+// Revizyon disiplini (#441 story 75, #447, #452): GET yanıtı içerik-adresli
+// bir ETag taşır; mutasyon `If-Match` başlığı ise HER ZAMAN sunucunun
+// read-back gövdesindeki `revision` alanından kurulan belgelenmiş biçimdir
+// (`"schedule:<id>:v<n>"`). İstemci revision aritmetiği YAPMAZ, fallback
+// üretmez ve GET ETag'ini asla `If-Match` olarak göndermez.
+//
+// #452: 412 (bayat) ve 428 (eksik sürüm) ayrı anlam ve ayrı yüzeydir; ikisi de
+// tüm mutation kontrollerini kilitler, hiçbiri otomatik yeniden denemez.
+// Offline istemci okumaya devam eder, yazma yapamaz ve depolanan veriye
+// düşmez. Kalıcı dersler ajanda içinde sahnelenir, tek `Taslağı kaydet`
+// ile kalıcılaşır; yeni satırlar mevcut `#schedule-events` editöründe kalır.
 
 const PROGRAMME_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const PROGRAMME_WEEKDAYS = [1, 2, 3, 4, 5];
@@ -46,8 +51,46 @@ function programmePeriodLabel(read) {
   return from || to || '';
 }
 
+const SCHEDULE_VERSION_COPY = {
+  stale_version: {
+    title: 'Program başka bir işlemle güncellendi',
+    message: 'Program başka bir işlemle güncellendi; değişiklikleriniz korunuyor. Kaydetmek için önce yenileyin.',
+    hint: 'Yenile\'ye basıp güncel sürümü yükleyin.',
+    gateState: 'version_stale',
+  },
+  version_required: {
+    title: 'Program sürümü doğrulanamadı',
+    message: 'Programın sunucudaki sürümü alınamadı; hiçbir değişiklik gönderilemez.',
+    hint: 'Yenile\'ye basıp programı yeniden yükleyin.',
+    gateState: 'version_missing',
+  },
+};
+
+function serverRevision(revision) {
+  const value = Number(revision);
+  return Number.isInteger(value) && value >= 1 ? value : 0;
+}
+
+/** Sunucu pozitif bir revision vermediyse istemci asla sürüm üretmez. */
 function mutationToken(id, revision) {
-  return `"schedule:${String(id)}:v${Number(revision) || 1}"`;
+  const value = Number(revision);
+  if (!id || !Number.isInteger(value) || value < 1) return '';
+  return `"schedule:${String(id)}:v${value}"`;
+}
+
+function scheduleMutationLocked() {
+  return Boolean(state.scheduleVersionState) || isOffline();
+}
+
+function canEditSchedule() {
+  const read = state.scheduleRead;
+  return Boolean(read && read.scheduleId && !read.readOnly
+    && read.status !== 'published' && hasCapability('schedule:draft:update'));
+}
+
+function isScheduleVersionError(error) {
+  const stateName = String(error?.uiState ?? '');
+  return stateName === 'stale_version' || stateName === 'version_required';
 }
 
 function timeToMinutes(value) {
@@ -59,9 +102,8 @@ function programmeDayLabel(day) {
   return PROGRAMME_DAY_LABELS[Number(day)] ?? 'Gün';
 }
 
-function readEventsAsDraft() {
-  const events = Array.isArray(state.scheduleRead?.events) ? state.scheduleRead.events : [];
-  return events.map((ev) => ({
+function toDraftEvent(ev) {
+  return {
     eventId: String(ev?.eventId ?? ''),
     teacherId: String(ev?.teacherId ?? ''),
     teacherBranchId: String(ev?.teacherBranchId ?? ''),
@@ -73,7 +115,17 @@ function readEventsAsDraft() {
     startTime: programmeTime(ev?.startTime),
     endTime: programmeTime(ev?.endTime),
     timeSlotLabel: ev?.timeSlotLabel ?? null,
-  }));
+  };
+}
+
+function readEventsFromRead(read) {
+  const events = Array.isArray(read?.events) ? read.events : [];
+  return events.map(toDraftEvent);
+}
+
+/** #452 — ajanda ve kaydetme aynı çalışma kopyasını okur. */
+function readEventsAsDraft() {
+  return (Array.isArray(state.scheduleEvents) ? state.scheduleEvents : []).map(toDraftEvent);
 }
 
 function rowsAsDraft() {
@@ -98,9 +150,29 @@ function newEventId() {
     : `row-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
 }
 
+/** Kalıcı çalışma kopyası + yeni satırlar: kaydedilecek tam ders listesi. */
+function stagedEventsAsDraft() {
+  return [...readEventsAsDraft(), ...rowsAsDraft()];
+}
+
+function findEventIndex(eventId) {
+  const wanted = String(eventId ?? '');
+  return (state.scheduleEvents || []).findIndex((ev) => String(ev?.eventId ?? '') === wanted);
+}
+
+function invalidateScheduleEvidence() {
+  state.scheduleEvidence = null;
+  resetValidationSummary();
+  if (typeof renderConflictResolution === 'function') renderConflictResolution([]);
+}
+
+/** Yeni ekleme, düzenleme, silme ve geri alma aynı ölçütle dirty olur. */
+function recomputeScheduleDirty() {
+  state.scheduleDirty = JSON.stringify(stagedEventsAsDraft()) !== state.scheduleBaseline;
+}
+
 /** İstemci tarafı biçim doğrulaması: eksik/ geçersiz referans 500'e düşmesin. */
-function programmeRowValidationMessage() {
-  const rows = rowsAsDraft();
+function programmeRowValidationMessage(rows = rowsAsDraft()) {
   const references = [
     ['teacherId', 'Öğretmen'],
     ['teacherBranchId', 'Öğretmen görevlendirmesi'],
@@ -131,14 +203,15 @@ function programmeRowValidationMessage() {
 }
 
 function mutationIfMatch() {
-  return state.scheduleEtag;
+  return state.scheduleIfMatch;
 }
 
 function canPublishNow() {
   const read = state.scheduleRead;
   if (!read || read.readOnly || read.status === 'published') return false;
+  if (scheduleMutationLocked()) return false;
   if (state.scheduleDirty) return false;
-  if (readEventsAsDraft().length === 0) return false;
+  if (stagedEventsAsDraft().length === 0) return false;
   const evidence = state.scheduleEvidence;
   if (!evidence) return false;
   if (evidence.mode !== 'FULL' || evidence.evidenceStatus !== 'authoritative') return false;
@@ -193,8 +266,9 @@ function renderProgrammePicker() {
   }
   select.innerHTML = items.map((item) => {
     const period = programmePeriodLabel(item);
-    const revision = Number(item?.revision) || 1;
-    const label = `${displayStatus(item?.status)} · ${period || 'Dönem belirtilmedi'} · Revizyon ${revision}`;
+    const revision = serverRevision(item?.revision);
+    const revisionLabel = revision ? ` · Revizyon ${revision}` : '';
+    const label = `${displayStatus(item?.status)} · ${period || 'Dönem belirtilmedi'}${revisionLabel}`;
     const selected = String(item?.scheduleId) === String(state.scheduleId) ? ' selected' : '';
     return `<option value="${escapeHtml(String(item?.scheduleId ?? ''))}"${selected}>${escapeHtml(label)}</option>`;
   }).join('');
@@ -212,9 +286,23 @@ function renderProgrammeScope() {
   target.textContent = `${branch} · ${period || 'Dönem belirtilmedi'}`;
 }
 
+function renderScheduleVersionLock() {
+  const copy = SCHEDULE_VERSION_COPY[state.scheduleVersionState];
+  if (!copy) return false;
+  const target = $('#schedule-status');
+  target.dataset.state = state.scheduleVersionState;
+  target.innerHTML = `<div class="error-state" data-state="${escapeHtml(state.scheduleVersionState)}">
+    <strong>${escapeHtml(copy.title)}</strong>
+    <p>${escapeHtml(copy.message)}</p>
+    <small class="recovery-hint">${escapeHtml(copy.hint)}</small>
+  </div>`;
+  return true;
+}
+
 function renderScheduleStatus() {
   const target = $('#schedule-status');
   const read = state.scheduleRead;
+  if (renderScheduleVersionLock()) return;
   if (!read || !read.scheduleId) {
     delete target.dataset.scheduleId;
     delete target.dataset.scheduleRevision;
@@ -228,17 +316,18 @@ function renderScheduleStatus() {
     || read.status === 'published';
   const gridState = read.gridState
     || (published ? 'weekly_grid_ready_published' : 'weekly_grid_ready_draft');
-  const eventCount = Number(read.eventCount ?? readEventsAsDraft().length) || 0;
-  const revision = Number(read.revision) || 1;
+  const eventCount = Number(read.eventCount ?? stagedEventsAsDraft().length) || 0;
+  const revision = serverRevision(read.revision);
   target.dataset.gridState = String(gridState);
   target.dataset.projection = String(read.projection ?? '');
   target.dataset.scheduleId = String(read.scheduleId);
   target.dataset.scheduleRevision = String(revision);
   const publishedAt = read.version?.publishedAt ? ` · Yayınlandı: ${programmeIsoDay(read.version.publishedAt)}` : '';
-  const suffix = published ? ' · Salt okunur' : '';
+  const suffix = published ? ' · Salt okunur' : (state.scheduleDirty ? ' · Kaydedilmemiş değişiklik' : '');
+  const revisionLabel = revision ? ` · Revizyon: ${revision}` : '';
   target.innerHTML = `<article class="card" data-schedule-id="${escapeHtml(String(read.scheduleId))}" data-schedule-revision="${escapeHtml(String(revision))}" data-grid-state="${escapeHtml(String(gridState))}" data-projection="${escapeHtml(String(read.projection ?? ''))}">
     <h3>${published ? 'Yayınlanmış program' : 'Taslak program'}</h3>
-    <p>Geçerlilik: ${escapeHtml(programmePeriodLabel(read) || 'Belirtilmedi')} · Revizyon: ${escapeHtml(String(revision))}</p>
+    <p>Geçerlilik: ${escapeHtml(programmePeriodLabel(read) || 'Belirtilmedi')}${escapeHtml(revisionLabel)}</p>
     <p>${escapeHtml(String(eventCount))} ders${escapeHtml(suffix)}${escapeHtml(publishedAt)}</p>
   </article>`;
 }
@@ -267,6 +356,31 @@ function agendaRefChip(label, present) {
   return `<span class="tag" data-tone="${present ? 'success' : 'warning'}">${escapeHtml(label)}${present ? '' : ' yok'}</span>`;
 }
 
+function scheduleEditFormMarkup(ev, disabled) {
+  const eventId = String(ev?.eventId ?? '');
+  const dayOptions = PROGRAMME_DAY_ORDER.map((day) => {
+    const selected = Number(ev?.dayOfWeek ?? 1) === day ? ' selected' : '';
+    return `<option value="${day}"${selected}${disabled}>${escapeHtml(programmeDayLabel(day))}</option>`;
+  }).join('');
+  const input = (field, label, value, type = 'text') =>
+    `<label>${escapeHtml(label)} <input type="${type}" data-schedule-field="${escapeHtml(field)}" data-schedule-edit-event-id="${escapeHtml(eventId)}" value="${escapeHtml(String(value ?? ''))}" autocomplete="off"${disabled} /></label>`;
+  return `<div class="grid-form agenda-edit-form" data-schedule-edit-form="${escapeHtml(eventId)}">
+    <label>Gün <select data-schedule-field="dayOfWeek" data-schedule-edit-event-id="${escapeHtml(eventId)}"${disabled}>${dayOptions}</select></label>
+    ${input('startTime', 'Başlangıç', programmeTime(ev?.startTime), 'time')}
+    ${input('endTime', 'Bitiş', programmeTime(ev?.endTime), 'time')}
+    ${input('teacherId', 'Öğretmen kimliği', ev?.teacherId)}
+    ${input('teacherBranchId', 'Öğretmen görevlendirme kimliği', ev?.teacherBranchId)}
+    ${input('studentGroupId', 'Sınıf kimliği', ev?.studentGroupId)}
+    ${input('courseId', 'Ders kimliği', ev?.courseId)}
+    ${input('roomId', 'Derslik kimliği', ev?.roomId)}
+    ${input('timeSlotId', 'Zaman dilimi kimliği', ev?.timeSlotId)}
+    <div class="quick-actions" role="group">
+      <button type="button" data-action="schedule-event-edit-save" data-event-id="${escapeHtml(eventId)}"${disabled}>Tamam</button>
+      <button type="button" data-action="schedule-event-edit-cancel" data-event-id="${escapeHtml(eventId)}"${disabled}>Vazgeç</button>
+    </div>
+  </div>`;
+}
+
 function renderAgenda() {
   const target = $('#schedule-agenda');
   const read = state.scheduleRead;
@@ -279,13 +393,27 @@ function renderAgenda() {
     empty(target, 'scheduleDay');
     return;
   }
-  target.innerHTML = events.map((ev, index) => `<article class="agenda-item" data-schedule-event="${escapeHtml(String(ev?.eventId ?? ''))}">
-    <p class="agenda-time">${escapeHtml(programmeTime(ev?.startTime) || '--:--')}–${escapeHtml(programmeTime(ev?.endTime) || '--:--')}</p>
-    <div>
-      <h3 class="agenda-title">${escapeHtml(String(ev?.timeSlotLabel ?? '').trim() || `Ders ${index + 1}`)}</h3>
-      <div class="agenda-refs">${agendaRefChip('Öğretmen', !!ev?.teacherId)}${agendaRefChip('Sınıf', !!ev?.studentGroupId)}${agendaRefChip('Derslik', !!ev?.roomId)}${agendaRefChip('Zaman dilimi', !!ev?.timeSlotId)}</div>
-    </div>
-  </article>`).join('');
+  const editable = canEditSchedule() && state.scheduleVersionState !== 'version_required';
+  const disabled = scheduleMutationLocked() ? ' disabled' : '';
+  target.innerHTML = events.map((ev, index) => {
+    const eventId = String(ev?.eventId ?? '');
+    const editing = editable && state.scheduleEditingEventId === eventId;
+    const controls = editable
+      ? `<div class="quick-actions" role="group">
+          <button type="button" data-action="schedule-event-edit" data-event-id="${escapeHtml(eventId)}"${disabled}>Düzenle</button>
+          <button type="button" data-action="schedule-event-delete" data-event-id="${escapeHtml(eventId)}"${disabled}>Sil</button>
+        </div>`
+      : '';
+    return `<article class="agenda-item" data-schedule-event="${escapeHtml(String(ev?.eventId ?? ''))}">
+      <p class="agenda-time">${escapeHtml(programmeTime(ev?.startTime) || '--:--')}–${escapeHtml(programmeTime(ev?.endTime) || '--:--')}</p>
+      <div>
+        <h3 class="agenda-title">${escapeHtml(String(ev?.timeSlotLabel ?? '').trim() || `Ders ${index + 1}`)}</h3>
+        <div class="agenda-refs">${agendaRefChip('Öğretmen', !!ev?.teacherId)}${agendaRefChip('Sınıf', !!ev?.studentGroupId)}${agendaRefChip('Derslik', !!ev?.roomId)}${agendaRefChip('Zaman dilimi', !!ev?.timeSlotId)}</div>
+      </div>
+      ${editing ? scheduleEditFormMarkup(ev, disabled) : ''}
+      ${controls}
+    </article>`;
+  }).join('');
 }
 
 function renderGate() {
@@ -294,22 +422,27 @@ function renderGate() {
   let stateName = 'none';
   let text = '';
   if (read && read.scheduleId) {
-    if (read.readOnly === true || read.status === 'published') {
+    const versionCopy = SCHEDULE_VERSION_COPY[state.scheduleVersionState];
+    if (versionCopy) {
+      text = versionCopy.message;
+      stateName = versionCopy.gateState;
+    } else if (isOffline()) {
+      text = 'Bağlantı yok; program görüntülenebilir ancak değişiklik kaydedilemez.';
+      stateName = 'offline';
+    } else if (read.readOnly === true || read.status === 'published') {
       text = 'Yayınlanmış program salt okunur; değişiklik için yeni dönem taslağı oluşturun.';
       stateName = 'readonly';
     } else {
-      const unsaved = state.scheduleRows.length;
-      const eventCount = Number(read.eventCount ?? readEventsAsDraft().length) || 0;
-      const total = eventCount + unsaved;
-      if (total === 0) {
+      const staged = stagedEventsAsDraft().length;
+      const revision = serverRevision(read.revision);
+      if (staged === 0) {
         text = 'Yayın için en az bir ders gerekli.';
         stateName = 'closed_empty';
-      } else if (unsaved > 0) {
+      } else if (state.scheduleDirty) {
         text = 'Kaydedilmemiş değişiklik var; önce taslağı kaydedin.';
         stateName = 'closed_dirty';
       } else {
         const evidence = state.scheduleEvidence;
-        const revision = Number(read.revision) || 1;
         if (!evidence || Number(evidence.scheduleRevision) !== revision) {
           text = 'Yayın için güncel doğrulama gerekli.';
           stateName = 'closed_stale';
@@ -334,7 +467,7 @@ function renderGate() {
 function renderScheduleActions() {
   const target = $('#schedule-actions');
   const read = state.scheduleRead;
-  const cooldown = mutationDisabled() ? ' disabled' : '';
+  const cooldown = scheduleMutationLocked() ? ' disabled' : '';
   let markup = '';
   if (read && read.scheduleId && !read.readOnly && read.status !== 'published') {
     if (hasCapability('schedule:validate')) {
@@ -349,12 +482,12 @@ function renderScheduleActions() {
   target.innerHTML = markup;
 }
 
-function scheduleRowMarkup(row, index) {
+function scheduleRowMarkup(row, index, disabled = '') {
   const dayOptions = PROGRAMME_DAY_ORDER.map((day) => {
     const selected = Number(row?.dayOfWeek ?? 1) === day ? ' selected' : '';
-    return `<option value="${day}"${selected}>${escapeHtml(programmeDayLabel(day))}</option>`;
+    return `<option value="${day}"${selected}${disabled}>${escapeHtml(programmeDayLabel(day))}</option>`;
   }).join('');
-  const input = (field, label, value, attrs = '') => `<label>${escapeHtml(label)} <input data-schedule-field="${escapeHtml(field)}" value="${escapeHtml(String(value ?? ''))}" autocomplete="off"${attrs} /></label>`;
+  const input = (field, label, value, attrs = '') => `<label>${escapeHtml(label)} <input data-schedule-field="${escapeHtml(field)}" value="${escapeHtml(String(value ?? ''))}" autocomplete="off"${disabled}${attrs} /></label>`;
   return `<article class="card" data-schedule-row="${index}">
     <h3>Yeni ders ${index + 1}</h3>
     <div class="grid-form">
@@ -369,7 +502,7 @@ function scheduleRowMarkup(row, index) {
       ${input('timeSlotId', 'Zaman dilimi kimliği', row?.timeSlotId)}
     </div>
     <div class="quick-actions" role="group">
-      <button type="button" data-action="schedule-row-remove" data-schedule-index="${index}">Satırı sil</button>
+      <button type="button" data-action="schedule-row-remove" data-schedule-index="${index}"${disabled}>Satırı sil</button>
     </div>
   </article>`;
 }
@@ -379,10 +512,8 @@ function renderScheduleEditor() {
   const addButton = $('#add-schedule-event');
   const saveButton = $('#save-schedule-draft');
   const list = $('#schedule-events');
-  const read = state.scheduleRead;
-  const editable = Boolean(read && read.scheduleId && !read.readOnly && read.status !== 'published');
-  const canUpdate = hasCapability('schedule:draft:update');
-  const visible = editable && canUpdate;
+  // 428'de editör gizlenir; 412'de görünür ama tüm kontroller disabled kalır.
+  const visible = canEditSchedule() && state.scheduleVersionState !== 'version_required';
   container.classList.toggle('hidden', !visible);
   if (!visible) {
     list.innerHTML = '';
@@ -390,13 +521,15 @@ function renderScheduleEditor() {
     saveButton.disabled = true;
     return;
   }
+  const locked = scheduleMutationLocked();
+  const disabled = locked ? ' disabled' : '';
   const rows = state.scheduleRows || [];
-  const unsaved = rows.length;
-  list.innerHTML = unsaved
-    ? rows.map(scheduleRowMarkup).join('')
+  list.innerHTML = rows.length
+    ? rows.map((row, index) => scheduleRowMarkup(row, index, disabled)).join('')
     : '<p class="hint">Kaydedilmemiş ders yok; "Ders ekle" ile ekleyin.</p>';
-  addButton.disabled = mutationDisabled();
-  saveButton.disabled = unsaved === 0 || mutationDisabled();
+  addButton.disabled = locked;
+  saveButton.disabled = locked || !state.scheduleDirty;
+  saveButton.setAttribute('aria-describedby', 'schedule-gate');
 }
 
 // #451 — bir bulgu, ait olduğu güne ve kendi kanonik durumuna ait kalır;
@@ -558,7 +691,11 @@ function resetProgrammeState() {
   state.scheduleRows = [];
   state.scheduleEvidence = null;
   state.scheduleDirty = false;
-  state.scheduleEtag = '';
+  state.scheduleIfMatch = '';
+  state.scheduleVersionState = '';
+  state.scheduleBaseline = '[]';
+  state.scheduleEditingEventId = '';
+  state.scheduleEditOriginal = null;
   state.scheduleDay = 1;
   // #451 — önceki programın kanıt özeti yeni kapsamda güncel gibi görünmesin.
   resetValidationSummary();
@@ -604,30 +741,47 @@ async function loadProgrammeList() {
 
 async function loadScheduleDetail(scheduleId) {
   const { body: read } = await apiRequest(`/schedules/${encodeURIComponent(scheduleId)}`);
+  const revision = serverRevision(read?.revision);
   state.scheduleRead = read ?? null;
   state.scheduleId = String(read?.scheduleId ?? scheduleId);
-  state.scheduleRevision = Number(read?.revision) || 1;
-  state.scheduleEvents = Array.isArray(read?.events) ? read.events : [];
+  state.scheduleRevision = revision;
+  state.scheduleEvents = readEventsFromRead(read);
   state.scheduleRows = [];
   state.scheduleEvidence = null;
   state.scheduleDirty = false;
+  state.scheduleEditingEventId = '';
+  state.scheduleEditOriginal = null;
   resetValidationSummary();
-  // GET ETag'i content-addressed'dir; `If-Match` gövdedeki revision'dan kurulur.
-  state.scheduleEtag = mutationToken(state.scheduleId, state.scheduleRevision);
+  // GET ETag'i content-addressed'dir; `If-Match` yalnız gövdedeki sunucu
+  // revision'ından kurulur. Sunucu vermediyse istemci sürüm uydurmaz.
+  state.scheduleIfMatch = mutationToken(state.scheduleId, revision);
+  state.scheduleVersionState = (!read?.readOnly && read?.status !== 'published' && !state.scheduleIfMatch)
+    ? 'version_required' : '';
+  state.scheduleBaseline = JSON.stringify(stagedEventsAsDraft());
   state.scheduleDay = pickDefaultDay(state.scheduleEvents, state.scheduleDay);
   renderConflictResolution([]);
   renderProgramme();
   return read;
 }
 
-// Kaydedilmemiş satırlar her liste/detay yenilemesinde kaybolur; sekme
-// geçişi ve seçici değişimi de dahil her yeniden yükleme yolu aynı soruyu
-// sorar.
+// Sahnelenen ekleme/düzenleme/silme her liste/detay yenilemesinde kaybolur;
+// sekme geçişi ve seçici değişimi de dahil her yeniden yükleme yolu aynı
+// soruyu sorar.
 function confirmDiscardRows(message) {
-  if (state.scheduleRows.length && typeof confirm === 'function') {
+  if (state.scheduleDirty && typeof confirm === 'function') {
     return confirm(message);
   }
   return true;
+}
+
+function keepReadSurfaceOnOfflineFailure(target, error) {
+  renderError(target, error);
+  // #451 — kanıt özeti yeni bir kapsama ait değil; yine de güncel sayılmaz.
+  resetValidationSummary();
+  renderAgenda();
+  renderGate();
+  renderScheduleActions();
+  renderScheduleEditor();
 }
 
 async function loadProgramme() {
@@ -641,9 +795,14 @@ async function loadProgramme() {
     return;
   }
   const target = $('#schedule-status');
+  const hasLoaded = Boolean(state.scheduleRead?.scheduleId);
   try {
     const { candidates, failures } = await loadProgrammeList();
     if (candidates.length === 0 && failures.length > 0) {
+      if (hasLoaded && failures.some((failure) => failure?.status === 0)) {
+        keepReadSurfaceOnOfflineFailure(target, failures[0]);
+        return;
+      }
       resetProgrammeState();
       renderProgramme();
       renderError(target, failures[0]);
@@ -658,6 +817,10 @@ async function loadProgramme() {
     }
     await loadScheduleDetail(selectedId);
   } catch (error) {
+    if (hasLoaded && error?.status === 0) {
+      keepReadSurfaceOnOfflineFailure(target, error);
+      return;
+    }
     resetProgrammeState();
     renderProgramme();
     renderError(target, error);
@@ -707,20 +870,85 @@ async function createSchedule(event) {
   }
 }
 
+function renderScheduleWorkSurfaces() {
+  renderDayStrip();
+  renderAgenda();
+  renderGate();
+  renderScheduleActions();
+  renderScheduleEditor();
+}
+
+function openScheduleEventEditor(eventId) {
+  if (!canEditSchedule() || scheduleMutationLocked()) return;
+  const index = findEventIndex(eventId);
+  if (index < 0) return;
+  state.scheduleEditingEventId = String(eventId);
+  state.scheduleEditOriginal = { ...state.scheduleEvents[index] };
+  renderAgenda();
+}
+
+function applyScheduleEventField(eventId, field, value) {
+  if (!canEditSchedule() || scheduleMutationLocked() || !field) return;
+  const index = findEventIndex(eventId);
+  if (index < 0) return;
+  state.scheduleEvents[index] = { ...state.scheduleEvents[index], [field]: value };
+  invalidateScheduleEvidence();
+  recomputeScheduleDirty();
+  renderGate();
+  renderScheduleActions();
+}
+
+function commitScheduleEventEdit() {
+  if (!state.scheduleEditingEventId) return;
+  state.scheduleEditingEventId = '';
+  state.scheduleEditOriginal = null;
+  renderScheduleWorkSurfaces();
+}
+
+function cancelScheduleEventEdit() {
+  if (!state.scheduleEditingEventId) return;
+  const index = findEventIndex(state.scheduleEditingEventId);
+  if (index >= 0 && state.scheduleEditOriginal) {
+    state.scheduleEvents[index] = { ...state.scheduleEditOriginal };
+  }
+  state.scheduleEditingEventId = '';
+  state.scheduleEditOriginal = null;
+  invalidateScheduleEvidence();
+  recomputeScheduleDirty();
+  renderScheduleWorkSurfaces();
+}
+
+function removeScheduleEvent(eventId) {
+  if (!canEditSchedule() || scheduleMutationLocked()) return;
+  const index = findEventIndex(eventId);
+  if (index < 0) return;
+  state.scheduleEvents.splice(index, 1);
+  if (state.scheduleEditingEventId === String(eventId)) {
+    state.scheduleEditingEventId = '';
+    state.scheduleEditOriginal = null;
+  }
+  invalidateScheduleEvidence();
+  recomputeScheduleDirty();
+  renderScheduleWorkSurfaces();
+  announce('Ders ajandadan kaldırıldı; taslağı kaydedin.', 'success');
+}
+
 function addScheduleEvent() {
-  if (!state.scheduleRead || !state.scheduleRead.scheduleId) {
-    announce('Önce bir program seçin veya oluşturun.', 'warning');
+  if (!canEditSchedule()) {
+    announce('Bu programda ders ekleyemezsiniz.', 'warning');
     return;
   }
-  if (state.scheduleRead.readOnly || state.scheduleRead.status === 'published') {
-    announce('Yayınlanmış program değiştirilemez.', 'warning');
+  if (isOffline()) {
+    announce('Bağlantı yok; ders eklenemez.', 'warning');
     return;
   }
-  if (!hasCapability('schedule:draft:update')) {
-    announce('Bu işlem için yetkiniz yok.', 'warning');
+  if (state.scheduleVersionState) {
+    announce(SCHEDULE_VERSION_COPY[state.scheduleVersionState].message, 'warning');
     return;
   }
-  const day = PROGRAMME_WEEKDAYS.includes(state.scheduleDay) ? state.scheduleDay : 1;
+  // #452 — seçili gün hafta sonu da olsa kullanılır; sessizce Pazartesi'ye düşmez.
+  const day = Number(state.scheduleDay);
+  const selectedDay = Number.isInteger(day) && day >= 0 && day <= 6 ? day : 1;
   state.scheduleRows.push({
     eventId: newEventId(),
     teacherId: '',
@@ -729,67 +957,96 @@ function addScheduleEvent() {
     courseId: '',
     roomId: '',
     timeSlotId: '',
-    dayOfWeek: String(day),
+    dayOfWeek: String(selectedDay),
     startTime: '09:00',
     endTime: '09:40',
   });
-  state.scheduleDirty = true;
-  state.scheduleEvidence = null;
-  resetValidationSummary();
-  renderScheduleEditor();
-  renderGate();
-  renderScheduleActions();
+  invalidateScheduleEvidence();
+  recomputeScheduleDirty();
+  renderScheduleWorkSurfaces();
   announce('Yeni ders satırı eklendi.', 'success');
 }
 
 function removeScheduleRow(index) {
-  if (!Array.isArray(state.scheduleRows) || !state.scheduleRows[index]) return;
+  if (scheduleMutationLocked() || !Array.isArray(state.scheduleRows) || !state.scheduleRows[index]) return;
   state.scheduleRows.splice(index, 1);
-  state.scheduleDirty = state.scheduleRows.length > 0;
-  renderScheduleEditor();
-  renderGate();
-  renderScheduleActions();
+  invalidateScheduleEvidence();
+  recomputeScheduleDirty();
+  renderScheduleWorkSurfaces();
 }
 
 function handleScheduleRowInput(event) {
   const target = event && event.target;
   const field = target && target.dataset ? target.dataset.scheduleField : undefined;
   if (!field) return;
+  const editId = target.dataset.scheduleEditEventId;
+  if (editId) {
+    applyScheduleEventField(editId, field, target.value);
+    return;
+  }
+  if (scheduleMutationLocked()) return;
   const rowEl = target.closest ? target.closest('[data-schedule-row]') : null;
   const index = rowEl ? Number(rowEl.dataset.scheduleRow) : NaN;
   if (!Number.isInteger(index) || !state.scheduleRows[index]) return;
   state.scheduleRows[index] = { ...state.scheduleRows[index], [field]: target.value };
-  state.scheduleEvidence = null;
-  resetValidationSummary();
+  invalidateScheduleEvidence();
+  recomputeScheduleDirty();
   renderGate();
   renderScheduleActions();
 }
 
+function enterScheduleVersionLock(uiState) {
+  const lock = uiState === 'version_required' ? 'version_required' : 'stale_version';
+  state.scheduleVersionState = lock;
+  if (lock === 'version_required') {
+    state.scheduleIfMatch = '';
+    state.scheduleEditingEventId = '';
+    state.scheduleEditOriginal = null;
+  }
+  state.scheduleEvidence = null;
+  resetValidationSummary();
+  renderProgramme();
+}
+
+function handleScheduleMutationError(target, error) {
+  if (isScheduleVersionError(error)) {
+    enterScheduleVersionLock(error.uiState);
+    announce(SCHEDULE_VERSION_COPY[state.scheduleVersionState].message, 'warning');
+    return;
+  }
+  renderError(target, error);
+}
+
 async function saveScheduleDraft() {
   if (!requireSession()) return;
-  const read = state.scheduleRead;
-  if (!read || !read.scheduleId) {
-    announce('Önce bir program seçin.', 'warning');
+  if (!canEditSchedule()) {
+    announce('Bu programda taslak kaydedemezsiniz.', 'warning');
     return;
   }
-  if (read.readOnly || read.status === 'published') {
-    announce('Yayınlanmış program değiştirilemez.', 'warning');
+  if (isOffline()) {
+    announce('Bağlantı yok; taslak kaydedilemez.', 'warning');
     return;
   }
-  if (!hasCapability('schedule:draft:update')) {
-    announce('Bu işlem için yetkiniz yok.', 'warning');
+  if (state.scheduleVersionState) {
+    announce(SCHEDULE_VERSION_COPY[state.scheduleVersionState].message, 'warning');
     return;
   }
-  if (!state.scheduleRows.length) {
-    announce('Kaydedilecek yeni ders yok.', 'warning');
+  if (!state.scheduleIfMatch) {
+    enterScheduleVersionLock('version_required');
+    announce(SCHEDULE_VERSION_COPY.version_required.message, 'warning');
     return;
   }
-  const message = programmeRowValidationMessage();
+  if (!state.scheduleDirty) {
+    announce('Kaydedilecek değişiklik yok.', 'warning');
+    return;
+  }
+  // Tek yazma yolu: tüm çalışma kopyası tek If-Match ile gönderilir.
+  const events = stagedEventsAsDraft();
+  const message = programmeRowValidationMessage(events);
   if (message) {
     announce(message, 'warning');
     return;
   }
-  const events = [...readEventsAsDraft(), ...rowsAsDraft()];
   const target = $('#schedule-status');
   target.innerHTML = loading('Taslak kaydediliyor');
   try {
@@ -798,10 +1055,20 @@ async function saveScheduleDraft() {
       headers: { 'If-Match': mutationIfMatch() },
       body: { branchId: getBranchId(), events },
     });
-    await loadScheduleDetail(state.scheduleId);
-    announce('Taslak kaydedildi.', 'success');
+    try {
+      await loadScheduleDetail(state.scheduleId);
+      announce('Taslak kaydedildi.', 'success');
+    } catch (readError) {
+      // Yazma başarılı ama yeni revision okunamadı: sürüm uydurmadan kilitle.
+      state.scheduleVersionState = 'version_required';
+      state.scheduleIfMatch = '';
+      state.scheduleEditingEventId = '';
+      state.scheduleEditOriginal = null;
+      renderProgramme();
+      announce('Taslak kaydedildi ancak güncel sürüm alınamadı; yenileyin.', 'warning');
+    }
   } catch (error) {
-    renderError(target, error);
+    handleScheduleMutationError(target, error);
   }
 }
 
@@ -815,6 +1082,14 @@ async function validateSchedule(event) {
   }
   if (read.readOnly || read.status === 'published') {
     announce('Yayınlanmış program için doğrulama çalıştırılamaz.', 'warning');
+    return;
+  }
+  if (state.scheduleVersionState) {
+    announce(SCHEDULE_VERSION_COPY[state.scheduleVersionState].message, 'warning');
+    return;
+  }
+  if (isOffline()) {
+    announce('Bağlantı yok; doğrulama çalıştırılamaz.', 'warning');
     return;
   }
   if (state.scheduleDirty) {
@@ -844,6 +1119,11 @@ async function validateSchedule(event) {
         ? 'Kısmi doğrulama; yayın için tam doğrulama gerekli.'
         : 'Doğrulama yayın engelleri buldu.', canPublish ? 'success' : 'warning');
   } catch (error) {
+    if (isScheduleVersionError(error)) {
+      handleScheduleMutationError(target, error);
+      renderConflictResolution([]);
+      return;
+    }
     renderError(target, error);
     renderConflictResolution([]);
     resetValidationSummary();
@@ -863,6 +1143,14 @@ async function publishSchedule() {
   }
   if (!hasCapability('schedule:publish')) {
     announce('Bu işlem için yetkiniz yok.', 'warning');
+    return;
+  }
+  if (state.scheduleVersionState) {
+    announce(SCHEDULE_VERSION_COPY[state.scheduleVersionState].message, 'warning');
+    return;
+  }
+  if (isOffline()) {
+    announce('Bağlantı yok; yayınlanamaz.', 'warning');
     return;
   }
   if (!canPublishNow()) {
@@ -886,7 +1174,7 @@ async function publishSchedule() {
     resetValidationSummary();
     announce('Çizelge yayınlandı.', 'success');
   } catch (error) {
-    renderError(target, error);
+    handleScheduleMutationError(target, error);
   }
 }
 
@@ -968,7 +1256,12 @@ document.addEventListener('click', (event) => {
   }
   const button = clickTarget.closest('button');
   if (!button) return;
-  if (button.dataset.action === 'schedule-row-remove') removeScheduleRow(Number(button.dataset.scheduleIndex));
+  const action = button.dataset.action;
+  if (action === 'schedule-row-remove') removeScheduleRow(Number(button.dataset.scheduleIndex));
+  if (action === 'schedule-event-edit') openScheduleEventEditor(button.dataset.eventId);
+  if (action === 'schedule-event-delete') removeScheduleEvent(button.dataset.eventId);
+  if (action === 'schedule-event-edit-save') commitScheduleEventEdit();
+  if (action === 'schedule-event-edit-cancel') cancelScheduleEventEdit();
   if (button.dataset.action === 'schedule-conflict-show') {
     const id = String(button.dataset.eventId ?? '');
     if (id) {
@@ -1020,5 +1313,20 @@ $('#schedule-programme-select').addEventListener('change', (event) => {
 });
 $('#schedule-events').addEventListener('input', handleScheduleRowInput);
 $('#schedule-events').addEventListener('change', handleScheduleRowInput);
+$('#schedule-agenda').addEventListener('input', handleScheduleRowInput);
+$('#schedule-agenda').addEventListener('change', handleScheduleRowInput);
+
+// #452 — bağlantı durumu değişince yalnız yüzey yeniden çizilir; otomatik
+// yazma/okuma isteği yoktur (kullanıcı manuel yeniler).
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('offline', () => {
+    state.isOffline = true;
+    if (state.scheduleRead?.scheduleId && typeof renderProgramme === 'function') renderProgramme();
+  });
+  window.addEventListener('online', () => {
+    state.isOffline = false;
+    if (state.scheduleRead?.scheduleId && typeof renderProgramme === 'function') renderProgramme();
+  });
+}
 
 registerTabActivationHook('program', loadProgramme);

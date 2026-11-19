@@ -11,7 +11,7 @@ import { runtime, response, TENANT_ADMIN_PERMISSION_KEYS } from './runtime-harne
  * davranışıdır. Hiçbir koşulda otomatik mutation retry yoktur.
  */
 const PROBE =
-  'state, isOffline, mutationDisabled, mutationToken, loadProgramme, addScheduleEvent, saveScheduleDraft, validateSchedule, scheduleMutationLocked, renderProgramme, renderAgenda, renderGate, renderScheduleEditor, renderScheduleActions';
+  'state, isOffline, mutationDisabled, mutationToken, loadProgramme, addScheduleEvent, recomputeScheduleDirty, saveScheduleDraft, validateSchedule, scheduleMutationLocked, renderProgramme, renderAgenda, renderGate, renderScheduleEditor, renderScheduleActions';
 
 const etagResponse = (body: unknown, etag: string, status = 200) => ({
   ok: status >= 200 && status < 300,
@@ -132,7 +132,7 @@ describe('#452 sunucu sürümü tek otoritedir', () => {
     ui.fetch.mockResolvedValueOnce(etagResponse(readFor({ revision: 8, events: [eventFor()], eventCount: 1 }), '"schedule:readback"'));
     await ui.probe.saveScheduleDraft();
     const calls = ui.fetch.mock.calls as Array<[string, { headers?: Record<string, string> }]>;
-    const save = calls.find(([url]) => String(url).includes('/draft'));
+    const save = calls.find(([url]) => String(url).includes('/draft') && !String(url).includes('/drafts'));
     expect(save?.[1].headers?.['If-Match']).toBe(`"schedule:${SCHEDULE_ID}:v1"`);
     const detailCalls = calls.filter(([url]) => String(url).endsWith(`/schedules/${SCHEDULE_ID}`));
     expect(detailCalls.length).toBe(2);
@@ -150,6 +150,7 @@ describe('#452 412 ve 428 ayrı yüzeylerdir ve otomatik yeniden deneme yapmaz',
     mockProgrammeFetch(ui, readFor({ revision: 2, events: [eventFor()], eventCount: 1 }));
     await ui.probe.loadProgramme();
     ui.probe.state.scheduleRows = [{ ...eventFor({ eventId: '' }), dayOfWeek: '1' }];
+    ui.probe.recomputeScheduleDirty();
     const before = ui.fetch.mock.calls.length;
     ui.fetch.mockResolvedValueOnce(response({ code, message: 'sunucu reddi' }, status));
     await ui.probe.saveScheduleDraft();
@@ -169,7 +170,9 @@ describe('#452 412 ve 428 ayrı yüzeylerdir ve otomatik yeniden deneme yapmaz',
       .toContain('değişiklikleriniz korunuyor');
     // Editör görünür ama tüm kontroller disabled; çalışma kopyası duruyor.
     expect(ui.element('#schedule-editor').classList.contains('hidden')).toBe(false);
-    expect(ui.element('#schedule-editor').innerHTML).toContain('disabled');
+    expect(ui.element('#schedule-events').innerHTML).toContain('disabled');
+    expect(ui.element('#add-schedule-event').disabled).toBe(true);
+    expect(ui.element('#save-schedule-draft').disabled).toBe(true);
     expect(ui.probe.state.scheduleRows.length).toBe(1);
     expect(ui.probe.state.scheduleEvents[0].startTime).toBe('09:00');
     expect(ui.element('#schedule-agenda').innerHTML).toContain('data-action="schedule-event-edit"');
