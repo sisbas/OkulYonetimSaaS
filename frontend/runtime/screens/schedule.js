@@ -560,6 +560,8 @@ function resetProgrammeState() {
   state.scheduleDirty = false;
   state.scheduleEtag = '';
   state.scheduleDay = 1;
+  // #451 — önceki programın kanıt özeti yeni kapsamda güncel gibi görünmesin.
+  resetValidationSummary();
 }
 
 function pickProgrammeCandidate(candidates, preferredId) {

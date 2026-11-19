@@ -1,10 +1,11 @@
 import {
   runtime,
+  response,
   TENANT_ADMIN_PERMISSION_KEYS,
 } from './runtime-harness';
 
 const PROBE =
-  'state, loadScheduleDetail, validateSchedule, renderConflictResolution, renderValidationSummary, canPublishNow';
+  'state, loadScheduleDetail, validateSchedule, renderConflictResolution, renderValidationSummary, canPublishNow, clearBranchWork, resetProgrammeState, loadProgramme';
 
 /** Yalnızca görünen metin: öznitelik değerleri hariç. */
 function renderedText(html: string): string {
@@ -325,5 +326,47 @@ describe('#451 doğrulama geri bildirimi — yayınlanabilir tam doğrulama', ()
     expect(String(summary.dataset.publishability)).toBe('yes');
     expect(text).toContain('Yayın izni: Evet');
     expect(text).toContain('Yayın engelleyici çatışma: 0');
+  });
+});
+
+describe('#451 doğrulama özeti — kapsam değişiminde temizlik', () => {
+  function expectSummaryCleared(ui: ReturnType<typeof runtime>) {
+    const summary = ui.element('#schedule-validation-summary');
+    expect(summary.hidden).toBe(true);
+    expect(summary.innerHTML).toBe('');
+    expect(Object.keys(summary.dataset)).toHaveLength(0);
+  }
+
+  async function withVisibleSummary() {
+    const ui = signedIn();
+    await validateWith(
+      ui,
+      evidenceFor({ canPublish: true, hardConflictCount: 0, reasons: [] }),
+    );
+    expect(ui.element('#schedule-validation-summary').hidden).toBe(false);
+    expect(renderedText(ui.element('#schedule-validation-summary').innerHTML)).toContain('Yayın izni: Evet');
+    return ui;
+  }
+
+  it('clears the validation summary when the branch scope is cleared', async () => {
+    const ui = await withVisibleSummary();
+    await ui.probe.clearBranchWork();
+    expectSummaryCleared(ui);
+  });
+
+  it('clears the validation summary when the programme list is empty', async () => {
+    const ui = await withVisibleSummary();
+    ui.fetch.mockResolvedValueOnce(response({ items: [] }));
+    ui.fetch.mockResolvedValueOnce(response({ items: [] }));
+    await ui.probe.loadProgramme();
+    expectSummaryCleared(ui);
+  });
+
+  it('clears the validation summary when the programme list cannot be loaded', async () => {
+    const ui = await withVisibleSummary();
+    ui.fetch.mockRejectedValueOnce(new Error('network down'));
+    ui.fetch.mockRejectedValueOnce(new Error('network down'));
+    await ui.probe.loadProgramme();
+    expectSummaryCleared(ui);
   });
 });
