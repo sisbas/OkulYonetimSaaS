@@ -501,7 +501,7 @@ main { display: grid; gap: 1rem; }
   min-height: 44px;
   text-align: center;
 }
-.day-chip small { color: #64748b; font-weight: 600; }
+.day-chip small { color: #475569; font-weight: 600; }
 .agenda {
   display: flex;
   flex-direction: column;
@@ -537,6 +537,12 @@ main { display: grid; gap: 1rem; }
 .gate-line[data-gate-state="closed_stale"],
 .gate-line[data-gate-state="closed_conflicts"] { border-left-color: #d97706; }
 .gate-line[data-gate-state="closed_dirty"] { border-left-color: #d97706; font-weight: 700; }
+/* #452 — sürüm/offline kilitleri: bayat ve eksik sürüm ayrı yüz, ayrı ton. */
+.gate-line[data-gate-state="version_stale"] { background: #fef2f2; border-left-color: #b91c1c; color: #7f1d1d; font-weight: 700; }
+.gate-line[data-gate-state="version_missing"] { background: #fff7ed; border-left-color: #9a3412; color: #7c2d12; font-weight: 700; }
+.gate-line[data-gate-state="offline"] { background: #f8fafc; border-left-color: #64748b; color: #334155; font-weight: 700; }
+.agenda-edit-form { margin: 0.55rem 0 0; padding: 0.6rem; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; }
+.agenda-item button:disabled, #schedule-editor button:disabled, #schedule-editor input:disabled, #schedule-editor select:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* #451 — Doğrulama özeti ve güne göre gruplu bulgular. */
 .validation-summary-box { border-left: 6px solid #3568d4; }

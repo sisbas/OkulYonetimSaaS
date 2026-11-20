@@ -180,6 +180,46 @@ describe('ScheduleService (P1B-05 wiring)', () => {
     expect(savedEvents[0].teacherId).toBe('teacher-1');
   });
 
+  // #452 — ajandadaki tüm dersler silindiğinde istemci `events: []` gönderir.
+  // Backend bunu "yeni satır yok" olarak değil, tüm satırların silinmesi olarak
+  // işler; bu test mevcut davranışı kalıcı kılar.
+  it('saveDraft with an empty event list deletes every event and still bumps revision', async () => {
+    const { service, scheduleRepo, eventRepo, em } = makeService();
+    scheduleRepo.findOne = async () =>
+      ({ id: 's1', tenantId: 't1', status: 'draft', revision: 1 } as Schedule);
+    let deletedFilter: any = null;
+    eventRepo.delete = async (f: any) => {
+      deletedFilter = f;
+      return undefined;
+    };
+    let saveCalls = 0;
+    eventRepo.save = async () => {
+      saveCalls += 1;
+      return [];
+    };
+    let bump: any = null;
+    em.increment = async (entity: unknown, criteria: unknown, field: string, amount: number) => {
+      bump = { entity, criteria, field, amount };
+      return { affected: 1 };
+    };
+    const result = await service.saveDraft({
+      tenantId: 't1',
+      branchId: 'b1',
+      scheduleId: 's1',
+      events: [],
+      expectedRevision: 1,
+    });
+    expect(deletedFilter).toEqual({ tenantId: 't1', scheduleId: 's1', versionId: 'v1' });
+    expect(saveCalls).toBe(0);
+    expect(bump).toEqual({
+      entity: Schedule,
+      criteria: { tenantId: 't1', id: 's1', revision: 1 },
+      field: 'revision',
+      amount: 1,
+    });
+    expect(result.id).toBe('v1');
+  });
+
   it('validateDraft returns valid for non-overlapping events', async () => {
     const { service, scheduleRepo } = makeService();
     scheduleRepo.findOne = async () =>

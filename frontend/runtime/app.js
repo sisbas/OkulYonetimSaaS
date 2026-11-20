@@ -32,12 +32,19 @@ const state = {
   scheduleRevision: 0,
   scheduleEvents: [],
   scheduleRead: null,
-  scheduleEtag: '',
+  // #452 — bu alan GET yanıt başlığı değil, sunucu revision'ından kurulan If-Match jetonudur.
+  scheduleIfMatch: '',
+  scheduleVersionState: '',
+  scheduleBaseline: '[]',
+  scheduleEditingEventId: '',
+  scheduleEditOriginal: null,
   scheduleEvidence: null,
   scheduleDirty: false,
   scheduleDay: 1,
   scheduleRows: [],
   scheduleList: [],
+  // #452 — ağ durumu: yazma kilitleri online/offline sinyalinden beslenir.
+  isOffline: false,
   activeLeaveDecision: '',
   impactOpenRows: [],
   pendingSubstitutions: {},
@@ -89,12 +96,12 @@ const UI_STATES = {
   version_required: {
     title: 'Güncel kayıt bekleniyor',
     message: 'Kayıt sürümü doğrulanmadan işlem yapılamaz.',
-    hint: 'Önce güncel izin kaydını tekrar yükleyin.',
+    hint: 'Önce güncel kaydı tekrar yükleyin.',
   },
   stale_version: {
     title: 'Kayıt güncellendi',
     message: 'Kayıt güncellendi; yenileme gerekir.',
-    hint: 'Kayıt değişmiş; etki listesini yenileyin.',
+    hint: 'Kayıt değişmiş; ekranı yenileyin.',
   },
   eligibility_not_ready: {
     title: 'Uygunluk bekleniyor',
@@ -606,6 +613,8 @@ async function apiRequest(path, options = {}, _refreshAttempted = false) {
     handleNetworkError();
     throw normalizeApiError({ status: 0, headers: { get: () => null } }, { message: '' });
   }
+  // #452 — bir yanıt alındıysa bağlantı var; tek bir hata kalıcı offline sayılmaz.
+  state.isOffline = false;
   const text = await response.text();
   let body = null;
   if (text) {
@@ -718,8 +727,14 @@ function startRateLimitCooldown(retryAfterSeconds) {
   state.rateLimitedUntil = Date.now() + (seconds > 0 ? seconds * 1000 : RATE_LIMIT_COOLDOWN_MS);
 }
 
+/** #452 — offline istemci okuyabilir ama hiçbir mutation gönderemez. */
+function isOffline() {
+  if (state.isOffline) return true;
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
 function mutationDisabled() {
-  return Date.now() < state.rateLimitedUntil;
+  return Date.now() < state.rateLimitedUntil || isOffline();
 }
 
 function requireSession() {
@@ -748,7 +763,11 @@ function clearBranchWork() {
   state.scheduleRevision = 0;
   state.scheduleEvents = [];
   state.scheduleRead = null;
-  state.scheduleEtag = '';
+  state.scheduleIfMatch = '';
+  state.scheduleVersionState = '';
+  state.scheduleBaseline = '[]';
+  state.scheduleEditingEventId = '';
+  state.scheduleEditOriginal = null;
   state.scheduleEvidence = null;
   state.scheduleDirty = false;
   state.scheduleDay = 1;
@@ -952,6 +971,7 @@ function handleAuthRequired() {
 }
 
 function handleNetworkError() {
+  state.isOffline = true;
   setStatus('Bağlantı hatası', 'warning');
   announce('Bağlantı kurulamadı. Lütfen tekrar deneyin.', 'warning');
 }

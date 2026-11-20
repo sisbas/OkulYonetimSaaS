@@ -140,12 +140,13 @@ describe('#450 Haftalık program seti', () => {
       expect(schedule).toContain('if (state.scheduleDirty) return false;');
     });
 
-    it('uses the revision from the response body for If-Match, never the GET ETag', () => {
+    it('uses only a server-issued revision for If-Match, never a fabricated one or the GET ETag', () => {
       expect(schedule).toContain('function mutationToken(id, revision)');
-      expect(schedule).toContain('`"schedule:${String(id)}:v${Number(revision) || 1}"`');
+      expect(schedule).toContain('Number.isInteger(value) && value >= 1');
+      expect(schedule).not.toContain('Number(revision) || 1');
       // GET yanıtının header ETag'i hiçbir mutasyon isteğinde kullanılmaz.
       expect(schedule).toContain("'If-Match': mutationIfMatch()");
-      expect(schedule).not.toContain('state.scheduleEtag = etag;');
+      expect(schedule).not.toContain('state.scheduleEtag');
     });
 
     it('re-reads the schedule after every mutation (read-after-write)', () => {
