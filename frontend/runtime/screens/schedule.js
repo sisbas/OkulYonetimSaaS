@@ -79,7 +79,9 @@ function mutationToken(id, revision) {
 }
 
 function scheduleMutationLocked() {
-  return Boolean(state.scheduleVersionState) || isOffline();
+  // #452/#532 — 429 cooldown'u offline ile aynı kilide dahildir; aksi halde
+  // bekleme süresince save/validate/publish kontrolleri açık kalır.
+  return Boolean(state.scheduleVersionState) || mutationDisabled();
 }
 
 function canEditSchedule() {
@@ -492,8 +494,8 @@ function scheduleRowMarkup(row, index, disabled = '') {
     <h3>Yeni ders ${index + 1}</h3>
     <div class="grid-form">
       <label>Gün <select data-schedule-field="dayOfWeek">${dayOptions}</select></label>
-      <label>Başlangıç <input data-schedule-field="startTime" type="time" value="${escapeHtml(String(row?.startTime ?? '09:00'))}" /></label>
-      <label>Bitiş <input data-schedule-field="endTime" type="time" value="${escapeHtml(String(row?.endTime ?? '09:40'))}" /></label>
+      <label>Başlangıç <input data-schedule-field="startTime" type="time" value="${escapeHtml(String(row?.startTime ?? '09:00'))}"${disabled} /></label>
+      <label>Bitiş <input data-schedule-field="endTime" type="time" value="${escapeHtml(String(row?.endTime ?? '09:40'))}"${disabled} /></label>
       ${input('teacherId', 'Öğretmen kimliği', row?.teacherId)}
       ${input('teacherBranchId', 'Öğretmen görevlendirme kimliği', row?.teacherBranchId)}
       ${input('studentGroupId', 'Sınıf kimliği', row?.studentGroupId)}
@@ -1015,6 +1017,9 @@ function handleScheduleMutationError(target, error) {
     return;
   }
   renderError(target, error);
+  // #532 — 429 cooldown'u aynı anda kontrollere yansısın; hata yüzeyi
+  // çizildiğinde butonlar hâlâ açık görünmesin.
+  if (error?.uiState === 'rate_limited') renderScheduleWorkSurfaces();
 }
 
 async function saveScheduleDraft() {
@@ -1023,8 +1028,10 @@ async function saveScheduleDraft() {
     announce('Bu programda taslak kaydedemezsiniz.', 'warning');
     return;
   }
-  if (isOffline()) {
-    announce('Bağlantı yok; taslak kaydedilemez.', 'warning');
+  if (mutationDisabled()) {
+    announce(isOffline()
+      ? 'Bağlantı yok; taslak kaydedilemez.'
+      : 'Çok fazla istek; kısa bir süre sonra tekrar deneyin.', 'warning');
     return;
   }
   if (state.scheduleVersionState) {
@@ -1088,8 +1095,10 @@ async function validateSchedule(event) {
     announce(SCHEDULE_VERSION_COPY[state.scheduleVersionState].message, 'warning');
     return;
   }
-  if (isOffline()) {
-    announce('Bağlantı yok; doğrulama çalıştırılamaz.', 'warning');
+  if (mutationDisabled()) {
+    announce(isOffline()
+      ? 'Bağlantı yok; doğrulama çalıştırılamaz.'
+      : 'Çok fazla istek; kısa bir süre sonra tekrar deneyin.', 'warning');
     return;
   }
   if (state.scheduleDirty) {
@@ -1126,7 +1135,9 @@ async function validateSchedule(event) {
     }
     renderError(target, error);
     renderConflictResolution([]);
-    resetValidationSummary();
+    // #532 — doğrulama 429 ile dönerse kontroller bekleme boyunca kapansın.
+    if (error?.uiState === 'rate_limited') renderScheduleWorkSurfaces();
+    else resetValidationSummary();
   }
 }
 
@@ -1149,8 +1160,10 @@ async function publishSchedule() {
     announce(SCHEDULE_VERSION_COPY[state.scheduleVersionState].message, 'warning');
     return;
   }
-  if (isOffline()) {
-    announce('Bağlantı yok; yayınlanamaz.', 'warning');
+  if (mutationDisabled()) {
+    announce(isOffline()
+      ? 'Bağlantı yok; yayınlanamaz.'
+      : 'Çok fazla istek; kısa bir süre sonra tekrar deneyin.', 'warning');
     return;
   }
   if (!canPublishNow()) {

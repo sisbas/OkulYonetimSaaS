@@ -501,7 +501,7 @@ main { display: grid; gap: 1rem; }
   min-height: 44px;
   text-align: center;
 }
-.day-chip small { color: #64748b; font-weight: 600; }
+.day-chip small { color: #475569; font-weight: 600; }
 .agenda {
   display: flex;
   flex-direction: column;

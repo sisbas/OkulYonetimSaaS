@@ -11,7 +11,7 @@ import { runtime, response, TENANT_ADMIN_PERMISSION_KEYS } from './runtime-harne
  * davranışıdır. Hiçbir koşulda otomatik mutation retry yoktur.
  */
 const PROBE =
-  'state, isOffline, mutationDisabled, mutationToken, loadProgramme, addScheduleEvent, recomputeScheduleDirty, saveScheduleDraft, validateSchedule, scheduleMutationLocked, renderProgramme, renderAgenda, renderGate, renderScheduleEditor, renderScheduleActions';
+  'state, isOffline, mutationDisabled, mutationToken, loadProgramme, addScheduleEvent, recomputeScheduleDirty, saveScheduleDraft, validateSchedule, publishSchedule, scheduleMutationLocked, handleScheduleRowInput, renderProgramme, renderAgenda, renderGate, renderScheduleEditor, renderScheduleActions';
 
 const etagResponse = (body: unknown, etag: string, status = 200) => ({
   ok: status >= 200 && status < 300,
@@ -175,6 +175,19 @@ describe('#452 412 ve 428 ayrı yüzeylerdir ve otomatik yeniden deneme yapmaz',
     expect(ui.element('#save-schedule-draft').disabled).toBe(true);
     expect(ui.probe.state.scheduleRows.length).toBe(1);
     expect(ui.probe.state.scheduleEvents[0].startTime).toBe('09:00');
+    // #532 — kilitliyken yeni satırın saat inputları da görsel olarak kapalı.
+    const stagedHtml = ui.element('#schedule-events').innerHTML;
+    expect(stagedHtml).toMatch(/data-schedule-field="startTime"[^>]*disabled/);
+    expect(stagedHtml).toMatch(/data-schedule-field="endTime"[^>]*disabled/);
+    const beforeStart = ui.probe.state.scheduleRows[0].startTime;
+    ui.probe.handleScheduleRowInput({
+      target: {
+        dataset: { scheduleField: 'startTime' },
+        value: '10:00',
+        closest: () => ({ dataset: { scheduleRow: '0' } }),
+      },
+    });
+    expect(ui.probe.state.scheduleRows[0].startTime).toBe(beforeStart);
     expect(ui.element('#schedule-agenda').innerHTML).toContain('data-action="schedule-event-edit"');
     expect(renderedText(ui.element('#schedule-status').innerHTML)).not.toMatch(/412|SCHEDULE_VERSION/);
   });
@@ -230,9 +243,63 @@ describe('#452 offline istemci okur ama yazmaz ve depolanan veriye düşmez', ()
     expect(ui.element('#schedule-status').dataset.state).toBe('offline_or_unavailable');
     expect(ui.element('#schedule-agenda').innerHTML).toContain('agenda-item');
 
+    // #532 — offline'ta yeni satırın saat inputları disabled; yazma denemesi yok.
+    ui.probe.state.scheduleRows = [{ ...eventFor({ eventId: '' }), dayOfWeek: '1' }];
+    ui.probe.renderScheduleEditor();
+    const offlineHtml = ui.element('#schedule-events').innerHTML;
+    expect(offlineHtml).toMatch(/data-schedule-field="startTime"[^>]*disabled/);
+    expect(offlineHtml).toMatch(/data-schedule-field="endTime"[^>]*disabled/);
+    const beforeStart = ui.probe.state.scheduleRows[0].startTime;
+    ui.probe.handleScheduleRowInput({
+      target: {
+        dataset: { scheduleField: 'startTime' },
+        value: '10:00',
+        closest: () => ({ dataset: { scheduleRow: '0' } }),
+      },
+    });
+    expect(ui.probe.state.scheduleRows[0].startTime).toBe(beforeStart);
+
     const before = ui.fetch.mock.calls.length;
     await ui.probe.saveScheduleDraft();
     expect(ui.fetch.mock.calls.length).toBe(before);
     expect(renderedText(ui.element('#message-region').innerHTML)).toContain('Bağlantı');
+  });
+});
+
+describe('#532 429 cooldown kilidi', () => {
+  const schedule = fs.readFileSync(path.join(process.cwd(), 'frontend/runtime/screens/schedule.js'), 'utf8');
+
+  it('includes the cooldown in the shared lock and disables staged time inputs in markup', () => {
+    const lock = schedule.match(/function scheduleMutationLocked\([\s\S]*?\n\}/)?.[0] ?? '';
+    expect(lock).toContain('mutationDisabled()');
+    const row = schedule.match(/function scheduleRowMarkup\([\s\S]*?\n\}/)?.[0] ?? '';
+    expect(row).toMatch(/data-schedule-field="startTime"[^>]*\$\{disabled\}/);
+    expect(row).toMatch(/data-schedule-field="endTime"[^>]*\$\{disabled\}/);
+  });
+
+  it('keeps save, validate and publish disabled during an active cooldown and sends nothing', async () => {
+    const ui = signedIn();
+    mockProgrammeFetch(ui, readFor({ revision: 2, events: [eventFor()], eventCount: 1 }));
+    await ui.probe.loadProgramme();
+    ui.probe.state.scheduleRows = [{ ...eventFor({ eventId: '' }), dayOfWeek: '1' }];
+    ui.probe.recomputeScheduleDirty();
+    ui.probe.state.rateLimitedUntil = Date.now() + 60_000;
+    ui.probe.renderScheduleEditor();
+    ui.probe.renderScheduleActions();
+
+    expect(ui.probe.scheduleMutationLocked()).toBe(true);
+    expect(ui.element('#add-schedule-event').disabled).toBe(true);
+    expect(ui.element('#save-schedule-draft').disabled).toBe(true);
+    expect(ui.element('#schedule-actions').innerHTML).toContain('disabled');
+    expect(ui.element('#schedule-events').innerHTML)
+      .toMatch(/data-schedule-field="startTime"[^>]*disabled/);
+    expect(ui.element('#schedule-events').innerHTML)
+      .toMatch(/data-schedule-field="endTime"[^>]*disabled/);
+
+    const before = ui.fetch.mock.calls.length;
+    await ui.probe.saveScheduleDraft();
+    await ui.probe.validateSchedule({ preventDefault: () => {} });
+    await ui.probe.publishSchedule();
+    expect(ui.fetch.mock.calls.length).toBe(before);
   });
 });
