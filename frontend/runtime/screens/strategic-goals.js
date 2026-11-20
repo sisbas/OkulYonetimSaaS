@@ -377,7 +377,9 @@ async function deleteStrategicGoal() {
   }
 }
 
-if (typeof registerTabActivationHook === 'function') registerTabActivationHook('yonetim', renderStrategicGoals);
+// #458 — hedefler ana ekranda (Bugün) yaşar; Yönetim sekmesi yalnız kullanıcı
+// ve rol matrisini taşır. renderNavigation ilk oturumda da bu hook'u çalıştırır.
+if (typeof registerTabActivationHook === 'function') registerTabActivationHook('bugun', renderStrategicGoals);
 
 document.addEventListener('click', (event) => {
   const target = event.target?.closest ? event.target.closest('button') : null;

@@ -77,9 +77,11 @@ async function waitForTab(session: UiSession, tab: string, timeoutMs = 20_000): 
   throw new Error(`Sekme görünür olmadı: ${tab}`);
 }
 
+// #458 — hedefler Yönetim sekmesinden Bugün ana ekranına taşındı; yolculuk
+// yine UI tıklamasıyla açılır, yalnız sekme adresi değişti.
 async function openStrategicGoals(session: UiSession): Promise<void> {
-  await waitForTab(session, 'yonetim');
-  await session.clickElement('.tab[data-tab="yonetim"]');
+  await waitForTab(session, 'bugun');
+  await session.clickElement('.tab[data-tab="bugun"]');
   await session.waitForText('#strategic-goals-heading', /Stratejik hedefler ve gerçekleşme/i, 20_000);
 }
 
@@ -262,8 +264,8 @@ describe('#484 Stratejik hedefler P0 yolculuğu (bayrak açık ve kapalı)', () 
     });
     try {
       await loginViaUi(session, fixture.adminUser.email, fixture.adminUser.credential);
-      await waitForTab(session, 'yonetim');
-      await session.clickElement('.tab[data-tab="yonetim"]');
+      await waitForTab(session, 'bugun');
+      await session.clickElement('.tab[data-tab="bugun"]');
       await sleep(1_000);
       expect(await session.isVisible('#strategic-goals-section')).toBe(false);
       expect(await session.countElements('#strategic-goals-table tr')).toBe(0);

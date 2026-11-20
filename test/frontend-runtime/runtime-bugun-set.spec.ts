@@ -125,7 +125,10 @@ describe('#489 Bugün ekranı kod portu (mock-up bugun → runtime)', () => {
       await ui.probe.loadTodayDashboard();
       expect(ui.element('#bugun-queue-output').dataset.state).toBe('same_scope_empty');
       expect(ui.element('#bugun-queue-output').innerHTML).toContain('Günlük iş listesi boş');
-      expect(ui.element('#bugun-open-work-value').textContent).toBe('0');
+      // #458 — veri yokken sıfır basılmaz; ölçüm alanı kendi boş durumunu gösterir.
+      expect(ui.element('#bugun-open-work-value').textContent).toBe('');
+      expect(ui.element('#bugun-stats').classList.contains('hidden')).toBe(true);
+      expect(ui.element('#bugun-stats-empty').dataset.state).toBe('same_scope_empty');
     });
   });
 
