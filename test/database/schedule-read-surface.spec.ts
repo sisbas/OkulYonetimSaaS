@@ -352,7 +352,7 @@ describeWithPostgres('#447/#449 Schedule read surface PostgreSQL integration', (
   it('serves published own projection with only the actor events and 404s on empty', async () => {
     const withOwn = await create();
     await saveAndPublish(withOwn.id, [ownEvent(), otherEvent()]);
-    const otherOnly = await create({ from: '2027-01-01', to: '2027-06-30' });
+    const otherOnly = await create({ from: '2027-07-01', to: '2027-12-31' });
     await saveAndPublish(otherOnly.id, [otherEvent()]);
 
     const ctx = ownContext(OWN_USER);
@@ -378,7 +378,7 @@ describeWithPostgres('#447/#449 Schedule read surface PostgreSQL integration', (
   it('listPublished returns only schedules containing own events for own-scope actors', async () => {
     const withOwn = await create();
     await saveAndPublish(withOwn.id, [ownEvent(), otherEvent()]);
-    const otherOnly = await create({ from: '2027-01-01', to: '2027-06-30' });
+    const otherOnly = await create({ from: '2027-07-01', to: '2027-12-31' });
     await saveAndPublish(otherOnly.id, [otherEvent()]);
 
     const ownItems = await reads.listPublished({ tenantId: TENANT_A, branchId: BRANCH_A, ctx: ownContext(OWN_USER) });
