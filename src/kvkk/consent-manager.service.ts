@@ -12,6 +12,7 @@ import {
 } from '../common/audit/transactional-audit-writer';
 import { RedactionReceipt } from '../common/audit/transactional-audit.types';
 import { ConsentSubjectType } from './consent-authority';
+import { extractRows } from '../common/db/extract-rows';
 
 export type ConsentRowSnapshot = Readonly<{
   consentId: string;
@@ -84,18 +85,6 @@ function noneRedactionReceipt(
     skippedFieldCount: evaluatedFieldCount,
     appliedAt: new Date().toISOString(),
   });
-}
-
-/**
- * TypeORM postgres sürücüsü UPDATE/DELETE sorgularında `[rows, rowCount]`
- * tuple'ı döner; SELECT/INSERT ise doğrudan `rows` dizisi. Ham sonucu
- * satır dizisine indirger (bkz. NotificationOutboxRepository.extractRows).
- */
-function extractRows<T>(result: unknown): T[] {
-  if (Array.isArray(result) && Array.isArray(result[0])) {
-    return result[0] as T[];
-  }
-  return (result ?? []) as T[];
 }
 
 /**

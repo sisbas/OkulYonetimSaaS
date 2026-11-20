@@ -6,22 +6,14 @@ import { join } from 'node:path';
 import { AppModule } from './app.module';
 import { assertSecurityPostureAtStartup } from './common/security/security-bootstrap';
 import { assertDatabaseUrlConfigured } from './database/data-source';
+import { requestFailureCategory } from './common/http-failure-categories';
 
 // Guard/interceptor/controller katmanından düşen istekleri yalnız meta veriyle
 // (method/url/status/kategori) raporlar; exception.message/body asla yazılmaz
 // (ham detay sızıntısı tarayıcısına takılmamak için). URL yalnızca pathname olarak
 // yazılır — query string öğretmen/öğrenci filtrelerini taşıdığı için log'a girmez.
 // YANITI KENDİSİ YAZAR: yanıt göndermeden bırakmak istemci tarafında isteğin
-// askıda kalmasına yol açar.
-const REQUEST_FAILURE_CATEGORIES = [
-  'AuthorizationContextError',
-  'UnauthorizedException',
-  'ForbiddenException',
-  'NotFoundException',
-  'BadRequestException',
-  'ConflictException',
-  'HttpException',
-];
+// askıda kalmasına yol açar. Kategori allowlist'i tek kaynaktan gelir (#416).
 
 function requestFailureBody(exception: unknown): Record<string, unknown> {
   if (exception instanceof HttpException) {
@@ -43,7 +35,7 @@ class RequestFailureFilter implements ExceptionFilter {
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     if (request?.method) {
       const name = exception instanceof Error ? exception.constructor.name : 'UnknownError';
-      const category = REQUEST_FAILURE_CATEGORIES.includes(name) ? name : 'Error';
+      const category = requestFailureCategory(name);
       console.warn(
         JSON.stringify({
           event: 'http.request.failed',
