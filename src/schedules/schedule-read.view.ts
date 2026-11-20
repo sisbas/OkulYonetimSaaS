@@ -42,6 +42,10 @@ export type ScheduleReadVersionMeta = {
   versionNo: number;
   status: 'draft' | 'published' | 'unpublished';
   publishedAt: string | null;
+  /** #453 — yayın kararının kanıtı okuma yüzeyinde de taşınır. */
+  validationMode: 'FULL' | 'INCREMENTAL' | null;
+  validationFingerprint: string | null;
+  validatedRevision: number | null;
 };
 
 export type ScheduleReadV1 = {
@@ -194,6 +198,9 @@ export function versionMeta(
     versionNo: Number(version.versionNo),
     status: version.status,
     publishedAt: version.publishedAt ? new Date(version.publishedAt).toISOString() : null,
+    validationMode: version.validationMode ?? null,
+    validationFingerprint: version.validationFingerprint ?? null,
+    validatedRevision: version.validatedRevision == null ? null : Number(version.validatedRevision),
   };
 }
 

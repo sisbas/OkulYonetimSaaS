@@ -163,8 +163,10 @@ function findEventIndex(eventId) {
 }
 
 function invalidateScheduleEvidence() {
-  state.scheduleEvidence = null;
-  resetValidationSummary();
+  // #453 — kanıtı silmeyiz: son doğrulamanın hangi revizyona/parmak izine
+  // ait olduğu ekranda kalır, üzerine "geçersiz" işareti basılır.
+  state.scheduleEvidenceInvalidated = true;
+  renderEvidenceCard();
   if (typeof renderConflictResolution === 'function') renderConflictResolution([]);
 }
 
@@ -215,7 +217,7 @@ function canPublishNow() {
   if (state.scheduleDirty) return false;
   if (stagedEventsAsDraft().length === 0) return false;
   const evidence = state.scheduleEvidence;
-  if (!evidence) return false;
+  if (!evidence || state.scheduleEvidenceInvalidated) return false;
   if (evidence.mode !== 'FULL' || evidence.evidenceStatus !== 'authoritative') return false;
   if (!evidence.canPublish) return false;
   if (Number(evidence.scheduleRevision) !== Number(read.revision)) return false;
@@ -445,12 +447,20 @@ function renderGate() {
         stateName = 'closed_dirty';
       } else {
         const evidence = state.scheduleEvidence;
-        if (!evidence || Number(evidence.scheduleRevision) !== revision) {
-          text = 'Yayın için güncel doğrulama gerekli.';
+        const codes = asArray(evidence, ['reasons']).map((reason) => String(reason?.code ?? ''));
+        if (!evidence || state.scheduleEvidenceInvalidated || Number(evidence.scheduleRevision) !== revision) {
+          text = 'Program düzenlendi; yayın için güncel tam doğrulama gerekli.';
           stateName = 'closed_stale';
         } else if (evidence.mode !== 'FULL' || evidence.evidenceStatus !== 'authoritative') {
-          text = 'Yayın için güncel doğrulama gerekli.';
+          text = 'Yayın için güncel tam doğrulama gerekli.';
           stateName = 'closed_stale';
+        } else if (codes.includes('PUBLISHED_SCHEDULE_PERIOD_CONFLICT') || evidence.publishedPeriodConflict === true) {
+          // #453 — dönem çakışması, taslak içi çakışmadan ayrı bir kapalı kapı.
+          text = 'Bu şube ve tarih aralığında yayınlanmış başka bir program var; dönemi değiştirin.';
+          stateName = 'closed_period';
+        } else if (codes.includes('SCHEDULE_EMPTY') || staged === 0) {
+          text = 'Yayın için en az bir ders gerekli.';
+          stateName = 'closed_empty';
         } else if (!evidence.canPublish) {
           text = 'Doğrulama yayın engelleri buldu.';
           stateName = 'closed_conflicts';
@@ -611,32 +621,36 @@ function renderConflictResolution(reasons) {
 function renderValidationSummary(evidence) {
   const target = $('#schedule-validation-summary');
   if (!target) return;
-  if (!evidence) {
-    resetValidationSummary();
-    return;
-  }
-  const mode = String(evidence.mode ?? '').trim().toUpperCase() || 'UNKNOWN';
-  const evidenceStatus = String(evidence.evidenceStatus ?? '').trim() || 'unknown';
-  const authoritative = mode === 'FULL' && evidenceStatus === 'authoritative';
-  const canPublish = evidence.canPublish === true;
-  const revisionRaw = Number(evidence.scheduleRevision);
+  const source = evidence ?? {};
+  const invalidated = state.scheduleEvidenceInvalidated === true;
+  const mode = String(source.mode ?? '').trim().toUpperCase() || 'UNKNOWN';
+  const evidenceStatus = String(source.evidenceStatus ?? '').trim() || 'absent';
+  const authoritative = mode === 'FULL' && evidenceStatus === 'authoritative' && !invalidated;
+  const canPublish = source.canPublish === true;
+  const revisionRaw = Number(source.scheduleRevision);
   const revision = Number.isFinite(revisionRaw) ? String(revisionRaw) : 'bilinmiyor';
-  const conflictRaw = Number(evidence.hardConflictCount);
+  const conflictRaw = Number(source.hardConflictCount);
   const conflicts = Number.isFinite(conflictRaw) ? String(Math.max(0, conflictRaw)) : 'bilinmiyor';
-  const fingerprint = String(evidence.inputFingerprint ?? '').trim();
+  const fingerprint = String(source.inputFingerprint ?? '').trim();
   const publishability = authoritative ? (canPublish ? 'Evet' : 'Hayır') : 'Yayın kanıtı değil';
   target.hidden = false;
   target.classList.remove('hidden');
   target.dataset.mode = mode;
   target.dataset.evidenceStatus = evidenceStatus;
   target.dataset.publishability = authoritative ? (canPublish ? 'yes' : 'no') : 'not_evidence';
-  const modeLabel = mode === 'FULL' ? 'Tam doğrulama' : mode === 'INCREMENTAL' ? 'Kısmi doğrulama' : 'Bilinmiyor';
-  const statusLabel = authoritative ? 'Güncel' : 'Editör geri bildirimi';
+  target.dataset.invalidated = invalidated ? 'true' : 'false';
+  const modeLabel = mode === 'FULL' ? 'Tam doğrulama' : mode === 'INCREMENTAL' ? 'Kısmi doğrulama' : mode === 'UNKNOWN' ? 'Henüz doğrulanmadı' : 'Bilinmiyor';
+  const statusLabel = invalidated
+    ? 'Geçersiz (düzenleme sonrası)'
+    : authoritative ? 'Güncel' : 'Editör geri bildirimi';
+  const note = invalidated
+    ? '<p class="editor-feedback-note" role="note">Son düzenleme bu doğrulamayı geçersiz kıldı; yayın için yeniden tam doğrulama gerekli.</p>'
+    : !authoritative
+      ? '<p class="editor-feedback-note" role="note">Bu sonuç yayın kararı değildir; yayın için tam doğrulama gerekli.</p>'
+      : '';
   target.innerHTML = `<article class="validation-summary${authoritative ? '' : ' validation-summary-editor-feedback'}">
     <h3>Doğrulama özeti</h3>
-    ${authoritative
-      ? ''
-      : '<p class="editor-feedback-note" role="note">Kısmi doğrulama çalıştı (editör geri bildirimi); bu sonucun yayın kararı değildir.</p>'}
+    ${note}
     <dl class="validation-summary-grid">
       <div><dt>Doğrulama:</dt><dd>${escapeHtml(modeLabel)}</dd></div>
       <div><dt>Kanıt durumu:</dt><dd>${escapeHtml(statusLabel)}</dd></div>
@@ -648,6 +662,36 @@ function renderValidationSummary(evidence) {
   </article>`;
 }
 
+/**
+ * #453 — yayın kontrolü göründüğü sürece kanıt kartı da görünür. Doğrulama
+ * hiç çalışmamışsa sunucu okuma yüzeyindeki version meta'sından nötr kart
+ * çizilir; kanıt varsa değerleri korunur, düzenleme sonrası "geçersiz" denir.
+ */
+function renderEvidenceCard() {
+  const read = state.scheduleRead;
+  const draftVisible = Boolean(read?.scheduleId && !read.readOnly && String(read.status) !== 'published');
+  if (!draftVisible) {
+    resetValidationSummary();
+    return;
+  }
+  const evidence = state.scheduleEvidence;
+  if (evidence && !state.scheduleEvidenceInvalidated) {
+    renderValidationSummary(evidence);
+    return;
+  }
+  const meta = read.version || {};
+  // Geçersiz kanıtın parmak izi/revizyonu kaybolmaz; yalnız durumu "geçersiz"
+  // olarak gösterilir. Hiç doğrulama yoksa okuma yüzeyinin meta'sı kullanılır.
+  renderValidationSummary({
+    mode: evidence ? (evidence.mode ?? meta.validationMode ?? 'UNKNOWN') : (meta.validationMode ?? 'UNKNOWN'),
+    evidenceStatus: evidence ? (evidence.evidenceStatus ?? 'absent') : 'absent',
+    canPublish: false,
+    hardConflictCount: Number(evidence?.hardConflictCount ?? 0),
+    scheduleRevision: Number(evidence?.scheduleRevision ?? read.revision),
+    inputFingerprint: String(evidence?.inputFingerprint ?? meta.validationFingerprint ?? ''),
+  });
+}
+
 function resetValidationSummary() {
   const target = $('#schedule-validation-summary');
   if (!target) return;
@@ -657,6 +701,7 @@ function resetValidationSummary() {
   delete target.dataset.mode;
   delete target.dataset.evidenceStatus;
   delete target.dataset.publishability;
+  delete target.dataset.invalidated;
 }
 
 function renderProgramme() {
@@ -665,6 +710,7 @@ function renderProgramme() {
   renderScheduleStatus();
   renderDayStrip();
   renderAgenda();
+  renderEvidenceCard();
   renderGate();
   renderScheduleActions();
   renderScheduleEditor();
@@ -750,6 +796,7 @@ async function loadScheduleDetail(scheduleId) {
   state.scheduleEvents = readEventsFromRead(read);
   state.scheduleRows = [];
   state.scheduleEvidence = null;
+  state.scheduleEvidenceInvalidated = false;
   state.scheduleDirty = false;
   state.scheduleEditingEventId = '';
   state.scheduleEditOriginal = null;
@@ -875,6 +922,7 @@ async function createSchedule(event) {
 function renderScheduleWorkSurfaces() {
   renderDayStrip();
   renderAgenda();
+  renderEvidenceCard();
   renderGate();
   renderScheduleActions();
   renderScheduleEditor();
@@ -1114,6 +1162,7 @@ async function validateSchedule(event) {
       body: { branchId: getBranchId(), events: readEventsAsDraft() },
     });
     state.scheduleEvidence = body && body.evidence ? body.evidence : body;
+    state.scheduleEvidenceInvalidated = false;
     const partial = !(state.scheduleEvidence?.mode === 'FULL'
       && state.scheduleEvidence?.evidenceStatus === 'authoritative');
     const canPublish = canPublishNow();
@@ -1135,9 +1184,11 @@ async function validateSchedule(event) {
     }
     renderError(target, error);
     renderConflictResolution([]);
+    // #453 — hata sonrası kanıt kaybolmaz; geçersiz olarak işaretlenir.
+    state.scheduleEvidenceInvalidated = true;
+    renderEvidenceCard();
     // #532 — doğrulama 429 ile dönerse kontroller bekleme boyunca kapansın.
     if (error?.uiState === 'rate_limited') renderScheduleWorkSurfaces();
-    else resetValidationSummary();
   }
 }
 

@@ -4,6 +4,7 @@ import { Schedule } from './schedule.entity';
 import { ScheduleVersion, ScheduleVersionStatus } from './schedule-version.entity';
 import { ScheduleEvent } from './schedule-event.entity';
 import { ScheduleEventDraft } from './m3-schedule-contract';
+import { SchedulePublishDeniedException } from './schedule-publish-denied';
 
 const REFS = {
   activeTeacherIds: new Set(['teacher-1', 'teacher-2']),
@@ -35,6 +36,9 @@ function makeService() {
     create: (e: Partial<Schedule>) => ({ ...e }) as Schedule,
     save: async (e: Schedule) => e,
     findOne: async () => null,
+    find: async () => [],
+    query: async (_sql: string, params: unknown[]) =>
+      Array.isArray(params?.[2]) ? params[2].map((id) => ({ id })) : [],
     increment: async () => ({ affected: 1 }),
     update: async () => undefined,
   };
@@ -371,5 +375,71 @@ describe('ScheduleService (P1B-05 wiring)', () => {
     const passedEvents = spy.mock.calls[0][2] as Array<{ teacherId: string; studentGroupId: string; timeSlotId: string }>;
     expect(passedEvents.some((e) => e.teacherId === 't1' && e.studentGroupId === 'g1' && e.timeSlotId === 's1')).toBe(true);
     spy.mockRestore();
+  });
+});
+
+describe('#453 yayın kapısı: gerçek dönem ve yanıt sınıfları', () => {
+  const draft = (over: Record<string, unknown> = {}) =>
+    ({
+      id: 's1',
+      tenantId: 't1',
+      branchId: 'b1',
+      status: 'draft',
+      revision: 1,
+      effectiveFrom: new Date('2026-09-01T00:00:00.000Z'),
+      effectiveTo: new Date('2026-12-20T00:00:00.000Z'),
+      ...over,
+    }) as Schedule;
+
+  const published = (over: Record<string, unknown> = {}) =>
+    draft({ id: 'other', status: 'published', ...over });
+
+  it('doğrulamada sabit dönem yerine takvim aralığı ve yayınlanmış dönem çakışması taşınır', async () => {
+    const { service, scheduleRepo } = makeService();
+    scheduleRepo.findOne = async () => draft();
+    scheduleRepo.find = async () => [published({
+      effectiveFrom: new Date('2026-12-01T00:00:00.000Z'),
+      effectiveTo: new Date('2026-12-31T00:00:00.000Z'),
+    })];
+
+    const evidence = await service.validateDraft('t1', 'b1', 's1', [makeEvent()], 1, REFS);
+
+    expect(evidence.reasons.some((reason) => reason.code === 'PUBLISHED_SCHEDULE_PERIOD_CONFLICT')).toBe(true);
+    expect(evidence.canPublish).toBe(false);
+  });
+
+  it('örtüşmeyen yayınlanmış dönem temiz doğrulamayı engellemez', async () => {
+    const { service, scheduleRepo } = makeService();
+    scheduleRepo.findOne = async () => draft();
+    scheduleRepo.find = async () => [published({
+      effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+      effectiveTo: new Date('2026-02-01T00:00:00.000Z'),
+    })];
+
+    const evidence = await service.validateDraft('t1', 'b1', 's1', [makeEvent()], 1, REFS);
+
+    expect(evidence.reasons.some((reason) => reason.code === 'PUBLISHED_SCHEDULE_PERIOD_CONFLICT')).toBe(false);
+    expect(evidence.canPublish).toBe(true);
+  });
+
+  it('dönem çakışması 409, boş program 422 ile reddedilir', async () => {
+    const { service, scheduleRepo, versionRepo } = makeService();
+    scheduleRepo.findOne = async () => draft();
+    scheduleRepo.find = async () => [published({
+      effectiveFrom: new Date('2026-10-01T00:00:00.000Z'),
+      effectiveTo: new Date('2026-10-31T00:00:00.000Z'),
+    })];
+    versionRepo.findOne = async () => ({ id: 'v1', status: 'draft', versionNo: 1 }) as ScheduleVersion;
+
+    const periodError = await service.publish('t1', 'b1', 's1', 'actor', 'req', [makeEvent()], 1).catch((error) => error);
+    expect(periodError).toBeInstanceOf(SchedulePublishDeniedException);
+    expect(periodError.getStatus()).toBe(409);
+    expect(periodError.getResponse()).toMatchObject({ code: 'PUBLISHED_SCHEDULE_PERIOD_CONFLICT' });
+
+    scheduleRepo.find = async () => [];
+    const emptyError = await service.publish('t1', 'b1', 's1', 'actor', 'req', [], 1).catch((error) => error);
+    expect(emptyError).toBeInstanceOf(SchedulePublishDeniedException);
+    expect(emptyError.getStatus()).toBe(422);
+    expect(emptyError.getResponse()).toMatchObject({ code: 'SCHEDULE_EMPTY' });
   });
 });

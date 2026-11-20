@@ -125,7 +125,10 @@ describe('#452 gün ajandası yerinde düzenleme yüzeyi', () => {
     ui.probe.commitScheduleEventEdit();
     expect(ui.probe.state.scheduleEvents[0].startTime).toBe('11:00');
     expect(ui.probe.state.scheduleDirty).toBe(true);
-    expect(ui.probe.state.scheduleEvidence).toBeNull();
+    // #453 — kanıt silinmez; geçersiz işaretlenir ve kartta görünür kalır.
+    expect(ui.probe.state.scheduleEvidence).not.toBeNull();
+    expect(ui.probe.state.scheduleEvidenceInvalidated).toBe(true);
+    expect(ui.element('#schedule-validation-summary').dataset.invalidated).toBe('true');
     expect(ui.fetch.mock.calls.length).toBe(fetchCount);
     expect(ui.element('#schedule-agenda').innerHTML).toContain('11:00');
     expect(ui.element('#schedule-gate').textContent).toContain('Kaydedilmemiş değişiklik');

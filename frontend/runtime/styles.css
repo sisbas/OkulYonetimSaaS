@@ -535,7 +535,10 @@ main { display: grid; gap: 1rem; }
 .gate-line[data-gate-state="ready"] { background: #eaf7ef; border-left-color: #166534; color: #14532d; font-weight: 700; }
 .gate-line[data-gate-state="closed_empty"],
 .gate-line[data-gate-state="closed_stale"],
-.gate-line[data-gate-state="closed_conflicts"] { border-left-color: #d97706; }
+.gate-line[data-gate-state="closed_conflicts"],
+.gate-line[data-gate-state="closed_period"] { border-left-color: #d97706; }
+/* #453 — dönem çakışması ayrı bir kapalı kapı; diğerlerinden farklı ton. */
+.gate-line[data-gate-state="closed_period"] { background: #fff7ed; border-left-color: #9a3412; color: #7c2d12; font-weight: 700; }
 .gate-line[data-gate-state="closed_dirty"] { border-left-color: #d97706; font-weight: 700; }
 /* #452 — sürüm/offline kilitleri: bayat ve eksik sürüm ayrı yüz, ayrı ton. */
 .gate-line[data-gate-state="version_stale"] { background: #fef2f2; border-left-color: #b91c1c; color: #7f1d1d; font-weight: 700; }

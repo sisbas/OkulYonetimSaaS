@@ -20,6 +20,7 @@ import {
   ScheduleAuditEvent,
 } from './schedule-publisher';
 import { SolverPort, SolveRequest, SolveResult } from './solver/solver-port';
+import { isoDate } from './schedule-read.view';
 
 export type CreateScheduleInput = {
   tenantId: string;
@@ -91,6 +92,35 @@ export class ScheduleService {
     });
     if (!schedule) throw new NotFoundException('Schedule not found');
     return schedule;
+  }
+
+  /**
+   * #453 — doğrulama artık takvimin gerçek aralığını ve aynı şubedeki yayınlanmış
+   * programlarla örtüşmeyi taşır. Sabit `2000-01-01` / `null` / `false` yok.
+   */
+  private async periodContext(schedule: Schedule): Promise<{
+    effectiveFrom: string;
+    effectiveTo: string | null;
+    publishedPeriodConflict: boolean;
+  }> {
+    const effectiveFrom = isoDate(schedule.effectiveFrom) ?? '2000-01-01';
+    const effectiveTo = isoDate(schedule.effectiveTo);
+    const published = await this.scheduleRepo.find({
+      where: {
+        tenantId: schedule.tenantId,
+        branchId: schedule.branchId,
+        status: ScheduleStatus.PUBLISHED,
+      },
+    });
+    const conflict = published.some((other) => {
+      if (String(other.id) === String(schedule.id)) return false;
+      const otherFrom = isoDate(other.effectiveFrom);
+      const otherTo = isoDate(other.effectiveTo);
+      if (!otherFrom) return false;
+      return (effectiveTo === null || otherFrom <= effectiveTo)
+        && (otherTo === null || effectiveFrom <= otherTo);
+    });
+    return { effectiveFrom, effectiveTo, publishedPeriodConflict: conflict };
   }
 
   /**
@@ -211,6 +241,7 @@ export class ScheduleService {
     }
     const effectiveReferences =
       references ?? (await this.loadActiveReferences(tenantId, branchId, events));
+    const period = await this.periodContext(persisted);
     const input: ScheduleValidationInput = {
       mode: 'FULL',
       tenantId,
@@ -222,9 +253,9 @@ export class ScheduleService {
       validationFingerprint: fingerprint(events),
       validatedRevision: revision,
       status: ScheduleStatus.DRAFT,
-      effectiveFrom: '2000-01-01',
-      effectiveTo: null,
-      publishedPeriodConflict: false,
+      effectiveFrom: period.effectiveFrom,
+      effectiveTo: period.effectiveTo,
+      publishedPeriodConflict: period.publishedPeriodConflict,
       events,
       references: effectiveReferences,
     };
@@ -264,6 +295,7 @@ export class ScheduleService {
 
     // Gerçek aktif referans setini DB'den yükle (bulgu 3).
     const references = await this.loadActiveReferences(tenantId, branchId, events);
+    const period = await this.periodContext(schedule);
 
     const validationInput: ScheduleValidationInput = {
       mode: 'FULL',
@@ -276,9 +308,9 @@ export class ScheduleService {
       validationFingerprint: fingerprint(events),
       validatedRevision: schedule.revision,
       status: ScheduleStatus.DRAFT,
-      effectiveFrom: '2000-01-01',
-      effectiveTo: null,
-      publishedPeriodConflict: false,
+      effectiveFrom: period.effectiveFrom,
+      effectiveTo: period.effectiveTo,
+      publishedPeriodConflict: period.publishedPeriodConflict,
       events,
       references,
     };

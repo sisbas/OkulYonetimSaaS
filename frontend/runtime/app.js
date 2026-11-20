@@ -39,6 +39,8 @@ const state = {
   scheduleEditingEventId: '',
   scheduleEditOriginal: null,
   scheduleEvidence: null,
+  // #453 — düzenleme sonrası son doğrulama geçersiz sayılır; kanıt silinmez.
+  scheduleEvidenceInvalidated: false,
   scheduleDirty: false,
   scheduleDay: 1,
   scheduleRows: [],
@@ -236,6 +238,12 @@ const SERVER_REASON_UI = {
   cross_tenant_or_unknown_resource: { state: 'empty_or_not_found_same_scope' },
   LEAVE_VERSION_REQUIRED: { state: 'version_required' },
   LEAVE_VERSION_MISMATCH: { state: 'stale_version' },
+  // #453 — dört yayın engeli, dört ayrı kanonik durum ve yanıt sınıfı.
+  SCHEDULE_EMPTY: { state: 'publish_blocked_empty' },
+  SCHEDULE_VALIDATION_STALE: { state: 'publish_blocked_stale' },
+  SCHEDULE_HARD_CONFLICTS_PRESENT: { state: 'publish_blocked_conflicts' },
+  PUBLISHED_SCHEDULE_PERIOD_CONFLICT: { state: 'publish_blocked_period' },
+  PUBLISHED_SCHEDULE_IMMUTABLE: { state: 'published_read_only' },
   TEACHER_COURSE_ELIGIBILITY_NOT_READY: { state: 'impact_not_ready' },
   TEACHER_COURSE_MISMATCH: {
     state: 'candidate_unavailable',
@@ -769,6 +777,7 @@ function clearBranchWork() {
   state.scheduleEditingEventId = '';
   state.scheduleEditOriginal = null;
   state.scheduleEvidence = null;
+  state.scheduleEvidenceInvalidated = false;
   state.scheduleDirty = false;
   state.scheduleDay = 1;
   state.scheduleRows = [];
