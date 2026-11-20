@@ -493,7 +493,7 @@ function scheduleRowMarkup(row, index, disabled = '') {
   return `<article class="card" data-schedule-row="${index}">
     <h3>Yeni ders ${index + 1}</h3>
     <div class="grid-form">
-      <label>Gün <select data-schedule-field="dayOfWeek">${dayOptions}</select></label>
+      <label>Gün <select data-schedule-field="dayOfWeek"${disabled}>${dayOptions}</select></label>
       <label>Başlangıç <input data-schedule-field="startTime" type="time" value="${escapeHtml(String(row?.startTime ?? '09:00'))}"${disabled} /></label>
       <label>Bitiş <input data-schedule-field="endTime" type="time" value="${escapeHtml(String(row?.endTime ?? '09:40'))}"${disabled} /></label>
       ${input('teacherId', 'Öğretmen kimliği', row?.teacherId)}

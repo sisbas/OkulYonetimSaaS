@@ -177,6 +177,7 @@ describe('#452 412 ve 428 ayrı yüzeylerdir ve otomatik yeniden deneme yapmaz',
     expect(ui.probe.state.scheduleEvents[0].startTime).toBe('09:00');
     // #532 — kilitliyken yeni satırın saat inputları da görsel olarak kapalı.
     const stagedHtml = ui.element('#schedule-events').innerHTML;
+    expect(stagedHtml).toMatch(/data-schedule-field="dayOfWeek"[^>]*disabled/);
     expect(stagedHtml).toMatch(/data-schedule-field="startTime"[^>]*disabled/);
     expect(stagedHtml).toMatch(/data-schedule-field="endTime"[^>]*disabled/);
     const beforeStart = ui.probe.state.scheduleRows[0].startTime;
@@ -273,6 +274,7 @@ describe('#532 429 cooldown kilidi', () => {
     const lock = schedule.match(/function scheduleMutationLocked\([\s\S]*?\n\}/)?.[0] ?? '';
     expect(lock).toContain('mutationDisabled()');
     const row = schedule.match(/function scheduleRowMarkup\([\s\S]*?\n\}/)?.[0] ?? '';
+    expect(row).toMatch(/data-schedule-field="dayOfWeek"\$\{disabled\}/);
     expect(row).toMatch(/data-schedule-field="startTime"[^>]*\$\{disabled\}/);
     expect(row).toMatch(/data-schedule-field="endTime"[^>]*\$\{disabled\}/);
   });
