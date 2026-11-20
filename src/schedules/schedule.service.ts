@@ -21,6 +21,14 @@ import {
 } from './schedule-publisher';
 import { SolverPort, SolveRequest, SolveResult } from './solver/solver-port';
 import { isoDate } from './schedule-read.view';
+import { SchedulePublishDeniedException } from './schedule-publish-denied';
+
+/** Postgres EXCLUDE ihlali (#453) — yalnız ilgili constraint için eşlenir. */
+function isPublishedPeriodExclusionError(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  const message = String((error as { message?: string } | null)?.message ?? '');
+  return code === '23P01' && message.includes('ex_schedules_published_period');
+}
 
 export type CreateScheduleInput = {
   tenantId: string;
@@ -315,56 +323,64 @@ export class ScheduleService {
       references,
     };
 
-    const port: ScheduleTransactionPort = {
-      insertPublishedVersion: async (snapshot) => {
-        await this.versionRepo.update(draft.id, {
-          status: ScheduleVersionStatus.PUBLISHED,
-          publishedAt: new Date(snapshot.publishedAt),
-          validationMode: 'FULL' as ScheduleVersion['validationMode'],
-          validationFingerprint: fingerprint(events),
-          validatedRevision: schedule.revision,
-          // Snapshot bir OBJECT olmalı (migration chk_schedule_versions_snapshot_object).
-          snapshot: { events },
-        });
-      },
-      markSchedulePublished: async (sid, expectedRevision, versionId) => {
-        await this.scheduleRepo.update(
-          { tenantId, id: sid },
-          {
-            status: ScheduleStatus.PUBLISHED,
-            activeVersionId: versionId,
-            revision: expectedRevision,
+    // #453 — iki yazım TEK transaction içinde. Aksi halde EXCLUDE ihlalinde
+    // versiyon published olarak kalır, schedule draft'ta kalır ve sonraki
+    // yayın "No draft version to publish" ile bozulur.
+    try {
+      await this.scheduleRepo.manager.transaction(async (em: EntityManager) => {
+        const port: ScheduleTransactionPort = {
+          insertPublishedVersion: async (snapshot) => {
+            await em.update(ScheduleVersion, { tenantId, id: draft.id }, {
+              status: ScheduleVersionStatus.PUBLISHED,
+              publishedAt: new Date(snapshot.publishedAt),
+              validationMode: 'FULL' as ScheduleVersion['validationMode'],
+              validationFingerprint: fingerprint(events),
+              validatedRevision: schedule.revision,
+              // Snapshot bir OBJECT olmalı (migration chk_schedule_versions_snapshot_object).
+              snapshot: { events },
+            });
           },
-        );
-      },
-      markScheduleUnpublished: async (sid, expectedRevision) => {
-        await this.scheduleRepo.update(
-          { tenantId, id: sid },
-          {
-            status: ScheduleStatus.UNPUBLISHED,
-            activeVersionId: null,
-            revision: expectedRevision,
+          markSchedulePublished: async (sid, expectedRevision, versionId) => {
+            await em.update(Schedule, { tenantId, id: sid }, {
+              status: ScheduleStatus.PUBLISHED,
+              activeVersionId: versionId,
+              revision: expectedRevision,
+            });
           },
-        );
-      },
-      appendAudit: async (event: ScheduleAuditEvent) => {
-        // Audit kaydı common/audit üzerinden düşürülebilir; bu slice'ta no-op
-        // (audit pipeline zaten interceptor ile çalışır).
-        void event;
-      },
-    };
+          markScheduleUnpublished: async (sid, expectedRevision) => {
+            await em.update(Schedule, { tenantId, id: sid }, {
+              status: ScheduleStatus.UNPUBLISHED,
+              activeVersionId: null,
+              revision: expectedRevision,
+            });
+          },
+          appendAudit: async (event: ScheduleAuditEvent) => {
+            // Audit kaydı common/audit üzerinden düşürülebilir; bu slice'ta no-op
+            // (audit pipeline zaten interceptor ile çalışır).
+            void event;
+          },
+        };
 
-    await publishSchedule({
-      actorId,
-      requestId,
-      expectedRevision: callerRevision,
-      scheduleVersionId: draft.id,
-      versionNo: draft.versionNo,
-      publishedAt: new Date().toISOString(),
-      validation: validateSchedule(validationInput),
-      validationInput,
-      transaction: port,
-    });
+        await publishSchedule({
+          actorId,
+          requestId,
+          expectedRevision: callerRevision,
+          scheduleVersionId: draft.id,
+          versionNo: draft.versionNo,
+          publishedAt: new Date().toISOString(),
+          validation: validateSchedule(validationInput),
+          validationInput,
+          transaction: port,
+        });
+      });
+    } catch (error) {
+      // Yarışı kaybeden isteği aynı kanonik dönem çakışması olarak döndür;
+      // ham PostgreSQL kodu istemciye sızmaz.
+      if (isPublishedPeriodExclusionError(error)) {
+        throw new SchedulePublishDeniedException('PUBLISHED_SCHEDULE_PERIOD_CONFLICT');
+      }
+      throw error;
+    }
 
     return (await this.versionRepo.findOne({
       where: { id: draft.id },

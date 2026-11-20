@@ -442,4 +442,25 @@ describe('#453 yayın kapısı: gerçek dönem ve yanıt sınıfları', () => {
     expect(emptyError.getStatus()).toBe(422);
     expect(emptyError.getResponse()).toMatchObject({ code: 'SCHEDULE_EMPTY' });
   });
+
+  it('yarışta EXCLUDE ihlalini 409 dönem çakışmasına eşler ve ham kodu sızdırmaz', async () => {
+    const { service, scheduleRepo, versionRepo, em } = makeService();
+    scheduleRepo.findOne = async () => draft();
+    scheduleRepo.find = async () => [];
+    versionRepo.findOne = async () => ({ id: 'v1', status: 'draft', versionNo: 1 }) as ScheduleVersion;
+    em.update = async () => {
+      const dbError = Object.assign(
+        new Error('conflicting key value violates exclusion constraint "ex_schedules_published_period"'),
+        { code: '23P01' },
+      );
+      throw dbError;
+    };
+
+    const error = await service.publish('t1', 'b1', 's1', 'actor', 'req', [makeEvent()], 1).catch((e) => e);
+
+    expect(error).toBeInstanceOf(SchedulePublishDeniedException);
+    expect(error.getStatus()).toBe(409);
+    expect(error.getResponse()).toMatchObject({ code: 'PUBLISHED_SCHEDULE_PERIOD_CONFLICT' });
+    expect(String(error.message)).not.toContain('23P01');
+  });
 });
