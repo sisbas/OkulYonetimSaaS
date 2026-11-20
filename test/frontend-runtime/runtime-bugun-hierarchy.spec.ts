@@ -11,7 +11,7 @@ import { response, runtime, ALL_PERMISSION_KEYS } from './runtime-harness';
  */
 
 const PROBE =
-  'state, applyCatalog, loadTodayDashboard, renderNavigation, renderStrategicGoals, apiRequest';
+  'state, applyCatalog, loadTodayDashboard, renderNavigation, renderStrategicGoals, apiRequest, logout';
 
 const root = process.cwd();
 const runtimeDir = path.join(root, 'frontend/runtime');
@@ -98,5 +98,34 @@ describe('#458 Bugün operasyon-önce kalıcı hiyerarşi', () => {
 
     expect(ui.fetch.mock.calls.some((call) => String(call[0]).includes('/strategic-goals?'))).toBe(true);
     expect(ui.element('#strategic-goals-table').innerHTML.length).toBeGreaterThan(0);
+  });
+
+  it('çıkışta hedefler temizlenir ve yetenek kalsa bile izinsiz görünmez', async () => {
+    const ui = runtime(PROBE, ['strategic_goal:read']);
+    ui.probe.state.accessToken = 'token';
+    ui.probe.state.branchId = 'ANKARA';
+    ui.fetch.mockResolvedValue(response({
+      strategicGoals: [{ id: 'g1', academicYear: '2026-2027', metricKey: 'devam', metricLabel: 'Devam', targetValue: 90, progressValue: 80 }],
+    }));
+    ui.probe.applyCatalog({
+      version: 1,
+      institution: { name: 'Okul' },
+      role: { label: 'rol' },
+      branches: [{ name: 'Merkez', code: 'ANKARA' }],
+      activeBranch: { name: 'Merkez', code: 'ANKARA' },
+      permissions: ['strategic_goal:read'],
+      capabilities: ['strategic_goals'],
+    });
+    await ui.probe.renderStrategicGoals();
+    expect(ui.element('#strategic-goals-section').classList.contains('hidden')).toBe(false);
+    expect(ui.element('#strategic-goals-table').innerHTML).toContain('Devam');
+
+    ui.probe.logout();
+    ui.probe.renderNavigation();
+
+    expect(ui.element('#strategic-goals-table').innerHTML).toBe('');
+    expect(ui.element('#strategic-goals-controls').innerHTML).toBe('');
+    expect(ui.element('#strategic-goals-section').classList.contains('hidden')).toBe(true);
+    expect(ui.probe.state.capabilities).toContain('strategic_goals');
   });
 });
