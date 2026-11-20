@@ -1,7 +1,7 @@
 import { runtime, response, ALL_PERMISSION_KEYS, TEACHER_PERMISSION_KEYS, TENANT_ADMIN_PERMISSION_KEYS } from './runtime-harness';
 
 const PROBE =
-  'state, canRequest, hasCapability, navSectionsFor, loadProgramme, loadScheduleDetail, createSchedule, addScheduleEvent, saveScheduleDraft, validateSchedule, publishSchedule, canPublishNow, renderProgramme, renderScheduleStatus, renderDayStrip, renderAgenda, renderGate, renderScheduleEditor, renderScheduleActions, selectScheduleDay';
+  'state, canRequest, hasCapability, navSectionsFor, loadProgramme, loadScheduleDetail, createSchedule, addScheduleEvent, recomputeScheduleDirty, saveScheduleDraft, validateSchedule, publishSchedule, canPublishNow, renderProgramme, renderScheduleStatus, renderDayStrip, renderAgenda, renderGate, renderScheduleEditor, renderScheduleActions, selectScheduleDay';
 
 /** Yalnızca görünen metin: öznitelik değerleri hariç. */
 function renderedText(html: string): string {
@@ -238,9 +238,10 @@ describe('#450 haftalık program — kaydet → doğrula → yayınla', () => {
     mockProgrammeFetch(ui, { draft: summaryFor(), read: readFor({ revision: 1 }) });
     await ui.probe.loadProgramme();
     // GET yanıtının ETag'i content-addressed'dir (sha256 benzeri) — asla If-Match değil.
-    expect(ui.probe.state.scheduleEtag).toBe('"schedule:11111111-1111-4111-8111-111111111111:v1"');
+    expect(ui.probe.state.scheduleIfMatch).toBe('"schedule:11111111-1111-4111-8111-111111111111:v1"');
 
     ui.probe.state.scheduleRows = [{ ...eventFor({ eventId: '' }), dayOfWeek: '1' }].map((row) => ({ ...row }));
+    ui.probe.recomputeScheduleDirty();
     ui.fetch.mockResolvedValueOnce(etagResponse({ id: SCHEDULE_ID }, '"schedule:11111111-1111-4111-8111-111111111111:v2"'));
     ui.fetch.mockResolvedValueOnce(etagResponse(draftWithOneEvent, '"schedule:readbackhash"'));
     await ui.probe.saveScheduleDraft();
@@ -251,7 +252,7 @@ describe('#450 haftalık program — kaydet → doğrula → yayınla', () => {
     expect(save![1].headers?.['If-Match']).toBe('"schedule:11111111-1111-4111-8111-111111111111:v1"');
     expect(JSON.parse(save![1].body ?? '{}').events.length).toBe(1);
     // Read-back sonrası jeton taze revision'dan yeniden kurulur.
-    expect(ui.probe.state.scheduleEtag).toBe('"schedule:11111111-1111-4111-8111-111111111111:v2"');
+    expect(ui.probe.state.scheduleIfMatch).toBe('"schedule:11111111-1111-4111-8111-111111111111:v2"');
   });
 
   it('keeps publish disabled when the evidence is stale or conflicting', async () => {
@@ -287,6 +288,7 @@ describe('#450 haftalık program — kaydet → doğrula → yayınla', () => {
     mockProgrammeFetch(ui, { draft: summaryFor(), read: readFor() });
     await ui.probe.loadProgramme();
     ui.probe.state.scheduleRows = [{ ...eventFor({ eventId: '' }), dayOfWeek: '1' }];
+    ui.probe.recomputeScheduleDirty();
     const callsBefore = ui.fetch.mock.calls.length;
     ui.fetch.mockResolvedValueOnce(response({ code: 'SCHEDULE_VERSION_MISMATCH', message: 'Kayıt güncellendi' }, 412));
     await ui.probe.saveScheduleDraft();

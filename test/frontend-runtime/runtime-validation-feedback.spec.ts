@@ -82,7 +82,7 @@ function signedIn() {
   ui.probe.state.branchId = 'ANKARA';
   ui.probe.state.scheduleId = SCHEDULE_ID;
   ui.probe.state.scheduleRevision = 1;
-  ui.probe.state.scheduleEtag = `"schedule:${SCHEDULE_ID}:v1"`;
+  ui.probe.state.scheduleIfMatch = `"schedule:${SCHEDULE_ID}:v1"`;
   ui.probe.state.scheduleRead = readFor();
   ui.probe.state.scheduleEvents = ui.probe.state.scheduleRead.events;
   ui.probe.state.scheduleDay = 1;
@@ -283,7 +283,7 @@ describe('#451 doğrulama geri bildirimi — kısmi vs tam doğrulama', () => {
     const ui = signedIn();
     ui.probe.state.scheduleRevision = 2;
     ui.probe.state.scheduleRead = { ...ui.probe.state.scheduleRead, revision: 2 };
-    ui.probe.state.scheduleEtag = `"schedule:${SCHEDULE_ID}:v2"`;
+    ui.probe.state.scheduleIfMatch = `"schedule:${SCHEDULE_ID}:v2"`;
     await validateWith(
       ui,
       evidenceFor({

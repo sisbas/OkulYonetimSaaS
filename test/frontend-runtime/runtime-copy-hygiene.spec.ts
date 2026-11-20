@@ -236,7 +236,7 @@ describe('#446 copy hygiene', () => {
       const ui = signedIn();
       ui.probe.state.scheduleId = 'sch-1';
       ui.probe.state.scheduleRevision = 1;
-      ui.probe.state.scheduleEtag = '"schedule:sch-1:v1"';
+      ui.probe.state.scheduleIfMatch = '"schedule:sch-1:v1"';
       ui.probe.state.scheduleRead = {
         scheduleId: 'sch-1',
         status: 'draft',
