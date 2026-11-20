@@ -42,7 +42,9 @@ export type PublishCommand = {
 export async function publishSchedule(command: PublishCommand): Promise<PublishedScheduleSnapshot> {
   if (command.expectedRevision !== command.validationInput.currentScheduleRevision) {
     await command.transaction.appendAudit(denied(command, 'SCHEDULE_VERSION_MISMATCH'));
-    throw new ScheduleVersionMismatchException();
+    throw new ScheduleVersionMismatchException(
+      'SCHEDULE_VERSION_MISMATCH: Program başka bir işlemle güncellendi. Ekranı yenileyin.',
+    );
   }
   if (command.validation.mode !== 'FULL' || command.validation.evidenceStatus !== 'authoritative') {
     await command.transaction.appendAudit(denied(command, 'SCHEDULE_VALIDATION_STALE'));

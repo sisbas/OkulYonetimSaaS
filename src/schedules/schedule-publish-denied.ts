@@ -26,7 +26,9 @@ export class SchedulePublishDeniedException extends HttpException {
         statusCode: publishDeniedStatus(code),
         code,
         reasonCode: code,
-        message: message ?? publishDeniedMessage(code),
+        // Kanonik kod mesajda da taşınır (sözleşme testleri ve log okunabilirliği);
+        // istemci görseli gövdedeki `code` alanından üretir.
+        message: message ?? `${code}: ${publishDeniedMessage(code)}`,
       },
       publishDeniedStatus(code),
     );
