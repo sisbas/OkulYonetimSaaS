@@ -79,7 +79,11 @@ const SCENARIO_NAMES = [
   'İzolasyon + yeniden giriş kalıcılığı + ham PII/depolama taraması.',
   'S5-B2 negatif matris: invalid date, stale/conflict, forbidden, session expiry, cross-tenant, 404, empty/loading/offline.',
   'S5-B2 a11y/klavye/responsive: axe critical/serious=0 (desktop+mobile), focus, overflow, trace.',
+  '#460 yayın kapısı, sürüm kilitleri ve canlı istatistik kanıtı (tamamen UI).',
 ] as const;
+
+const A11Y_SCENARIO = SCENARIO_NAMES[7];
+const PUBLISH_GATE_SCENARIO = SCENARIO_NAMES[8];
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
@@ -117,6 +121,7 @@ let browser: Browser | undefined;
 let sessionA: UiSession | undefined;
 let sessionB: UiSession | undefined;
 let sessionC: UiSession | undefined;
+let sessionD: UiSession | undefined;
 let dbClient: PgClient | undefined;
 let opsApi: BootstrapApi;
 let opsApiB: BootstrapApi;
@@ -995,8 +1000,137 @@ beforeAll(async () => {
     index: screenshotIndex,
   });
   attachNetworkRecorder(sessionC, 'mobile');
+  // #460 — 412 yarışı için ikinci bir yönetici oturumu (yalnız UI eylemleri).
+  sessionD = await createUiSession({ browser, baseUrl: environment.baseUrl, screenshotDir, index: screenshotIndex });
+  attachNetworkRecorder(sessionD, 'opsD');
   await sessionA.startTrace(path.join(environment.artifactDir, 'traces', 's5-journey-trace.json'));
 });
+
+// ---------------------------------------------------------------------------
+// #460 — yalnız UI eylemleriyle program/yayın kapısı kanıtları için yardımcılar.
+// ---------------------------------------------------------------------------
+
+async function waitForVisible(session: UiSession, selector: string, timeoutMs = 20_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await session.isVisible(selector).catch(() => false)) return;
+    await sleep(200);
+  }
+  throw new Error(`waitForVisible timeout: ${selector}`);
+}
+
+async function createDraft(session: UiSession, from: string, to: string): Promise<string> {
+  await session.clickElement('.tab[data-tab="program"]');
+  // Yeni taslak formu yalnız yayınlanmış program seçiliyken görünür.
+  if (scheduleId && (await session.countElements('#schedule-programme-select option')) > 0) {
+    await session.selectValue('#schedule-programme-select', scheduleId);
+    await session.waitForText('#schedule-status h3', /Yayınlanmış program/, 20_000);
+  }
+  await waitForVisible(session, '#schedule-create-form');
+  await fillField(session, '#schedule-effective-from', from);
+  await fillField(session, '#schedule-effective-to', to);
+  await session.submitForm('#schedule-create-form');
+  await session.waitForText('#schedule-status h3', /Taslak program/, 20_000);
+  await session.waitForText('#schedule-status', /Revizyon: 1/, 10_000);
+  const id = await session.attribute('#schedule-status', 'data-schedule-id');
+  if (!id) throw new Error('draft id not rendered in #schedule-status');
+  return id;
+}
+
+async function addProgrammeRow(
+  session: UiSession,
+  day: number,
+  start: string,
+  end: string,
+): Promise<number> {
+  // Yeni/kaydedilmiş taslakta staged satır sıfırdır; satırı ÖNCE ekle,
+  // indeksi mevcut satır sayısından türet (persisted event sayısı değil).
+  await session.clickElement('#add-schedule-event');
+  const index = (await session.countElements('#schedule-events [data-schedule-row]')) - 1;
+  if (index < 0) throw new Error('add-schedule-event did not create a staged row');
+  const field = (name: string): string =>
+    `#schedule-events [data-schedule-row="${index}"] [data-schedule-field="${name}"]`;
+  await fillField(session, field('teacherId'), fixture.teacherId);
+  await fillField(session, field('teacherBranchId'), fixture.teacherBranchId);
+  await fillField(session, field('studentGroupId'), fixture.studentGroupId);
+  await fillField(session, field('courseId'), fixture.courseId);
+  await fillField(session, field('roomId'), fixture.roomId);
+  await fillField(session, field('timeSlotId'), fixture.timeSlotId);
+  await session.selectValue(field('dayOfWeek'), String(day));
+  await fillField(session, field('startTime'), start);
+  await fillField(session, field('endTime'), end);
+  return index;
+}
+
+/** state.date yalnız #context-form submit ile değişir; input fill tek başına yeterli değil. */
+async function changeOperationalDate(session: UiSession, date: string): Promise<void> {
+  await fillField(session, '#operation-date', date);
+  await session.submitForm('#context-form');
+  await waitForNetworkIdle(session);
+}
+
+async function saveDraft(session: UiSession, expectedRevision: number): Promise<void> {
+  await session.clickElement('#save-schedule-draft');
+  await session.waitForText('#schedule-status', new RegExp(`Revizyon: ${expectedRevision}`), 20_000);
+}
+
+async function validateProgramme(session: UiSession): Promise<void> {
+  await session.clickElement('#validate-schedule');
+  await sleep(600);
+}
+
+async function expectGate(session: UiSession, state: string, copy: RegExp): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  let last = '';
+  while (Date.now() < deadline) {
+    last = (await session.attribute('#schedule-gate', 'data-gate-state').catch(() => null)) ?? '';
+    if (last === state) {
+      await session.waitForText('#schedule-gate', copy, 10_000);
+      return;
+    }
+    await sleep(200);
+  }
+  throw new Error(`gate state timeout: expected ${state}, last=${last}; text=${await textOf(session, '#schedule-gate')}`);
+}
+
+async function programmeMutationFlags(session: UiSession): Promise<Record<string, boolean | null>> {
+  return session.page.evaluate(() => {
+    const disabled = (sel: string): boolean | null => {
+      const el = document.querySelector(sel);
+      return el ? (el as HTMLButtonElement).disabled : null;
+    };
+    return {
+      add: disabled('#add-schedule-event'),
+      save: disabled('#save-schedule-draft'),
+      validate: disabled('#validate-schedule'),
+      publish: disabled('#publish-schedule'),
+      newDraft: disabled('#new-schedule-draft'),
+      editorHidden: document.querySelector('#schedule-editor')?.classList.contains('hidden') ?? null,
+    };
+  });
+}
+
+function expectEveryMutationClosed(flags: Record<string, boolean | null>): void {
+  for (const key of ['add', 'save', 'validate', 'publish', 'newDraft']) {
+    expect([true, null]).toContain(flags[key]);
+  }
+}
+
+async function readScheduleRevision(id: string): Promise<number> {
+  const result = await dbClient!.query(
+    `SELECT revision::int AS revision FROM schedules WHERE tenant_id = $1::uuid AND id = $2::uuid`,
+    [fixture.tenantId, id],
+  );
+  return Number(result.rows[0]?.revision ?? -1);
+}
+
+async function readDayStats(session: UiSession): Promise<{ absent: number; present: number }> {
+  const text = await textOf(session, '#day-summary');
+  return {
+    absent: Number(/Devamsız:\s*(\d+)/.exec(text)?.[1] ?? -1),
+    present: Number(/Hazır:\s*(\d+)/.exec(text)?.[1] ?? -1),
+  };
+}
 
 describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leave → attendance → notifications)', () => {
   it('Program çizelgesi taslak → doğrulama → yayın (tamamen UI; branch code body).', async () => {
@@ -1059,18 +1193,13 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(created.branchId).toBe(fixture.branchId);
     recordEvidence(currentScenario, 'POST /schedules/drafts: body.branchId=kod → guard UUID yeniden yazması kanıtı (DB branch_id UUID)');
 
-    await sessionA!.clickElement('#add-schedule-event');
     const row = (index: string, field: string): string =>
       `#schedule-events [data-schedule-row="${index}"] [data-schedule-field="${field}"]`;
-    await fillField(sessionA!, row('0', 'teacherId'), fixture.teacherId);
-    await fillField(sessionA!, row('0', 'teacherBranchId'), fixture.teacherBranchId);
-    await fillField(sessionA!, row('0', 'studentGroupId'), fixture.studentGroupId);
-    await fillField(sessionA!, row('0', 'courseId'), fixture.courseId);
-    await fillField(sessionA!, row('0', 'roomId'), fixture.roomId);
-    await fillField(sessionA!, row('0', 'timeSlotId'), fixture.timeSlotId);
-    await sessionA!.selectValue(row('0', 'dayOfWeek'), '1');
-    await fillField(sessionA!, row('0', 'startTime'), '10:00');
-    await fillField(sessionA!, row('0', 'endTime'), '11:00');
+    // #460 — haftayı gün takviminden kur: Pzt–Cum, her gün aynı saatli bir ders.
+    for (const day of [1, 2, 3, 4, 5]) {
+      await addProgrammeRow(sessionA!, day, '10:00', '11:00');
+    }
+    recordEvidence(currentScenario, 'hafta taslağı: 5 gün × 1 ders, gün şeridinden sırayla doğrulanacak');
 
     await sessionA!.clickElement('#save-schedule-draft');
     try {
@@ -1122,15 +1251,25 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'publish: revision 2, schedule_versions published v1 (validatedRevision 2)');
 
     const events = await readScheduleEvents();
-    expect(events.length).toBe(1);
-    scheduleEventId = String(events[0].id);
-    expect(events[0].teacherId).toBe(fixture.teacherId);
-    expect(events[0].teacherBranchId).toBe(fixture.teacherBranchId);
-    expect(events[0].dayOfWeek).toBe(1);
-    expect(String(events[0].startTime)).toContain('10:00');
-    expect(String(events[0].endTime)).toContain('11:00');
-    recordEvidence(currentScenario, 'event day=1 10:00-11:00, ref IDs UUID (teacherBranchId guard tarafından dokunulmadı)');
-    await snap(sessionA!, '01-schedule-published-ui');
+    expect(events.length).toBe(5);
+    const monday = events.find((event) => Number(event.dayOfWeek) === 1);
+    expect(monday).toBeDefined();
+    scheduleEventId = String(monday!.id);
+    expect(monday!.teacherId).toBe(fixture.teacherId);
+    expect(monday!.teacherBranchId).toBe(fixture.teacherBranchId);
+    expect(String(monday!.startTime)).toContain('10:00');
+    expect(String(monday!.endTime)).toContain('11:00');
+    recordEvidence(currentScenario, '5 event: Pzt–Cum 10:00-11:00, ref IDs UUID (teacherBranchId guard tarafından dokunulmadı)');
+
+    // #460 AC1 — hafta, gün takvimi (gün şeridi + ajanda) üzerinden okunur.
+    for (const day of [1, 2, 3, 4, 5]) {
+      await sessionA!.clickElement(`#schedule-daystrip button[data-day="${day}"]`);
+      await waitForCount(sessionA!, '#schedule-agenda .agenda-item', 1);
+    }
+    const dayStripCounts = await sessionA!.queryTexts('#schedule-daystrip .day-chip small');
+    expect(dayStripCounts.filter((text) => text.trim() === '1 ders').length).toBe(5);
+    recordEvidence(currentScenario, `gün takvimi: 5 gün şeridi, her ajanda 1 ders (${dayStripCounts.join(', ')})`);
+    await snap(sessionA!, '01-schedule-published-week-ui');
     recordScenario(SCENARIO_NAMES[0], 'PASS');
   });
 
@@ -1148,6 +1287,30 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
       expect(await sessionB!.attribute('#schedule-editor', 'class')).toContain('hidden');
       const teacherGrid = await sessionB!.attribute('#schedule-status', 'data-grid-state');
       expect(teacherGrid).toBe('weekly_grid_ready_published');
+      // #460 AC4 — öğretmen yüzeyinde hiçbir taslak mutasyon kontrolü açık değil.
+      const teacherMutationFlags = await sessionB!.page.evaluate(() => {
+        const inspect = (selector: string): string => {
+          const el = document.querySelector(selector);
+          if (!el) return 'absent';
+          if (el.closest('#schedule-editor')?.classList.contains('hidden')) return 'hidden';
+          if (el.classList.contains('hidden')) return 'hidden';
+          if ((el as HTMLButtonElement).disabled) return 'disabled';
+          return 'open';
+        };
+        return {
+          add: inspect('#add-schedule-event'),
+          save: inspect('#save-schedule-draft'),
+          validate: inspect('#validate-schedule'),
+          publish: inspect('#publish-schedule'),
+          newDraft: inspect('#new-schedule-draft'),
+          createForm: inspect('#schedule-create-form'),
+        };
+      });
+      expect(Object.values(teacherMutationFlags).every((value) => value !== 'open')).toBe(true);
+      const teacherDraftCalls = networkRecords.filter(
+        (record) => record.label === 'teacher' && record.url.includes('/schedules/drafts'),
+      );
+      expect(teacherDraftCalls).toEqual([]);
     } catch (error) {
       await rethrowWithDiag(error, currentScenario, [
         ['status', () => textOf(sessionB!, '#schedule-status')],
@@ -1155,7 +1318,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
         ['net', () => networkTail('teacher', /\/schedules\//)],
       ]);
     }
-    recordEvidence(currentScenario, 'teacher: yayınlanmış program own projection salt-okur (mutasyon kontrolü yok)');
+    recordEvidence(currentScenario, 'teacher: yayınlanmış program own projection salt-okur; 5 mutasyon kontrolü ve tüm /schedules/drafts çağrıları yok');
     await snap(sessionB!, '02-teacher-published-programme-readonly');
     await sessionB!.clickElement('.tab[data-tab="teacher"]');
     await sessionB!.selectValue('#leave-duration-type', 'full_day');
@@ -1178,31 +1341,31 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionB!.waitForText('#message-region', /İzin talebi oluşturuldu|kaydedildi/i, 10_000).catch(() => undefined);
     recordEvidence(currentScenario, `teacher UI: izin ${leaveMonday} 08:00-18:00 (full_day/health) kaydedildi`);
 
-    await sessionA!.clickElement('.tab[data-tab="ops"]');
-    await sessionA!.clickElement('#refresh-leaves');
-    await waitForCountAtLeast(sessionA!, '#leaves-output article.card', 1);
-    await sessionA!.waitForText('#leaves-output', /Beklemede/, 10_000);
-    leaveId = (await sessionA!.attribute('#leaves-output button[data-leave-decision="approve"]', 'data-leave-id')) ?? '';
-    if (!leaveId) throw new Error('leave id not captured from approve button');
-    // #461 F4 — önce etki, sonra karar; yedekler onayla AYNI transaction'da atanır.
-    await sessionA!.clickElement(`#leaves-output button[data-action="leave-impact"][data-leave-id="${leaveId}"]`);
-    await sessionA!.waitForText('#impact-output', /ders etkileniyor/, 20_000);
-    await sessionA!.waitForText('#impact-output', new RegExp(leaveMonday), 10_000);
-    await sessionA!.clickElement('button[data-action="candidates"]');
-    await sessionA!.waitForText('#candidate-output article.candidate', /(substitute|Seçilebilir aday)/i, 20_000);
-    const candidateTags = await sessionA!.queryTexts('#candidate-output article.candidate .tag');
-    expect(candidateTags.join(' ')).toContain('Seçilebilir aday');
-    const selectDisabled = await sessionA!.attribute(
-      '#candidate-output button[data-action="select-substitute"]',
-      'disabled',
-    ).catch(() => null);
-    expect(selectDisabled).toBeNull();
-    recordEvidence(currentScenario, 'substitute aday UI: uygun + yedek seçim düğmesi aktif (teacher_branches/teacher_courses seed)');
-    await sessionA!.clickElement('#candidate-output button[data-action="select-substitute"]');
-    await sessionA!.waitForText('#approval-substitutions-summary', /yedek seçildi/, 10_000);
-    await sessionA!.clickElement('#approval-substitutions-summary button[data-action="approve-with-substitutions"]');
+    await sessionA!.clickElement('.tab[data-tab="bugun"]');
+    await sessionA!.clickElement('#bugun-refresh');
+    await waitForCountAtLeast(sessionA!, '#day-leave-rail article.day-leave-card', 1);
+    leaveId = (await sessionA!.attribute('#day-leave-rail article.day-leave-card', 'data-leave-id')) ?? '';
+    if (!leaveId) throw new Error('leave id not captured from decision rail');
+    await sessionA!.waitForText('#day-leave-rail', /Etkilenen: \d+ ders/, 10_000);
+    await sessionA!.waitForText('#day-leave-rail', /Bugün: \d+ ders/, 10_000);
+    recordEvidence(currentScenario, 'karar rayı: etkilenen / bugün / açık sayıları karar kontrollerinden önce, sunucu projeksiyonundan');
+    await snap(sessionA!, '02a-decision-rail-impact-before-controls');
+
+    await sessionA!.clickElement(`#day-leave-rail button[data-action="day-leave-open"][data-leave-id="${leaveId}"]`);
+    await sessionA!.waitForText(`#day-leave-detail-${leaveId}`, /Bugün: \d+ ders/, 10_000);
+    expect(await textOf(sessionA!, `#day-leave-detail-${leaveId}`)).toMatch(/yedek seçilmedi/);
+    expect(await sessionA!.attribute(`#day-leave-detail-${leaveId} button[data-action="day-leave-approve"]`, 'disabled')).not.toBeNull();
+    await sessionA!.clickElement(`#day-leave-detail-${leaveId} button[data-action="day-leave-candidates"]`);
+    await sessionA!.waitForText(`#day-leave-detail-${leaveId} article.candidate`, /Sunucu bu ders için uygun listeledi/, 20_000);
+    const railCandidates = await sessionA!.queryTexts(`#day-leave-detail-${leaveId} article.candidate strong`);
+    expect(railCandidates.length).toBeGreaterThan(0);
+    recordEvidence(currentScenario, `yedek adayları yalnız sunucudan: ${railCandidates.join(', ')}`);
+    await sessionA!.clickElement(`#day-leave-detail-${leaveId} article.candidate button[data-action="day-leave-substitute"]`);
+    await sessionA!.waitForText('#day-leave-substitutions-summary', /yedek seçildi/, 10_000);
+    await sessionA!.clickElement(`#day-leave-detail-${leaveId} button[data-action="day-leave-approve"]`);
     await waitForLeaveDecision(leaveId, 'approved');
-    await sessionA!.waitForText('#leaves-output', /Onaylandı/, 10_000);
+    await waitForCount(sessionA!, `#day-leave-rail article.day-leave-card[data-leave-id="${leaveId}"]`, 0);
+    recordEvidence(currentScenario, 'karar verilen izin raydan çıktı + DB decision_status=approved');
     let leave = await readLeave(leaveId);
     expect(leave.decisionStatus).toBe('approved');
     expect(leave.coverageStatus).toBe('covered');
@@ -1215,6 +1378,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(assignment!.state).toBe('assigned');
     recordEvidence(currentScenario, 'substitutions onayla aynı transaction → DB state=assigned, leave approved, coverage covered');
 
+    await sessionA!.clickElement('.tab[data-tab="ops"]');
     await sessionA!.clickElement('#refresh-queue');
     await sessionA!.waitForText(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`, /./, 20_000);
     await sessionA!.clickElement(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`);
@@ -1325,6 +1489,43 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     const recordCount = await readAttendanceRecordCount(session1Id);
     expect(recordCount).toBe(STUDENT_COUNT);
     recordEvidence(currentScenario, 'teacher UI: 3 kayıt işaretlendi (absent/present/absent)');
+
+    // #460 AC5 — devamsızlık şeridi salt-okunur ve canlı: her işaretleme sonrası
+    // sunucu yanıtıyla yeniden hesaplanır, istemci istatistik üretmez.
+    await sessionA!.clickElement('.tab[data-tab="bugun"]');
+    // state.date yalnız #context-form submit ile değişir; input fill tek başına
+    // önceki leaveMonday bağlamında kalır ve yanlış günün şeridini getirir.
+    await changeOperationalDate(sessionA!, attendanceMonday);
+    await sessionA!.clickElement('#load-day');
+    await waitForCountAtLeast(sessionA!, '#day-lessons article.day-lesson-card', 1, 20_000);
+    const statsBefore = await readDayStats(sessionA!);
+    expect(statsBefore.absent).toBe(2);
+    expect(statsBefore.present).toBe(1);
+    recordEvidence(currentScenario, `canlı şerit (sunucu): devamsız=${statsBefore.absent}, hazır=${statsBefore.present}`);
+    // İşaretleme öğretmenin yoklama ekranından yapılır; ops şeridi yalnız OKUR.
+    // Gün rayında roster açmak öğrenci kodlarını DOM/ağ kanıtına sokacağı için
+    // PII taramasını bozar — bu yüzden kanıt salt-okunur şerit üzerinden alınır.
+    await sessionB!.clickElement('.tab[data-tab="attendance"]');
+    await sessionB!.clickElement(
+      `button[data-action="attendance-mark"][data-student-id="${students[0].studentId}"][data-mark="present"]`,
+    );
+    await sessionB!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
+    await sessionA!.clickElement('#load-day');
+    await sleep(600);
+    const statsAfterPresent = await readDayStats(sessionA!);
+    expect(statsAfterPresent.absent).toBe(1);
+    expect(statsAfterPresent.present).toBe(2);
+    recordEvidence(currentScenario, `sunucu yeniden hesapladı: devamsız=${statsAfterPresent.absent}, hazır=${statsAfterPresent.present}`);
+    await sessionB!.clickElement(
+      `button[data-action="attendance-mark"][data-student-id="${students[0].studentId}"][data-mark="absent"]`,
+    );
+    await sessionB!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
+    await sessionA!.clickElement('#load-day');
+    await sleep(600);
+    const statsRestored = await readDayStats(sessionA!);
+    expect(statsRestored.absent).toBe(2);
+    recordEvidence(currentScenario, 'canlı şerit yeniden hesaplandı: 2 → 1 → 2 devamsız; kilit/dayanık gün durumu yazılmadı');
+    await sessionA!.clickElement('.tab[data-tab="attendance"]');
 
     await sessionA!.clickElement('#refresh-attendance');
     await waitForCountAtLeast(sessionA!, `button[data-action="attendance-open"][data-session-id="${session1Id}"]`, 1, 20_000);
@@ -1541,6 +1742,84 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'execute reddi + DB değişmedi (attempts 0, receipt yok)');
     await snap(sessionA!, '05-consent-revoke-blocked');
     recordScenario(SCENARIO_NAMES[4], 'PASS');
+  });
+
+  it(PUBLISH_GATE_SCENARIO, async () => {
+    currentScenario = PUBLISH_GATE_SCENARIO;
+    await loginViaUi(sessionA!, fixture.opsUser.email, fixture.opsUser.credential);
+    await submitContextDate(sessionA!, leaveMonday);
+    await ensureBranch(sessionA!, fixture.branchCode);
+    await loginViaUi(sessionD!, fixture.opsUser.email, fixture.opsUser.credential);
+    await submitContextDate(sessionD!, leaveMonday);
+    await ensureBranch(sessionD!, fixture.branchCode);
+
+    // AC2 — dört kapalı durum, dört ayrı ekran ve dört ayrı metin.
+    const emptyId = await createDraft(sessionA!, isoDay(-70), isoDay(-61));
+    await expectGate(sessionA!, 'closed_empty', /en az bir ders/i);
+    await snap(sessionA!, '08-gate-closed-empty');
+    expect((await programmeMutationFlags(sessionA!)).publish).toBe(true);
+    recordEvidence(currentScenario, `closed_empty: ${emptyId} · yayın kapalı, gerekçe "en az bir ders"`);
+
+    const staleId = await createDraft(sessionA!, isoDay(-60), isoDay(-51));
+    await addProgrammeRow(sessionA!, 1, '09:00', '09:40');
+    await saveDraft(sessionA!, 2);
+    await validateProgramme(sessionA!);
+    await sessionA!.waitForText('#schedule-gate', /yayınlanabilir/i, 20_000);
+    await addProgrammeRow(sessionA!, 2, '09:00', '09:40');
+    await saveDraft(sessionA!, 3);
+    await expectGate(sessionA!, 'closed_stale', /güncel.*doğrulama/i);
+    await snap(sessionA!, '09-gate-closed-stale');
+    recordEvidence(currentScenario, `closed_stale: ${staleId} · düzenleme sonrası revizyon 3, kanıt geçersiz`);
+
+    const conflictsId = await createDraft(sessionA!, isoDay(-50), isoDay(-41));
+    await addProgrammeRow(sessionA!, 1, '09:00', '09:40');
+    await addProgrammeRow(sessionA!, 1, '09:00', '09:40');
+    await saveDraft(sessionA!, 2);
+    await validateProgramme(sessionA!);
+    await expectGate(sessionA!, 'closed_conflicts', /engeller|çakışma/i);
+    expect(await sessionA!.attribute('#schedule-validation-summary', 'data-publishability')).toBe('no');
+    await snap(sessionA!, '10-gate-closed-conflicts');
+    recordEvidence(currentScenario, `closed_conflicts: ${conflictsId} · canPublish=false, çakışma sayısı > 0`);
+
+    const periodId = await createDraft(sessionA!, isoDay(-30), isoDay(30));
+    await addProgrammeRow(sessionA!, 1, '10:00', '11:00');
+    await saveDraft(sessionA!, 2);
+    await validateProgramme(sessionA!);
+    await expectGate(sessionA!, 'closed_period', /dönem/i);
+    await snap(sessionA!, '11-gate-closed-period');
+    recordEvidence(currentScenario, `closed_period: ${periodId} · yayınlanmış dönemle çakışma, taslak içi çakışmadan ayrı`);
+    recordEvidence(currentScenario, 'dört kapalı kapı: closed_empty / closed_stale / closed_conflicts / closed_period — dört ayrı metin ve kanıt kartı görünür');
+
+    // AC3 — 412 (stale) ve 428 (version_required) tüm mutasyon kontrollerini kapatır.
+    const raceId = await createDraft(sessionA!, isoDay(-40), isoDay(-31));
+    await sessionD!.clickElement('.tab[data-tab="program"]');
+    await sessionD!.clickElement('#refresh-schedule-status');
+    await sessionD!.selectValue('#schedule-programme-select', raceId);
+    await sessionA!.selectValue('#schedule-programme-select', raceId);
+    await addProgrammeRow(sessionD!, 1, '09:00', '09:40');
+    await addProgrammeRow(sessionA!, 1, '09:00', '09:40');
+    await saveDraft(sessionA!, 2);
+    const revisionAfterA = await readScheduleRevision(raceId);
+    expect(revisionAfterA).toBe(2);
+    await sessionD!.clickElement('#save-schedule-draft');
+    await expectGate(sessionD!, 'version_stale', /güncellendi|yenile/i);
+    expectEveryMutationClosed(await programmeMutationFlags(sessionD!));
+    expect(await readScheduleRevision(raceId)).toBe(2);
+    await snap(sessionD!, '12-version-stale-all-mutations-disabled');
+    recordEvidence(currentScenario, `412: ${raceId} · A revizyon 2 kaydetti, D eski If-Match ile kaydedemedi; tüm mutasyon kontrolleri kapalı`);
+
+    // 428 — kabul harness'ı iş tablolarına SQL yazamaz; sunucu koşulu gerçek
+    // HTTP sınırında kanıtlanır, UI'nın version_missing tepkisi VM kilit
+    // spec'inde (runtime-schedule-revision-lock.spec.ts) pinlenir.
+    const noVersion = await rawApiCall(opsApi, 'POST', `/schedules/${raceId}/draft`, {
+      body: { branchId: fixture.branchId, events: [] },
+    });
+    expect(noVersion.status).toBe(428);
+    negatives['version-required'] = 'POST /schedules/:id/draft without If-Match -> HTTP 428';
+    expect(await readScheduleRevision(raceId)).toBe(2);
+    recordEvidence(currentScenario, '428: sürüm jetonu olmayan mutation sunucuda reddedildi; VM kanıtı version_missing → tüm mutasyon kontrolleri kapalı');
+
+    recordScenario(PUBLISH_GATE_SCENARIO, 'PASS');
   });
 
   it('İzolasyon + yeniden giriş kalıcılığı + ham PII/depolama taraması.', async () => {
@@ -1913,7 +2192,7 @@ async function writeReport(verdict: ScenarioStatus): Promise<void> {
       engine: 'axe-core 4.14.0',
       rules: 'wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa',
       gate: 'critical+serious = 0 on login, authenticated desktop and mobile viewport',
-      evidence: evidence[SCENARIO_NAMES[7]] ?? [],
+      evidence: evidence[A11Y_SCENARIO] ?? [],
     },
     negativeMatrix: {
       cases: negatives,
