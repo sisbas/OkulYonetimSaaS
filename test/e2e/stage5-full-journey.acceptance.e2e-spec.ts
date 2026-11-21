@@ -1029,12 +1029,15 @@ async function createDraft(session: UiSession, from: string, to: string): Promis
 
 async function addProgrammeRow(
   session: UiSession,
-  index: number,
   day: number,
   start: string,
   end: string,
-): Promise<void> {
-  if (index > 0) await session.clickElement('#add-schedule-event');
+): Promise<number> {
+  // Yeni/kaydedilmiş taslakta staged satır sıfırdır; satırı ÖNCE ekle,
+  // indeksi mevcut satır sayısından türet (persisted event sayısı değil).
+  await session.clickElement('#add-schedule-event');
+  const index = (await session.countElements('#schedule-events [data-schedule-row]')) - 1;
+  if (index < 0) throw new Error('add-schedule-event did not create a staged row');
   const field = (name: string): string =>
     `#schedule-events [data-schedule-row="${index}"] [data-schedule-field="${name}"]`;
   await fillField(session, field('teacherId'), fixture.teacherId);
@@ -1046,6 +1049,14 @@ async function addProgrammeRow(
   await session.selectValue(field('dayOfWeek'), String(day));
   await fillField(session, field('startTime'), start);
   await fillField(session, field('endTime'), end);
+  return index;
+}
+
+/** state.date yalnız #context-form submit ile değişir; input fill tek başına yeterli değil. */
+async function changeOperationalDate(session: UiSession, date: string): Promise<void> {
+  await fillField(session, '#operation-date', date);
+  await session.submitForm('#context-form');
+  await waitForNetworkIdle(session);
 }
 
 async function saveDraft(session: UiSession, expectedRevision: number): Promise<void> {
@@ -1172,21 +1183,11 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(created.branchId).toBe(fixture.branchId);
     recordEvidence(currentScenario, 'POST /schedules/drafts: body.branchId=kod → guard UUID yeniden yazması kanıtı (DB branch_id UUID)');
 
-    await sessionA!.clickElement('#add-schedule-event');
     const row = (index: string, field: string): string =>
       `#schedule-events [data-schedule-row="${index}"] [data-schedule-field="${field}"]`;
-    await fillField(sessionA!, row('0', 'teacherId'), fixture.teacherId);
-    await fillField(sessionA!, row('0', 'teacherBranchId'), fixture.teacherBranchId);
-    await fillField(sessionA!, row('0', 'studentGroupId'), fixture.studentGroupId);
-    await fillField(sessionA!, row('0', 'courseId'), fixture.courseId);
-    await fillField(sessionA!, row('0', 'roomId'), fixture.roomId);
-    await fillField(sessionA!, row('0', 'timeSlotId'), fixture.timeSlotId);
-    await sessionA!.selectValue(row('0', 'dayOfWeek'), '1');
-    await fillField(sessionA!, row('0', 'startTime'), '10:00');
-    await fillField(sessionA!, row('0', 'endTime'), '11:00');
     // #460 — haftayı gün takviminden kur: Pzt–Cum, her gün aynı saatli bir ders.
-    for (const day of [2, 3, 4, 5]) {
-      await addProgrammeRow(sessionA!, day - 1, day, '10:00', '11:00');
+    for (const day of [1, 2, 3, 4, 5]) {
+      await addProgrammeRow(sessionA!, day, '10:00', '11:00');
     }
     recordEvidence(currentScenario, 'hafta taslağı: 5 gün × 1 ders, gün şeridinden sırayla doğrulanacak');
 
@@ -1482,7 +1483,9 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     // #460 AC5 — devamsızlık şeridi salt-okunur ve canlı: her işaretleme sonrası
     // sunucu yanıtıyla yeniden hesaplanır, istemci istatistik üretmez.
     await sessionA!.clickElement('.tab[data-tab="bugun"]');
-    await submitContextDate(sessionA!, attendanceMonday);
+    // state.date yalnız #context-form submit ile değişir; input fill tek başına
+    // önceki leaveMonday bağlamında kalır ve yanlış günün şeridini getirir.
+    await changeOperationalDate(sessionA!, attendanceMonday);
     await sessionA!.clickElement('#load-day');
     await waitForCountAtLeast(sessionA!, '#day-lessons article.day-lesson-card', 1, 20_000);
     const statsBefore = await readDayStats(sessionA!);
@@ -1741,19 +1744,19 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, `closed_empty: ${emptyId} · yayın kapalı, gerekçe "en az bir ders"`);
 
     const staleId = await createDraft(sessionA!, isoDay(-60), isoDay(-51));
-    await addProgrammeRow(sessionA!, 0, 1, '09:00', '09:40');
+    await addProgrammeRow(sessionA!, 1, '09:00', '09:40');
     await saveDraft(sessionA!, 2);
     await validateProgramme(sessionA!);
     await sessionA!.waitForText('#schedule-gate', /yayınlanabilir/i, 20_000);
-    await addProgrammeRow(sessionA!, 1, 2, '09:00', '09:40');
+    await addProgrammeRow(sessionA!, 2, '09:00', '09:40');
     await saveDraft(sessionA!, 3);
     await expectGate(sessionA!, 'closed_stale', /güncel.*doğrulama/i);
     await snap(sessionA!, '09-gate-closed-stale');
     recordEvidence(currentScenario, `closed_stale: ${staleId} · düzenleme sonrası revizyon 3, kanıt geçersiz`);
 
     const conflictsId = await createDraft(sessionA!, isoDay(-50), isoDay(-41));
-    await addProgrammeRow(sessionA!, 0, 1, '09:00', '09:40');
-    await addProgrammeRow(sessionA!, 1, 1, '09:00', '09:40');
+    await addProgrammeRow(sessionA!, 1, '09:00', '09:40');
+    await addProgrammeRow(sessionA!, 1, '09:00', '09:40');
     await saveDraft(sessionA!, 2);
     await validateProgramme(sessionA!);
     await expectGate(sessionA!, 'closed_conflicts', /engeller|çakışma/i);
@@ -1762,7 +1765,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, `closed_conflicts: ${conflictsId} · canPublish=false, çakışma sayısı > 0`);
 
     const periodId = await createDraft(sessionA!, isoDay(-30), isoDay(30));
-    await addProgrammeRow(sessionA!, 0, 1, '10:00', '11:00');
+    await addProgrammeRow(sessionA!, 1, '10:00', '11:00');
     await saveDraft(sessionA!, 2);
     await validateProgramme(sessionA!);
     await expectGate(sessionA!, 'closed_period', /dönem/i);
@@ -1776,8 +1779,8 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await sessionD!.clickElement('#refresh-schedule-status');
     await sessionD!.selectValue('#schedule-programme-select', raceId);
     await sessionA!.selectValue('#schedule-programme-select', raceId);
-    await addProgrammeRow(sessionD!, 0, 1, '09:00', '09:40');
-    await addProgrammeRow(sessionA!, 0, 1, '09:00', '09:40');
+    await addProgrammeRow(sessionD!, 1, '09:00', '09:40');
+    await addProgrammeRow(sessionA!, 1, '09:00', '09:40');
     await saveDraft(sessionA!, 2);
     const revisionAfterA = await readScheduleRevision(raceId);
     expect(revisionAfterA).toBe(2);
