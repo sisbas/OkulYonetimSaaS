@@ -1010,6 +1010,15 @@ beforeAll(async () => {
 // #460 — yalnız UI eylemleriyle program/yayın kapısı kanıtları için yardımcılar.
 // ---------------------------------------------------------------------------
 
+async function waitForVisible(session: UiSession, selector: string, timeoutMs = 20_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await session.isVisible(selector).catch(() => false)) return;
+    await sleep(200);
+  }
+  throw new Error(`waitForVisible timeout: ${selector}`);
+}
+
 async function createDraft(session: UiSession, from: string, to: string): Promise<string> {
   await session.clickElement('.tab[data-tab="program"]');
   // Yeni taslak formu yalnız yayınlanmış program seçiliyken görünür.
@@ -1017,6 +1026,7 @@ async function createDraft(session: UiSession, from: string, to: string): Promis
     await session.selectValue('#schedule-programme-select', scheduleId);
     await session.waitForText('#schedule-status h3', /Yayınlanmış program/, 20_000);
   }
+  await waitForVisible(session, '#schedule-create-form');
   await fillField(session, '#schedule-effective-from', from);
   await fillField(session, '#schedule-effective-to', to);
   await session.submitForm('#schedule-create-form');
@@ -1492,19 +1502,26 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     expect(statsBefore.absent).toBe(2);
     expect(statsBefore.present).toBe(1);
     recordEvidence(currentScenario, `canlı şerit (sunucu): devamsız=${statsBefore.absent}, hazır=${statsBefore.present}`);
-    await sessionA!.clickElement('#day-lessons button[data-action="day-roster"]');
-    await waitForCountAtLeast(sessionA!, '#day-rail button[data-action="day-mark"]', STUDENT_COUNT, 20_000);
-    await sessionA!.clickElement(
-      `#day-rail button[data-action="day-mark"][data-student-id="${students[0].studentId}"][data-mark="present"]`,
+    // İşaretleme öğretmenin yoklama ekranından yapılır; ops şeridi yalnız OKUR.
+    // Gün rayında roster açmak öğrenci kodlarını DOM/ağ kanıtına sokacağı için
+    // PII taramasını bozar — bu yüzden kanıt salt-okunur şerit üzerinden alınır.
+    await sessionB!.clickElement('.tab[data-tab="attendance"]');
+    await sessionB!.clickElement(
+      `button[data-action="attendance-mark"][data-student-id="${students[0].studentId}"][data-mark="present"]`,
     );
-    await sleep(400);
+    await sessionB!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
+    await sessionA!.clickElement('#load-day');
+    await sleep(600);
     const statsAfterPresent = await readDayStats(sessionA!);
     expect(statsAfterPresent.absent).toBe(1);
     expect(statsAfterPresent.present).toBe(2);
-    await sessionA!.clickElement(
-      `#day-rail button[data-action="day-mark"][data-student-id="${students[0].studentId}"][data-mark="absent"]`,
+    recordEvidence(currentScenario, `sunucu yeniden hesapladı: devamsız=${statsAfterPresent.absent}, hazır=${statsAfterPresent.present}`);
+    await sessionB!.clickElement(
+      `button[data-action="attendance-mark"][data-student-id="${students[0].studentId}"][data-mark="absent"]`,
     );
-    await sleep(400);
+    await sessionB!.waitForText('#attendance-detail h3', /Yoklama · Yayınlandı/, 20_000);
+    await sessionA!.clickElement('#load-day');
+    await sleep(600);
     const statsRestored = await readDayStats(sessionA!);
     expect(statsRestored.absent).toBe(2);
     recordEvidence(currentScenario, 'canlı şerit yeniden hesaplandı: 2 → 1 → 2 devamsız; kilit/dayanık gün durumu yazılmadı');
