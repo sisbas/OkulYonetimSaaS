@@ -208,7 +208,7 @@ describe('#450 haftalık program — kaydet → doğrula → yayınla', () => {
     expect(ui.probe.state.scheduleRevision).toBe(2);
     expect(ui.probe.state.scheduleRows).toEqual([]);
     expect(ui.probe.state.scheduleDirty).toBe(false);
-    expect(ui.element('#schedule-gate').textContent).toContain('Yayın için güncel doğrulama gerekli.');
+    expect(ui.element('#schedule-gate').textContent).toContain('güncel tam doğrulama gerekli.');
     expect(ui.probe.canPublishNow()).toBe(false);
 
     // Güncel kanıt: FULL + authoritative + canPublish + mevcut revision.
@@ -280,7 +280,7 @@ describe('#450 haftalık program — kaydet → doğrula → yayınla', () => {
     ));
     await ui.probe.validateSchedule({ preventDefault: () => {} });
     expect(ui.probe.canPublishNow()).toBe(false);
-    expect(ui.element('#schedule-gate').textContent).toContain('Yayın için güncel doğrulama gerekli.');
+    expect(ui.element('#schedule-gate').textContent).toContain('güncel tam doğrulama gerekli.');
   });
 
   it('a 412 on save renders the canonical stale surface and never retries', async () => {

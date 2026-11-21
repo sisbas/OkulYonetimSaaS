@@ -228,8 +228,13 @@ describeWithPostgres('#447/#449 Schedule read surface PostgreSQL integration', (
   });
 
   type Created = Awaited<ReturnType<typeof create>>;
-  async function create() {
-    const schedule = await service.createSchedule({ tenantId: TENANT_A, branchId: BRANCH_A, effectiveFrom: '2026-09-01', effectiveTo: '2027-06-30' });
+  async function create(period: { from?: string; to?: string } = {}) {
+    const schedule = await service.createSchedule({
+      tenantId: TENANT_A,
+      branchId: BRANCH_A,
+      effectiveFrom: period.from ?? '2026-09-01',
+      effectiveTo: period.to ?? '2027-06-30',
+    });
     return schedule;
   }
 
@@ -245,10 +250,12 @@ describeWithPostgres('#447/#449 Schedule read surface PostgreSQL integration', (
     const draft = await create();
     await service.saveDraft({ tenantId: TENANT_A, branchId: BRANCH_A, scheduleId: draft.id, events: [ownEvent()], expectedRevision: 1 });
 
-    const published = await create();
+    // #453 — aynı şubede yayınlanmış dönemler örtüşemez; bu yüzden ikinci
+    // yayın farklı bir dönem kullanır (testin amacı projeksiyonları ayırt etmek).
+    const published = await create({ from: '2026-09-01', to: '2026-12-20' });
     await saveAndPublish(published.id, [ownEvent()]);
 
-    const unpublished = await create();
+    const unpublished = await create({ from: '2027-01-01', to: '2027-06-30' });
     await saveAndPublish(unpublished.id, [ownEvent()]);
     await service.unpublish(TENANT_A, BRANCH_A, unpublished.id, 'actor', 'req-unpublish', 2);
     const items = await reads.listManagementDrafts({ tenantId: TENANT_A, branchId: BRANCH_A });
@@ -345,7 +352,7 @@ describeWithPostgres('#447/#449 Schedule read surface PostgreSQL integration', (
   it('serves published own projection with only the actor events and 404s on empty', async () => {
     const withOwn = await create();
     await saveAndPublish(withOwn.id, [ownEvent(), otherEvent()]);
-    const otherOnly = await create();
+    const otherOnly = await create({ from: '2027-07-01', to: '2027-12-31' });
     await saveAndPublish(otherOnly.id, [otherEvent()]);
 
     const ctx = ownContext(OWN_USER);
@@ -371,7 +378,7 @@ describeWithPostgres('#447/#449 Schedule read surface PostgreSQL integration', (
   it('listPublished returns only schedules containing own events for own-scope actors', async () => {
     const withOwn = await create();
     await saveAndPublish(withOwn.id, [ownEvent(), otherEvent()]);
-    const otherOnly = await create();
+    const otherOnly = await create({ from: '2027-07-01', to: '2027-12-31' });
     await saveAndPublish(otherOnly.id, [otherEvent()]);
 
     const ownItems = await reads.listPublished({ tenantId: TENANT_A, branchId: BRANCH_A, ctx: ownContext(OWN_USER) });

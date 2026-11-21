@@ -6,6 +6,8 @@ import {
 } from './m3-schedule-contract';
 import { ScheduleValidationInput, ScheduleValidationReason } from './m3-schedule-contract';
 import { validateSchedule } from './schedule-validator';
+import { ScheduleVersionMismatchException } from './schedule-revision';
+import { SchedulePublishDeniedException } from './schedule-publish-denied';
 
 export type ScheduleAuditEvent = {
   eventName: 'schedule.published' | 'schedule.unpublished' | 'schedule.publish_denied';
@@ -40,17 +42,21 @@ export type PublishCommand = {
 export async function publishSchedule(command: PublishCommand): Promise<PublishedScheduleSnapshot> {
   if (command.expectedRevision !== command.validationInput.currentScheduleRevision) {
     await command.transaction.appendAudit(denied(command, 'SCHEDULE_VERSION_MISMATCH'));
-    throw new Error('SCHEDULE_VERSION_MISMATCH');
+    throw new ScheduleVersionMismatchException(
+      'SCHEDULE_VERSION_MISMATCH: Program başka bir işlemle güncellendi. Ekranı yenileyin.',
+    );
   }
   if (command.validation.mode !== 'FULL' || command.validation.evidenceStatus !== 'authoritative') {
     await command.transaction.appendAudit(denied(command, 'SCHEDULE_VALIDATION_STALE'));
-    throw new Error('INCREMENTAL_VALIDATION_IS_NOT_PUBLISH_EVIDENCE');
+    throw new SchedulePublishDeniedException('SCHEDULE_VALIDATION_STALE');
   }
 
   const validation = validateSchedule({ ...command.validationInput, mode: 'FULL' });
   if (!validation.canPublish) {
-    await command.transaction.appendAudit(denied(command, validation.reasons[0]?.code ?? 'SCHEDULE_HARD_CONFLICTS_PRESENT'));
-    throw new Error(validation.reasons[0]?.code ?? 'SCHEDULE_HARD_CONFLICTS_PRESENT');
+    // #453 — neden kodunu koru; dönem çakışması 409, diğer kapalı kapılar 422.
+    const code = validation.reasons[0]?.code ?? 'SCHEDULE_HARD_CONFLICTS_PRESENT';
+    await command.transaction.appendAudit(denied(command, code));
+    throw new SchedulePublishDeniedException(code);
   }
 
   const snapshot = makePublishedSnapshot({

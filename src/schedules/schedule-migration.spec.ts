@@ -1,6 +1,7 @@
 import { QueryRunner } from 'typeorm';
 
 import { CreateScheduleMinimumPublish1784700000000 } from '../database/migrations/1784700000000-CreateScheduleMinimumPublish';
+import { EnforcePublishedSchedulePeriod1930000000000 } from '../database/migrations/1930000000000-EnforcePublishedSchedulePeriod';
 
 describe('CreateScheduleMinimumPublish migration', () => {
   it('creates the minimum Schedule publish family with non-null references and rollback', async () => {
@@ -38,5 +39,25 @@ describe('CreateScheduleMinimumPublish migration', () => {
       'DROP TABLE IF EXISTS schedule_versions',
       'DROP TABLE IF EXISTS schedules',
     ]);
+  });
+});
+
+describe('EnforcePublishedSchedulePeriod migration (#453)', () => {
+  it('adds a btree_gist exclusion constraint for published periods with a reversible down', async () => {
+    const queries: string[] = [];
+    const runner = { query: jest.fn(async (query: string) => { queries.push(query); }) } as unknown as QueryRunner;
+    const migration = new EnforcePublishedSchedulePeriod1930000000000();
+
+    await migration.up(runner);
+    const sql = queries.join('\n');
+    expect(sql).toContain('CREATE EXTENSION IF NOT EXISTS "btree_gist"');
+    expect(sql).toContain('ex_schedules_published_period');
+    expect(sql).toContain('EXCLUDE USING gist');
+    expect(sql).toContain("daterange(effective_from, COALESCE(effective_to, 'infinity'::date), '[]') WITH &&");
+    expect(sql).toContain("WHERE (status = 'published')");
+
+    queries.length = 0;
+    await migration.down(runner);
+    expect(queries).toEqual(['ALTER TABLE schedules DROP CONSTRAINT IF EXISTS ex_schedules_published_period']);
   });
 });
