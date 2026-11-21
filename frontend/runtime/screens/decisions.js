@@ -263,7 +263,8 @@ function renderDayLeaveSubstitutionSummary() {
 
 async function loadDayLeaveCandidates(eventId, courseLabel = '') {
   if (!requireSession() || !dayLeaveExpandedId) return;
-  state.activeScheduleEventId = eventId;
+  // Her dersin adayları kendi eventId'sine bağlıdır; son yüklenen dersin
+  // global kimliği başka bir karttaki seçimi değiştirmemelidir.
   state.activeLessonLabel = courseLabel || state.activeLessonLabel;
   const target = $(`#day-leave-candidates-${eventId}`);
   target.innerHTML = loading('Adaylar getiriliyor');
@@ -279,16 +280,16 @@ async function loadDayLeaveCandidates(eventId, courseLabel = '') {
       empty(target, 'candidates');
       return;
     }
-    target.innerHTML = candidates.map(renderDayLeaveCandidate).join('');
+    target.innerHTML = candidates.map((candidate) => renderDayLeaveCandidate(candidate, eventId)).join('');
   } catch (error) {
     renderError(target, error);
   }
 }
 
-function renderDayLeaveCandidate(candidate) {
+function renderDayLeaveCandidate(candidate, eventId) {
   const teacherId = String(pick(candidate, ['teacherId'], ''));
   const eligible = pick(candidate, ['eligible'], false) === true;
-  const selected = state.pendingSubstitutions[state.activeScheduleEventId] === teacherId;
+  const selected = state.pendingSubstitutions[eventId] === teacherId;
   return `<article class="card candidate" data-day-leave-candidate="${escapeHtml(teacherId)}">
     <strong>${escapeHtml(pick(candidate, ['teacherLabel', 'displayName', 'name'], 'Aday öğretmen'))}</strong>
     <p class="card-meta">
@@ -297,14 +298,13 @@ function renderDayLeaveCandidate(candidate) {
       ${pick(candidate, ['availabilityLabel'], '') ? `<span>${escapeHtml(pick(candidate, ['availabilityLabel'], ''))}</span>` : ''}
     </p>
     ${eligible
-      ? `<button type="button" data-action="day-leave-substitute" data-teacher-id="${escapeHtml(teacherId)}"${mutationDisabled() ? ' disabled' : ''}>${selected ? 'Bu yedeği kaldır' : 'Bu yedeği seç'}</button>`
+      ? `<button type="button" data-action="day-leave-substitute" data-event-id="${escapeHtml(eventId)}" data-teacher-id="${escapeHtml(teacherId)}"${mutationDisabled() ? ' disabled' : ''}>${selected ? 'Bu yedeği kaldır' : 'Bu yedeği seç'}</button>`
       : '<p class="hint">Sunucu uygunluk kaydı bu aday için kapalı.</p>'}
   </article>`;
 }
 
-function dayLeavePickSubstitute(teacherId) {
-  if (!state.activeScheduleEventId) return announce('Önce bir dersin adaylarını açın.', 'warning');
-  const eventId = state.activeScheduleEventId;
+function dayLeavePickSubstitute(teacherId, eventId) {
+  if (!eventId) return announce('Önce bir dersin adaylarını açın.', 'warning');
   const next = { ...state.pendingSubstitutions };
   if (next[eventId] === teacherId) delete next[eventId];
   else next[eventId] = teacherId;
@@ -455,7 +455,7 @@ document.addEventListener('click', (event) => {
   // #455 — karar rayı eylemleri.
   if (target.dataset.action === 'day-leave-open') openDayLeaveDecision(target.dataset.leaveId);
   if (target.dataset.action === 'day-leave-candidates') loadDayLeaveCandidates(target.dataset.eventId, target.dataset.courseLabel);
-  if (target.dataset.action === 'day-leave-substitute') dayLeavePickSubstitute(target.dataset.teacherId);
+  if (target.dataset.action === 'day-leave-substitute') dayLeavePickSubstitute(target.dataset.teacherId, target.dataset.eventId);
   if (target.dataset.action === 'day-leave-substitutions-clear') {
     state.pendingSubstitutions = {};
     renderDayLeaveSubstitutionSummary();

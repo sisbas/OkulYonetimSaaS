@@ -136,10 +136,10 @@ describe('#455 gün akışının yanındaki izin karar rayı', () => {
     const ui = setup();
     await ui.probe.openDayLeaveDecision(LEAVE_ID);
     await ui.probe.loadDayLeaveCandidates(EVENT_A);
-    ui.probe.dayLeavePickSubstitute('teacher-1');
+    ui.probe.dayLeavePickSubstitute('teacher-1', EVENT_A);
     expect(ui.probe.substitutionsEntries()).toHaveLength(1);
     await ui.probe.loadDayLeaveCandidates(EVENT_B);
-    ui.probe.dayLeavePickSubstitute('teacher-1');
+    ui.probe.dayLeavePickSubstitute('teacher-1', EVENT_B);
     const entries = ui.probe.substitutionsEntries();
     expect(entries).toHaveLength(2);
     expect(entries.map((entry: { scheduleEventId: string }) => entry.scheduleEventId).sort())
@@ -156,6 +156,21 @@ describe('#455 gün akışının yanındaki izin karar rayı', () => {
     expect(rendered).toContain('<strong>Yalnız Sunucudan</strong>');
     // Ham kimlik yalnız data-* özniteliğinde taşınır; görünen kopyada yer almaz.
     expect(rendered.replace(/data-[a-z-]+="[^"]*"/g, '')).not.toContain('teacher-9');
+  });
+
+  it('son yüklenen ders, başka bir karttaki aday seçimini değiştirmez', async () => {
+    const ui = setup();
+    await ui.probe.openDayLeaveDecision(LEAVE_ID);
+    await ui.probe.loadDayLeaveCandidates(EVENT_A);
+    await ui.probe.loadDayLeaveCandidates(EVENT_B);
+    // A kartında görünen düğme kendi dersini taşır; B son yüklenmiş olsa bile
+    // seçim A'ya yazılır.
+    const markupA = ui.element(`#day-leave-candidates-${EVENT_A}`).innerHTML;
+    expect(markupA).toContain(`data-event-id="${EVENT_A}"`);
+    ui.probe.dayLeavePickSubstitute('teacher-1', EVENT_A);
+    const entries = ui.probe.substitutionsEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].scheduleEventId).toBe(EVENT_A);
   });
 
   it('açık ders yoksa yedek gerekmeden doğrudan onay açıktır', async () => {
@@ -192,9 +207,9 @@ describe('#455 gün akışının yanındaki izin karar rayı', () => {
     });
     await ui.probe.openDayLeaveDecision(LEAVE_ID);
     await ui.probe.loadDayLeaveCandidates(EVENT_A);
-    ui.probe.dayLeavePickSubstitute('teacher-1');
+    ui.probe.dayLeavePickSubstitute('teacher-1', EVENT_A);
     await ui.probe.loadDayLeaveCandidates(EVENT_B);
-    ui.probe.dayLeavePickSubstitute('teacher-1');
+    ui.probe.dayLeavePickSubstitute('teacher-1', EVENT_B);
     await ui.probe.dayLeaveApprove();
     expect(decided).toBe(true);
     const rail = ui.element('#day-leave-rail').innerHTML;
