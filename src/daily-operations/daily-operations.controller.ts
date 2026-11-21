@@ -66,8 +66,12 @@ export class DailyOperationsController {
 
   @Get(':leaveId/impact')
   @Permissions('leave:impact:read')
-  impact(@Req() request: RequestWithContext, @Param('leaveId', ParseUUIDPipe) leaveId: string) {
-    return this.dailyOperations.impact(getRequestContext(request), leaveId);
+  impact(
+    @Req() request: RequestWithContext,
+    @Param('leaveId', ParseUUIDPipe) leaveId: string,
+    @Query('date') date?: string,
+  ) {
+    return this.dailyOperations.impact(getRequestContext(request), leaveId, date);
   }
 
   @Get(':leaveId/events/:scheduleEventId/candidates')

@@ -456,7 +456,11 @@ main { display: grid; gap: 1rem; }
   margin-top: 0.8rem;
 }
 .day-lessons { display: grid; align-content: start; gap: 0.8rem; }
-.day-rail { display: grid; align-content: start; gap: 0.8rem; }
+.day-rail-column { display: grid; align-content: start; gap: 0.8rem; min-width: 0; }
+.day-rail { display: grid; align-content: start; gap: 0.8rem; min-width: 0; }
+.day-leave-card[data-day-leave-state="coverage_required"] { border-left: 3px solid #d97706; }
+.day-leave-detail { display: grid; gap: 0.6rem; }
+.day-leave-impact { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .day-lesson-card[data-state="done"] { border-color: #bbf7d0; }
 .day-roster li {
   align-items: start;

@@ -92,3 +92,37 @@ describe('daily operations day surface (#461 F2)', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('#455 impact projection operational day boundary', () => {
+  const context: RequestContext = { tenantId: 'tenant', requestId: 'impact-boundary' };
+  const impact = jest.fn().mockResolvedValue({
+    leaveRequestId: 'leave',
+    events: [],
+    todayLessonCount: 0,
+  });
+  const service = new DailyOperationsService({ impact } as unknown as DailyOperationsRepository);
+
+  beforeEach(() => impact.mockClear());
+
+  it('passes the validated operational date to the impact repository', async () => {
+    await service.impact(context, 'leave', '2026-11-23');
+    expect(impact).toHaveBeenCalledWith(context, 'leave', '2026-11-23');
+  });
+
+  it('falls back to the authoritative context business date', async () => {
+    const scoped: RequestContext = {
+      ...context,
+      businessDate: { tenantId: 'tenant', date: '2024-02-29', source: 'tenant_local' },
+    };
+    await service.impact(scoped, 'leave');
+    expect(impact).toHaveBeenCalledWith(scoped, 'leave', '2024-02-29');
+  });
+
+  it.each(['2026-02-30', '2026-13-01', '2026-9-30', 'not-a-date'])(
+    'rejects invalid impact date %s before touching storage',
+    async (date) => {
+      await expect(service.impact(context, 'leave', date)).rejects.toBeInstanceOf(BadRequestException);
+      expect(impact).not.toHaveBeenCalled();
+    },
+  );
+});

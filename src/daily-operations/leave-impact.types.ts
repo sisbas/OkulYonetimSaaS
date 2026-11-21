@@ -103,6 +103,8 @@ export type LeaveImpactResponse = Readonly<{
   impactedLessonCount: number;
   resolvedLessonCount: number;
   openLessonCount: number;
+  /** #455 — etkilenen derslerden operasyon gününe düşenlerin sayısı (sunucu üretir). */
+  todayLessonCount: number;
   events: LeaveImpactEvent[];
 }>;
 
@@ -176,6 +178,18 @@ export function computeCoverageStatus(total: number, resolved: number): LeaveCov
   if (resolved === 0) return LeaveCoverageStatus.UNRESOLVED;
   if (resolved < total) return LeaveCoverageStatus.PARTIALLY_COVERED;
   return LeaveCoverageStatus.COVERED;
+}
+
+/**
+ * #455 — etki projeksiyonundaki "bugüne düşen ders" sayısı.
+ * Takvim kararı istemciye bırakılmaz: karşılaştırma sunucunun operasyon
+ * günü (YYYY-MM-DD) ile olayların occurrenceDate alanı arasında yapılır.
+ */
+export function countOccurrencesOnDate(
+  events: ReadonlyArray<Readonly<{ occurrenceDate: string }>>,
+  date: string,
+): number {
+  return events.reduce((count, event) => count + (event.occurrenceDate === date ? 1 : 0), 0);
 }
 
 export function parseLeaveExpectedVersion(ifMatch: string | undefined, leaveId: string): number {
