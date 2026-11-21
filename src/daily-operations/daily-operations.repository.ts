@@ -49,6 +49,7 @@ import {
   LeaveImpactEvent,
   LeaveImpactResponse,
   computeCoverageStatus,
+  countOccurrencesOnDate,
   dateStringInTimeZone,
   isoDayOfWeek,
   leaveEtag,
@@ -647,7 +648,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     };
   }
 
-  async impact(ctx: RequestContext, leaveId: string): Promise<LeaveImpactResponse> {
+  async impact(ctx: RequestContext, leaveId: string, date?: string): Promise<LeaveImpactResponse> {
     assertTenantScope(ctx, 'daily_operations_leave_impact');
     // #461 F4: karar ÖNCESİ etki — pending izin de okunabilir.
     const leave = await this.findLeaveForPreview(this.dataSource.manager, ctx.tenantId!, leaveId);
@@ -659,7 +660,7 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       leave.tenantId,
       leave.teacherId,
     );
-    return this.toImpact(leave, events, assignments, teacherLabel);
+    return this.toImpact(leave, events, assignments, teacherLabel, date);
   }
 
   async candidates(ctx: RequestContext, leaveId: string, scheduleEventId: string): Promise<CandidateResponse> {
@@ -1602,7 +1603,13 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
     );
   }
 
-  private toImpact(leave: LeaveRow, events: ImpactedScheduleEventRow[], assignments: AssignmentRow[], teacherLabel: string): LeaveImpactResponse {
+  private toImpact(
+    leave: LeaveRow,
+    events: ImpactedScheduleEventRow[],
+    assignments: AssignmentRow[],
+    teacherLabel: string,
+    today?: string,
+  ): LeaveImpactResponse {
     const responseEvents: LeaveImpactEvent[] = events.map((event) => {
       const assignment = assignments.find((item) => assignmentCoversEvent(item, event)) ?? null;
       const courseLabel = event.courseLabel ?? NO_LESSON_LABEL_FALLBACK;
@@ -1644,6 +1651,11 @@ export class DailyOperationsRepository implements LeaveApprovalImpactPort {
       impactedLessonCount: responseEvents.length,
       resolvedLessonCount: resolved,
       openLessonCount: responseEvents.length - resolved,
+      // #455 — "bugün" sunucunun operasyon günüdür; istemci takvim hesabı yapmaz.
+      todayLessonCount: countOccurrencesOnDate(
+        responseEvents,
+        today ?? dateStringInTimeZone(new Date(), DEFAULT_TENANT_TIME_ZONE),
+      ),
       events: responseEvents,
     };
   }

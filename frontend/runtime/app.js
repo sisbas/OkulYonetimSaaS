@@ -797,9 +797,12 @@ function clearBranchWork() {
   // #458/#533 — Bugün artık her zaman görünür; çıkış/şube sıfırlamasında
   // stratejik hedefler yüzeyi de temizlenmeli, aksi halde oturumsuz kalır.
   if (typeof strategicGoalsHideSurface === 'function') strategicGoalsHideSurface();
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#schedule-agenda', '#schedule-daystrip', '#schedule-gate', '#schedule-actions', '#attendance-sessions', '#attendance-detail', '#schedule-conflicts', '#schedule-programme-select', '#program-scope', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-stats-empty', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#bugun-roles-output', '#day-summary', '#day-lessons', '#day-rail']) {
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#schedule-agenda', '#schedule-daystrip', '#schedule-gate', '#schedule-actions', '#attendance-sessions', '#attendance-detail', '#schedule-conflicts', '#schedule-programme-select', '#program-scope', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-stats-empty', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#bugun-roles-output', '#day-summary', '#day-lessons', '#day-leave-rail', '#day-rail']) {
     $(id).innerHTML = '';
   }
+  // #455 — şube/kurum değişince karar rayının açık izin ve yedek seçimleri de sıfırlanır.
+  if (typeof dayLeaveRailReset === 'function') dayLeaveRailReset();
+  if (typeof dayLeaveRailClearSession === 'function') dayLeaveRailClearSession();
   const programmePicker = document.getElementById('schedule-programme-picker');
   if (programmePicker) programmePicker.classList.add('hidden');
   for (const id of ['#schedule-editor', '#schedule-daystrip', '#schedule-gate']) {
@@ -1755,6 +1758,10 @@ const EMPTY_COPY = {
   leaves: {
     title: 'İzin talebi yok',
     message: 'Bu kapsamda izin talebi yok.',
+  },
+  dayLeaves: {
+    title: 'Karar bekleyen izin yok',
+    message: 'Bu şube için karar bekleyen izin talebi yok.',
   },
   consents: {
     title: 'Onay kaydı yok',
