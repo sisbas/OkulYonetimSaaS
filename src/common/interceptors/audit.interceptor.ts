@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { Observable, tap } from 'rxjs';
 import { AUDIT_ACTION_KEY, AuditActionOptions } from '../decorators/audit-action.decorator';
 import { RequestWithContext } from '../context/request-context';
+import { requestFailureCategory } from '../http-failure-categories';
 
 const SENSITIVE_KEY_PATTERNS = [
   'password',
@@ -77,9 +78,7 @@ export class AuditInterceptor implements NestInterceptor {
           // PII). Kategori allowlist'i, artefakt tarayıcısının ham istisna
           // sınıflarını (ör. QueryFailedError) yakıt olarak görmesini önler.
           const name = (error as Error | undefined)?.constructor?.name ?? 'Error';
-          const category = ['AuthorizationContextError', 'UnauthorizedException', 'ForbiddenException', 'NotFoundException', 'HttpException'].includes(name)
-            ? name
-            : 'Error';
+          const category = requestFailureCategory(name);
           this.logger.warn(JSON.stringify({
             action: audit.action,
             resource: audit.resource,

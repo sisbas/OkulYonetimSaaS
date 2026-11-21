@@ -4,6 +4,7 @@ import { EntityManager } from 'typeorm';
 import { RequestContext } from '../common/context/request-context';
 import { NotificationOutboxStatus } from './notification-outbox.entity';
 import { DispatchOutcome, NotificationDispatchReceipt } from './notification-dispatch-receipt.entity';
+import { extractRows } from '../common/db/extract-rows';
 
 /** Kiralama (lease) süresi — saniye. Süresi dolan kiralama yeniden kiralanabilir. */
 export const CLAIM_LEASE_SECONDS = 90;
@@ -14,6 +15,27 @@ export const MAX_ATTEMPTS = 3;
 /** Backoff: min(5s · 2^(attempts-1), 300s) — milisaniye. */
 export function backoffMsForAttempts(attempts: number): number {
   return Math.min(5_000 * 2 ** Math.max(attempts - 1, 0), 300_000);
+}
+
+/** #416 — tenant/branch/id üçlüsü için tek tip (data clump azaltma). */
+export type OutboxScope = Readonly<{ tenantId: string; branchId: string }>;
+export type OutboxRowScope = OutboxScope & Readonly<{ id: string }>;
+
+/**
+ * #416 — scope predicate'leri tek kaynaktan üretir. Parametre pozisyonları
+ * çağıran sorguda açıkça verilir; SQL'in anlamı değişmez, yalnızca kopya kalkar.
+ */
+function scopedRow(alias: string | undefined, tenantParam: number, idParam: number): string {
+  const prefix = alias ? `${alias}.` : '';
+  return `${prefix}tenant_id = $${tenantParam} AND ${prefix}id = $${idParam}`;
+}
+
+function scopedOutboxReceipt(tenantParam: number, outboxParam: number): string {
+  return `tenant_id = $${tenantParam} AND outbox_id = $${outboxParam}`;
+}
+
+function scopedSessionBranch(tenantParam: number, branchParam: number): string {
+  return `tenant_id = $${tenantParam} AND branch_id = $${branchParam}`;
 }
 
 export type NotificationOperationRow = {
@@ -50,13 +72,6 @@ export type ClaimResult = Readonly<{
   claimToken: string;
   version: number;
 }>;
-
-function extractRows<T>(result: unknown): T[] {
-  if (Array.isArray(result) && Array.isArray(result[0])) {
-    return result[0] as T[];
-  }
-  return (result ?? []) as T[];
-}
 
 const OPERATION_COLUMNS = `
   o.id, o.tenant_id AS "tenantId", o.dedupe_key AS "dedupeKey",
@@ -106,7 +121,7 @@ export class NotificationDispatchRepository {
   private scope(
     entityManager: EntityManager,
     trustedRequestContext: Readonly<{ tenantId?: string; branchId?: string }>,
-  ): { tenantId: string; branchId: string } {
+  ): OutboxScope {
     const tenantId = trustedRequestContext?.tenantId;
     const branchId = trustedRequestContext?.branchId;
     if (
@@ -175,7 +190,7 @@ export class NotificationDispatchRepository {
   /** Satırın güncel durumu — başarısız claim'in sınıflandırılması için. */
   async currentClaimBasis(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
+    input: OutboxRowScope,
   ): Promise<{
     status: NotificationOutboxStatus;
     version: number;
@@ -189,10 +204,10 @@ export class NotificationDispatchRepository {
               (o.claim_expires_at IS NOT NULL AND o.claim_expires_at >= now()) AS "claimActive",
               o.available_at AS "backoffUntil"
          FROM notification_outbox o
-        WHERE o.tenant_id = $1 AND o.id = $2
+        WHERE ${scopedRow('o', 1, 2)}
           AND o.session_id IN (
             SELECT id FROM attendance_sessions
-             WHERE tenant_id = $1 AND branch_id = $3)`,
+             WHERE ${scopedSessionBranch(1, 3)})`,
       [tenantId, input.id, branchId],
     )) as Array<{
       status: NotificationOutboxStatus;
@@ -220,7 +235,7 @@ export class NotificationDispatchRepository {
    */
   async claim(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
+    input: OutboxRowScope,
   ): Promise<ClaimResult | null> {
     const { tenantId, branchId } = this.scope(entityManager, input);
     const claimToken = randomUUID();
@@ -245,10 +260,10 @@ export class NotificationDispatchRepository {
                 claim_expires_at = now() + make_interval(secs => $4),
                 version = version + 1,
                 updated_at = now()
-          WHERE tenant_id = $1 AND id = $2
+          WHERE ${scopedRow(undefined, 1, 2)}
             AND session_id IN (
               SELECT id FROM attendance_sessions
-               WHERE tenant_id = $1 AND branch_id = $5)
+               WHERE ${scopedSessionBranch(1, 5)})
             AND status IN ('approved', 'failed')
             AND available_at <= now()
             AND (claim_expires_at IS NULL OR claim_expires_at < now())
@@ -298,7 +313,7 @@ export class NotificationDispatchRepository {
                 claim_token = NULL, claimed_at = NULL, claim_expires_at = NULL,
                 version = version + 1,
                 updated_at = now()
-          WHERE tenant_id = $1 AND id = $2 AND claim_token = $5
+          WHERE ${scopedRow(undefined, 1, 2)} AND claim_token = $5
             AND status IN ('approved', 'failed')
           RETURNING version`,
         [
@@ -365,7 +380,7 @@ export class NotificationDispatchRepository {
                 claim_token = NULL, claimed_at = NULL, claim_expires_at = NULL,
                 version = version + 1,
                 updated_at = now()
-          WHERE tenant_id = $1 AND id = $2 AND claim_token = $7
+          WHERE ${scopedRow(undefined, 1, 2)} AND claim_token = $7
             AND status IN ('approved', 'failed')
           RETURNING status, version`,
         [
@@ -428,7 +443,7 @@ export class NotificationDispatchRepository {
   ): Promise<NotificationDispatchReceipt[]> {
     const rows = (await entityManager.query(
       `SELECT * FROM notification_dispatch_receipts
-        WHERE tenant_id = $1 AND outbox_id = $2
+        WHERE ${scopedOutboxReceipt(1, 2)}
         ORDER BY attempt ASC`,
       [tenantId, outboxId],
     )) as Array<Record<string, unknown>>;
@@ -446,7 +461,7 @@ export class NotificationDispatchRepository {
   ): Promise<NotificationDispatchReceipt | null> {
     const rows = (await entityManager.query(
       `SELECT * FROM notification_dispatch_receipts
-        WHERE tenant_id = $1 AND outbox_id = $2
+        WHERE ${scopedOutboxReceipt(1, 2)}
         ORDER BY attempt DESC LIMIT 1`,
       [tenantId, outboxId],
     )) as Array<Record<string, unknown>>;
@@ -459,7 +474,7 @@ export class NotificationDispatchRepository {
    */
   async rearmForRetry(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
+    input: OutboxRowScope,
   ): Promise<{ status: NotificationOutboxStatus; version: number } | null> {
     const { tenantId, branchId } = this.scope(entityManager, input);
     const rows = extractRows<{ status: NotificationOutboxStatus; version: number }>(
@@ -470,10 +485,10 @@ export class NotificationDispatchRepository {
                 last_error_code = NULL,
                 version = version + 1,
                 updated_at = now()
-          WHERE tenant_id = $1 AND id = $2
+          WHERE ${scopedRow(undefined, 1, 2)}
             AND session_id IN (
               SELECT id FROM attendance_sessions
-               WHERE tenant_id = $1 AND branch_id = $3)
+               WHERE ${scopedSessionBranch(1, 3)})
             AND status IN ('dead_lettered', 'uncertain')
           RETURNING status, version`,
         [tenantId, input.id, branchId],
@@ -489,7 +504,7 @@ export class NotificationDispatchRepository {
    */
   async cancel(
     entityManager: EntityManager,
-    input: Readonly<{ tenantId: string; branchId: string; id: string }>,
+    input: OutboxRowScope,
   ): Promise<{ status: NotificationOutboxStatus; version: number } | null> {
     const { tenantId, branchId } = this.scope(entityManager, input);
     const rows = extractRows<{ status: NotificationOutboxStatus; version: number }>(
@@ -500,10 +515,10 @@ export class NotificationDispatchRepository {
                 claim_token = NULL, claimed_at = NULL, claim_expires_at = NULL,
                 version = version + 1,
                 updated_at = now()
-          WHERE tenant_id = $1 AND id = $2
+          WHERE ${scopedRow(undefined, 1, 2)}
             AND session_id IN (
               SELECT id FROM attendance_sessions
-               WHERE tenant_id = $1 AND branch_id = $3)
+               WHERE ${scopedSessionBranch(1, 3)})
             AND status NOT IN ('dispatched', 'delivered', 'cancelled', 'closed')
           RETURNING status, version`,
         [tenantId, input.id, branchId],

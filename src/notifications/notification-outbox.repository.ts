@@ -9,6 +9,7 @@ import { RequestContext } from '../common/context/request-context';
 import { ConsentAuthority } from '../kvkk/consent-authority';
 
 import { NotificationOutboxStatus } from './notification-outbox.entity';
+import { extractRows } from '../common/db/extract-rows';
 
 export type EnqueueOutboxRow = Readonly<{
   tenantId: string;
@@ -41,18 +42,6 @@ export type NotificationDraftRow = {
   availableAt: Date;
   createdAt: Date;
 };
-
-/**
- * TypeORM 0.3.30 postgres QueryRunner dönüş şeklini normalize eder:
- * UPDATE/DELETE sorguları `[rows, rowCount]` tuple'ı döner;
- * SELECT/INSERT ise `rows` dizisi.
- */
-function extractRows<T>(result: unknown): T[] {
-  if (Array.isArray(result) && Array.isArray(result[0])) {
-    return result[0] as T[];
-  }
-  return (result ?? []) as T[];
-}
 
 /**
  * Transactional outbox deposu (#266).

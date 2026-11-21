@@ -358,6 +358,9 @@ const statusLabels = {
   cancelled: 'İptal edildi',
   blocked_consent: 'Onay engelli',
   dispatched: 'Gönderildi',
+  // #416 / K-26 — n3 review "divergent change" kararı: APPROVED (revert yok).
+  // `delivered` etiketi ve statusTones'daki karşılığı, K-18 delivered state'inin
+  // UI yüzeyidir; aynı hatched karar hem burada hem ton haritasında geçerlidir.
   delivered: 'Teslim edildi',
   failed: 'Başarısız',
   dead_lettered: 'Durduruldu',

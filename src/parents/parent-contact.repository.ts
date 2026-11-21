@@ -13,6 +13,7 @@ import { ContactChannel, ContactVerificationStatus } from './contact-point.entit
 import { maskContactValue } from './contact-masking';
 import { ParentContactStatus } from './parent-contact.entity';
 import { StudentParentContactStatus } from './student-parent-contact.entity';
+import { extractRows } from '../common/db/extract-rows';
 
 /**
  * #266 N1a — Parent contact / contact point / student-link deposu.
@@ -109,20 +110,6 @@ type ContactPointRow = {
 function normalizeContactValue(channel: ContactChannel, raw: string): string {
   if (channel === 'email') return raw.trim().toLowerCase();
   return raw.replace(/\D/g, '');
-}
-
-/**
- * TypeORM 0.3.30 postgres QueryRunner dönüş şeklini normalize eder:
- * UPDATE/DELETE sorguları `[rows, rowCount]` tuple'ı döner;
- * SELECT/INSERT ise `rows` dizisi (PostgresQueryRunner.query
- * `result.raw` ataması). Her iki durumda da affected satır
- * dizisini verir.
- */
-function extractRows<T>(result: unknown): T[] {
-  if (Array.isArray(result) && Array.isArray(result[0])) {
-    return result[0] as T[];
-  }
-  return (result ?? []) as T[];
 }
 
 function toMaskedProjection(row: ContactPointRow): MaskedContactPoint {
