@@ -117,8 +117,9 @@ describe('#483 Stratejik hedefler seti (mock-up → runtime)', () => {
       expect(mockup).not.toMatch(/içcin|rotaıl|düfşer|görünç|tanımlıl|ödnem/);
     });
 
-    it('modül Yönetim sekmesine yazma kontrolleriyle birlikte kaydolur', () => {
-      expect(module).toContain("registerTabActivationHook('yonetim'");
+    it('modül Bugün ana ekranına yazma kontrolleriyle birlikte kaydolur (#458)', () => {
+      expect(module).toContain("registerTabActivationHook('bugun'");
+      expect(module).not.toContain("registerTabActivationHook('yonetim'");
       expect(app).toContain('STRATEGIC_GOALS_DEPLOY_CAPABILITY'.replace('STRATEGIC_GOALS_DEPLOY_CAPABILITY', 'strategic_goals'));
       expect(app).toContain("'strategic_goal:read'");
       expect(app).toContain("'strategic_goal:manage'");

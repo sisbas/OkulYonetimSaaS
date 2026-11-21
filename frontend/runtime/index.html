@@ -195,16 +195,6 @@
             </div>
           </div>
 
-          <div class="panel-intro">
-            <strong>Operasyon gün kurulu</strong>
-            <p class="hint">Günün dersleri solda sırayla akar; yoklama dersin olduğu yerde alınır. Seçili dersin yoklama listesi ve karşılık ataması sağdaki kararda bekler.</p>
-          </div>
-          <div id="day-summary" role="status" aria-live="polite"></div>
-          <div class="day-split">
-            <div id="day-lessons" class="day-lessons" role="region" aria-label="Günün dersleri"></div>
-            <div id="day-rail" class="day-rail" role="region" aria-label="Ders kararı ve yoklama listesi"></div>
-          </div>
-
           <section class="bugun-summary" aria-labelledby="bugun-summary-heading">
             <div class="section-head">
               <div>
@@ -215,20 +205,21 @@
             <div class="cards" id="bugun-stats" aria-label="Bugün özeti">
               <article class="card" data-metric="open-work">
                 <h3>Açık iş</h3>
-                <p class="card-meta"><span id="bugun-open-work-value">0</span></p>
+                <p class="card-meta"><span id="bugun-open-work-value"></span></p>
                 <p class="hint" id="bugun-open-work-hint">Karşılığı atanmamış dersler, gün başlamadan kapatılmalı.</p>
               </article>
               <article class="card" data-metric="awaiting-leave">
                 <h3>Karar bekleyen izin</h3>
-                <p class="card-meta"><span id="bugun-awaiting-leave-value">0</span></p>
+                <p class="card-meta"><span id="bugun-awaiting-leave-value"></span></p>
                 <p class="hint" id="bugun-awaiting-leave-hint">Karar vermek karşılık atamak değildir; ikisi ayrı durumdur.</p>
               </article>
               <article class="card" data-metric="sessions-open">
                 <h3>Bugünün oturumları</h3>
-                <p class="card-meta"><span id="bugun-sessions-open-value">0</span></p>
+                <p class="card-meta"><span id="bugun-sessions-open-value"></span></p>
                 <p class="hint" id="bugun-sessions-open-hint">Tamamlanan oturum kilitlenir; geri açmak ayrı bir yetkidir.</p>
               </article>
             </div>
+            <div id="bugun-stats-empty" role="status" aria-live="polite"></div>
           </section>
 
           <section class="bugun-queue" aria-labelledby="bugun-queue-heading">
@@ -250,6 +241,52 @@
             </div>
             <div id="bugun-sessions-output" class="cards" role="region" aria-label="Bugünün yoklama oturumları"></div>
           </section>
+
+          <section class="bugun-day-flow" aria-labelledby="bugun-flow-heading">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">İkincil · takvim</p>
+                <h3 id="bugun-flow-heading">Günün akışı</h3>
+              </div>
+            </div>
+            <div class="panel-intro">
+              <strong>Operasyon gün kurulu</strong>
+              <p class="hint">Günün dersleri solda sırayla akar; yoklama dersin olduğu yerde alınır. Seçili dersin yoklama listesi ve karşılık ataması sağdaki kararda bekler.</p>
+            </div>
+            <div id="day-summary" role="status" aria-live="polite"></div>
+            <div class="day-split">
+              <div id="day-lessons" class="day-lessons" role="region" aria-label="Günün dersleri"></div>
+              <div id="day-rail" class="day-rail" role="region" aria-label="Ders kararı ve yoklama listesi"></div>
+            </div>
+          </section>
+
+          <div
+            id="strategic-goals-section"
+            class="panel-section"
+            data-requires-permission="strategic_goal:read"
+            data-requires-capability="strategic_goals"
+          >
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Bugün · Stratejik hedefler</p>
+                <h2 id="strategic-goals-heading">Stratejik hedefler ve gerçekleşme</h2>
+              </div>
+            </div>
+            <div class="panel-intro" aria-labelledby="strategic-goals-intro">
+              <strong id="strategic-goals-intro">Hedefler</strong>
+              <p class="hint">Akademik yıl bazında metrik hedeflerini tanımlayın, gerçekleşmeyi girin ve oranı takip edin. Okul yöneticileri yazar; öğretmenler salt-okunur görüntüler.</p>
+            </div>
+            <form id="strategic-goals-scope" class="filter-grid" aria-label="Hedef kapsamı" novalidate>
+              <label>
+                Akademik yıl
+                <select id="strategic-goals-year" name="academicYear" required></select>
+                <span class="hint">Dönem istemcide tarihten türetilir; seçilen yıl sunucuya gider.</span>
+              </label>
+            </form>
+            <div id="strategic-goals-controls" class="stack"></div>
+            <p id="strategic-goal-form-status" class="hint" role="status"></p>
+            <div id="strategic-goals-table" class="matrix" role="region" aria-labelledby="strategic-goals-heading"></div>
+          </div>
 
           <section class="bugun-roles" aria-labelledby="bugun-roles-heading">
             <div class="section-head">
@@ -598,34 +635,6 @@
             <div id="users-roles-matrix" class="matrix" role="region" aria-label="Erişim matrisi">
               <p class="hint" id="users-roles-empty-heading">Kullanıcı ve rol matrisi henüz canlı yayınlanmadı.</p>
             </div>
-          </div>
-
-          <div
-            id="strategic-goals-section"
-            class="panel-section"
-            data-requires-permission="strategic_goal:read"
-            data-requires-capability="strategic_goals"
-          >
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">Yönetim · Stratejik hedefler</p>
-                <h2 id="strategic-goals-heading">Stratejik hedefler ve gerçekleşme</h2>
-              </div>
-            </div>
-            <div class="panel-intro" aria-labelledby="strategic-goals-intro">
-              <strong id="strategic-goals-intro">Hedefler</strong>
-              <p class="hint">Akademik yıl bazında metrik hedeflerini tanımlayın, gerçekleşmeyi girin ve oranı takip edin. Okul yöneticileri yazar; öğretmenler salt-okunur görüntüler.</p>
-            </div>
-            <form id="strategic-goals-scope" class="filter-grid" aria-label="Hedef kapsamı" novalidate>
-              <label>
-                Akademik yıl
-                <select id="strategic-goals-year" name="academicYear" required></select>
-                <span class="hint">Dönem istemcide tarihten türetilir; seçilen yıl sunucuya gider.</span>
-              </label>
-            </form>
-            <div id="strategic-goals-controls" class="stack"></div>
-            <p id="strategic-goal-form-status" class="hint" role="status"></p>
-            <div id="strategic-goals-table" class="matrix" role="region" aria-labelledby="strategic-goals-heading"></div>
           </div>
         </section>
       </main>

@@ -117,44 +117,67 @@ function renderBugunSessionCard(session) {
   </article>`;
 }
 
-function setBugunOpenWorkValue(value, permitted) {
-  $('#bugun-open-work-value').textContent = String(value ?? '');
+// #458 — veri yoksa panelsel sıfır basma: değer yalnız gerçek bir kayıt
+// kapsamında yazılır. Yetki yoksa veya kapsam boşsa hücre boş kalır.
+function bugunMetricText(value, permitted, hasData) {
+  return permitted && hasData && value !== null && value !== undefined ? String(value) : '';
+}
+
+function setBugunOpenWorkValue(value, permitted, hasData = true) {
+  $('#bugun-open-work-value').textContent = bugunMetricText(value, permitted, hasData);
   $('#bugun-open-work-hint').textContent = permitted
     ? 'Karşılığı atanmamış dersler, gün başlamadan kapatılmalı.'
     : 'Bu ölçüm yetkiniz kapsamında değil.';
 }
 
-function setBugunPendingLeaveValue(value, permitted) {
-  $('#bugun-awaiting-leave-value').textContent = String(value ?? '');
+function setBugunPendingLeaveValue(value, permitted, hasData = true) {
+  $('#bugun-awaiting-leave-value').textContent = bugunMetricText(value, permitted, hasData);
   $('#bugun-awaiting-leave-hint').textContent = permitted
     ? 'Karar vermek karşılık atamak değildir; ikisi ayrı durumdur.'
     : 'Bu ölçüm yetkiniz kapsamında değil.';
 }
 
-function setBugunSessionsValue(value, permitted) {
-  $('#bugun-sessions-open-value').textContent = String(value ?? '');
+function setBugunSessionsValue(value, permitted, hasData = true) {
+  $('#bugun-sessions-open-value').textContent = bugunMetricText(value, permitted, hasData);
+}
+
+function renderBugunStatsSurface(results) {
+  const cards = $('#bugun-stats');
+  const emptyTarget = $('#bugun-stats-empty');
+  const anyData = results.some((result) => result.permitted && result.hasData);
+  const anyFailure = results.some((result) => !result.ok);
+  cards.classList.toggle('hidden', !anyData && !anyFailure);
+  if (!anyData && !anyFailure) {
+    empty(emptyTarget, 'bugunStats');
+  } else {
+    emptyTarget.innerHTML = '';
+    delete emptyTarget.dataset.state;
+  }
 }
 
 async function loadTodaySessions() {
   const target = $('#bugun-sessions-output');
   if (!canRequest('GET', '/attendance/sessions')) {
-    setBugunSessionsValue('', false);
+    setBugunSessionsValue('', false, false);
     renderRegionState(target, 'forbidden_non_enumerating', 'Yoklama okuma yetkiniz kapsamında değil.');
-    return;
+    return { ok: false, permitted: false, hasData: false };
   }
   target.innerHTML = loading('Yoklama oturumları getiriliyor');
   try {
     const { body } = await apiRequest('/attendance/sessions');
     const all = asArray(body, ['sessions', 'items']);
     const sessions = state.date ? all.filter((session) => bugunToDay(pick(session, ['sessionDate'], '')) === state.date.slice(0, 10)) : all;
-    setBugunSessionsValue(sessions.length, true);
+    setBugunSessionsValue(sessions.length, true, sessions.length > 0);
     if (sessions.length) {
       target.innerHTML = sessions.map(renderBugunSessionCard).join('');
     } else {
       empty(target, 'attendance');
     }
+    return { ok: true, permitted: true, hasData: sessions.length > 0 };
   } catch (error) {
     renderError(target, error);
+    setBugunSessionsValue('', true, false);
+    return { ok: false, permitted: true, hasData: false };
   }
 }
 
@@ -163,6 +186,7 @@ async function loadTodayDashboard() {
   if (!requireSession()) return;
   const queueTarget = $('#bugun-queue-output');
   const queuePermitted = canRequest('GET', '/daily-operations/today');
+  const metricResults = [];
   if (queuePermitted) {
     const branchId = getBranchId();
     if (!branchId) {
@@ -178,21 +202,26 @@ async function loadTodayDashboard() {
         const coverageStatus = pick(item, ['coverageStatus'], '');
         if (coverageStatus === 'unresolved' || coverageStatus === 'partially_covered' || !coverageStatus) openWorkCount += 1;
       }
-      setBugunOpenWorkValue(openWorkCount, true);
+      setBugunOpenWorkValue(openWorkCount, true, items.length > 0);
       if (items.length) {
         queueTarget.innerHTML = items.map(renderBugunQueueItem).join('');
       } else {
         empty(queueTarget, 'queue');
       }
+      metricResults.push({ ok: true, permitted: true, hasData: items.length > 0 });
     } catch (error) {
       renderError(queueTarget, error);
+      setBugunOpenWorkValue('', true, false);
+      metricResults.push({ ok: false, permitted: true, hasData: false });
     }
   } else {
     renderRegionState(queueTarget, 'forbidden_non_enumerating', 'Bugünün iş listesi için yetkiniz bulunmuyor.');
-    setBugunOpenWorkValue('', false);
+    setBugunOpenWorkValue('', false, false);
+    metricResults.push({ ok: false, permitted: false, hasData: false });
   }
 
-  if (canRequest('GET', '/leaves')) {
+  const leavesPermitted = canRequest('GET', '/leaves');
+  if (leavesPermitted) {
     try {
       const { body } = await apiRequest('/leaves');
       const leaves = asArray(body, ['leaves', 'items']);
@@ -201,15 +230,19 @@ async function loadTodayDashboard() {
         const status = String(pick(leave, ['status'], '') || '').toLowerCase();
         if (status === 'pending') pending += 1;
       }
-      setBugunPendingLeaveValue(pending, true);
+      setBugunPendingLeaveValue(pending, true, leaves.length > 0);
+      metricResults.push({ ok: true, permitted: true, hasData: leaves.length > 0 });
     } catch (error) {
-      setBugunPendingLeaveValue('', true);
+      setBugunPendingLeaveValue('', true, false);
+      metricResults.push({ ok: false, permitted: true, hasData: false });
     }
   } else {
-    setBugunPendingLeaveValue('', false);
+    setBugunPendingLeaveValue('', false, false);
+    metricResults.push({ ok: false, permitted: false, hasData: false });
   }
 
-  await loadTodaySessions();
+  metricResults.push(await loadTodaySessions());
+  renderBugunStatsSurface(metricResults);
 
   renderBugunKesit();
   updateWorkflowProgress();

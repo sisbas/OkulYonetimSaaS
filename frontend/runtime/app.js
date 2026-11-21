@@ -782,7 +782,10 @@ function clearBranchWork() {
   // #451 — şube/kurum kapsamı değişince önceki programın doğrulama özeti
   // (fingerprint, revizyon, yayın izni) yeni kapsamda güncel gibi kalmasın.
   if (typeof resetValidationSummary === 'function') resetValidationSummary();
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#schedule-agenda', '#schedule-daystrip', '#schedule-gate', '#schedule-actions', '#attendance-sessions', '#attendance-detail', '#schedule-conflicts', '#schedule-programme-select', '#program-scope', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#bugun-roles-output', '#day-summary', '#day-lessons', '#day-rail']) {
+  // #458/#533 — Bugün artık her zaman görünür; çıkış/şube sıfırlamasında
+  // stratejik hedefler yüzeyi de temizlenmeli, aksi halde oturumsuz kalır.
+  if (typeof strategicGoalsHideSurface === 'function') strategicGoalsHideSurface();
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#schedule-agenda', '#schedule-daystrip', '#schedule-gate', '#schedule-actions', '#attendance-sessions', '#attendance-detail', '#schedule-conflicts', '#schedule-programme-select', '#program-scope', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-stats-empty', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#bugun-roles-output', '#day-summary', '#day-lessons', '#day-rail']) {
     $(id).innerHTML = '';
   }
   const programmePicker = document.getElementById('schedule-programme-picker');
@@ -1102,12 +1105,23 @@ function renderNavigation() {
     el.classList.toggle('hidden', !hasCapability(el.dataset.requiresPermission));
   });
   // Deploy yeteneği kapısı (#483): yüzey bu deploy'da yoksa bölge gizlenir.
+  // #458/#533 — yetenek kontrolü, izin kontrolünün üstüne yazmasın: iki kapı
+  // birlikte açık olmadıkça bölge gizli kalır (çıkışta izinler gider, yetenek
+  // kalır; hedefler Bugün'de olduğu için oturumsuz görünmemeli).
   document.querySelectorAll('[data-requires-capability]').forEach((el) => {
-    el.classList.toggle('hidden', !state.capabilities.includes(el.dataset.requiresCapability));
+    const permission = el.dataset.requiresPermission;
+    const permissionOk = !permission || hasCapability(permission);
+    el.classList.toggle('hidden', !permissionOk || !state.capabilities.includes(el.dataset.requiresCapability));
   });
   const current = document.querySelector('.tab[aria-selected="true"]');
   if (current && !allowed.has(current.dataset.tab)) {
     activateTab('bugun');
+    return;
+  }
+  // #458 — Bugün zaten açıkken modül hook'ları da çalışsın: ana ekranın
+  // içeriği (ör. stratejik hedefler) ilk girişte sekme tıklaması beklemesin.
+  if (state.accessToken && current?.dataset.tab === 'bugun') {
+    for (const activationHook of tabActivationHooks.bugun || []) activationHook();
   }
 }
 
@@ -1745,6 +1759,10 @@ const EMPTY_COPY = {
   day: {
     title: 'Gün programı boş',
     message: 'Bu kapsamda yayınlanmış ders yok. Şube veya tarih değiştirip yeniden deneyin.',
+  },
+  bugunStats: {
+    title: 'Bugün için ölçüm yok',
+    message: 'Bu kapsamda iş, izin veya yoklama kaydı yok. Ölçüm görüntülemek için veri oluşmasını bekleyin.',
   },
   dayRail: {
     title: 'Yoklama listesi boş',

@@ -77,10 +77,19 @@ async function waitForTab(session: UiSession, tab: string, timeoutMs = 20_000): 
   throw new Error(`Sekme görünür olmadı: ${tab}`);
 }
 
+// #458 — hedefler Yönetim sekmesinden Bugün ana ekranına taşındı; yolculuk
+// yine UI tıklamasıyla açılır, yalnız sekme adresi değişti. Bugün sekmesi
+// oturum açmadan da görünür olduğu için katalog gelene kadar Yönetim sekmesini
+// bekleriz; aksi halde yıl seçeneği henüz basılmamış olabilir.
 async function openStrategicGoals(session: UiSession): Promise<void> {
   await waitForTab(session, 'yonetim');
-  await session.clickElement('.tab[data-tab="yonetim"]');
+  await session.clickElement('.tab[data-tab="bugun"]');
   await session.waitForText('#strategic-goals-heading', /Stratejik hedefler ve gerçekleşme/i, 20_000);
+  const deadline = Date.now() + 20_000;
+  while (!/^\d{4}-\d{4}$/.test(await readSelectedYear(session))) {
+    if (Date.now() > deadline) throw new Error('Akademik yıl seçenekleri yüklenmedi.');
+    await sleep(250);
+  }
 }
 
 /** Seçili akademik yılı DOM'dan okur (salt-okunur). */
@@ -262,8 +271,10 @@ describe('#484 Stratejik hedefler P0 yolculuğu (bayrak açık ve kapalı)', () 
     });
     try {
       await loginViaUi(session, fixture.adminUser.email, fixture.adminUser.credential);
+      // #458 — katalog gelene kadar Bugün sekmesi zaten görünür; Yönetim
+      // sekmesini bekleyip yetenek kapısının uygulanmasını garanti ederiz.
       await waitForTab(session, 'yonetim');
-      await session.clickElement('.tab[data-tab="yonetim"]');
+      await session.clickElement('.tab[data-tab="bugun"]');
       await sleep(1_000);
       expect(await session.isVisible('#strategic-goals-section')).toBe(false);
       expect(await session.countElements('#strategic-goals-table tr')).toBe(0);
