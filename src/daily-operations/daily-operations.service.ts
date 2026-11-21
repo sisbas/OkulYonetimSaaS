@@ -63,8 +63,14 @@ export class DailyOperationsService {
     return this.mapErrors(() => this.repository.day(ctx, { branchId, date }));
   }
 
-  async impact(ctx: RequestContext, leaveId: string) {
-    return this.mapErrors(() => this.repository.impact(ctx, leaveId));
+  /**
+   * #455 — etki projeksiyonu operasyon gününe göre de sorulabilir.
+   * Tarih doğrulaması kuyruk yüzeyleriyle aynı sınırda yapılır; geçersiz
+   * takvim girdisi depoya hiç ulaşmaz.
+   */
+  async impact(ctx: RequestContext, leaveId: string, date?: string) {
+    const today = parseQueueDate(date, ctx.businessDate?.date);
+    return this.mapErrors(() => this.repository.impact(ctx, leaveId, today));
   }
 
   async candidates(ctx: RequestContext, leaveId: string, scheduleEventId: string) {

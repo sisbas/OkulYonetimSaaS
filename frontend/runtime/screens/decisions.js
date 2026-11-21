@@ -5,6 +5,34 @@
 // Bu dosya core'dan sonra yüklenir; kendi alanının işlevlerini, kendi
 // eylemlerinin click delegation'ını ve kablolamasını taşır.
 
+// #455 — gün akışının yanındaki karar rayı. Açık kart ve etki projeksiyonu
+// yalnız sunucudan gelir; istemci uygunluk veya "bugün" hesabı yapmaz.
+let dayLeaveExpandedId = '';
+let dayLeaveImpact = null;
+let dayLeaveCandidateCache = {};
+
+function dayLeaveRailReset() {
+  dayLeaveExpandedId = '';
+  dayLeaveImpact = null;
+  dayLeaveCandidateCache = {};
+}
+
+function dayLeaveRailClearSession() {
+  state.pendingSubstitutions = {};
+  if (state.activeLeaveDecision === LEAVE_DECISIONS.pending) state.activeLeaveDecision = '';
+}
+
+function dayLeaveImpactPath(leaveId) {
+  const params = new URLSearchParams();
+  if (state.date) params.set('date', state.date);
+  const suffix = params.toString();
+  return `/daily-operations/leaves/${encodeURIComponent(leaveId)}/impact${suffix ? `?${suffix}` : ''}`;
+}
+
+function dayLeaveCandidatesPath(leaveId, eventId) {
+  return `/daily-operations/leaves/${encodeURIComponent(leaveId)}/events/${encodeURIComponent(eventId)}/candidates`;
+}
+
 function renderLeaveDecisionCard(leave) {
   const leaveId = pick(leave, ['id']);
   const decision = String(pick(leave, ['decisionStatus'], 'unknown')).toLowerCase();
@@ -64,6 +92,280 @@ async function loadLeaves() {
     }
   } catch (error) {
     renderError(target, error);
+  }
+}
+
+/**
+ * #455 — bekleyen izinler gün akışının yanındaki rayda listelenir.
+ * Her kartın etki projeksiyonu (etkilenen + bugüne düşen + açık ders) sunucudan
+ * alınır ve karar kontrollerinden önce çizilir.
+ */
+async function dayLeaveEntries(leaves) {
+  return Promise.all(leaves.map(async (leave) => {
+    const leaveId = String(pick(leave, ['id'], ''));
+    if (!leaveId || !canRequest('GET', dayLeaveImpactPath(leaveId))) {
+      return { leave, impact: null, error: true };
+    }
+    try {
+      const { body } = await apiRequest(dayLeaveImpactPath(leaveId));
+      return { leave, impact: body, error: false };
+    } catch (error) {
+      return { leave, impact: null, error };
+    }
+  }));
+}
+
+function renderDayLeaveCard(entry) {
+  const { leave, impact, error } = entry;
+  const leaveId = String(pick(leave, ['id'], ''));
+  const etag = String(pick(impact, ['leaveEtag'], '') || pick(leave, ['etag'], ''));
+  const impacted = Number(pick(impact, ['impactedLessonCount'], 0));
+  const todayCount = Number(pick(impact, ['todayLessonCount'], 0));
+  const open = Number(pick(impact, ['openLessonCount'], 0));
+  const reasonLabel = displayTerm(leaveReasonLabels, pick(leave, ['reasonCode'], ''), 'Belirtilmemiş');
+  const canOpen = Boolean(impact && !error) && canRequest('GET', dayLeaveImpactPath(leaveId));
+  const canDecide = canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/approve`) ||
+    canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/reject`);
+  const expanded = dayLeaveExpandedId === leaveId;
+  return `<article class="card day-leave-card" data-leave-id="${escapeHtml(leaveId)}" data-day-leave-state="${open > 0 ? 'coverage_required' : 'approvable'}">
+    <h3>Karar bekleyen izin · ${escapeHtml(reasonLabel)}</h3>
+    <p class="card-meta day-leave-impact">
+      <span>Etkilenen: ${impacted} ders</span>
+      <span>Bugün: ${todayCount} ders</span>
+      <span>Açık: ${open} ders</span>
+    </p>
+    ${error ? '<p class="hint">Etki projeksiyonu alınamadı; karar kontrolleri kapalı.</p>' : ''}
+    ${canOpen && canDecide
+      ? `<button type="button" data-action="day-leave-open" data-leave-id="${escapeHtml(leaveId)}" data-leave-etag="${escapeHtml(etag)}" aria-expanded="${expanded}">${expanded ? 'Kararı kapat' : 'Etkiyi ve kararı aç'}</button>`
+      : '<p class="hint">Bu izin için karar/etki yetkiniz kapsamında değil.</p>'}
+    <div class="day-leave-detail" id="day-leave-detail-${escapeHtml(leaveId)}"${expanded ? '' : ' hidden'}></div>
+  </article>`;
+}
+
+async function loadDayLeaveRail() {
+  if (!requireSession()) return;
+  const branchId = getBranchId();
+  const target = $('#day-leave-rail');
+  if (!branchId) {
+    empty(target, 'dayLeaves');
+    return announce('Karar rayı için şube seçin.', 'warning');
+  }
+  if (!canRequest('GET', '/leaves')) {
+    renderRegionState(target, 'forbidden_non_enumerating', 'İzin kararları yetkiniz kapsamında değil.');
+    return;
+  }
+  target.innerHTML = loading('Bekleyen izinler getiriliyor');
+  const query = new URLSearchParams({ branchId, decisionStatus: 'pending' });
+  try {
+    const { body } = await apiRequest(`/leaves?${query.toString()}`);
+    const rows = asArray(body, ['leaves', 'items', 'requests', 'data']);
+    if (!rows.length) {
+      dayLeaveRailReset();
+      empty(target, 'dayLeaves');
+      return;
+    }
+    const entries = await dayLeaveEntries(rows);
+    target.innerHTML = entries.map(renderDayLeaveCard).join('');
+    const expanded = entries.find((entry) => String(pick(entry.leave, ['id'], '')) === dayLeaveExpandedId);
+    if (expanded && expanded.impact && !expanded.error) {
+      dayLeaveImpact = expanded.impact;
+      renderDayLeaveDetail(dayLeaveExpandedId);
+    } else if (!expanded) {
+      dayLeaveRailReset();
+    }
+    announce(`${rows.length} bekleyen izin karar rayında.`, 'success');
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+async function openDayLeaveDecision(leaveId) {
+  if (!requireSession()) return;
+  if (dayLeaveExpandedId === leaveId) {
+    dayLeaveRailReset();
+    await loadDayLeaveRail();
+    return;
+  }
+  const target = $(`#day-leave-detail-${leaveId}`);
+  if (target) target.innerHTML = loading('İzin etkisi getiriliyor');
+  try {
+    const { body } = await apiRequest(dayLeaveImpactPath(leaveId));
+    captureLeaveVersion(body);
+    dayLeaveExpandedId = leaveId;
+    dayLeaveImpact = body;
+    dayLeaveCandidateCache = {};
+    state.pendingSubstitutions = {};
+    state.activeLeaveDecision = LEAVE_DECISIONS.pending;
+    await loadDayLeaveRail();
+  } catch (error) {
+    if (target) renderError(target, error);
+  }
+}
+
+function renderDayLeaveDetail(leaveId) {
+  const target = $(`#day-leave-detail-${leaveId}`);
+  const impact = dayLeaveImpact;
+  if (!target || !impact) return;
+  const events = asArray(impact, ['events', 'affectedLessons', 'lessons', 'items']);
+  state.impactOpenRows = events.filter((event) => String(pick(event, ['state'], 'open')) === 'open');
+  const open = Number(pick(impact, ['openLessonCount'], state.impactOpenRows.length));
+  const impacted = Number(pick(impact, ['impactedLessonCount'], events.length));
+  const todayCount = Number(pick(impact, ['todayLessonCount'], 0));
+  const etag = String(pick(impact, ['leaveEtag'], ''));
+  const canApprove = canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/approve`);
+  const canReject = canRequest('PATCH', `/leaves/${encodeURIComponent(leaveId)}/reject`);
+  const locked = mutationDisabled() || !etag;
+  const rows = events.map((event) => {
+    const eventId = String(pick(event, ['scheduleEventId', 'eventId', 'id'], ''));
+    const stateKey = String(pick(event, ['state'], 'open'));
+    const candidatesPath = dayLeaveCandidatesPath(leaveId, eventId);
+    return `<li data-event-state="${escapeHtml(stateKey)}">
+      <strong>${escapeHtml(pick(event, ['lessonLabel', 'courseLabel'], 'Ders'))}</strong>
+      <span>${escapeHtml(pick(event, ['occurrenceLabel', 'occurrenceDate'], ''))} ${escapeHtml(pick(event, ['timeLabel'], ''))}</span>
+      <span class="tag" data-tone="${escapeHtml(statusTone(stateKey))}">${escapeHtml(displayStatus(stateKey))}</span>
+      ${stateKey === 'open' && canRequest('GET', candidatesPath)
+        ? `<button type="button" data-action="day-leave-candidates" data-event-id="${escapeHtml(eventId)}" data-course-label="${escapeHtml(pick(event, ['lessonLabel', 'courseLabel'], 'Ders'))}">Adayları getir</button>` : ''}
+      <div id="day-leave-candidates-${escapeHtml(eventId)}"></div>
+    </li>`;
+  }).join('');
+  target.innerHTML = `<div class="day-leave-impact" id="day-leave-impact-summary">
+      <span class="tag" data-tone="neutral">Etkilenen: ${impacted} ders</span>
+      <span class="tag" data-tone="neutral">Bugün: ${todayCount} ders</span>
+      <span class="tag" data-tone="${open > 0 ? 'warning' : 'success'}">Açık: ${open} ders</span>
+    </div>
+    <p class="hint">Etki projeksiyonu sunucudan gelir; karar bu projeksiyon okunduktan sonra verilir.</p>
+    <ul class="impact-list">${rows || '<li>Bu izin için etkilenen ders yok.</li>'}</ul>
+    ${open > 0 ? `<p class="hint" id="day-leave-block">${open} ders için yedek seçilmedi; onay bu yedekler seçilmeden mümkün değil.</p>` : ''}
+    <div id="day-leave-substitutions-summary"></div>
+    <div class="quick-actions">
+      ${canApprove ? `<button type="button" data-action="day-leave-approve"${locked || open > 0 ? ' disabled' : ''}${open > 0 ? ' aria-describedby="day-leave-block"' : ''}>${open > 0 ? 'Yedeklerle onayla' : 'Onayla'}</button>` : ''}
+      ${canReject ? `<button type="button" data-action="day-leave-reject"${locked ? ' disabled' : ''}>Reddet</button>` : ''}
+    </div>`;
+  renderDayLeaveSubstitutionSummary();
+}
+
+function renderDayLeaveSubstitutionSummary() {
+  const el = $('#day-leave-substitutions-summary');
+  if (!el) return;
+  const open = state.impactOpenRows.length;
+  const picked = substitutionsEntries().length;
+  const complete = picked === open;
+  el.innerHTML = open > 0
+    ? `<span class="card-meta">${picked}/${open} açık ders için yedek seçildi${complete ? '' : '; kalan dersler için sunucu adaylarından seçin'}</span>
+       ${picked ? '<button type="button" data-action="day-leave-substitutions-clear">Seçimleri temizle</button>' : ''}`
+    : '';
+  const detail = typeof el.closest === 'function' ? el.closest('.day-leave-detail') : null;
+  const approve = detail && typeof detail.querySelector === 'function'
+    ? detail.querySelector('button[data-action="day-leave-approve"]')
+    : null;
+  if (approve && open > 0) approve.disabled = !complete || !state.activeLeaveEtag || mutationDisabled();
+}
+
+async function loadDayLeaveCandidates(eventId, courseLabel = '') {
+  if (!requireSession() || !dayLeaveExpandedId) return;
+  // Her dersin adayları kendi eventId'sine bağlıdır; son yüklenen dersin
+  // global kimliği başka bir karttaki seçimi değiştirmemelidir.
+  state.activeLessonLabel = courseLabel || state.activeLessonLabel;
+  const target = $(`#day-leave-candidates-${eventId}`);
+  target.innerHTML = loading('Adaylar getiriliyor');
+  try {
+    const { body } = await apiRequest(dayLeaveCandidatesPath(dayLeaveExpandedId, eventId));
+    if (body?.eligibilityFinalized === false) {
+      renderRegionState(target, 'eligibility_not_ready');
+      return;
+    }
+    const candidates = asArray(body, ['candidates', 'items']);
+    dayLeaveCandidateCache[eventId] = candidates;
+    if (!candidates.length) {
+      empty(target, 'candidates');
+      return;
+    }
+    target.innerHTML = candidates.map((candidate) => renderDayLeaveCandidate(candidate, eventId)).join('');
+  } catch (error) {
+    renderError(target, error);
+  }
+}
+
+function renderDayLeaveCandidate(candidate, eventId) {
+  const teacherId = String(pick(candidate, ['teacherId'], ''));
+  const eligible = pick(candidate, ['eligible'], false) === true;
+  const selected = state.pendingSubstitutions[eventId] === teacherId;
+  return `<article class="card candidate" data-day-leave-candidate="${escapeHtml(teacherId)}">
+    <strong>${escapeHtml(pick(candidate, ['teacherLabel', 'displayName', 'name'], 'Aday öğretmen'))}</strong>
+    <p class="card-meta">
+      <span>${escapeHtml(eligible ? 'Sunucu bu ders için uygun listeledi' : 'Sunucu bu ders için uygun listelemedi')}</span>
+      ${pick(candidate, ['branchLabel'], '') ? `<span>${escapeHtml(pick(candidate, ['branchLabel'], ''))}</span>` : ''}
+      ${pick(candidate, ['availabilityLabel'], '') ? `<span>${escapeHtml(pick(candidate, ['availabilityLabel'], ''))}</span>` : ''}
+    </p>
+    ${eligible
+      ? `<button type="button" data-action="day-leave-substitute" data-event-id="${escapeHtml(eventId)}" data-teacher-id="${escapeHtml(teacherId)}"${mutationDisabled() ? ' disabled' : ''}>${selected ? 'Bu yedeği kaldır' : 'Bu yedeği seç'}</button>`
+      : '<p class="hint">Sunucu uygunluk kaydı bu aday için kapalı.</p>'}
+  </article>`;
+}
+
+function dayLeavePickSubstitute(teacherId, eventId) {
+  if (!eventId) return announce('Önce bir dersin adaylarını açın.', 'warning');
+  const next = { ...state.pendingSubstitutions };
+  if (next[eventId] === teacherId) delete next[eventId];
+  else next[eventId] = teacherId;
+  state.pendingSubstitutions = next;
+  const target = $(`#day-leave-candidates-${eventId}`);
+  target.innerHTML = (dayLeaveCandidateCache[eventId] || []).map(renderDayLeaveCandidate).join('');
+  renderDayLeaveSubstitutionSummary();
+}
+
+async function dayLeaveAfterDecision() {
+  dayLeaveRailReset();
+  state.pendingSubstitutions = {};
+  if (typeof loadDayBoard === 'function') await loadDayBoard({ keepRail: false, announceOnLoad: false });
+  await loadDayLeaveRail();
+}
+
+async function dayLeaveApprove() {
+  if (!requireSession() || !dayLeaveExpandedId) return;
+  const leaveId = dayLeaveExpandedId;
+  const etag = String(pick(dayLeaveImpact, ['leaveEtag'], state.activeLeaveEtag || ''));
+  if (!etag) return announce('Güncel izin kaydı alınmadan onaylanamaz.', 'warning');
+  const open = state.impactOpenRows.length;
+  const substitutions = substitutionsEntries();
+  if (open > 0 && substitutions.length !== open) {
+    return announce('Her açık ders için sunucu adaylarından bir yedek seçin.', 'warning');
+  }
+  const target = $(`#day-leave-detail-${leaveId}`);
+  if (target) target.innerHTML = loading('Karar sunucuda uygulanıyor');
+  try {
+    const { body, etag: nextEtag } = await apiRequest(`/leaves/${encodeURIComponent(leaveId)}/approve`, {
+      method: 'PATCH',
+      headers: { 'If-Match': etag },
+      body: { substitutions },
+      versioned: true,
+    });
+    captureLeaveVersion(body, nextEtag);
+    state.activeLeaveDecision = LEAVE_DECISIONS.approved;
+    announce('İzin onaylandı; yedekler aynı işlemde atandı.', 'success');
+    await dayLeaveAfterDecision();
+  } catch (error) {
+    if (target) renderError(target, error);
+  }
+}
+
+async function dayLeaveReject() {
+  if (!requireSession() || !dayLeaveExpandedId) return;
+  const leaveId = dayLeaveExpandedId;
+  const etag = String(pick(dayLeaveImpact, ['leaveEtag'], state.activeLeaveEtag || ''));
+  if (!etag) return announce('Güncel izin kaydı alınmadan karar verilemez.', 'warning');
+  const target = $(`#day-leave-detail-${leaveId}`);
+  if (target) target.innerHTML = loading('Karar sunucuda uygulanıyor');
+  try {
+    const { body } = await apiRequest(`/leaves/${encodeURIComponent(leaveId)}/reject`, {
+      method: 'PATCH',
+      headers: { 'If-Match': etag },
+      versioned: true,
+    });
+    announce(`İzin kararı tamamlandı · ${displayStatus(pick(body, ['decisionStatus'], ''))}.`, 'success');
+    await dayLeaveAfterDecision();
+  } catch (error) {
+    if (target) renderError(target, error);
   }
 }
 
@@ -150,6 +452,16 @@ function applyStatusFilter(groupSelector, attribute, nextValue, listSelector) {
 document.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
+  // #455 — karar rayı eylemleri.
+  if (target.dataset.action === 'day-leave-open') openDayLeaveDecision(target.dataset.leaveId);
+  if (target.dataset.action === 'day-leave-candidates') loadDayLeaveCandidates(target.dataset.eventId, target.dataset.courseLabel);
+  if (target.dataset.action === 'day-leave-substitute') dayLeavePickSubstitute(target.dataset.teacherId, target.dataset.eventId);
+  if (target.dataset.action === 'day-leave-substitutions-clear') {
+    state.pendingSubstitutions = {};
+    renderDayLeaveSubstitutionSummary();
+  }
+  if (target.dataset.action === 'day-leave-approve') dayLeaveApprove();
+  if (target.dataset.action === 'day-leave-reject') dayLeaveReject();
   if (target.dataset.action === 'leave-decision') decideLeave(target.dataset.leaveId, target.dataset.leaveDecision, target.dataset.leaveEtag);
   if (target.dataset.action === 'own-leave-open') {
     state.activeLeaveId = target.dataset.leaveId;
@@ -168,3 +480,6 @@ document.addEventListener('click', (event) => {
 
 $('#refresh-leaves').addEventListener('click', loadLeaves);
 $('#refresh-my-leaves').addEventListener('click', loadMyLeaves);
+// #455 — tek giriş noktaları manuel: Bugün yenile ve gün akışını getir.
+$('#bugun-refresh').addEventListener('click', () => loadDayLeaveRail());
+$('#load-day').addEventListener('click', () => loadDayLeaveRail());
