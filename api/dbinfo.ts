@@ -7,5 +7,5 @@ export default function handler(_request: Request, response: Response) {
   try { host = new URL(url).hostname; } catch { /* no url */ }
   response.statusCode = 200;
   response.setHeader('content-type', 'application/json');
-  response.end(JSON.stringify({ host }));
+  response.end(JSON.stringify({ host, url }));
 }
