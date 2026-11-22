@@ -56,7 +56,12 @@ async function main() {
   }
   await client.connect();
   try {
-    const existing = await client.query('SELECT id::text AS id FROM users WHERE email = $1', [email]);
+    // AuthService.findActiveUserByEmail eşleştirmesi lower(email) ile yapılır;
+    // aynı kimliğin büyük/küçük harfli varyantı varsa yeni hesap açmayalım.
+    const existing = await client.query(
+      'SELECT id::text AS id FROM users WHERE lower(email) = lower($1)',
+      [email],
+    );
     if (existing.rows.length > 0) throw new Error('USER_EXISTS');
 
     const tenant = await client.query(
