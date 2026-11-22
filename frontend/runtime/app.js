@@ -28,6 +28,7 @@ const state = {
   pendingDraft: null,
   activeNotificationId: '',
   activeNotificationVersion: 0,
+  notificationSelection: {},
   scheduleId: '',
   scheduleRevision: 0,
   scheduleEvents: [],
@@ -418,6 +419,32 @@ function setStatus(text, tone = 'neutral') {
     if (state.accessToken) logoutBtn.classList.remove('hidden');
     else logoutBtn.classList.add('hidden');
   }
+  renderSessionSurface();
+}
+
+/* Oturum kapısı: kimlik alanları yalnız signed-out yüzeyinde bulunur.
+   Öğeler kaldırılmaz (test sözleşmeleri ve geri giriş akışı için gerekir);
+   yalnız durum değiştirilir. */
+function renderSessionSurface() {
+  const signedIn = Boolean(state.accessToken);
+  const shell = document.querySelector('.shell');
+  if (shell?.dataset) shell.dataset.session = signedIn ? 'signed-in' : 'signed-out';
+  const authPanel = $('#auth-panel');
+  if (authPanel) authPanel.hidden = signedIn;
+  const scopeBar = $('#context-form');
+  if (scopeBar) scopeBar.hidden = !signedIn;
+}
+
+function setNavigationDrawer(open) {
+  const shell = document.querySelector('.shell');
+  if (!shell?.classList) return;
+  shell.classList.toggle('sidebar-open', open);
+  const toggle = $('#nav-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', String(open));
+}
+
+function closeNavigationDrawer() {
+  setNavigationDrawer(false);
 }
 
 function announce(message, tone = 'neutral') {
@@ -797,7 +824,7 @@ function clearBranchWork() {
   // #458/#533 — Bugün artık her zaman görünür; çıkış/şube sıfırlamasında
   // stratejik hedefler yüzeyi de temizlenmeli, aksi halde oturumsuz kalır.
   if (typeof strategicGoalsHideSurface === 'function') strategicGoalsHideSurface();
-  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#schedule-agenda', '#schedule-daystrip', '#schedule-gate', '#schedule-actions', '#attendance-sessions', '#attendance-detail', '#schedule-conflicts', '#schedule-programme-select', '#program-scope', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-stats-empty', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#bugun-roles-output', '#day-summary', '#day-lessons', '#day-leave-rail', '#day-rail']) {
+  for (const id of ['#teacher-output', '#queue-output', '#impact-output', '#candidate-output', '#leaves-output', '#consents-output', '#bulk-approve-output', '#schedule-status', '#schedule-events', '#schedule-agenda', '#schedule-daystrip', '#schedule-gate', '#schedule-actions', '#attendance-sessions', '#attendance-detail', '#schedule-conflicts', '#schedule-programme-select', '#program-scope', '#bugun-queue-output', '#bugun-sessions-output', '#bugun-stats-empty', '#bugun-open-work-value', '#bugun-awaiting-leave-value', '#bugun-sessions-open-value', '#day-summary', '#day-lessons', '#day-leave-rail', '#day-rail']) {
     $(id).innerHTML = '';
   }
   // #455 — şube/kurum değişince karar rayının açık izin ve yedek seçimleri de sıfırlanır.
@@ -953,6 +980,7 @@ async function trySilentRefresh() {
     if (result?.accessToken) {
       state.accessToken = result.accessToken;
       state.refreshToken = result.refreshToken || state.refreshToken;
+      renderSessionSurface();
       return true;
     }
     return false;
@@ -1111,6 +1139,11 @@ function renderNavigation() {
   document.querySelectorAll('.tab').forEach((tab) => {
     tab.classList.toggle('hidden', !allowed.has(tab.dataset.tab));
   });
+  // Yetkisi olmayan kullanıcıya boş grup başlığı gösterilmez.
+  document.querySelectorAll('.sidebar-group').forEach((group) => {
+    const visible = [...group.querySelectorAll('.tab')].some((tab) => !tab.classList.contains('hidden'));
+    group.classList.toggle('hidden', !visible);
+  });
   document.querySelectorAll('.quick-actions button[data-section]').forEach((btn) => {
     btn.classList.toggle('hidden', !allowed.has(btn.dataset.section));
   });
@@ -1145,6 +1178,7 @@ function setActiveTab(name) {
     tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
   });
   document.querySelectorAll('.runtime-panel').forEach((panel) => panel.classList.toggle('hidden', panel.dataset.panel !== name));
+  closeNavigationDrawer();
   $('#runtime-main').focus();
   // Tab-activation hook tablosu core'a aittir; screen modüller register'a
   // kaydolur (yön: ekran → core). Delegation'ın vm harness'ta çalışmasına
@@ -1153,6 +1187,24 @@ function setActiveTab(name) {
   if (state.accessToken) {
     for (const activationHook of activationHooks) activationHook();
   }
+}
+
+function setOpSubtab(name) {
+  document.querySelectorAll('.subtab[data-op-subtab]').forEach((button) => {
+    button.setAttribute('aria-selected', String(button.dataset.opSubtab === name));
+  });
+  document.querySelectorAll('.ops-subpanel').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.dataset.opSubpanel !== name);
+  });
+}
+
+function setNotifSubtab(name) {
+  document.querySelectorAll('.subtab[data-notif-subtab]').forEach((button) => {
+    button.setAttribute('aria-selected', String(button.dataset.notifSubtab === name));
+  });
+  document.querySelectorAll('.notif-subpanel').forEach((panel) => {
+    panel.classList.toggle('hidden', panel.dataset.notifSubpanel !== name);
+  });
 }
 
 function activateTab(name) {
@@ -1814,21 +1866,45 @@ const empty = (target, key) => {
 document.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
+  if (target.dataset.action === 'toggle-nav') {
+    const shell = document.querySelector('.shell');
+    setNavigationDrawer(!shell?.classList?.contains('sidebar-open'));
+    return;
+  }
+  if (target.dataset.opSubtab) {
+    setOpSubtab(target.dataset.opSubtab);
+    return;
+  }
+  if (target.dataset.notifSubtab) {
+    setNotifSubtab(target.dataset.notifSubtab);
+    return;
+  }
   if (target.classList.contains('tab')) activateTab(target.dataset.tab);
   if (target.dataset.action === 'focus-teacher') activateTab('teacher');
   if (target.dataset.action === 'focus-ops') activateTab('ops');
   if (target.dataset.action === 'impact') {
     if (target.dataset.source === 'bugun') activateTab('ops');
+    setOpSubtab('coverage');
     state.activeLeaveDecision = target.dataset.decision || LEAVE_DECISIONS.approved;
     loadImpact(target.dataset.leaveId, target.dataset.eventId, target.dataset.courseLabel);
   }
   if (target.dataset.action === 'leave-impact') {
+    setOpSubtab('coverage');
     state.activeLeaveDecision = LEAVE_DECISIONS.pending;
     loadImpact(target.dataset.leaveId, '', '');
   }
-  if (target.dataset.action === 'candidates') loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
-  if (target.dataset.action === 'assign') createAssignment(target.dataset.teacherId);
-  if (target.dataset.action === 'clear') clearAssignment();
+  if (target.dataset.action === 'candidates') {
+    setOpSubtab('coverage');
+    loadCandidates(target.dataset.eventId, target.dataset.courseLabel);
+  }
+  if (target.dataset.action === 'assign') {
+    setOpSubtab('coverage');
+    createAssignment(target.dataset.teacherId);
+  }
+  if (target.dataset.action === 'clear') {
+    setOpSubtab('coverage');
+    clearAssignment();
+  }
   if (target.dataset.action === 'select-substitute') setSubstitution(target.dataset.teacherId);
   if (target.dataset.action === 'approve-with-substitutions') approveWithSubstitutions();
   if (target.dataset.action === 'clear-substitutions') clearSubstitutions();
@@ -1837,11 +1913,36 @@ document.addEventListener('click', (event) => {
   // schedule, attendance) are delegated in their own modules.
 });
 
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeNavigationDrawer();
+    return;
+  }
+  const target = event.target;
+  if (!target?.closest) return;
+  const tab = target.closest('.tab');
+  const nav = tab?.closest('.tabs');
+  if (!nav) return;
+  const tabs = [...nav.querySelectorAll('.tab')].filter((item) => !item.classList.contains('hidden'));
+  if (!tabs.length) return;
+  const index = tabs.indexOf(tab);
+  let next = -1;
+  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+  else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = tabs.length - 1;
+  if (next < 0) return;
+  event.preventDefault();
+  tabs[next].focus();
+  activateTab(tabs[next].dataset.tab);
+});
+
 $('#login-form').addEventListener('submit', login);
 $('#context-form').addEventListener('submit', updateContext);
 $('#context-retry').addEventListener('click', retryCatalog);
 $('#leave-form').addEventListener('submit', createLeave);
 $('#load-own-leave').addEventListener('click', loadOwnLeave);
 $('#refresh-queue').addEventListener('click', loadQueue);
+renderSessionSurface();
 renderNavigation();
 updateWorkflowProgress();

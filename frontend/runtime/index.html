@@ -10,7 +10,7 @@
   </head>
   <body>
     <a class="skip-link" href="#runtime-main">İçeriğe geç</a>
-    <div class="shell">
+    <div class="shell" data-session="signed-out">
       <header class="topbar">
         <div>
           <p class="eyebrow">Faz 1 runtime</p>
@@ -21,36 +21,44 @@
         <div class="header-actions">
           <div id="session-status" class="status-pill" aria-live="polite">Oturum bekleniyor</div>
           <button id="logout-button" type="button" class="hidden" data-action="logout">Çıkış yap</button>
+          <button id="nav-toggle" type="button" class="nav-toggle" aria-controls="runtime-sidebar" aria-expanded="false" data-action="toggle-nav">Menü</button>
         </div>
       </header>
 
-      <aside class="panel" aria-labelledby="auth-heading">
-        <h2 id="auth-heading">Oturum ve okul seçimi</h2>
-        <div class="role-brief" aria-label="Rol özeti">
-          <article>
-            <strong>Öğretmen</strong>
-            <span>Kendi izin talebini başlatır ve durumunu izler.</span>
-          </article>
-          <article>
-            <strong>Operasyon</strong>
-            <span>Açık ders etkisini görür ve güvenli yedek öğretmen atar.</span>
-          </article>
+      <section id="auth-panel" class="auth-surface" aria-labelledby="auth-heading">
+        <div class="auth-card">
+          <p class="eyebrow">Faz 1 runtime</p>
+          <h2 id="auth-heading">Oturum ve okul seçimi</h2>
+          <p class="auth-lede">Güvenli işlem akışına başlamak için kurum hesabınızla oturum açın.</p>
+          <div class="role-brief" aria-label="Rol özeti">
+            <article>
+              <strong>Öğretmen</strong>
+              <span>Kendi izin talebini başlatır ve durumunu izler.</span>
+            </article>
+            <article>
+              <strong>Operasyon</strong>
+              <span>Açık ders etkisini görür ve güvenli yedek öğretmen atar.</span>
+            </article>
+          </div>
+          <form id="login-form" class="stack">
+            <label>E-posta
+              <input id="email" name="email" type="email" autocomplete="username" required />
+            </label>
+            <label>Şifre
+              <input id="password" name="password" type="password" autocomplete="current-password" required />
+            </label>
+            <label>Kurum
+              <input id="tenant-id" name="tenantId" inputmode="latin" aria-describedby="tenant-help" />
+            </label>
+            <p id="tenant-help" class="hint">Yetkileriniz ve kurum erişiminiz oturum açınca sistem tarafından doğrulanır.</p>
+            <button type="submit">Oturum aç</button>
+          </form>
         </div>
-        <form id="login-form" class="stack">
-          <label>E-posta
-            <input id="email" name="email" type="email" autocomplete="username" required />
-          </label>
-          <label>Şifre
-            <input id="password" name="password" type="password" autocomplete="current-password" required />
-          </label>
-          <label>Kurum
-            <input id="tenant-id" name="tenantId" inputmode="latin" aria-describedby="tenant-help" />
-          </label>
-          <p id="tenant-help" class="hint">Yetkileriniz ve kurum erişiminiz oturum açınca sistem tarafından doğrulanır.</p>
-          <button type="submit">Oturum aç</button>
-        </form>
+      </section>
 
-        <form id="context-form" class="stack context-form">
+      <aside id="runtime-sidebar" class="sidebar" aria-label="Ekran gezinmesi">
+        <button id="nav-close" type="button" class="nav-close" aria-label="Gezinmeyi kapat" data-action="toggle-nav">&times;</button>
+        <form id="context-form" class="scope-bar" aria-label="İşlem kapsamı">
           <label>Şube
             <select id="branch-id" name="branchCode" aria-describedby="branch-help" required disabled>
               <option value="">Önce oturum açın</option>
@@ -63,137 +71,116 @@
           <button type="submit">Günlük işleri getir</button>
         </form>
         <button id="context-retry" type="button" hidden>Kurum bilgisini yeniden dene</button>
-      </aside>
 
-      <nav class="tabs" role="tablist" aria-label="Runtime akışları">
-        <button class="tab" role="tab" data-tab="bugun" aria-controls="bugun-panel" aria-selected="true">
-          <strong>Bugün</strong>
-          <small>Görev merkezi</small>
-        </button>
-        <button class="tab" role="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="false">
-          <strong>İzin</strong>
-          <small>Talep oluştur</small>
-        </button>
-        <button class="tab" role="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">
-          <strong>Operasyon</strong>
-          <small>Ders karşılığı</small>
-        </button>
-        <button class="tab" role="tab" data-tab="notifications" aria-controls="notifications-panel" aria-selected="false">
-          <strong>Bildirimler</strong>
-          <small>Gönderim operasyonu</small>
-        </button>
-        <button class="tab" role="tab" data-tab="program" aria-controls="program-panel" aria-selected="false">
-          <strong>Program</strong>
-          <small>Ders çizelgesi</small>
-        </button>
-        <button class="tab" role="tab" data-tab="attendance" aria-controls="attendance-panel" aria-selected="false">
-          <strong>Yoklama</strong>
-          <small>Oturum ve kayıt</small>
-        </button>
-        <button class="tab" role="tab" data-tab="tanimlar" aria-controls="definitions-panel" aria-selected="false">
-          <strong>Tanımlar</strong>
-          <small>Kaynak listeleri</small>
-        </button>
-        <button class="tab" role="tab" data-tab="raporlar" aria-controls="reports-panel" aria-selected="false">
-          <strong>Raporlar</strong>
-          <small>Açık iş ve yük</small>
-        </button>
-        <button class="tab" role="tab" data-tab="yonetim" aria-controls="users-roles-panel" aria-selected="false">
-          <strong>Yönetim</strong>
-          <small>Erişim matrisi</small>
-        </button>
-      </nav>
+        <div class="sidebar-group">
+          <p class="nav-group-label">Günlük işler</p>
+          <nav class="tabs" role="tablist" aria-label="Günlük işler">
+            <button class="tab" role="tab" data-tab="bugun" aria-controls="bugun-panel" aria-selected="true">
+              <strong>Bugün</strong>
+              <small>Görev merkezi</small>
+            </button>
+            <button class="tab" role="tab" data-tab="teacher" aria-controls="teacher-panel" aria-selected="false">
+              <strong>İzinler</strong>
+              <small>Talep oluştur</small>
+            </button>
+            <button class="tab" role="tab" data-tab="ops" aria-controls="ops-panel" aria-selected="false">
+              <strong>Operasyon</strong>
+              <small>Ders karşılığı</small>
+            </button>
+            <button class="tab" role="tab" data-tab="program" aria-controls="program-panel" aria-selected="false">
+              <strong>Program</strong>
+              <small>Ders çizelgesi</small>
+            </button>
+            <button class="tab" role="tab" data-tab="attendance" aria-controls="attendance-panel" aria-selected="false">
+              <strong>Yoklama</strong>
+              <small>Oturum ve kayıt</small>
+            </button>
+            <button class="tab" role="tab" data-tab="notifications" aria-controls="notifications-panel" aria-selected="false">
+              <strong>Bildirimler</strong>
+              <small>Gönderim operasyonu</small>
+            </button>
+          </nav>
+        </div>
+        <div class="sidebar-group">
+          <p class="nav-group-label">Yönetim</p>
+          <nav class="tabs tabs-admin" role="tablist" aria-label="Yönetim">
+            <button class="tab" role="tab" data-tab="tanimlar" aria-controls="definitions-panel" aria-selected="false">
+              <strong>Tanımlar</strong>
+              <small>Kaynak listeleri</small>
+            </button>
+            <button class="tab" role="tab" data-tab="raporlar" aria-controls="reports-panel" aria-selected="false">
+              <strong>Raporlar</strong>
+              <small>Açık iş ve yük</small>
+            </button>
+            <button class="tab" role="tab" data-tab="yonetim" aria-controls="users-roles-panel" aria-selected="false">
+              <strong>Yönetim</strong>
+              <small>Erişim matrisi</small>
+            </button>
+          </nav>
+        </div>
+      </aside>
+      <div class="nav-scrim" aria-hidden="true"></div>
 
       <main id="runtime-main" tabindex="-1">
+        <div id="selected-lesson-context" class="selected-context" role="region" aria-label="Seçili ders bağlamı">
+          <strong>Seçili ders yok</strong>
+          <p>Günlük iş listesinden bir dersin etkisini açtığınızda aday seçimi burada bağlama oturur.</p>
+        </div>
         <section id="message-region" class="message-region" aria-live="polite"></section>
-
-        <section class="panel decision-panel" aria-labelledby="decision-heading">
-          <div>
-            <p class="eyebrow">Operasyon kokpiti</p>
-            <h2 id="decision-heading">Şu anki kapsam ve önerilen aksiyon</h2>
-            <p class="hint">Bu bölüm ekranlar arasında kaybolmadan, seçili işlem bağlamını ve bir sonraki güvenli adımı gösterir.</p>
-          </div>
-          <dl id="runtime-summary" class="summary-grid" aria-label="Seçili işlem özeti">
-            <div>
-              <dt>Oturum</dt>
-              <dd id="summary-session">Bekleniyor</dd>
-            </div>
-            <div>
-              <dt>Kapsam</dt>
-              <dd id="summary-scope">Şube seçilmedi</dd>
-            </div>
-            <div>
-              <dt>İzin</dt>
-              <dd id="summary-leave">Talep seçilmedi</dd>
-            </div>
-            <div>
-              <dt>Ders karşılığı</dt>
-              <dd id="summary-assignment">Henüz başlamadı</dd>
-            </div>
-            <div>
-              <dt>Seçili ders</dt>
-              <dd id="summary-lesson">Henüz seçilmedi</dd>
-            </div>
-          </dl>
-          <div id="next-action" class="next-action" role="status">Önce oturum açın.</div>
-          <div id="activity-trail" class="activity-trail" role="status">Henüz işlem yapılmadı.</div>
-          <ul class="trust-strip" aria-label="Güvenli işlem kontrolleri">
-            <li>Kurum ve şube yetkisi sistemde doğrulanır</li>
-            <li>Güncel kayıt kontrolüyle çakışan işlem engellenir</li>
-            <li>Yedek öğretmen seçimi ders ve zaman uygunluğuna göre yapılır</li>
-          </ul>
-          <div class="quick-actions" role="group" aria-label="Hızlı geçişler">
-            <button type="button" data-action="focus-teacher" data-section="teacher">İzin ekranına git</button>
-            <button type="button" data-action="focus-ops" data-section="ops">Operasyon ekranına git</button>
-          </div>
-        </section>
-
-        <section class="panel workflow-guide" aria-labelledby="workflow-heading">
-          <div>
-            <p class="eyebrow">Akış rehberi</p>
-            <h2 id="workflow-heading">Bugünkü işlemi adım adım tamamlayın</h2>
-            <p class="hint">Ekran, rol yetkinize göre aynı güvenli API sınırını kullanır; sıradaki adımı aşağıda gösterir.</p>
-          </div>
-          <ol id="workflow-steps" class="workflow-steps" aria-label="İşlem adımları">
-            <li data-step="session" data-state="current">
-              <span class="step-index">1</span>
-              <strong>Oturum aç</strong>
-              <small>Kimlik ve kurum doğrulansın</small>
-            </li>
-            <li data-step="context">
-              <span class="step-index">2</span>
-              <strong>Şube ve tarih seç</strong>
-              <small>Günlük iş kapsamını belirle</small>
-            </li>
-            <li data-step="leave">
-              <span class="step-index">3</span>
-              <strong>İzin talebini netleştir</strong>
-              <small>Öğretmen izni veya mevcut kayıt</small>
-            </li>
-            <li data-step="impact">
-              <span class="step-index">4</span>
-              <strong>Etkiyi incele</strong>
-              <small>Etkilenen dersi seç</small>
-            </li>
-            <li data-step="assignment">
-              <span class="step-index">5</span>
-              <strong>Karşılığı tamamla</strong>
-              <small>Aday seç veya görevi temizle</small>
-            </li>
-          </ol>
-        </section>
 
         <section id="bugun-panel" class="panel runtime-panel" data-panel="bugun">
           <div class="section-head">
             <div>
               <p class="eyebrow">Bugün</p>
               <h2>Bugün size ne lazım?</h2>
+              <p class="page-lede">Açık işleri, karar bekleyen talepleri ve günün oturumlarını tek ekranda görün.</p>
             </div>
             <div class="quick-actions">
-              <button id="bugun-refresh" type="button">Bugünü yenile</button>
               <button id="load-day" type="button">Günün akışını getir</button>
+              <button id="bugun-refresh" type="button">Yenile</button>
             </div>
           </div>
+
+          <section class="panel decision-panel" aria-labelledby="decision-heading">
+            <div>
+              <p class="eyebrow">Operasyon kokpiti</p>
+              <h2 id="decision-heading">Şu anki kapsam ve önerilen aksiyon</h2>
+              <p class="hint">Seçili işlem bağlamı ve bir sonraki güvenli adım.</p>
+            </div>
+            <dl id="runtime-summary" class="summary-grid" aria-label="Seçili işlem özeti">
+              <div>
+                <dt>Oturum</dt>
+                <dd id="summary-session">Bekleniyor</dd>
+              </div>
+              <div>
+                <dt>Kapsam</dt>
+                <dd id="summary-scope">Şube seçilmedi</dd>
+              </div>
+              <div>
+                <dt>İzin</dt>
+                <dd id="summary-leave">Talep seçilmedi</dd>
+              </div>
+              <div>
+                <dt>Ders karşılığı</dt>
+                <dd id="summary-assignment">Henüz başlamadı</dd>
+              </div>
+              <div>
+                <dt>Seçili ders</dt>
+                <dd id="summary-lesson">Henüz seçilmedi</dd>
+              </div>
+            </dl>
+            <div id="next-action" class="next-action" role="status">Önce oturum açın.</div>
+            <div id="activity-trail" class="activity-trail" role="status">Henüz işlem yapılmadı.</div>
+            <ul class="trust-strip" aria-label="Güvenli işlem kontrolleri">
+              <li>Kurum ve şube yetkisi sistemde doğrulanır</li>
+              <li>Güncel kayıt kontrolüyle çakışan işlem engellenir</li>
+              <li>Yedek öğretmen seçimi ders ve zaman uygunluğuna göre yapılır</li>
+            </ul>
+            <div class="quick-actions" role="group" aria-label="Hızlı geçişler">
+              <button type="button" data-action="focus-teacher" data-section="teacher">İzin ekranına git</button>
+              <button type="button" data-action="focus-ops" data-section="ops">Operasyon ekranına git</button>
+            </div>
+          </section>
 
           <section class="bugun-summary" aria-labelledby="bugun-summary-heading">
             <div class="section-head">
@@ -291,15 +278,6 @@
             <div id="strategic-goals-table" class="matrix" role="region" aria-labelledby="strategic-goals-heading"></div>
           </div>
 
-          <section class="bugun-roles" aria-labelledby="bugun-roles-heading">
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">Rol kesitleri</p>
-                <h3 id="bugun-roles-heading">Aynı ekran, farklı yetki kesiti</h3>
-              </div>
-            </div>
-            <div id="bugun-roles-output" class="cards" role="region" aria-label="Aktörün bugün ekranı kesiti"></div>
-          </section>
         </section>
 
         <section id="teacher-panel" class="panel runtime-panel hidden" data-panel="teacher">
@@ -361,111 +339,196 @@
         <section id="ops-panel" class="panel runtime-panel hidden" data-panel="ops">
           <div class="section-head">
             <div>
-              <p class="eyebrow">İzin kararları</p>
-              <h2>Bekleyen izin talepleri</h2>
+              <p class="eyebrow">Operasyon</p>
+              <h2>İzin kararları ve ders karşılığı</h2>
+              <p class="page-lede">Karar vermek ile karşılık atamak ayrı adımlardır; güvenli sırayı izleyin.</p>
             </div>
-            <button id="refresh-leaves" type="button">İzin listesini yenile</button>
           </div>
-          <div class="panel-intro">
-            <strong>Karar hattı</strong>
-            <ol class="checklist">
-              <li>Bekleyen talebi inceleyin (karar aynı güncel kayıt sürümüyle verilir).</li>
-              <li>Onay ders karşılığı akışını başlatır; ret talebi kapatır.</li>
-              <li>Kayıt değişmişse yenileme gerekir.</li>
-            </ol>
-          </div>
-          <div class="chip-row" id="leave-status-filter" role="group" aria-label="İzin listesi durum filtresi">
-            <button type="button" class="chip" data-leave-status="" aria-pressed="true">Tümü</button>
-            <button type="button" class="chip" data-leave-status="draft" aria-pressed="false">Taslak</button>
-            <button type="button" class="chip" data-leave-status="pending" aria-pressed="false">Beklemede</button>
-            <button type="button" class="chip" data-leave-status="approved" aria-pressed="false">Onaylandı</button>
-            <button type="button" class="chip" data-leave-status="rejected" aria-pressed="false">Reddedildi</button>
-          </div>
-          <div id="leaves-output" class="cards" role="region" aria-label="Bekleyen izin talebi kararları"></div>
-          <div class="section-head">
+
+          <section class="panel workflow-guide" aria-labelledby="workflow-heading">
             <div>
-              <p class="eyebrow">Operasyon yöneticisi işlemleri</p>
-              <h2>Günlük iş listesi</h2>
+              <p class="eyebrow">Akış rehberi</p>
+              <h2 id="workflow-heading">Bugünkü işlemi adım adım tamamlayın</h2>
+              <p class="hint">Ekran, rol yetkinize göre aynı güvenli API sınırını kullanır; sıradaki adımı aşağıda gösterir.</p>
             </div>
-            <button id="refresh-queue" type="button">Günlük işleri yenile</button>
-          </div>
-          <div class="panel-intro">
-            <strong>Öncelik sırası</strong>
-            <ol class="checklist">
-              <li>Açık dersleri getir.</li>
-              <li>Etkilenen dersi aç.</li>
-              <li>Uygun adayı seç veya mevcut görevlendirmeyi temizle.</li>
+            <ol id="workflow-steps" class="workflow-steps" aria-label="İşlem adımları">
+              <li data-step="session" data-state="current">
+                <span class="step-index">1</span>
+                <strong>Oturum aç</strong>
+                <small>Kimlik ve kurum doğrulansın</small>
+              </li>
+              <li data-step="context">
+                <span class="step-index">2</span>
+                <strong>Şube ve tarih seç</strong>
+                <small>Günlük iş kapsamını belirle</small>
+              </li>
+              <li data-step="leave">
+                <span class="step-index">3</span>
+                <strong>İzin talebini netleştir</strong>
+                <small>Öğretmen izni veya mevcut kayıt</small>
+              </li>
+              <li data-step="impact">
+                <span class="step-index">4</span>
+                <strong>Etkiyi incele</strong>
+                <small>Etkilenen dersi seç</small>
+              </li>
+              <li data-step="assignment">
+                <span class="step-index">5</span>
+                <strong>Karşılığı tamamla</strong>
+                <small>Aday seç veya görevi temizle</small>
+              </li>
             </ol>
+          </section>
+
+          <div class="subtabs" role="tablist" aria-label="Operasyon adımları">
+            <button type="button" class="subtab" role="tab" data-op-subtab="decisions" aria-controls="ops-decisions" aria-selected="true">İzin kararları</button>
+            <button type="button" class="subtab" role="tab" data-op-subtab="coverage" aria-controls="ops-coverage" aria-selected="false">Ders karşılama</button>
           </div>
-          <div id="queue-output" class="cards" role="region" aria-label="Günlük iş listesi"></div>
-          <div id="selected-lesson-context" class="selected-context" role="region" aria-label="Seçili ders bağlamı">
-            <strong>Seçili ders yok</strong>
-            <p>Günlük iş listesinden bir dersin etkisini açtığınızda aday seçimi burada bağlama oturur.</p>
-          </div>
-          <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
-          <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve görevlendirme durumu"></div>
+
+          <section id="ops-decisions" class="ops-subpanel" data-op-subpanel="decisions" role="tabpanel" aria-label="İzin kararları">
+            <div class="master-detail">
+              <div class="master-column">
+                <div class="section-head">
+                  <div>
+                    <p class="eyebrow">İzin kararları</p>
+                    <h3>Bekleyen talepler</h3>
+                  </div>
+                  <button id="refresh-leaves" type="button">İzin listesini yenile</button>
+                </div>
+                <div class="panel-intro">
+                  <strong>Karar hattı</strong>
+                  <ol class="checklist">
+                    <li>Bekleyen talebi inceleyin (karar aynı güncel kayıt sürümüyle verilir).</li>
+                    <li>Onay ders karşılığı akışını başlatır; ret talebi kapatır.</li>
+                    <li>Kayıt değişmişse yenileme gerekir.</li>
+                  </ol>
+                </div>
+                <div class="chip-row" id="leave-status-filter" role="group" aria-label="İzin listesi durum filtresi">
+                  <button type="button" class="chip" data-leave-status="" aria-pressed="true">Tümü</button>
+                  <button type="button" class="chip" data-leave-status="draft" aria-pressed="false">Taslak</button>
+                  <button type="button" class="chip" data-leave-status="pending" aria-pressed="false">Beklemede</button>
+                  <button type="button" class="chip" data-leave-status="approved" aria-pressed="false">Onaylandı</button>
+                  <button type="button" class="chip" data-leave-status="rejected" aria-pressed="false">Reddedildi</button>
+                </div>
+                <div id="leaves-output" class="cards" role="region" aria-label="Bekleyen izin talebi kararları"></div>
+              </div>
+              <aside class="detail-column" aria-label="İzin kararı detayı">
+                <section class="empty-state">
+                  <h3>Karar bekleyen talep yok</h3>
+                  <p class="hint">Soldan bir izin talebi seçin; onay veya ret burada tamamlanır.</p>
+                </section>
+              </aside>
+            </div>
+          </section>
+
+          <section id="ops-coverage" class="ops-subpanel hidden" data-op-subpanel="coverage" role="tabpanel" aria-label="Ders karşılama">
+            <div class="master-detail">
+              <div class="master-column">
+                <div class="section-head">
+                  <div>
+                    <p class="eyebrow">Operasyon yöneticisi işlemleri</p>
+                    <h3>Günlük iş listesi</h3>
+                  </div>
+                  <button id="refresh-queue" type="button">Günlük işleri yenile</button>
+                </div>
+                <div class="panel-intro">
+                  <strong>Öncelik sırası</strong>
+                  <ol class="checklist">
+                    <li>Açık dersleri getir.</li>
+                    <li>Etkilenen dersi aç.</li>
+                    <li>Uygun adayı seç veya mevcut görevlendirmeyi temizle.</li>
+                  </ol>
+                </div>
+                <div id="queue-output" class="cards" role="region" aria-label="Günlük iş listesi"></div>
+              </div>
+              <aside class="detail-column" aria-label="Ders karşılığı detayı">
+                <p class="hint">Etki analizi ve adaylar, seçilen ders için burada açılır.</p>
+                <div id="impact-output" class="state-box" role="region" aria-label="İzin etki analizi"></div>
+                <div id="candidate-output" class="state-box" role="region" aria-label="Aday ve görevlendirme durumu"></div>
+              </aside>
+            </div>
+          </section>
         </section>
 
         <section id="notifications-panel" class="panel runtime-panel hidden" data-panel="notifications">
           <div class="section-head">
             <div>
               <p class="eyebrow">Bildirim operasyonu</p>
-              <h2>Gönderim kuyruğu</h2>
+              <h2>Gönderim ve onaylar</h2>
+              <p class="page-lede">Gönderim kuyruğunu ve veli onaylarını ayrı adımlarda yönetin.</p>
             </div>
             <button id="refresh-notifications" type="button">Listeyi yenile</button>
           </div>
-          <div class="panel-intro">
-            <strong>Sunucu otoriter gönderim akışı</strong>
-            <ul class="checklist">
-              <li>İletişim uygunluğu rozeti (kayıtlı; gönderim anında sunucuda yeniden doğrulanır): izinli · maskeli · engeli. Sadece engeli uygunlukta onay izinli değildir.</li>
-              <li>Onay, gönderim, yeniden deneme ve iptal eylemleri yalnızca sunucunun izin verdiği eylemlerdir.</li>
-              <li>Her işlem güncel kayıt sürümüyle doğrulanır; sürüm değişmişse yenileme gerekir.</li>
-              <li>Sağlayıcı etkisi simülasyon modunda üretilir; kanıt dayanıklı gönderim receipt'inde saklanır; gönderilmediği sürece taslaktır.</li>
-            </ul>
+
+          <div class="subtabs" role="tablist" aria-label="Bildirim adımları">
+            <button type="button" class="subtab" role="tab" data-notif-subtab="dispatch" aria-controls="notif-dispatch" aria-selected="true">Gönderim</button>
+            <button type="button" class="subtab" role="tab" data-notif-subtab="approvals" aria-controls="notif-approvals" aria-selected="false">Onaylar</button>
           </div>
-          <div class="grid-form">
-            <label>Durum filtresi
-              <select id="notification-status-filter">
-                <option value="">Tüm durumlar</option>
-                <option value="pending">Beklemede</option>
-                <option value="approved">Onaylandı</option>
-                <option value="blocked_consent">Onay engelli</option>
-                <option value="dispatched">Gönderildi</option>
-                <option value="delivered">Teslim edildi</option>
-                <option value="failed">Başarısız</option>
-                <option value="dead_lettered">Durduruldu</option>
-                <option value="uncertain">Belirsiz</option>
-                <option value="cancelled">İptal edildi</option>
-                <option value="closed">Kapatıldı</option>
-              </select>
-            </label>
-            <button id="apply-notification-filter" type="button">Filtreyi uygula</button>
-          </div>
-          <div id="notifications-list" class="cards" role="region" aria-label="Bildirim operasyon listesi"></div>
-          <div id="notification-detail" class="state-box" role="region" aria-label="Seçili bildirim detayı ve eylemleri"></div>
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">KVKK onay yönetimi</p>
-              <h2>Veli bilgilendirme onayları</h2>
+
+          <section id="notif-dispatch" class="notif-subpanel" data-notif-subpanel="dispatch" role="tabpanel" aria-label="Gönderim">
+            <div class="master-detail">
+              <div class="master-column">
+                <div class="panel-intro">
+                  <strong>Sunucu otoriter gönderim akışı</strong>
+                  <ul class="checklist">
+                    <li>İletişim uygunluğu rozeti (kayıtlı; gönderim anında sunucuda yeniden doğrulanır): izinli · maskeli · engeli. Sadece engeli uygunlukta onay izinli değildir.</li>
+                    <li>Onay, gönderim, yeniden deneme ve iptal eylemleri yalnızca sunucunun izin verdiği eylemlerdir.</li>
+                    <li>Her işlem güncel kayıt sürümüyle doğrulanır; sürüm değişmişse yenileme gerekir.</li>
+                    <li>Sağlayıcı etkisi simülasyon modunda üretilir; kanıt dayanıklı gönderim receipt'inde saklanır; gönderilmediği sürece taslaktır.</li>
+                  </ul>
+                </div>
+                <div class="grid-form">
+                  <label>Durum filtresi
+                    <select id="notification-status-filter">
+                      <option value="">Tüm durumlar</option>
+                      <option value="pending">Beklemede</option>
+                      <option value="approved">Onaylandı</option>
+                      <option value="blocked_consent">Onay engelli</option>
+                      <option value="dispatched">Gönderildi</option>
+                      <option value="delivered">Teslim edildi</option>
+                      <option value="failed">Başarısız</option>
+                      <option value="dead_lettered">Durduruldu</option>
+                      <option value="uncertain">Belirsiz</option>
+                      <option value="cancelled">İptal edildi</option>
+                      <option value="closed">Kapatıldı</option>
+                    </select>
+                  </label>
+                  <button id="apply-notification-filter" type="button">Filtreyi uygula</button>
+                </div>
+                <div id="notifications-list" class="cards" role="region" aria-label="Bildirim operasyon listesi"></div>
+                <div id="notification-bulk-bar" class="bulk-bar hidden" role="status" aria-live="polite"></div>
+              </div>
+              <aside class="detail-column" aria-label="Seçili bildirim detayı">
+                <div id="notification-detail" class="state-box" role="region" aria-label="Seçili bildirim detayı ve eylemleri"></div>
+              </aside>
             </div>
-            <button id="refresh-consents" type="button">Onayları yenile</button>
-          </div>
-          <div class="panel-intro">
-            <strong>Consent otoritesi</strong>
-            <ul class="checklist">
-              <li>Onay listesi yalnız ürün kayıtlarına erişen roller tarafından görüntülenir.</li>
-              <li>Geri çekme, onayın otorite kaydını günceller; bekleyen bildirimler yeniden değerlendirilir.</li>
-            </ul>
-          </div>
-          <div id="consents-output" class="cards" role="region" aria-label="Konsent listesi"></div>
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Toplu onay</p>
-              <h2>Oturum düzeyinde toplu gönderim onayı</h2>
+          </section>
+
+          <section id="notif-approvals" class="notif-subpanel hidden" data-notif-subpanel="approvals" role="tabpanel" aria-label="Onaylar">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">KVKK onay yönetimi</p>
+                <h3>Veli bilgilendirme onayları</h3>
+              </div>
+              <button id="refresh-consents" type="button">Onayları yenile</button>
             </div>
-            <p class="hint">Aynı yoklama oturumunun tüm bekleyen bildirimleri, her satırın güncel sürümüyle tek işlemde onaylanır.</p>
-          </div>
-          <div id="bulk-approve-output" class="cards" role="region" aria-label="Oturum düzeyinde toplu onay eylemleri"></div>
+            <div class="panel-intro">
+              <strong>Consent otoritesi</strong>
+              <ul class="checklist">
+                <li>Onay listesi yalnız ürün kayıtlarına erişen roller tarafından görüntülenir.</li>
+                <li>Geri çekme, onayın otorite kaydını günceller; bekleyen bildirimler yeniden değerlendirilir.</li>
+              </ul>
+            </div>
+            <div id="consents-output" class="cards" role="region" aria-label="Konsent listesi"></div>
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Toplu onay</p>
+                <h3>Oturum düzeyinde toplu gönderim onayı</h3>
+              </div>
+              <p class="hint">Aynı yoklama oturumunun tüm bekleyen bildirimleri, her satırın güncel sürümüyle tek işlemde onaylanır.</p>
+            </div>
+            <div id="bulk-approve-output" class="cards" role="region" aria-label="Oturum düzeyinde toplu onay eylemleri"></div>
+          </section>
         </section>
 
         <section id="program-panel" class="panel runtime-panel hidden" data-panel="program" aria-labelledby="program-heading">
@@ -473,55 +536,64 @@
             <div>
               <p class="eyebrow">Ders çizelgesi</p>
               <h2 id="program-heading">Haftalık program</h2>
+              <p class="page-lede">Taslağı doğrulayın, çakışmaları giderin ve programı yayınlayın.</p>
             </div>
             <button id="refresh-schedule-status" type="button">Yenile</button>
           </div>
-          <p id="program-scope" class="hint"></p>
-          <label id="schedule-programme-picker" class="programme-picker hidden">
-            Program
-            <select id="schedule-programme-select"></select>
-          </label>
-          <form id="schedule-create-form" class="grid-form" novalidate>
-            <p class="hint wide">Yayınlanmış program salt okunur. Yeni dönem için taslak oluşturun; dönemler çakışmamalıdır.</p>
-            <label>Geçerlilik başlangıcı <input id="schedule-effective-from" type="date" required /></label>
-            <label>Geçerlilik sonu <input id="schedule-effective-to" type="date" required /></label>
-            <button type="submit">Yeni taslak oluştur</button>
-          </form>
-          <div id="schedule-status" class="state-box" role="region" aria-label="Program durumu" aria-live="polite"></div>
-          <nav id="schedule-daystrip" class="day-strip hidden" aria-label="Haftanın günleri"></nav>
-          <form id="program-filter-form" class="filter-grid" aria-label="Program kapsam filtreleri">
-            <label>
-              Sınıf
-              <select id="branch-filter" name="classCode">
-                <option value="">Tüm sınıflar</option>
-              </select>
+          <div class="program-toolbar">
+            <p id="program-scope" class="hint"></p>
+            <label id="schedule-programme-picker" class="programme-picker hidden">
+              Program
+              <select id="schedule-programme-select"></select>
             </label>
-            <label>
-              Öğretmen
-              <select id="teacher-filter" name="teacherId">
-                <option value="">Tüm öğretmenler</option>
-              </select>
-            </label>
-            <label>
-              Derslik
-              <select id="room-filter" name="roomCode">
-                <option value="">Tüm derslikler</option>
-              </select>
-            </label>
-          </form>
-          <div id="schedule-agenda" class="agenda" role="region" aria-label="Seçili günün dersleri" aria-live="polite"></div>
-          <p id="schedule-gate" class="gate-line hidden" role="status" aria-live="polite" data-gate-state="none"></p>
-          <div id="schedule-actions" class="quick-actions" role="group" aria-label="Program eylemleri"></div>
-          <div id="schedule-editor" class="stack hidden" aria-label="Kaydedilmemiş dersler">
-            <div id="schedule-events" class="cards" role="region" aria-label="Kaydedilmemiş dersler"></div>
-            <button id="add-schedule-event" type="button">Ders ekle</button>
-            <div class="quick-actions" role="group">
-              <button id="save-schedule-draft" type="button">Taslağı kaydet</button>
-            </div>
+            <form id="schedule-create-form" class="grid-form" novalidate>
+              <p class="hint wide">Yayınlanmış program salt okunur. Yeni dönem için taslak oluşturun; dönemler çakışmamalıdır.</p>
+              <label>Geçerlilik başlangıcı <input id="schedule-effective-from" type="date" required /></label>
+              <label>Geçerlilik sonu <input id="schedule-effective-to" type="date" required /></label>
+              <button type="submit">Yeni taslak oluştur</button>
+            </form>
+            <div id="schedule-status" class="state-box" role="region" aria-label="Program durumu" aria-live="polite"></div>
+            <nav id="schedule-daystrip" class="day-strip hidden" aria-label="Haftanın günleri"></nav>
+            <form id="program-filter-form" class="filter-grid" aria-label="Program kapsam filtreleri">
+              <label>
+                Sınıf
+                <select id="branch-filter" name="classCode">
+                  <option value="">Tüm sınıflar</option>
+                </select>
+              </label>
+              <label>
+                Öğretmen
+                <select id="teacher-filter" name="teacherId">
+                  <option value="">Tüm öğretmenler</option>
+                </select>
+              </label>
+              <label>
+                Derslik
+                <select id="room-filter" name="roomCode">
+                  <option value="">Tüm derslikler</option>
+                </select>
+              </label>
+            </form>
           </div>
-          <section id="schedule-validation-summary" class="state-box validation-summary-box hidden" role="region" aria-label="Doğrulama özeti" aria-live="polite" data-mode="none" data-evidence-status="none" data-publishability="none" hidden></section>
-          <section id="schedule-conflicts" class="state-box" role="region" aria-label="Doğrulama bulguları" aria-live="polite"></section>
-          <p class="hint" id="schedule-conflict-note">Otomatik çözücü devre dışı: çakışmalar elle çözülür.</p>
+          <div class="program-grid">
+            <div class="program-grid-main">
+              <div id="schedule-agenda" class="agenda" role="region" aria-label="Seçili günün dersleri" aria-live="polite"></div>
+              <div id="schedule-editor" class="stack hidden" aria-label="Kaydedilmemiş dersler">
+                <div id="schedule-events" class="cards" role="region" aria-label="Kaydedilmemiş dersler"></div>
+                <button id="add-schedule-event" type="button">Ders ekle</button>
+                <div class="quick-actions" role="group">
+                  <button id="save-schedule-draft" type="button">Taslağı kaydet</button>
+                </div>
+              </div>
+            </div>
+            <aside class="program-validation" aria-label="Doğrulama ve yayınlama">
+              <section id="schedule-validation-summary" class="state-box validation-summary-box hidden" role="region" aria-label="Doğrulama özeti" aria-live="polite" data-mode="none" data-evidence-status="none" data-publishability="none" hidden></section>
+              <section id="schedule-conflicts" class="state-box" role="region" aria-label="Doğrulama bulguları" aria-live="polite"></section>
+              <p class="hint" id="schedule-conflict-note">Otomatik çözücü devre dışı: çakışmalar elle çözülür.</p>
+              <p id="schedule-gate" class="gate-line hidden" role="status" aria-live="polite" data-gate-state="none"></p>
+              <div id="schedule-actions" class="quick-actions" role="group" aria-label="Program eylemleri"></div>
+            </aside>
+          </div>
         </section>
 
         <section id="attendance-panel" class="panel runtime-panel hidden" data-panel="attendance">
@@ -529,37 +601,44 @@
             <div>
               <p class="eyebrow">Yoklama oturumları</p>
               <h2>Oturum açma ve kayıt</h2>
+              <p class="page-lede">Oturumu açın, öğrencileri işaretleyin ve kaydı kilitleyin.</p>
             </div>
             <button id="refresh-attendance" type="button">Kayıtları yenile</button>
           </div>
-          <div class="panel-intro">
-            <strong>Sunucu otoriter yoklama zinciri</strong>
-            <ol class="checklist">
-              <li>Yayınlanmış ders olayından oturum açın (roster sabitlenir).</li>
-              <li>Öğretmen öğrenci kayıtlarını işaretler.</li>
-              <li>Kilitlenince devamsızlık bildirim kuyruğu oluşturulur.</li>
-            </ol>
+          <div class="master-detail">
+            <div class="master-column">
+              <div class="panel-intro">
+                <strong>Sunucu otoriter yoklama zinciri</strong>
+                <ol class="checklist">
+                  <li>Yayınlanmış ders olayından oturum açın (roster sabitlenir).</li>
+                  <li>Öğretmen öğrenci kayıtlarını işaretler.</li>
+                  <li>Kilitlenince devamsızlık bildirim kuyruğu oluşturulur.</li>
+                </ol>
+              </div>
+              <form id="attendance-generate-form" class="grid-form" data-requires-permission="attendance:generate">
+                <label>Ders olayı ID <input id="attendance-event-id" autocomplete="off" aria-describedby="attendance-event-help" /></label>
+                <p id="attendance-event-help" class="hint wide">Yayınlanmış program olayının kimliği (UUID).</p>
+                <label>Oturum tarihi <input id="attendance-session-date" type="date" aria-describedby="attendance-date-help" /></label>
+                <p id="attendance-date-help" class="hint wide">Boş bırakılırsa seçili işlem tarihi/kayıt tarihi kullanılır.</p>
+                <label>Öğrenci listesi <textarea id="attendance-student-ids" rows="2" aria-describedby="attendance-roster-help"></textarea></label>
+                <p id="attendance-roster-help" class="hint wide">Roster: her satırda veya virgülle ayırarak öğrenci UUID'leri.</p>
+                <button type="submit">Yoklama oturumu aç</button>
+              </form>
+              <h3>Oturum listesi</h3>
+              <div class="chip-row" id="attendance-status-filter" role="group" aria-label="Oturum tamamlanma filtresi">
+                <button type="button" class="chip" data-action="attendance-filter" data-attendance-status="" aria-pressed="true">Tümü</button>
+                <button type="button" class="chip" data-action="attendance-filter" data-attendance-status="incomplete" aria-pressed="false">Eksik</button>
+                <button type="button" class="chip" data-action="attendance-filter" data-attendance-status="complete" aria-pressed="false">Tamamlanmış</button>
+              </div>
+              <div id="attendance-sessions" class="cards" role="region" aria-label="Yoklama oturumları listesi"></div>
+            </div>
+            <aside class="detail-column" aria-label="Seçili oturum ve devamsızlıklar">
+              <div id="attendance-detail" class="cards" role="region" aria-label="Yoklama oturumu detayı ve kayıt eylemleri"></div>
+              <h3>Devamsızlık sonuçları</h3>
+              <p class="hint">İşaretlenmemiş öğrenci devamsız sayılmaz; sonuç yalnız açıkça "Gelmedi" işaretlenen kayıtlardan oluşur.</p>
+              <div id="attendance-absences" class="cards" role="region" aria-label="Devamsızlık sonuçları"></div>
+            </aside>
           </div>
-          <form id="attendance-generate-form" class="grid-form" data-requires-permission="attendance:generate">
-            <label>Ders olayı ID <input id="attendance-event-id" autocomplete="off" aria-describedby="attendance-event-help" /></label>
-            <p id="attendance-event-help" class="hint wide">Yayınlanmış program olayının kimliği (UUID).</p>
-            <label>Oturum tarihi <input id="attendance-session-date" type="date" aria-describedby="attendance-date-help" /></label>
-            <p id="attendance-date-help" class="hint wide">Boş bırakılırsa seçili işlem tarihi/kayıt tarihi kullanılır.</p>
-            <label>Öğrenci listesi <textarea id="attendance-student-ids" rows="2" aria-describedby="attendance-roster-help"></textarea></label>
-            <p id="attendance-roster-help" class="hint wide">Roster: her satırda veya virgülle ayırarak öğrenci UUID'leri.</p>
-            <button type="submit">Yoklama oturumu aç</button>
-          </form>
-          <h3>Oturum listesi</h3>
-          <div class="chip-row" id="attendance-status-filter" role="group" aria-label="Oturum tamamlanma filtresi">
-            <button type="button" class="chip" data-action="attendance-filter" data-attendance-status="" aria-pressed="true">Tümü</button>
-            <button type="button" class="chip" data-action="attendance-filter" data-attendance-status="incomplete" aria-pressed="false">Eksik</button>
-            <button type="button" class="chip" data-action="attendance-filter" data-attendance-status="complete" aria-pressed="false">Tamamlanmış</button>
-          </div>
-          <div id="attendance-sessions" class="cards" role="region" aria-label="Yoklama oturumları listesi"></div>
-          <div id="attendance-detail" class="cards" role="region" aria-label="Yoklama oturumu detayı ve kayıt eylemleri"></div>
-          <h3>Devamsızlık sonuçları</h3>
-          <p class="hint">İşaretlenmemiş öğrenci devamsız sayılmaz; sonuç yalnız açıkça "Gelmedi" işaretlenen kayıtlardan oluşur.</p>
-          <div id="attendance-absences" class="cards" role="region" aria-label="Devamsızlık sonuçları"></div>
         </section>
 
         <section id="definitions-panel" class="panel runtime-panel hidden" data-panel="tanimlar">
@@ -567,37 +646,48 @@
             <div>
               <p class="eyebrow">Tanımlar</p>
               <h2>Kaynak listeleri</h2>
+              <p class="page-lede">Öğretmen, grup, öğrenci, ders, derslik ve saat dilimlerini arayın.</p>
             </div>
           </div>
           <div class="panel-intro" aria-labelledby="definitions-heading">
             <strong id="definitions-heading">Kaynak tanımları</strong>
             <p class="hint">Öğretmen, grup, öğrenci; ders, derslik, saat dilimi. Liste, arama ve detay kalibrasyonu Faz 2'de canlı veriyle bağlanır; bu yüzey dürüst boş durum gösterir.</p>
           </div>
-          <form id="definition-form" class="filter-grid" aria-label="Tanım arama">
-            <label>
-              Kaynak türü
-              <select id="definition-type" name="type" aria-describedby="definition-type-help">
-                <option value="">Tüm kaynaklar</option>
-                <option value="teachers">Öğretmen</option>
-                <option value="groups">Grup</option>
-                <option value="students">Öğrenci</option>
-                <option value="courses">Ders</option>
-                <option value="rooms">Derslik</option>
-                <option value="time-slots">Saat dilimi</option>
-              </select>
-            </label>
-            <p id="definition-type-help" class="hint wide">Canlı liste henüz yayınlanmadı; seçimler sahte satır üretmez.</p>
-            <label>
-              Arama
-              <input id="definition-search" name="q" placeholder="İsimle ara" aria-describedby="definition-search-help" />
-            </label>
-            <p id="definition-search-help" class="hint wide">Aramayı yürütmek için canlı listeye ihtiyaç vardır.</p>
-          </form>
-          <div id="definition-list" class="cards" role="region" aria-label="Tanım listesi">
-            <section class="empty-state" aria-labelledby="empty-definitions-heading">
-              <h3 id="empty-definitions-heading">Kayıt yok</h3>
-              <p class="hint">Bir kaynak türü seçin veya arama yapın.</p>
-            </section>
+          <div class="master-detail">
+            <div class="master-column">
+              <form id="definition-form" class="filter-grid" aria-label="Tanım arama">
+                <label>
+                  Kaynak türü
+                  <select id="definition-type" name="type" aria-describedby="definition-type-help">
+                    <option value="">Tüm kaynaklar</option>
+                    <option value="teachers">Öğretmen</option>
+                    <option value="groups">Grup</option>
+                    <option value="students">Öğrenci</option>
+                    <option value="courses">Ders</option>
+                    <option value="rooms">Derslik</option>
+                    <option value="time-slots">Saat dilimi</option>
+                  </select>
+                </label>
+                <p id="definition-type-help" class="hint wide">Canlı liste henüz yayınlanmadı; seçimler sahte satır üretmez.</p>
+                <label>
+                  Arama
+                  <input id="definition-search" name="q" placeholder="İsimle ara" aria-describedby="definition-search-help" />
+                </label>
+                <p id="definition-search-help" class="hint wide">Aramayı yürütmek için canlı listeye ihtiyaç vardır.</p>
+              </form>
+              <div id="definition-list" class="cards data-table" role="region" aria-label="Tanım listesi">
+                <section class="empty-state" aria-labelledby="empty-definitions-heading">
+                  <h3 id="empty-definitions-heading">Kayıt yok</h3>
+                  <p class="hint">Bir kaynak türü seçin veya arama yapın.</p>
+                </section>
+              </div>
+            </div>
+            <aside class="detail-column" aria-label="Tanım detayı">
+              <section class="empty-state">
+                <h3>Detay yok</h3>
+                <p class="hint">Canlı liste yayına girdiğinde seçilen kayıt burada açılır.</p>
+              </section>
+            </aside>
           </div>
         </section>
 
@@ -606,17 +696,26 @@
             <div>
               <p class="eyebrow">Raporlar</p>
               <h2>Açık iş ve yük özeti</h2>
+              <p class="page-lede">Kapsam içindeki iş yükünün özetini görün; fiziksel kapanış iddiası taşımaz.</p>
             </div>
           </div>
           <div class="panel-intro" aria-labelledby="reports-heading">
             <strong id="reports-heading">Rapor özeti</strong>
             <p class="hint">Saf özet: fiziksel kapanış/teslimat iddiası yok. Rapor yükü Faz 2 kapsamında karantinada.</p>
           </div>
-          <div id="report-cards" class="cards" role="region" aria-label="Rapor kartları">
-            <section class="empty-state" aria-labelledby="empty-reports-heading">
-              <h3 id="empty-reports-heading">Gösterilecek rapor yok</h3>
-              <p class="hint">Rapor yükü Faz 2 kapsamında; bu yolun fiziksel kapanış/teslimat iddiası taşımadığı açık kalır.</p>
-            </section>
+          <div class="master-detail">
+            <div id="report-cards" class="cards data-table" role="region" aria-label="Rapor kartları">
+              <section class="empty-state" aria-labelledby="empty-reports-heading">
+                <h3 id="empty-reports-heading">Gösterilecek rapor yok</h3>
+                <p class="hint">Rapor yükü Faz 2 kapsamında; bu yolun fiziksel kapanış/teslimat iddiası taşımadığı açık kalır.</p>
+              </section>
+            </div>
+            <aside class="detail-column" aria-label="Rapor detayı">
+              <section class="empty-state">
+                <h3>Detay yok</h3>
+                <p class="hint">Rapor yayına girdiğinde seçilen özet burada açılır.</p>
+              </section>
+            </aside>
           </div>
         </section>
 
@@ -629,14 +728,23 @@
               <div>
                 <p class="eyebrow">Yönetim</p>
                 <h2>Kullanıcılar ve roller</h2>
+                <p class="page-lede">Erişim matrisi görünürlüğü daraltır; yetki kararı sunucuda kalır.</p>
               </div>
             </div>
             <div class="panel-intro" aria-labelledby="users-heading">
               <strong id="users-heading">Erişim matrisi</strong>
               <p class="hint">Satır: kullanıcı; sütun: izin anahtarı (makine-okur). Yetki kararı sunucuda kalır; istemci yalnız görünürlüğü daraltır.</p>
             </div>
-            <div id="users-roles-matrix" class="matrix" role="region" aria-label="Erişim matrisi">
-              <p class="hint" id="users-roles-empty-heading">Kullanıcı ve rol matrisi henüz canlı yayınlanmadı.</p>
+            <div class="master-detail">
+              <div id="users-roles-matrix" class="matrix data-table" role="region" aria-label="Erişim matrisi">
+                <p class="hint" id="users-roles-empty-heading">Kullanıcı ve rol matrisi henüz canlı yayınlanmadı.</p>
+              </div>
+              <aside class="detail-column" aria-label="Kullanıcı detayı">
+                <section class="empty-state">
+                  <h3>Detay yok</h3>
+                  <p class="hint">Matris canlı yayına girdiğinde seçilen kullanıcı burada açılır.</p>
+                </section>
+              </aside>
             </div>
           </div>
         </section>

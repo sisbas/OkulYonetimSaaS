@@ -86,6 +86,8 @@ async function fetchAllNotifications() {
 
 async function loadNotifications() {
   if (!requireSession()) return;
+  state.notificationSelection = {};
+  renderNotificationBulkBar();
   const branchId = getBranchId();
   if (!branchId) return announce('Bildirim listesi için şube seçin.', 'warning');
   const target = $('#notifications-list');
@@ -136,6 +138,13 @@ function renderNotificationCard(row) {
   const status = pick(row, ['status'], 'unknown');
   const { eventLabel, channelLabel } = notificationHeadings(row);
   const eligibility = notificationEligibility(row);
+  const id = String(pick(row, ['id'], ''));
+  const sessionId = String(pick(row, ['sessionId'], ''));
+  const statusKey = status.toLowerCase();
+  const selectable = Boolean(sessionId && (statusKey === 'pending' || statusKey === 'blocked_consent'));
+  const selectControl = selectable
+    ? `<label class="row-select"><input type="checkbox" data-notification-select data-notification-id="${escapeHtml(id)}" data-session-id="${escapeHtml(sessionId)}" data-version="${escapeHtml(pick(row, ['version'], 0))}" /> Seç</label>`
+    : '';
   return `<article class="card">
     <h3>${escapeHtml(eventLabel)}</h3>
     <p class="card-meta">
@@ -145,8 +154,29 @@ function renderNotificationCard(row) {
     </p>
     <span class="tag" data-tone="${escapeHtml(statusTone(status))}">${escapeHtml(displayStatus(status))}</span>
     <span class="tag" data-eligibility="${escapeHtml(eligibility.label)}" data-tone="${escapeHtml(eligibility.tone)}" title="Onay kayıtlıdır; sunucu gönderim anında yeniden doğrular.">Uygunluk: ${escapeHtml(eligibility.label)}</span>
-    <button type="button" data-action="notification-detail" data-notification-id="${escapeHtml(pick(row, ['id']))}">Detayı ve eylemleri aç</button>
+    ${selectControl}
+    <button type="button" data-action="notification-detail" data-notification-id="${escapeHtml(id)}">Detayı ve eylemleri aç</button>
   </article>`;
+}
+
+/* Seçim çubuğu yalnız satır seçildiğinde görünür; toplu onay sunucuda hâlâ
+   oturum bazında ve her satırın güncel sürümüyle doğrulanır. */
+function renderNotificationBulkBar() {
+  const target = $('#notification-bulk-bar');
+  if (!target) return;
+  const selected = Object.values(state.notificationSelection || {});
+  target.classList.toggle('hidden', selected.length === 0);
+  if (!selected.length) {
+    target.innerHTML = '';
+    return;
+  }
+  const sessionIds = [...new Set(selected.map((item) => item.sessionId))];
+  const mixed = sessionIds.length > 1
+    ? '<p class="hint">Farklı oturumlar seçildi; onay oturum bazında yapılır.</p>'
+    : '';
+  target.innerHTML = `<span>${selected.length} bildirim seçildi</span>
+    <button type="button" data-action="bulk-approve-selected" ${mutationDisabled() ? 'disabled' : ''}>Seçilenleri onayla</button>
+    ${mixed}`;
 }
 
 async function fetchNotificationDetail(id) {
@@ -278,12 +308,34 @@ async function runNotificationAction(action) {
   }
 }
 
+document.addEventListener('change', (event) => {
+  const input = event.target;
+  if (!input?.matches?.('[data-notification-select]')) return;
+  const id = String(input.dataset.notificationId || '');
+  if (input.checked) {
+    state.notificationSelection[id] = {
+      id,
+      sessionId: String(input.dataset.sessionId || ''),
+      version: Number(input.dataset.version || 0),
+    };
+  } else {
+    delete state.notificationSelection[id];
+  }
+  renderNotificationBulkBar();
+});
+
 document.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
   if (target.dataset.action === 'notification-detail') openNotificationDetail(target.dataset.notificationId);
   if (target.dataset.action === 'notification-run') runNotificationAction(target.dataset.notificationAction);
   if (target.dataset.action === 'bulk-approve-session') bulkApproveSession(target.dataset.sessionId, target.dataset.versions);
+  if (target.dataset.action === 'bulk-approve-selected') {
+    const selected = Object.values(state.notificationSelection || {});
+    const sessionIds = [...new Set(selected.map((item) => item.sessionId))];
+    if (sessionIds.length !== 1) return announce('Aynı oturumdan bildirim seçin.', 'warning');
+    bulkApproveSession(sessionIds[0], encodeURIComponent(JSON.stringify(selected.map((item) => ({ id: item.id, version: item.version })))));
+  }
 });
 
 $('#refresh-notifications').addEventListener('click', loadNotifications);

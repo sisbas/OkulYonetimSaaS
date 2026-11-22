@@ -27,7 +27,7 @@ const order = (input: string, needles: string[]) => needles.map((needle) => {
 });
 
 describe('#458 Bugün operasyon-önce kalıcı hiyerarşi', () => {
-  it('kuyruklar takvimden, takvim hedeflerden, hedefler rol kesitlerinden önce gelir', () => {
+  it('kuyruklar takvimden ve takvim hedeflerden önce gelir', () => {
     const panelStart = html.indexOf('<section id="bugun-panel"');
     const panelEnd = html.indexOf('<section id="teacher-panel"');
     expect(panelStart).toBeGreaterThan(-1);
@@ -40,7 +40,6 @@ describe('#458 Bugün operasyon-önce kalıcı hiyerarşi', () => {
       'id="bugun-sessions-output"',
       'class="day-split"',
       'id="strategic-goals-section"',
-      'id="bugun-roles-output"',
     ]);
     for (let i = 1; i < positions.length; i += 1) {
       expect(positions[i - 1].index).toBeLessThan(positions[i].index);

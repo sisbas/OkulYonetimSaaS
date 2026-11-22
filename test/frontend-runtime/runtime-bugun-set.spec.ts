@@ -1,17 +1,17 @@
 import * as fs from 'node:fs';
-import { runtime, response, ALL_PERMISSION_KEYS, OPS_PERMISSION_KEYS, TEACHER_PERMISSION_KEYS, VIEWER_PERMISSION_KEYS } from './runtime-harness';
+import { runtime, response, ALL_PERMISSION_KEYS, TEACHER_PERMISSION_KEYS, VIEWER_PERMISSION_KEYS } from './runtime-harness';
 
 /**
  * #489 — Bugün ekranı kod portu (mock-up bugun.html → runtime screens/bugun.js).
  *
  * Dışsal sözleşme pinlenir: istatistik şeridi (Açık iş / Karar bekleyen izin /
  * Bugünün oturumları), izin-projeksiyonu kuyruğu (K-47), ikincil bugün yoklama
- * oturumları (K-48/K-50), rol/aktör kesitleri ve tek durum yolu (renderRegionState,
+ * oturumları (K-48/K-50) ve tek durum yolu (renderRegionState,
  * K-40/K-41) + fail-closed izin kapısı (#445).
  */
 
 const PROBE =
-  'state, applyCatalog, login, updateContext, apiRequest, loadQueue, loadCandidates, loadLeaves, loadConsents, loadNotifications, renderError, handleNetworkError, loadAttendanceSessions, loadTodayDashboard, loadTodaySessions, openAttendanceSession, loadImpact, renderBugunQueueItem, renderBugunSessionCard, renderBugunKesit';
+  'state, applyCatalog, login, updateContext, apiRequest, loadQueue, loadCandidates, loadLeaves, loadConsents, loadNotifications, renderError, handleNetworkError, loadAttendanceSessions, loadTodayDashboard, loadTodaySessions, openAttendanceSession, loadImpact, renderBugunQueueItem, renderBugunSessionCard';
 
 function signedIn(permissions = ALL_PERMISSION_KEYS) {
   const ui = runtime(PROBE, permissions);
@@ -52,7 +52,6 @@ describe('#489 Bugün ekranı kod portu (mock-up bugun → runtime)', () => {
       expect(html).toContain('id="bugun-sessions-open-value"');
       expect(html).toContain('id="bugun-queue-output"');
       expect(html).toContain('id="bugun-sessions-output"');
-      expect(html).toContain('id="bugun-roles-output"');
       expect(html).toContain('id="bugun-refresh"');
       for (const metric of ['open-work', 'awaiting-leave', 'sessions-open']) {
         expect(html).toContain(`data-metric="${metric}"`);
@@ -112,7 +111,6 @@ describe('#489 Bugün ekranı kod portu (mock-up bugun → runtime)', () => {
       expect(ui.element('#bugun-queue-output').innerHTML).toContain('Henüz atanmadı');
       expect(ui.element('#bugun-queue-output').innerHTML).toContain('09:40 - 10:20');
       expect(ui.element('#bugun-sessions-output').innerHTML).toContain('data-attendance-state="open"');
-      expect(ui.element('#bugun-roles-output').innerHTML).toContain('Günlük işler');
     });
   });
 
@@ -143,20 +141,6 @@ describe('#489 Bugün ekranı kod portu (mock-up bugun → runtime)', () => {
     });
   });
 
-  describe('rol kesitleri: aktör kapsamı', () => {
-    it('operasyon persona ile kuyruk/karar/yoklama kesitleri açık yazar', async () => {
-      const ui = signedIn(OPS_PERMISSION_KEYS);
-      ui.fetch.mockResolvedValueOnce(todayResponse([]));
-      ui.fetch.mockResolvedValueOnce(leavesResponse([]));
-      ui.fetch.mockResolvedValueOnce(sessionsResponse([]));
-      await ui.probe.loadTodayDashboard();
-      const htmlOut = ui.element('#bugun-roles-output').innerHTML;
-      expect(htmlOut).toContain('data-kesit="queue"');
-      expect(htmlOut).toContain('data-kesit="decision"');
-      expect(htmlOut).toContain('data-kesit="attendance"');
-      expect(htmlOut).toContain('Açık');
-    });
-  });
 
   describe('mock-up kabuğu', () => {
     it('mockup bugun.html ile port kontratı uyumlu kalır', () => {
@@ -172,13 +156,13 @@ describe('#489 Bugün ekranı kod portu (mock-up bugun → runtime)', () => {
     });
   });
 
-  describe('viewer: mutasyon/karar/yoklama ölçümleri gizli', () => {
-    it('salt-okunur persona ile karar kesiti kapalı görünür', async () => {
+  describe('viewer: ölçüm alanları veri sızdırmaz', () => {
+    it('salt-okunur persona ile ölçüm kutuları boş kalır', async () => {
       const ui = signedIn(VIEWER_PERMISSION_KEYS);
       await ui.probe.loadTodayDashboard();
-      const htmlOut = ui.element('#bugun-roles-output').innerHTML;
-      expect(htmlOut).toContain('data-kesit="decision"');
-      expect(htmlOut).toContain('Kapalı');
+      expect(ui.element('#bugun-open-work-value').textContent).toBe('');
+      expect(ui.element('#bugun-awaiting-leave-value').textContent).toBe('');
+      expect(ui.element('#bugun-sessions-open-value').textContent).toBe('');
     });
   });
 });
