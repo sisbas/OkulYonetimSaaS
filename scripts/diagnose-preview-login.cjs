@@ -71,6 +71,7 @@ async function main() {
       message,
       code: isNestJson && typeof parsed.code === 'string' ? parsed.code.slice(0, 80) : null,
       hasToken: Boolean(isNestJson && parsed.accessToken),
+      dbHost: isNestJson && typeof parsed.host === 'string' ? parsed.host : null,
       bodyKind: parsed === null ? 'non-json' : 'json',
       // Hata yanıtlarında gövde, platformun nedeni (env/import/route) gösterir.
       // Başarılı yanıtlarda PII riski nedeniyle gövde hiç okunmaz/yazılmaz.
