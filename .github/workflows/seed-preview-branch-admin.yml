@@ -1,0 +1,54 @@
+# #503 — seed a synthetic admin into the Neon branch that backs a PR preview.
+# Vercel × Neon creates `preview/<git-branch>` per preview, so the shared
+# PREVIEW_DATABASE_URL admin is not present there. Refuses production DB.
+name: Seed PR preview admin
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Git branch of the preview (e.g. feat/runtime-ux-shell)'
+        required: true
+        type: string
+      confirm:
+        description: Type 'preview' to confirm the target is a preview database
+        required: true
+        type: string
+      database_name:
+        description: Neon database name
+        required: false
+        default: neondb
+        type: string
+      role_name:
+        description: Neon role name
+        required: false
+        default: neondb_owner
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Seed admin into the PR preview branch
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          PREVIEW_BRANCH: ${{ inputs.branch }}
+          PREVIEW_RESET_CONFIRM: ${{ inputs.confirm }}
+          ADMIN_EMAIL: preview-admin@okul.example
+          ADMIN_PASSWORD: ${{ secrets.PREVIEW_ADMIN_PASSWORD }}
+          DATABASE_NAME: ${{ inputs.database_name }}
+          ROLE_NAME: ${{ inputs.role_name }}
+        run: node scripts/seed-preview-branch-admin.cjs
