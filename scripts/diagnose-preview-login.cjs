@@ -72,7 +72,9 @@ async function main() {
       code: isNestJson && typeof parsed.code === 'string' ? parsed.code.slice(0, 80) : null,
       hasToken: Boolean(isNestJson && parsed.accessToken),
       bodyKind: parsed === null ? 'non-json' : 'json',
-      bodyPrefix: parsed === null ? scrubBody(raw) : null,
+      // Hata yanıtlarında gövde, platformun nedeni (env/import/route) gösterir.
+      // Başarılı yanıtlarda PII riski nedeniyle gövde hiç okunmaz/yazılmaz.
+      bodyPrefix: response.status >= 400 ? scrubBody(raw) : null,
     };
   }
 
@@ -91,6 +93,8 @@ async function main() {
     ['apiRootSlash', '/api/v1/'],
     ['health', '/api/v1/health'],
     ['login', '/api/v1/auth/login', loginOptions],
+    ['loginGet', '/api/v1/auth/login'],
+    ['authNested', '/api/v1/auth/__probe'],
     ['unknownNested', '/api/v1/__probe'],
     ['healthAfterWarmup', '/api/v1/health'],
   ];
