@@ -270,7 +270,8 @@ input, textarea {
   border-color: var(--color-interactive-primary);
   color: var(--color-text-inverse);
 }
-.tab[aria-selected="true"] small { color: inherit; opacity: 0.9; }
+/* Tam opak beyaz: #0075de üzerinde 4.58:1 (WCAG AA, 13px normal metin). */
+.tab[aria-selected="true"] small { color: var(--color-text-inverse); opacity: 1; }
 .tab[aria-selected="true"]:hover { background: var(--color-interactive-primary-hover); }
 main {
   display: grid;
@@ -823,10 +824,13 @@ main {
     position: fixed;
     transform: translateX(-100%);
     transition: transform var(--duration-normal) var(--ease-out);
+    /* visibility:hidden keeps closed-drawer controls out of focus order and
+       the accessibility tree; translateX alone does not. */
+    visibility: hidden;
     width: min(320px, 86vw);
     z-index: var(--z-drawer);
   }
-  .shell.sidebar-open .sidebar { transform: translateX(0); }
+  .shell.sidebar-open .sidebar { transform: translateX(0); visibility: visible; }
   .shell.sidebar-open .nav-scrim {
     background: rgba(0, 0, 0, 0.35);
     display: block;

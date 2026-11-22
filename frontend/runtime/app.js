@@ -433,6 +433,11 @@ function renderSessionSurface() {
   if (authPanel) authPanel.hidden = signedIn;
   const scopeBar = $('#context-form');
   if (scopeBar) scopeBar.hidden = !signedIn;
+  const authError = $('#auth-error');
+  if (authError && signedIn) {
+    authError.innerHTML = '';
+    delete authError.dataset.state;
+  }
 }
 
 function setNavigationDrawer(open) {
@@ -758,6 +763,15 @@ function renderError(target, error) {
   const uiState = UI_STATES[error.uiState] ? error.uiState : 'error_retryable';
   if (uiState === 'rate_limited') startRateLimitCooldown(error.retryAfterSeconds);
   renderRegionState(target, uiState, error.message);
+  // Oturum açılmadığında `main` gizli olduğundan hata yalnız giriş
+  // yüzeyinde görünür olmalı; aynı kanonik blok oraya da yazılır.
+  if (!state.accessToken) {
+    const authError = $('#auth-error');
+    if (authError) {
+      authError.dataset.state = uiState;
+      authError.innerHTML = canonicalStateBlock(uiState, error.message);
+    }
+  }
 }
 
 function startRateLimitCooldown(retryAfterSeconds) {
@@ -1173,13 +1187,14 @@ function renderNavigation() {
   }
 }
 
-function setActiveTab(name) {
+function setActiveTab(name, options = {}) {
+  const { focusMain = true, closeDrawer = true } = options;
   document.querySelectorAll('.tab').forEach((tab) => {
     tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
   });
   document.querySelectorAll('.runtime-panel').forEach((panel) => panel.classList.toggle('hidden', panel.dataset.panel !== name));
-  closeNavigationDrawer();
-  $('#runtime-main').focus();
+  if (closeDrawer) closeNavigationDrawer();
+  if (focusMain) $('#runtime-main').focus();
   // Tab-activation hook tablosu core'a aittir; screen modüller register'a
   // kaydolur (yön: ekran → core). Delegation'ın vm harness'ta çalışmasına
   // gerek yoktur — tablo boşsa davranış core-only kalır.
@@ -1207,7 +1222,7 @@ function setNotifSubtab(name) {
   });
 }
 
-function activateTab(name) {
+function activateTab(name, options = {}) {
   if (name !== 'bugun' && state.permissions.length && !hasAnyCapability(TAB_CAPABILITIES[name])) {
     announce('Bu işlem için yetkiniz yok. Güvenli şekilde Bugün ekranına dönebilirsiniz.', 'warning');
     const bugunTab = document.querySelector('.tab[data-tab="bugun"]');
@@ -1216,7 +1231,7 @@ function activateTab(name) {
     }
     return;
   }
-  setActiveTab(name);
+  setActiveTab(name, options);
 }
 
 /**
@@ -1933,8 +1948,10 @@ document.addEventListener('keydown', (event) => {
   else if (event.key === 'End') next = tabs.length - 1;
   if (next < 0) return;
   event.preventDefault();
+  // Klavye gezinmesinde odak sekmede kalır; içerik odağı ve drawer kapatma
+  // yalnızca açık kullanıcı gezinmesinde uygulanır.
+  activateTab(tabs[next].dataset.tab, { focusMain: false, closeDrawer: false });
   tabs[next].focus();
-  activateTab(tabs[next].dataset.tab);
 });
 
 $('#login-form').addEventListener('submit', login);
