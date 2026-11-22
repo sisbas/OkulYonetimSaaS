@@ -9,6 +9,16 @@ on:
         description: Full https preview URL (vercel.app)
         required: true
         type: string
+      seed_mode:
+        description: TEMP - set to 'seed' to seed the PR preview branch admin
+        required: false
+        default: ''
+        type: string
+      preview_branch:
+        description: TEMP - git branch of the preview
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -31,3 +41,14 @@ jobs:
           ADMIN_EMAIL: preview-admin@okul.example
           ADMIN_PASSWORD: ${{ secrets.PREVIEW_ADMIN_PASSWORD }}
         run: node scripts/diagnose-preview-login.cjs
+
+      - name: TEMP seed PR preview admin
+        if: inputs.seed_mode == 'seed'
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          PREVIEW_BRANCH: ${{ inputs.preview_branch }}
+          PREVIEW_RESET_CONFIRM: preview
+          ADMIN_EMAIL: preview-admin@okul.example
+          ADMIN_PASSWORD: ${{ secrets.PREVIEW_ADMIN_PASSWORD }}
+        run: node scripts/seed-preview-branch-admin.cjs
