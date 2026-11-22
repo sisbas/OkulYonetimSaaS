@@ -1,0 +1,36 @@
+# #503 — create a synthetic admin on the PREVIEW database only.
+# Refuses the production Neon endpoint. Password comes only from a secret.
+name: Create preview admin
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type 'preview' to confirm the target is the preview database
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Create preview administrator
+        env:
+          DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
+          ADMIN_EMAIL: preview-admin@okul.example
+          ADMIN_FULL_NAME: Önizleme Yöneticisi
+          ADMIN_PASSWORD: ${{ secrets.PREVIEW_ADMIN_PASSWORD }}
+          PREVIEW_RESET_CONFIRM: ${{ inputs.confirm }}
+        run: node scripts/create-preview-admin.cjs
