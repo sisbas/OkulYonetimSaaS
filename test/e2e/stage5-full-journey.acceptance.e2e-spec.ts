@@ -1019,12 +1019,52 @@ async function waitForVisible(session: UiSession, selector: string, timeoutMs = 
   throw new Error(`waitForVisible timeout: ${selector}`);
 }
 
-async function createDraft(session: UiSession, from: string, to: string): Promise<string> {
+/**
+ * Program listesi asenkron yenilenir. #schedule-create-form yalnız yayınlanmış
+ * program seçiliyken açık olduğu için tek seferlik option kontrolü yarışa yol
+ * açıyordu: refresh'e bas, hedef option görünene kadar bekle, sonra seç.
+ */
+async function selectProgramme(
+  session: UiSession,
+  id: string,
+  expectedHeading: RegExp,
+  label: string,
+): Promise<void> {
   await session.clickElement('.tab[data-tab="program"]');
-  // Yeni taslak formu yalnız yayınlanmış program seçiliyken görünür.
-  if (scheduleId && (await session.countElements('#schedule-programme-select option')) > 0) {
-    await session.selectValue('#schedule-programme-select', scheduleId);
-    await session.waitForText('#schedule-status h3', /Yayınlanmış program/, 20_000);
+  await session.clickElement('#refresh-schedule-status');
+  const deadline = Date.now() + 20_000;
+  let heading = '';
+  while (Date.now() < deadline) {
+    const option = `#schedule-programme-select option[value="${id}"]`;
+    if ((await session.countElements(option).catch(() => 0)) > 0) {
+      await session.selectValue('#schedule-programme-select', id);
+      await session.waitForText('#schedule-status h3', expectedHeading, 20_000);
+      return;
+    }
+    heading = await textOf(session, '#schedule-status h3').catch(() => '');
+    // Tek program varsa picker gizlidir; doğru program zaten seçili olabilir.
+    if (expectedHeading.test(heading) && (await session.isVisible('#schedule-create-form').catch(() => false))) {
+      return;
+    }
+    await sleep(200);
+  }
+  const options = await session.queryTexts('#schedule-programme-select option').catch(() => []);
+  throw new Error(
+    `selectProgramme(${label}) timeout: id=${id}, heading="${heading}", options=${JSON.stringify(options)}`,
+  );
+}
+
+async function waitForDraftEditor(session: UiSession): Promise<void> {
+  await waitForVisible(session, '#schedule-editor');
+  await waitForVisible(session, '#add-schedule-event');
+}
+
+async function createDraft(session: UiSession, from: string, to: string): Promise<string> {
+  if (scheduleId) {
+    await selectProgramme(session, scheduleId, /Yayınlanmış program/, 'published');
+  } else {
+    await session.clickElement('.tab[data-tab="program"]');
+    await session.clickElement('#refresh-schedule-status');
   }
   await waitForVisible(session, '#schedule-create-form');
   await fillField(session, '#schedule-effective-from', from);
@@ -1045,6 +1085,7 @@ async function addProgrammeRow(
 ): Promise<number> {
   // Yeni/kaydedilmiş taslakta staged satır sıfırdır; satırı ÖNCE ekle,
   // indeksi mevcut satır sayısından türet (persisted event sayısı değil).
+  await waitForDraftEditor(session);
   await session.clickElement('#add-schedule-event');
   const index = (await session.countElements('#schedule-events [data-schedule-row]')) - 1;
   if (index < 0) throw new Error('add-schedule-event did not create a staged row');
@@ -1753,6 +1794,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     await submitContextDate(sessionD!, leaveMonday);
     await ensureBranch(sessionD!, fixture.branchCode);
 
+    try {
     // AC2 — dört kapalı durum, dört ayrı ekran ve dört ayrı metin.
     const emptyId = await createDraft(sessionA!, isoDay(-70), isoDay(-61));
     await expectGate(sessionA!, 'closed_empty', /en az bir ders/i);
@@ -1792,10 +1834,8 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
 
     // AC3 — 412 (stale) ve 428 (version_required) tüm mutasyon kontrollerini kapatır.
     const raceId = await createDraft(sessionA!, isoDay(-40), isoDay(-31));
-    await sessionD!.clickElement('.tab[data-tab="program"]');
-    await sessionD!.clickElement('#refresh-schedule-status');
-    await sessionD!.selectValue('#schedule-programme-select', raceId);
-    await sessionA!.selectValue('#schedule-programme-select', raceId);
+    await selectProgramme(sessionD!, raceId, /Taslak program/, 'race-D');
+    await selectProgramme(sessionA!, raceId, /Taslak program/, 'race-A');
     await addProgrammeRow(sessionD!, 1, '09:00', '09:40');
     await addProgrammeRow(sessionA!, 1, '09:00', '09:40');
     await saveDraft(sessionA!, 2);
@@ -1820,6 +1860,15 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, '428: sürüm jetonu olmayan mutation sunucuda reddedildi; VM kanıtı version_missing → tüm mutasyon kontrolleri kapalı');
 
     recordScenario(PUBLISH_GATE_SCENARIO, 'PASS');
+    } catch (error) {
+      await rethrowWithDiag(error, currentScenario, [
+        ['gate', () => textOf(sessionA!, '#schedule-gate')],
+        ['status', () => textOf(sessionA!, '#schedule-status')],
+        ['validation', () => textOf(sessionA!, '#schedule-validation-summary')],
+        ['netA', () => networkTail('opsA', /\/schedules\//)],
+        ['netD', () => networkTail('opsD', /\/schedules\//)],
+      ]);
+    }
   });
 
   it('İzolasyon + yeniden giriş kalıcılığı + ham PII/depolama taraması.', async () => {
