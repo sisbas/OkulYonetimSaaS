@@ -2,6 +2,9 @@ name: Inspect Vercel build config
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ops/503-repair-preview-api-routing
 
 permissions:
   contents: read
