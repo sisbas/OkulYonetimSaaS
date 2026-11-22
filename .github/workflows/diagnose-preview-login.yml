@@ -56,6 +56,15 @@ jobs:
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
         run: node scripts/probe-vercel-env.cjs
 
+      - name: TEMP reset shared preview admin password
+        if: inputs.seed_mode == 'reset'
+        env:
+          DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
+          ADMIN_EMAIL: preview-admin@okul.example
+          ADMIN_PASSWORD: ${{ secrets.PREVIEW_ADMIN_PASSWORD }}
+          PREVIEW_RESET_CONFIRM: preview
+        run: node scripts/reset-preview-admin.cjs
+
       - name: TEMP seed PR preview admin
         if: inputs.seed_mode == 'seed'
         env:
