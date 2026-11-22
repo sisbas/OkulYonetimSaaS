@@ -1,0 +1,27 @@
+# #503 — read-only metadata/count probe of the configured preview database.
+# Never prints row values, emails, tenant names or the connection string.
+name: Preview DB probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Probe preview database (metadata and counts only)
+        env:
+          DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
+        run: node scripts/probe-preview-db.cjs
