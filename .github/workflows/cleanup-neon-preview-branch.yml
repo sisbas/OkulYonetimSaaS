@@ -6,6 +6,10 @@
 # Delete the preview branch as soon as the PR closes. This is idempotent: if
 # Vercel's cleanup webhook arrives first, the branch is already gone.
 #
+# workflow_dispatch also allows an operator to clear accumulated preview/*
+# branches without waiting for a PR to close (the human runbook in
+# docs/devops/vercel-h2-waiver-and-observation.md §5.3).
+#
 # Required repository configuration:
 #   variable NEON_PROJECT_ID  (Neon Console → Project → Settings → Project ID)
 #   secret   NEON_API_KEY     (Neon Console → Account Settings → API Keys)
@@ -16,12 +20,19 @@ name: Cleanup Neon preview branch
 on:
   pull_request:
     types: [closed]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Optional git branch name (without preview/ prefix). Empty clears all preview/* branches.'
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   delete-branch:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Check cleanup configuration
@@ -44,3 +55,69 @@ jobs:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           branch: preview/${{ github.head_ref }}
           api_key: ${{ secrets.NEON_API_KEY }}
+
+  dispatch-cleanup:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check cleanup configuration
+        id: config
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: |
+          if [ -z "$NEON_API_KEY" ] || [ -z "$NEON_PROJECT_ID" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::NEON_API_KEY / NEON_PROJECT_ID not configured; manual preview branch cleanup skipped."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Delete preview branch(es) via Neon API
+        if: steps.config.outputs.configured == 'true'
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          REQUESTED_BRANCH: ${{ inputs.branch }}
+        run: |
+          node --input-type=module - <<'NODE'
+          const key = process.env.NEON_API_KEY;
+          const project = process.env.NEON_PROJECT_ID;
+          const requested = (process.env.REQUESTED_BRANCH ?? '').trim();
+          if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,199}$/.test(project)) throw new Error('BAD_PROJECT_ID');
+          if (requested && !/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,199}$/.test(requested)) throw new Error('BAD_BRANCH_NAME');
+
+          const base = 'https://console.neon.tech/api/v2/projects/' + encodeURIComponent(project);
+          const headers = { authorization: `Bearer ${key}`, accept: 'application/json' };
+          async function request(path, options = {}) {
+            const response = await fetch(base + path, {
+              ...options, headers, signal: AbortSignal.timeout(20000),
+            });
+            if (!response.ok) throw new Error('NEON_API_HTTP_' + response.status);
+            return response.json();
+          }
+
+          let targets;
+          if (requested) {
+            const name = requested.startsWith('preview/') ? requested : `preview/${requested}`;
+            if (name === 'preview/main' || name === 'preview/' ) throw new Error('PROTECTED_BRANCH');
+            targets = [name];
+          } else {
+            const listing = await request('/branches');
+            if (!Array.isArray(listing.branches)) throw new Error('NEON_SCHEMA_INVALID');
+            targets = listing.branches
+              .map((branch) => String(branch.name ?? ''))
+              .filter((name) => name.startsWith('preview/') && name !== 'preview/main');
+          }
+
+          let deleted = 0;
+          let missing = 0;
+          for (const name of targets) {
+            const listing = await request('/branches');
+            const branch = (listing.branches ?? []).find((item) => String(item.name ?? '') === name);
+            if (!branch) { missing += 1; continue; }
+            await request('/branches/' + encodeURIComponent(String(branch.id)), { method: 'DELETE' });
+            deleted += 1;
+          }
+          console.log(JSON.stringify({ mode: 'MANUAL_PREVIEW_CLEANUP', requested: requested || 'all-preview-branches', deleted, missing }));
+          NODE
