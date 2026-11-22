@@ -242,6 +242,7 @@ async function waitForConsentStatusDb(
 async function openCard(session: UiSession, key: string): Promise<void> {
   const id = rows[key];
   if (!id) throw new Error(`No outbox id for row ${key}.`);
+  await session.clickElement('.subtab[data-notif-subtab="dispatch"]').catch(() => undefined);
   await session.clickElement(
     `button[data-action="notification-detail"][data-notification-id="${id}"]`,
   );
@@ -253,6 +254,7 @@ function detailHeading(session: UiSession): Promise<string> {
 }
 
 async function runAction(session: UiSession, action: string): Promise<void> {
+  await session.clickElement('.subtab[data-notif-subtab="dispatch"]').catch(() => undefined);
   await session.clickElement(`button[data-notification-action="${action}"]`);
 }
 
@@ -932,6 +934,7 @@ describe('N3-A1 acceptance — notification operations UI (server-authoritative,
     await runAction(sessionA!, 'approve');
     await sessionA!.waitForText('#notification-detail h3', /· Onaylandı/, 20_000);
 
+    await sessionA!.clickElement('.subtab[data-notif-subtab="approvals"]');
     await sessionA!.clickElement('#refresh-consents');
     for (const consentType of ['parent_notification', 'sms_notification']) {
       const revokeButton = `#consents-output button[data-action="consent-revoke"][data-subject-ref-id="${students[6].studentId}"][data-consent-type="${consentType}"]`;
