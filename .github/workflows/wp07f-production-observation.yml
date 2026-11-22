@@ -33,6 +33,10 @@ on:
         required: false
         type: boolean
         default: false
+      vercel_deployment_id:
+        description: Optional deployment id (dpl_...) to diagnose; defaults to the script's known reference deployment
+        required: false
+        type: string
       smoke_credentials_missing:
         description: If true, skip auth smoke test and record REACHABILITY_ONLY verdict; if false and credentials missing, fail the workflow
         required: false
@@ -66,6 +70,7 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_DIAGNOSTIC_PREVIEW_ID: ${{ inputs.vercel_deployment_id }}
         run: node scripts/diagnose-vercel-deployment.cjs
       - name: Upload redacted diagnostic evidence
         if: always()

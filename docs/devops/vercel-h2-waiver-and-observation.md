@@ -156,6 +156,14 @@ duration 0). #503'teki 27 Ekim 5 Ready / 3 Error ve 29 Ekim 0 Ready / 6 Error de
 3. Runbook: Neon Console → Branches sayfasında `preview/*` sayısını izle; limit yaklaşırsa eski branch'leri
    sil. Production/default branch **asla** silinmez; preview ortamı production `DATABASE_URL`'ine
    yönlendirilmez.
+4. #503 regresyonunda (2026-11-22) cleanup workflow'a `workflow_dispatch` eklendi: tek bir
+   `preview/<branch>` veya biriken **tüm** `preview/*` branch'leri Neon API üzerinden silinebilir.
+   Çalıştırma: `gh workflow run "Cleanup Neon preview branch" -f branch=<git-branch>` (boş bırakılırsa
+   tüm preview branch'leri). `NEON_PROJECT_ID` variable ve `NEON_API_KEY` secret tanımlı değilse job
+   notice ile atlanır; çalıştırma sonrası log'daki `deleted` sayısı doğrulanmalı.
+   Ayrıca `WP-07F Production Observation` workflow'u `diagnostic_only=true` ve
+   `vercel_deployment_id=dpl_...` ile çalıştırılarak ilgili preview deployment'ının
+   `resourceProvisioningFailure` sınıflandırması okunabilir.
 
 ### 5.4 Waiver'ın sonlandırılması
 
