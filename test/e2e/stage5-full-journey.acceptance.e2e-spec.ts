@@ -1030,27 +1030,50 @@ async function selectProgramme(
   expectedHeading: RegExp,
   label: string,
 ): Promise<void> {
-  await session.clickElement('.tab[data-tab="program"]');
-  await session.clickElement('#refresh-schedule-status');
-  const deadline = Date.now() + 20_000;
-  let heading = '';
+  // Tek bir yenileme yolu kullan: sekme zaten açıksa refresh, değilsek sekme
+  // aktivasyonu. İkisini birden tetiklemek iki concurrency isteği üretiyor ve
+  // geç gelen yanıt seçimi geri alıyordu (Codex P2, 412 senaryosu).
+  const onProgram = await session.isVisible('#program-panel').catch(() => false);
+  await session.clickElement(onProgram ? '#refresh-schedule-status' : '.tab[data-tab="program"]');
+  await sleep(300);
+  await waitForNetworkIdle(session);
+
+  const shown = async (): Promise<{ id: string; heading: string }> => ({
+    id: (await session.attribute('#schedule-status', 'data-schedule-id').catch(() => null)) ?? '',
+    heading: await textOf(session, '#schedule-status h3').catch(() => ''),
+  });
+
+  const deadline = Date.now() + 25_000;
+  let last = { id: '', heading: '' };
   while (Date.now() < deadline) {
     const option = `#schedule-programme-select option[value="${id}"]`;
     if ((await session.countElements(option).catch(() => 0)) > 0) {
       await session.selectValue('#schedule-programme-select', id);
-      await session.waitForText('#schedule-status h3', expectedHeading, 20_000);
-      return;
+      const settled = Date.now() + 20_000;
+      while (Date.now() < settled) {
+        await waitForNetworkIdle(session).catch(() => undefined);
+        last = await shown();
+        if (last.id === id && expectedHeading.test(last.heading)) {
+          // Geç gelen detail yanıtı seçimi geri almadıysa kabul et.
+          await sleep(350);
+          const stable = await shown();
+          if (stable.id === id && expectedHeading.test(stable.heading)) return;
+          last = stable;
+        }
+        await sleep(200);
+      }
+      throw new Error(
+        `selectProgramme(${label}) settle timeout: wanted ${id} / ${expectedHeading}, got ${last.id} / "${last.heading}"`,
+      );
     }
-    heading = await textOf(session, '#schedule-status h3').catch(() => '');
-    // Tek program varsa picker gizlidir; doğru program zaten seçili olabilir.
-    if (expectedHeading.test(heading) && (await session.isVisible('#schedule-create-form').catch(() => false))) {
-      return;
-    }
+    last = await shown();
+    // Tek program varsa picker gizlidir; doğru kayıt zaten açık olabilir.
+    if (last.id === id && expectedHeading.test(last.heading)) return;
     await sleep(200);
   }
   const options = await session.queryTexts('#schedule-programme-select option').catch(() => []);
   throw new Error(
-    `selectProgramme(${label}) timeout: id=${id}, heading="${heading}", options=${JSON.stringify(options)}`,
+    `selectProgramme(${label}) timeout: id=${id}, shown=${last.id}/${last.heading}, options=${JSON.stringify(options)}`,
   );
 }
 
@@ -1064,7 +1087,8 @@ async function createDraft(session: UiSession, from: string, to: string): Promis
     await selectProgramme(session, scheduleId, /Yayınlanmış program/, 'published');
   } else {
     await session.clickElement('.tab[data-tab="program"]');
-    await session.clickElement('#refresh-schedule-status');
+    await sleep(300);
+    await waitForNetworkIdle(session);
   }
   await waitForVisible(session, '#schedule-create-form');
   await fillField(session, '#schedule-effective-from', from);
