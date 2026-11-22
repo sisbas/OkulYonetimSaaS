@@ -47,13 +47,19 @@ function windowsArguments(args) {
   return args.map((arg) => '"' + arg.replace(/"/g, '""') + '"').join(' ');
 }
 
+/** GitHub Actions passes an unset optional input as an empty string, not undefined. */
+function resolvePreviewId(value) {
+  const configured = (value ?? '').trim();
+  return configured || 'dpl_Fpxrha4wkHH4dvAkroi8MKdJvtUk';
+}
+
 async function main() {
   const token = process.env.VERCEL_TOKEN;
   const localConfig = process.env.LOCAL_VERCEL_AUTH_CONFIG;
   if (localConfig && !/^[a-zA-Z0-9:\\/_\.~-]+$/.test(localConfig)) throw new Error('DIAGNOSTIC_UNAVAILABLE');
   const team = process.env.VERCEL_TEAM_ID ?? (localConfig ? 'team_TdQwmVs9Kt3dkxEAla4vr76w' : undefined);
   const project = 'prj_T3niSmmEo4038jwEHEYIjtHXuVZz';
-  const previewId = process.env.VERCEL_DIAGNOSTIC_PREVIEW_ID ?? 'dpl_Fpxrha4wkHH4dvAkroi8MKdJvtUk';
+  const previewId = resolvePreviewId(process.env.VERCEL_DIAGNOSTIC_PREVIEW_ID);
   if (!/^dpl_[a-zA-Z0-9]+$/.test(previewId)) throw new Error('DIAGNOSTIC_UNAVAILABLE');
   if (!token && !localConfig) throw new Error('VERCEL_TOKEN_UNAVAILABLE');
   function runCli(args) {
@@ -167,7 +173,7 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
 }
 
-module.exports = { deploymentIdentity, classifyLogs, productionEnvironmentNames, windowsArguments };
+module.exports = { deploymentIdentity, classifyLogs, productionEnvironmentNames, windowsArguments, resolvePreviewId };
 if (require.main === module) main().catch((error) => {
   const code = /^(VERCEL_API_HTTP_\d{3}|VERCEL_TOKEN_UNAVAILABLE|PRODUCTION_ID_UNAVAILABLE)$/.test(error.message)
     ? error.message : 'DIAGNOSTIC_UNAVAILABLE';

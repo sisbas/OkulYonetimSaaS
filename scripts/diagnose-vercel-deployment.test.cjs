@@ -1,8 +1,15 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { deploymentIdentity, classifyLogs, productionEnvironmentNames, windowsArguments } = require('./diagnose-vercel-deployment.cjs');
+const { deploymentIdentity, classifyLogs, productionEnvironmentNames, windowsArguments, resolvePreviewId } = require('./diagnose-vercel-deployment.cjs');
 const { spawnSync } = require('node:child_process');
 
+test('empty or missing deployment id falls back to the documented reference deployment', () => {
+  const fallback = 'dpl_Fpxrha4wkHH4dvAkroi8MKdJvtUk';
+  assert.equal(resolvePreviewId(undefined), fallback);
+  assert.equal(resolvePreviewId(''), fallback);
+  assert.equal(resolvePreviewId('   '), fallback);
+  assert.equal(resolvePreviewId('dpl_EhYpnSsZvaGosYXzfHaoa2ofHWye'), 'dpl_EhYpnSsZvaGosYXzfHaoa2ofHWye');
+});
 test('deployment output never includes raw metadata, errors or environment values', () => {
   const result = deploymentIdentity({ id: 'dpl_abc', url: 'app-abc.vercel.app', readyState: 'ERROR',
     errorCode: 'BUILD_FAILED', errorMessage: 'Resource provisioning failed PRIVATE_VALUE',
