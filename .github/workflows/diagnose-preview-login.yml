@@ -1,0 +1,33 @@
+# #503 — read-only probe of the Vercel preview auth surface.
+# Prints only HTTP statuses and scrubbed messages; no secrets or tokens.
+name: Diagnose preview login
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_url:
+        description: Full https preview URL (vercel.app)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Probe preview auth endpoints
+        env:
+          PREVIEW_URL: ${{ inputs.preview_url }}
+          VERCEL_BYPASS_SECRET: ${{ secrets.VERCEL_PROTECTION_BYPASS_SECRET }}
+          ADMIN_EMAIL: preview-admin@okul.example
+          ADMIN_PASSWORD: ${{ secrets.PREVIEW_ADMIN_PASSWORD }}
+        run: node scripts/diagnose-preview-login.cjs
