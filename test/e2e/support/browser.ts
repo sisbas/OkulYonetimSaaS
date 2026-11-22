@@ -277,7 +277,7 @@ export async function createUiSession(input: Readonly<{
     maskCredentialInputs: async () => {
       for (const selector of ['#password', '#email']) {
         const element = await page.$(selector);
-        if (!element) continue;
+        if (!element || !(await element.isVisible())) continue;
         await page.click(selector);
         await page.keyboard.down('Control');
         await page.keyboard.press('KeyA');

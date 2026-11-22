@@ -290,6 +290,11 @@ async function clickRetry(session: UiSession, selector: string, attempts = 5, de
   throw last instanceof Error ? last : new Error(String(last));
 }
 
+/** Ekran içi adım sekmeleri: yeni master-detail düzeninde ilgili bölmeyi açar. */
+async function selectSubtab(session: UiSession, kind: 'op' | 'notif', name: string): Promise<void> {
+  await session.clickElement(`.subtab[data-${kind}-subtab="${name}"]`).catch(() => undefined);
+}
+
 /**
  * `#refresh-consents` tıklaması render sırasında kopabilir veya loadConsents
  * geçici bir durumda no-op olabilir; butonlar görünene kadar yeniden dener.
@@ -300,6 +305,7 @@ async function waitForConsentsWithRetry(
   expected: number,
   timeoutMs = 30_000,
 ): Promise<void> {
+  await selectSubtab(session, 'notif', 'approvals');
   const deadline = Date.now() + timeoutMs;
   let last = -1;
   while (Date.now() < deadline) {
@@ -379,6 +385,7 @@ async function waitForConsentStatus(
 async function openCard(session: UiSession, key: string): Promise<void> {
   const id = rows[key];
   if (!id) throw new Error(`No outbox id for row ${key}.`);
+  await selectSubtab(session, 'notif', 'dispatch');
   await session.clickElement(`button[data-action="notification-detail"][data-notification-id="${id}"]`);
 }
 
@@ -387,6 +394,7 @@ function detailHeading(session: UiSession): Promise<string> {
 }
 
 async function runAction(session: UiSession, action: string): Promise<void> {
+  await selectSubtab(session, 'notif', 'dispatch');
   await session.clickElement(`button[data-notification-action="${action}"]`);
 }
 
@@ -1444,6 +1452,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
     recordEvidence(currentScenario, 'substitutions onayla aynı transaction → DB state=assigned, leave approved, coverage covered');
 
     await sessionA!.clickElement('.tab[data-tab="ops"]');
+    await selectSubtab(sessionA!, 'op', 'coverage');
     await sessionA!.clickElement('#refresh-queue');
     await sessionA!.waitForText(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`, /./, 20_000);
     await sessionA!.clickElement(`#queue-output button[data-action="impact"][data-leave-id="${leaveId}"]`);
@@ -1654,6 +1663,7 @@ describe('S5-E1 acceptance — Stage 5 full journey (UI-driven schedule → leav
       ]);
     }
     recordEvidence(currentScenario, 'notifications list renderme: >= 2 kart (N3 kalıntıları nedeniyle tam sayı yerine alt sınır)');
+    await selectSubtab(sessionA!, 'notif', 'approvals');
     await sessionA!.waitForText('#bulk-approve-output button[data-action="bulk-approve-session"]', /toplu onayla/i, 10_000);
     await sessionA!.clickElement('#bulk-approve-output button[data-action="bulk-approve-session"]');
     try {

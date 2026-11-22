@@ -244,23 +244,7 @@ async function loadTodayDashboard() {
   metricResults.push(await loadTodaySessions());
   renderBugunStatsSurface(metricResults);
 
-  renderBugunKesit();
   updateWorkflowProgress();
-}
-
-function renderBugunKesit() {
-  const target = $('#bugun-roles-output');
-  const rows = [
-    { key: 'queue', title: 'Günlük işler', permitted: canRequest('GET', '/daily-operations/today'), hint: 'Bugünün iş listesi görünürlüğü aktör yetkisiyle belirlenir.' },
-    { key: 'decision', title: 'Karar', permitted: canRequest('GET', '/leaves'), hint: 'İzin kararı görünürlüğü aktör yetkisiyle belirlenir.' },
-    { key: 'attendance', title: 'Yoklama', permitted: canRequest('GET', '/attendance/sessions'), hint: 'Yoklama okuma görünürlüğü aktör yetkisiyle belirlenir.' },
-  ];
-  target.innerHTML = rows
-    .map(
-      (row) =>
-        `<article class="card" data-kesit="${row.key}"><h3>${row.title}</h3><p class="card-meta"><span>${row.permitted ? 'Açık' : 'Kapalı'}</span></p><p class="hint">${row.permitted ? row.hint : 'Bu kesit için yetkiniz bulunmuyor.'}</p></article>`,
-    )
-    .join('');
 }
 
 document.addEventListener('click', async (event) => {
