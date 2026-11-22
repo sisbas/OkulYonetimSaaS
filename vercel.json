@@ -9,6 +9,12 @@
       "maxDuration": 30
     }
   },
+  "routes": [
+    {
+      "src": "^/api/v1/(?<nested>.+)$",
+      "dest": "/api/v1?__vercelApiPath=$nested"
+    }
+  ],
   "redirects": [
     {
       "source": "/ux/:path*",
