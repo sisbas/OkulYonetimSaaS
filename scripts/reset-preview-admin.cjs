@@ -22,6 +22,18 @@ function maskEmail(email) {
   return `${local.slice(0, 2)}***@${domain}`;
 }
 
+/** URL hostname AND pg's preferred ?host= override, case-insensitive. */
+function isProductionHost(connectionString) {
+  const parsed = new URL(connectionString);
+  const hosts = [parsed.hostname];
+  for (const [key, value] of parsed.searchParams) {
+    if (key.toLowerCase() === 'host') hosts.push(value);
+  }
+  return hosts
+    .map((value) => String(value ?? '').toLowerCase())
+    .some((host) => host.includes(PRODUCTION_HOST_FRAGMENT));
+}
+
 async function main() {
   const confirm = String(process.env.PREVIEW_RESET_CONFIRM ?? '').trim().toLowerCase();
   if (confirm !== 'preview') throw new Error('CONFIRM_REQUIRED');
@@ -33,14 +45,20 @@ async function main() {
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL_REQUIRED');
-  const parsed = new URL(connectionString);
-  if (parsed.hostname.includes(PRODUCTION_HOST_FRAGMENT)) throw new Error('PRODUCTION_DB_REFUSED');
+  const normalized = (value) => String(value ?? '').toLowerCase();
+  // pg, ?host= query parametresini URL hostname'ine tercih eder; ikisini de
+  // ve yine de oluşturulan client'ın etkin host'unu kontrol et.
+  if (isProductionHost(connectionString)) throw new Error('PRODUCTION_DB_REFUSED');
 
   const client = new Client({
     connectionString,
     connectionTimeoutMillis: 20000,
     ssl: { rejectUnauthorized: false },
   });
+  if (normalized(client.connectionParameters?.host).includes(PRODUCTION_HOST_FRAGMENT)) {
+    await client.end().catch(() => undefined);
+    throw new Error('PRODUCTION_DB_REFUSED');
+  }
   await client.connect();
   try {
     const found = await client.query(
@@ -100,17 +118,21 @@ async function main() {
       outcome: 'reset',
       email: maskEmail(email),
       userId,
-      host: parsed.hostname,
+      host: normalized(client.connectionParameters?.host),
     }));
   } finally {
     await client.end();
   }
 }
 
-main().catch((error) => {
-  const code = /^(CONFIRM_REQUIRED|BAD_EMAIL|PASSWORD_TOO_SHORT|DATABASE_URL_REQUIRED|PRODUCTION_DB_REFUSED|USER_NOT_FOUND|TENANT_NOT_FOUND|ROLE_NOT_FOUND)$/.test(
-    String(error.message),
-  ) ? String(error.message) : 'RESET_FAILED';
-  console.error(code);
-  process.exitCode = 1;
-});
+module.exports = { isProductionHost };
+
+if (require.main === module) {
+  main().catch((error) => {
+    const code = /^(CONFIRM_REQUIRED|BAD_EMAIL|PASSWORD_TOO_SHORT|DATABASE_URL_REQUIRED|PRODUCTION_DB_REFUSED|USER_NOT_FOUND|TENANT_NOT_FOUND|ROLE_NOT_FOUND)$/.test(
+      String(error.message),
+    ) ? String(error.message) : 'RESET_FAILED';
+    console.error(code);
+    process.exitCode = 1;
+  });
+}
