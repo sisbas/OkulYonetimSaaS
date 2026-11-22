@@ -89,6 +89,7 @@ async function main() {
     body: JSON.stringify({ email, password }),
   };
   const definitions = [
+    ['dbInfo', '/api/dbinfo'],
     ['apiRoot', '/api/v1'],
     ['apiRootSlash', '/api/v1/'],
     ['health', '/api/v1/health'],
