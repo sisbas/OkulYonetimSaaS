@@ -1,0 +1,35 @@
+# #503 — reset the password of an existing administrator on the PREVIEW DB.
+# Refuses the production Neon endpoint. Password comes only from a secret.
+name: Reset preview admin password
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type 'preview' to confirm the target is the preview database
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Reset existing preview admin password
+        env:
+          DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
+          ADMIN_EMAIL: admin@okul.example
+          ADMIN_PASSWORD: ${{ secrets.PREVIEW_ADMIN_PASSWORD }}
+          PREVIEW_RESET_CONFIRM: ${{ inputs.confirm }}
+        run: node scripts/reset-preview-admin.cjs
