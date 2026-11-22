@@ -117,11 +117,12 @@ export default async function handler(request: Request, response: Response) {
   } catch (error) {
     // Production keeps the platform's opaque 500. Preview surfaces a scrubbed
     // first-line reason so deployment/env regressions are diagnosable via HTTP.
-    if (process.env.VERCEL_ENV !== 'preview') throw error;
+    if (process.env.VERCEL_ENV === 'production') throw error;
     response.statusCode = 500;
     response.setHeader('content-type', 'application/json');
     response.end(JSON.stringify({
       error: 'preview_bootstrap_failed',
+      diagnosticVersion: 2,
       detail: scrubBootstrapError(error),
     }));
     return;
