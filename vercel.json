@@ -4,6 +4,17 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist/runtime",
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    {
+      "src": "^/api/v1/(?<nested>.+)$",
+      "dest": "/api/v1?__vercelApiPath=$nested"
+    }
+  ],
   "redirects": [
     {
       "source": "/ux/:path*",
@@ -15,10 +26,6 @@
     {
       "source": "/",
       "destination": "/landing/index.html"
-    },
-    {
-      "source": "/api/v1/:path*",
-      "destination": "/api/v1/:path*"
     },
     {
       "source": "/runtime",
