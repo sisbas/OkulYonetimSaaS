@@ -97,8 +97,34 @@ export function __resetCreateNestHandlerForTest(): void {
   cachedHandler = undefined;
 }
 
+/** #503 — preview booting error detail is diagnostic-only, never a secret sink. */
+function scrubBootstrapError(error: unknown): string {
+  const message = String((error as { message?: unknown } | null)?.message ?? error);
+  return message
+    .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, '[db-url-redacted]')
+    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[email-redacted]')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
 export default async function handler(request: Request, response: Response) {
   restoreRewrittenApiRequestUrl(request);
-  const nestHandler = await getCachedNestHandler();
+  let nestHandler: ExpressHandler;
+  try {
+    nestHandler = await getCachedNestHandler();
+  } catch (error) {
+    // Production keeps the platform's opaque 500. Preview surfaces a scrubbed
+    // first-line reason so deployment/env regressions are diagnosable via HTTP.
+    if (process.env.VERCEL_ENV !== 'preview') throw error;
+    response.statusCode = 500;
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({
+      error: 'preview_bootstrap_failed',
+      detail: scrubBootstrapError(error),
+    }));
+    return;
+  }
   return nestHandler(request, response);
 }

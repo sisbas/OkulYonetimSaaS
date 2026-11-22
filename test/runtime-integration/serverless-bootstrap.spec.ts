@@ -29,6 +29,35 @@ describe('Vercel serverless Nest bootstrap cache', () => {
     expect(attempts).toBe(2);
   });
 
+  it('surfaces a scrubbed bootstrap failure on preview without leaking DB URLs', async () => {
+    const originalVercelEnv = process.env.VERCEL_ENV;
+    process.env.VERCEL_ENV = 'preview';
+    __setCreateNestHandlerForTest(async () => {
+      throw new Error('DATABASE_URL is required: postgres://user:secret@host/db?sslmode=require');
+    });
+    let body = '';
+    const response = {
+      statusCode: 200,
+      setHeader: jest.fn(),
+      end: jest.fn((chunk?: string) => { body = String(chunk ?? ''); }),
+    } as unknown as Response;
+
+    try {
+      await handler(
+        { url: '/api/v1/health', query: {}, headers: {}, method: 'GET' } as unknown as Request,
+        response,
+      );
+      expect(response.statusCode).toBe(500);
+      expect(body).toContain('preview_bootstrap_failed');
+      expect(body).toContain('DATABASE_URL is required');
+      expect(body).not.toContain('postgres://');
+      expect(body).not.toContain('secret@host');
+    } finally {
+      if (originalVercelEnv === undefined) delete process.env.VERCEL_ENV;
+      else process.env.VERCEL_ENV = originalVercelEnv;
+    }
+  });
+
   it('reuses a successful bootstrap promise for concurrent and warm invocations', async () => {
     const runtimeHandler = jest.fn();
     let attempts = 0;
