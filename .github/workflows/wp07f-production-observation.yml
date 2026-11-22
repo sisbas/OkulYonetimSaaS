@@ -166,9 +166,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wp07f-production-observation-${{ github.sha }}
-          path:
-            - artifacts/wp07f-production-observation
-            - artifacts/production-auth-smoke-receipt-${{ github.sha }}.json
+          path: |
+            artifacts/wp07f-production-observation
+            artifacts/production-auth-smoke-receipt-${{ github.sha }}.json
           if-no-files-found: error
           retention-days: 14
 
